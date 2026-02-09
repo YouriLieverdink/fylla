@@ -88,7 +88,6 @@ fylla sync --days 10                # Override scheduling window (default: 5)
 fylla sync --from 2025-01-20 --to 2025-01-24  # Explicit date range
 
 fylla list                          # Show sorted tasks without scheduling
-fylla list --include-snoozed        # Include snoozed tasks in output
 
 # Time tracking
 fylla start PROJ-123                # Start timer for a task
@@ -121,20 +120,18 @@ fylla config set projectRules.ADMIN.end "11:00"
          ↓
 2. Fetch Jira tasks (JQL query)
          ↓
-3. Filter out snoozed tasks (snoozeField > today)
+3. Sort by composite score
          ↓
-4. Sort by composite score
+4. Fetch Google Calendar events (meetings, OOO - within scheduling window)
          ↓
-5. Fetch Google Calendar events (meetings, OOO - within scheduling window)
-         ↓
-6. Find free slots per project
+5. Find free slots per project
    - Default business hours for most tasks
    - Project-specific windows for configured projects
    - Exclude OOO periods
          ↓
-7. Allocate tasks to slots (first-fit, respecting min duration)
+6. Allocate tasks to slots (first-fit, respecting min duration)
          ↓
-8. Create fresh [Fylla] calendar events (or dry-run output)
+7. Create fresh [Fylla] calendar events (or dry-run output)
 ```
 
 ## Key Implementation Details
@@ -162,10 +159,6 @@ fylla config set projectRules.ADMIN.end "11:00"
 - First-fit: highest priority task gets first available slot
 - **Project filtering**: Tasks check if their project has custom time rules
 - Tasks without estimates default to 1 hour
-
-### Snooze Filtering
-- Before sorting, tasks with `snoozeField > today` are excluded
-- Snoozed tasks reappear automatically when the snooze date passes
 
 ### Deadline Risk Handling
 - **Crunch mode boost**: Tasks with due date < 3 days away get extra priority weight
@@ -204,7 +197,6 @@ jira:
   url: https://company.atlassian.net
   email: you@example.com
   defaultJql: "assignee = currentUser() AND status = 'To Do'"
-  snoozeField: customfield_10050  # Optional: custom "Snooze Until" date field
 
 calendar:
   sourceCalendar: primary           # Read meetings & OOO from here
@@ -327,18 +319,6 @@ Pre-fill values:
 ```
 $ fylla add --project PROJ --type Bug --priority High
 ```
-
-## Snooze/Delay Tasks in Jira
-
-To delay a task, use a custom Jira field:
-
-1. **Create field in Jira**: Add a Date field called "Snooze Until" (or similar)
-2. **Configure the tool**: Set `jira.snoozeField` to the custom field ID
-3. **Usage**: Set the date on any Jira issue - tool skips it until that date
-
-The tool filters out tasks where `snoozeField > today` before sorting/scheduling.
-
-**Alternative (no custom field)**: Use a label convention like `snooze:2025-01-25`. The tool parses labels matching this pattern and skips accordingly.
 
 ## Implementation Order
 
