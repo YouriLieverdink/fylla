@@ -5,120 +5,278 @@
         {
             "id": "project-setup",
             "name": "Project Setup",
-            "requirements": ["SETUP-001", "SETUP-002", "SETUP-003"],
-            "target": {"source": "go.mod", "test": null},
+            "requirements": [
+                "SETUP-001",
+                "SETUP-002",
+                "SETUP-003"
+            ],
+            "target": {
+                "source": "go.mod",
+                "test": null
+            },
             "passes": true
         },
         {
             "id": "config-system",
             "name": "Configuration System",
-            "requirements": ["CFG-001", "CFG-002", "CFG-003", "CFG-004", "CFG-005", "CFG-006", "CFG-007", "CFG-008", "CFG-009"],
-            "target": {"source": "internal/config", "test": "internal/config/config_test.go"},
+            "requirements": [
+                "CFG-001",
+                "CFG-002",
+                "CFG-003",
+                "CFG-004",
+                "CFG-005",
+                "CFG-006",
+                "CFG-007",
+                "CFG-008",
+                "CFG-009"
+            ],
+            "target": {
+                "source": "internal/config",
+                "test": "internal/config/config_test.go"
+            },
             "passes": true
         },
         {
             "id": "jira-client",
             "name": "Jira Client",
-            "requirements": ["JIRA-001", "JIRA-002", "JIRA-003", "JIRA-004", "JIRA-005", "JIRA-006", "JIRA-007", "JIRA-008", "JIRA-009"],
-            "target": {"source": "internal/jira", "test": "internal/jira/client_test.go"},
+            "requirements": [
+                "JIRA-001",
+                "JIRA-002",
+                "JIRA-003",
+                "JIRA-004",
+                "JIRA-005",
+                "JIRA-006",
+                "JIRA-007",
+                "JIRA-008",
+                "JIRA-009"
+            ],
+            "target": {
+                "source": "internal/jira",
+                "test": "internal/jira/client_test.go"
+            },
             "passes": true
         },
         {
             "id": "task-sorter",
             "name": "Task Sorting Algorithm",
-            "requirements": ["SORT-001", "SORT-002", "SORT-003", "SORT-004", "SORT-005", "SORT-006", "SORT-007", "SORT-008", "SORT-009", "SORT-010"],
-            "target": {"source": "internal/scheduler/sorter.go", "test": "internal/scheduler/sorter_test.go"},
+            "requirements": [
+                "SORT-001",
+                "SORT-002",
+                "SORT-003",
+                "SORT-004",
+                "SORT-005",
+                "SORT-006",
+                "SORT-007",
+                "SORT-008",
+                "SORT-009",
+                "SORT-010"
+            ],
+            "target": {
+                "source": "internal/scheduler/sorter.go",
+                "test": "internal/scheduler/sorter_test.go"
+            },
             "passes": true
         },
         {
             "id": "google-oauth",
             "name": "Google OAuth Authentication",
-            "requirements": ["GCAL-001", "GCAL-002"],
-            "target": {"source": "internal/calendar/oauth.go", "test": "internal/calendar/oauth_test.go"},
+            "requirements": [
+                "GCAL-001",
+                "GCAL-002"
+            ],
+            "target": {
+                "source": "internal/calendar/oauth.go",
+                "test": "internal/calendar/oauth_test.go"
+            },
             "passes": true
         },
         {
             "id": "calendar-client",
             "name": "Google Calendar Client",
-            "requirements": ["GCAL-003", "GCAL-004", "GCAL-005", "GCAL-006", "GCAL-007", "GCAL-008", "GCAL-009"],
-            "target": {"source": "internal/calendar/google.go", "test": "internal/calendar/google_test.go"},
+            "requirements": [
+                "GCAL-003",
+                "GCAL-004",
+                "GCAL-005",
+                "GCAL-006",
+                "GCAL-007",
+                "GCAL-008",
+                "GCAL-009"
+            ],
+            "target": {
+                "source": "internal/calendar/google.go",
+                "test": "internal/calendar/google_test.go"
+            },
             "passes": true
         },
         {
             "id": "free-slot-finder",
             "name": "Free Slot Finder",
-            "requirements": ["SLOT-001", "SLOT-002", "SLOT-003", "SLOT-004", "SLOT-005", "SLOT-006", "SLOT-007"],
-            "target": {"source": "internal/calendar/slots.go", "test": "internal/calendar/slots_test.go"},
+            "requirements": [
+                "SLOT-001",
+                "SLOT-002",
+                "SLOT-003",
+                "SLOT-004",
+                "SLOT-005",
+                "SLOT-006",
+                "SLOT-007"
+            ],
+            "target": {
+                "source": "internal/calendar/slots.go",
+                "test": "internal/calendar/slots_test.go"
+            },
             "passes": true
         },
         {
             "id": "slot-allocator",
             "name": "Slot Allocator",
-            "requirements": ["ALLOC-001", "ALLOC-002", "ALLOC-003", "ALLOC-004", "ALLOC-005", "ALLOC-006", "ALLOC-007"],
-            "target": {"source": "internal/scheduler/allocator.go", "test": "internal/scheduler/allocator_test.go"},
+            "requirements": [
+                "ALLOC-001",
+                "ALLOC-002",
+                "ALLOC-003",
+                "ALLOC-004",
+                "ALLOC-005",
+                "ALLOC-006",
+                "ALLOC-007"
+            ],
+            "target": {
+                "source": "internal/scheduler/allocator.go",
+                "test": "internal/scheduler/allocator_test.go"
+            },
             "passes": true
         },
         {
             "id": "timer-system",
             "name": "Timer System",
-            "requirements": ["TIMER-001", "TIMER-002", "TIMER-003", "TIMER-004", "TIMER-005", "TIMER-006"],
-            "target": {"source": "internal/timer/state.go", "test": "internal/timer/state_test.go"},
+            "requirements": [
+                "TIMER-001",
+                "TIMER-002",
+                "TIMER-003",
+                "TIMER-004",
+                "TIMER-005",
+                "TIMER-006"
+            ],
+            "target": {
+                "source": "internal/timer/state.go",
+                "test": "internal/timer/state_test.go"
+            },
             "passes": true
         },
         {
             "id": "sync-process",
             "name": "Sync Process",
-            "requirements": ["SYNC-001", "SYNC-002", "SYNC-003", "SYNC-004", "SYNC-005", "SYNC-006", "SYNC-007", "SYNC-008"],
-            "target": {"source": "internal/cli/commands/sync.go", "test": "internal/cli/commands/sync_test.go"},
-            "passes": false
+            "requirements": [
+                "SYNC-001",
+                "SYNC-002",
+                "SYNC-003",
+                "SYNC-004",
+                "SYNC-005",
+                "SYNC-006",
+                "SYNC-007",
+                "SYNC-008"
+            ],
+            "target": {
+                "source": "internal/cli/commands/sync.go",
+                "test": "internal/cli/commands/sync_test.go"
+            },
+            "passes": true
         },
         {
             "id": "cli-auth",
             "name": "CLI Auth Commands",
-            "requirements": ["CLI-001", "CLI-002", "CLI-003"],
-            "target": {"source": "internal/cli/commands/auth.go", "test": "internal/cli/commands/auth_test.go"},
+            "requirements": [
+                "CLI-001",
+                "CLI-002",
+                "CLI-003"
+            ],
+            "target": {
+                "source": "internal/cli/commands/auth.go",
+                "test": "internal/cli/commands/auth_test.go"
+            },
             "passes": false
         },
         {
             "id": "cli-sync",
             "name": "CLI Sync Command",
-            "requirements": ["CLI-004", "CLI-005", "CLI-006", "CLI-007", "CLI-008"],
-            "target": {"source": "internal/cli/commands/sync.go", "test": "internal/cli/commands/sync_test.go"},
+            "requirements": [
+                "CLI-004",
+                "CLI-005",
+                "CLI-006",
+                "CLI-007",
+                "CLI-008"
+            ],
+            "target": {
+                "source": "internal/cli/commands/sync.go",
+                "test": "internal/cli/commands/sync_test.go"
+            },
             "passes": false
         },
         {
             "id": "cli-list",
             "name": "CLI List Command",
-            "requirements": ["CLI-009"],
-            "target": {"source": "internal/cli/commands/list.go", "test": "internal/cli/commands/list_test.go"},
+            "requirements": [
+                "CLI-009"
+            ],
+            "target": {
+                "source": "internal/cli/commands/list.go",
+                "test": "internal/cli/commands/list_test.go"
+            },
             "passes": false
         },
         {
             "id": "cli-timer",
             "name": "CLI Timer Commands",
-            "requirements": ["CLI-010", "CLI-011", "CLI-012", "CLI-013", "CLI-014"],
-            "target": {"source": "internal/cli/commands", "test": "internal/cli/commands"},
+            "requirements": [
+                "CLI-010",
+                "CLI-011",
+                "CLI-012",
+                "CLI-013",
+                "CLI-014"
+            ],
+            "target": {
+                "source": "internal/cli/commands",
+                "test": "internal/cli/commands"
+            },
             "passes": false
         },
         {
             "id": "cli-estimate",
             "name": "CLI Estimate Command",
-            "requirements": ["CLI-015", "CLI-016"],
-            "target": {"source": "internal/cli/commands/estimate.go", "test": "internal/cli/commands/estimate_test.go"},
+            "requirements": [
+                "CLI-015",
+                "CLI-016"
+            ],
+            "target": {
+                "source": "internal/cli/commands/estimate.go",
+                "test": "internal/cli/commands/estimate_test.go"
+            },
             "passes": false
         },
         {
             "id": "cli-add",
             "name": "CLI Add Command",
-            "requirements": ["CLI-017", "CLI-018", "CLI-019"],
-            "target": {"source": "internal/cli/commands/add.go", "test": "internal/cli/commands/add_test.go"},
+            "requirements": [
+                "CLI-017",
+                "CLI-018",
+                "CLI-019"
+            ],
+            "target": {
+                "source": "internal/cli/commands/add.go",
+                "test": "internal/cli/commands/add_test.go"
+            },
             "passes": false
         },
         {
             "id": "cli-config",
             "name": "CLI Config Commands",
-            "requirements": ["CLI-020", "CLI-021", "CLI-022"],
-            "target": {"source": "internal/cli/commands/config.go", "test": "internal/cli/commands/config_test.go"},
+            "requirements": [
+                "CLI-020",
+                "CLI-021",
+                "CLI-022"
+            ],
+            "target": {
+                "source": "internal/cli/commands/config.go",
+                "test": "internal/cli/commands/config_test.go"
+            },
             "passes": false
         }
     ],
@@ -792,7 +950,7 @@
                 "Run 'fylla sync' again",
                 "Verify old [Fylla] events are deleted before new ones created"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SYNC-002",
@@ -803,7 +961,7 @@
                 "Run 'fylla sync'",
                 "Verify tasks matching JQL are fetched"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SYNC-003",
@@ -814,7 +972,7 @@
                 "Run 'fylla sync --dry-run'",
                 "Verify tasks are scheduled in score order"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SYNC-004",
@@ -825,7 +983,7 @@
                 "Run 'fylla sync'",
                 "Verify meetings are detected as busy times"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SYNC-005",
@@ -836,7 +994,7 @@
                 "Run 'fylla sync' with tasks from different projects",
                 "Verify each task gets slots matching its project's rules"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SYNC-006",
@@ -847,7 +1005,7 @@
                 "Verify highest priority tasks get earliest slots",
                 "Verify allocation respects minimum duration rules"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SYNC-007",
@@ -858,7 +1016,7 @@
                 "Open Google Calendar",
                 "Verify [Fylla] events are created with correct details"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SYNC-008",
@@ -869,7 +1027,7 @@
                 "Run 'fylla sync'",
                 "Verify warning message shows task key and scheduling conflict"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CLI-001",

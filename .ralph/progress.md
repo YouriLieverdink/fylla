@@ -84,3 +84,14 @@ Build: SUCCESS | Lint: SUCCESS | Test: 18 passed
 - TIMER-005: PASS - RoundDuration rounds to nearest N minutes (configurable), minimum 1 unit, 7m→5m, 8m→10m
 - TIMER-006: PASS - Status returns running task key and elapsed time, nil when no timer active
 Build: SUCCESS | Lint: SUCCESS | Test: 22 passed
+
+## Feature: sync-process
+- SYNC-001: PASS - DeleteFyllaEvents called with correct time range, skipped on dry-run, called before event creation
+- SYNC-002: PASS - FetchTasks called with provided JQL, fetched tasks appear in allocations
+- SYNC-003: PASS - Tasks sorted by composite score; higher priority and sooner due dates scheduled first
+- SYNC-004: PASS - FetchEvents called within scheduling window, busy events reduce available slots
+- SYNC-005: PASS - Project-specific time windows (ADMIN 09:00-10:00), default hours for others, OOO blocks scheduling
+- SYNC-006: PASS - First-fit allocation gives highest priority earliest slot, respects minimum duration
+- SYNC-007: PASS - CreateEvent called for each allocation with correct details, dry-run skips creation
+- SYNC-008: PASS - At-risk tasks detected (overdue), AtRisk flag set on events, on-time not flagged, deduplicated by key
+Build: SUCCESS | Lint: SUCCESS | Test: 29 passed

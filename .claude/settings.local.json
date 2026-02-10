@@ -2,6 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(go:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
       "Bash(wc:*)"
     ]
   }
