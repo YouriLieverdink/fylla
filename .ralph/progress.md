@@ -27,3 +27,16 @@ Build: SUCCESS | Lint: SUCCESS | Test: 22 passed
 - JIRA-008: PASS - Original and remaining estimate parsed from seconds, nil timetracking handled
 - JIRA-009: PASS - Issue type (Bug, Task, Story) parsed from issuetype.name field
 Build: SUCCESS | Lint: SUCCESS | Test: 24 passed
+
+## Feature: task-sorter
+- SORT-001: PASS - Priority 40% weight, higher priority tasks sorted first
+- SORT-002: PASS - Due date 30% weight, earlier due dates prioritized
+- SORT-003: PASS - Estimate 15% weight, smaller tasks score higher (quick wins)
+- SORT-004: PASS - Issue type 10% weight, Bug prioritized over Task
+- SORT-005: PASS - Age 5% weight, older tasks get slight boost
+- SORT-006: PASS - Priority scoring: Highest(1)=100, High(2)=80, Medium(3)=60, Low(4)=40, Lowest(5)=20
+- SORT-007: PASS - Due date scoring: 0 days=100, 30+ days=0, linear decay
+- SORT-008: PASS - Estimate scoring: inverse relationship, 30min=93.75, 8h=0
+- SORT-009: PASS - Issue type scoring: Bug=100, Task=70, Story=50
+- SORT-010: PASS - Crunch mode: tasks due within 3 days get extra priority boost
+Build: SUCCESS | Lint: SUCCESS | Test: 28 passed

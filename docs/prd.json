@@ -28,7 +28,7 @@
             "name": "Task Sorting Algorithm",
             "requirements": ["SORT-001", "SORT-002", "SORT-003", "SORT-004", "SORT-005", "SORT-006", "SORT-007", "SORT-008", "SORT-009", "SORT-010"],
             "target": {"source": "internal/scheduler/sorter.go", "test": "internal/scheduler/sorter_test.go"},
-            "passes": false
+            "passes": true
         },
         {
             "id": "google-oauth",
@@ -363,7 +363,7 @@
                 "Run 'fylla list' and verify higher priority task is first",
                 "Verify priority contributes 40% to final score"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SORT-002",
@@ -374,7 +374,7 @@
                 "Run 'fylla list' and verify earlier due date is prioritized",
                 "Verify due date contributes 30% to final score"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SORT-003",
@@ -385,7 +385,7 @@
                 "Run 'fylla list' and verify smaller task is prioritized",
                 "Verify estimate contributes 15% to final score"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SORT-004",
@@ -396,7 +396,7 @@
                 "Run 'fylla list' and verify Bug is prioritized over Task",
                 "Verify issue type contributes 10% to final score"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SORT-005",
@@ -407,7 +407,7 @@
                 "Run 'fylla list' and verify older task gets slight priority boost",
                 "Verify age contributes 5% to final score"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SORT-006",
@@ -418,7 +418,7 @@
                 "Calculate score for priority 5 task and verify it's 20",
                 "Verify linear interpolation between priority levels"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SORT-007",
@@ -429,7 +429,7 @@
                 "Calculate score for task due in 30+ days and verify it's 0",
                 "Verify linear decay between 0 and 30 days"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SORT-008",
@@ -440,7 +440,7 @@
                 "Calculate score for 8-hour task and verify lower score",
                 "Verify inverse relationship between estimate and score"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SORT-009",
@@ -451,7 +451,7 @@
                 "Calculate score for Task and verify it's 70",
                 "Calculate score for Story and verify it's 50"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SORT-010",
@@ -462,7 +462,7 @@
                 "Verify it receives crunch mode priority boost",
                 "Verify task due in 5 days does not receive boost"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "GCAL-001",
