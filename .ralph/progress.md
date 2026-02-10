@@ -126,3 +126,9 @@ Build: SUCCESS | Lint: SUCCESS | Test: 22 passed
 - CLI-015: PASS - RunEstimate sets absolute remaining estimate (4h, 30m, 1h30m), UpdateEstimate called with correct duration, confirmation message displayed
 - CLI-016: PASS - Relative adjustments (+2h adds, -1h subtracts), GetEstimate fetches current, clamps to zero on underflow, invalid durations return errors
 Build: SUCCESS | Lint: SUCCESS | Test: 13 passed
+
+## Feature: cli-add
+- CLI-017: PASS - RunAdd creates issue with all fields via IssueCreator interface, RequiredFields returns all 6 fields in full mode, PrintAddResult shows key+summary
+- CLI-018: PASS - Quick mode RequiredFields returns only project/summary/estimate, defaults IssueType=Task and Priority=Medium, doesn't override provided values
+- CLI-019: PASS - --project pre-selects project (removed from RequiredFields), used in CreateIssue, works combined with quick mode
+Build: SUCCESS | Lint: SUCCESS | Test: 11 passed

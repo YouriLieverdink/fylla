@@ -263,7 +263,7 @@
                 "source": "internal/cli/commands/add.go",
                 "test": "internal/cli/commands/add_test.go"
             },
-            "passes": false
+            "passes": true
         },
         {
             "id": "cli-config",
@@ -1214,7 +1214,7 @@
                 "Verify prompts for project, type, summary, description, estimate, priority",
                 "Verify task is created in Jira"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CLI-018",
@@ -1225,7 +1225,7 @@
                 "Verify only project, summary, and estimate are prompted",
                 "Verify task is created with default type and priority"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CLI-019",
@@ -1236,7 +1236,7 @@
                 "Verify project prompt is skipped",
                 "Verify task is created in PROJ project"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CLI-020",
