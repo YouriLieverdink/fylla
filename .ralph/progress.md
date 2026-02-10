@@ -65,3 +65,13 @@ Build: SUCCESS | Lint: SUCCESS | Test: 28 passed
 - SLOT-006: PASS - Today's slots start from current time (not start of day), buffer applied
 - SLOT-007: PASS - Multi-day OOO handled correctly (week-long vacation, partial week, multiple OOO)
 Build: SUCCESS | Lint: SUCCESS | Test: 21 passed
+
+## Feature: slot-allocator
+- ALLOC-001: PASS - First-fit algorithm assigns highest priority task to earliest slot, maintains order
+- ALLOC-002: PASS - Project-specific slots used for matching projects, fallback to default slots
+- ALLOC-003: PASS - Tasks with zero or negative estimate default to 1 hour duration
+- ALLOC-004: PASS - Slots smaller than minTaskDurationMinutes are skipped entirely
+- ALLOC-005: PASS - Task moves to next slot when remainder (estimate - slotDur) < minimum; splits when remainder >= minimum
+- ALLOC-006: PASS - At-risk detected when task's last allocation ends after due date; no false positives
+- ALLOC-007: PASS - AtRisk=true set on all parts of at-risk task for [LATE] calendar prefix
+Build: SUCCESS | Lint: SUCCESS | Test: 18 passed

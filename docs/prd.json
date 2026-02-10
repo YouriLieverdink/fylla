@@ -56,7 +56,7 @@
             "name": "Slot Allocator",
             "requirements": ["ALLOC-001", "ALLOC-002", "ALLOC-003", "ALLOC-004", "ALLOC-005", "ALLOC-006", "ALLOC-007"],
             "target": {"source": "internal/scheduler/allocator.go", "test": "internal/scheduler/allocator_test.go"},
-            "passes": false
+            "passes": true
         },
         {
             "id": "timer-system",
@@ -649,7 +649,7 @@
                 "Run 'fylla sync'",
                 "Verify highest priority task gets earliest slot"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "ALLOC-002",
@@ -660,7 +660,7 @@
                 "Configure ADMIN project with morning-only window",
                 "Verify ADMIN task is in morning, general task uses default hours"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "ALLOC-003",
@@ -671,7 +671,7 @@
                 "Run 'fylla sync'",
                 "Verify task is scheduled for 1 hour duration"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "ALLOC-004",
@@ -682,7 +682,7 @@
                 "Create situation where only 20-minute slot available",
                 "Verify task is not scheduled in that slot"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "ALLOC-005",
@@ -693,7 +693,7 @@
                 "Configure minTaskDurationMinutes to 25",
                 "Verify task moves to next slot (remainder 15 min < minimum)"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "ALLOC-006",
@@ -704,7 +704,7 @@
                 "Run 'fylla sync' where task gets pushed past due date",
                 "Verify warning is shown about at-risk task"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "ALLOC-007",
@@ -715,7 +715,7 @@
                 "Run 'fylla sync'",
                 "Verify calendar event title starts with '[LATE]'"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "TIMER-001",
