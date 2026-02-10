@@ -236,7 +236,7 @@
                 "source": "internal/cli/commands",
                 "test": "internal/cli/commands"
             },
-            "passes": false
+            "passes": true
         },
         {
             "id": "cli-estimate",
@@ -1137,7 +1137,7 @@
                 "Verify 'Started timer for PROJ-123' message",
                 "Verify timer state is persisted"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CLI-011",
@@ -1148,7 +1148,7 @@
                 "Verify prompt for description appears",
                 "Verify worklog is created in Jira"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CLI-012",
@@ -1159,7 +1159,7 @@
                 "Verify no interactive prompt appears",
                 "Verify worklog uses provided description"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CLI-013",
@@ -1170,7 +1170,7 @@
                 "Verify task key and summary are displayed",
                 "Verify elapsed time is shown and updates"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CLI-014",
@@ -1181,7 +1181,7 @@
                 "Verify worklog is created in Jira",
                 "Verify time and description are correct"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CLI-015",

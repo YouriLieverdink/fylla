@@ -113,3 +113,11 @@ Build: SUCCESS | Lint: SUCCESS | Test: 14 passed
 ## Feature: cli-list
 - CLI-009: PASS - RunList fetches/sorts tasks without calendar interaction, PrintListResult shows priority-ordered output with scores
 Build: SUCCESS | Lint: SUCCESS | Test: 4 passed
+
+## Feature: cli-timer
+- CLI-010: PASS - RunStart stores task key/time, PrintStartResult shows "Started timer for PROJ-123", state persisted to disk
+- CLI-011: PASS - RunStop stops timer, calculates elapsed, posts worklog to Jira via WorklogPoster interface
+- CLI-012: PASS - Description passed inline to RunStop skips prompt, worklog uses provided description, --description/-d flag registered
+- CLI-013: PASS - RunStatus returns task key and elapsed time, PrintStatusResult displays running info, nil when no timer
+- CLI-014: PASS - RunLog posts manual worklog to Jira, ParseDuration handles 2h/30m/1h30m formats, cobra accepts 3 args
+Build: SUCCESS | Lint: SUCCESS | Test: 22 passed
