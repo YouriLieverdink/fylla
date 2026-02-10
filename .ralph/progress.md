@@ -75,3 +75,12 @@ Build: SUCCESS | Lint: SUCCESS | Test: 21 passed
 - ALLOC-006: PASS - At-risk detected when task's last allocation ends after due date; no false positives
 - ALLOC-007: PASS - AtRisk=true set on all parts of at-risk task for [LATE] calendar prefix
 Build: SUCCESS | Lint: SUCCESS | Test: 18 passed
+
+## Feature: timer-system
+- TIMER-001: PASS - Start stores task key and start time, returns State for confirmation
+- TIMER-002: PASS - State persisted to ~/.config/fylla/timer.json with JSON format, round-trip save/load
+- TIMER-003: PASS - Stop calculates elapsed time correctly, removes state file, returns StopResult
+- TIMER-004: PASS - StopResult provides TaskKey and Rounded duration for CLI prompt/worklog flow
+- TIMER-005: PASS - RoundDuration rounds to nearest N minutes (configurable), minimum 1 unit, 7m→5m, 8m→10m
+- TIMER-006: PASS - Status returns running task key and elapsed time, nil when no timer active
+Build: SUCCESS | Lint: SUCCESS | Test: 22 passed

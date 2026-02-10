@@ -63,7 +63,7 @@
             "name": "Timer System",
             "requirements": ["TIMER-001", "TIMER-002", "TIMER-003", "TIMER-004", "TIMER-005", "TIMER-006"],
             "target": {"source": "internal/timer/state.go", "test": "internal/timer/state_test.go"},
-            "passes": false
+            "passes": true
         },
         {
             "id": "sync-process",
@@ -726,7 +726,7 @@
                 "Verify confirmation message is displayed",
                 "Verify task key and start time are stored"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "TIMER-002",
@@ -737,7 +737,7 @@
                 "Check ~/.config/fylla/timer.json exists",
                 "Verify file contains task key and start timestamp"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "TIMER-003",
@@ -748,7 +748,7 @@
                 "Run 'fylla stop'",
                 "Verify elapsed time is approximately 5 minutes"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "TIMER-004",
@@ -759,7 +759,7 @@
                 "Verify interactive prompt asks for description",
                 "Verify description is included in worklog"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "TIMER-005",
@@ -770,7 +770,7 @@
                 "Stop timer and verify logged time is 5 or 10 minutes",
                 "Verify rounding follows configured interval"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "TIMER-006",
@@ -781,7 +781,7 @@
                 "Run 'fylla status'",
                 "Verify output shows task key, summary, and elapsed time"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SYNC-001",
