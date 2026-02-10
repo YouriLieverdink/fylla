@@ -95,3 +95,9 @@ Build: SUCCESS | Lint: SUCCESS | Test: 22 passed
 - SYNC-007: PASS - CreateEvent called for each allocation with correct details, dry-run skips creation
 - SYNC-008: PASS - At-risk tasks detected (overdue), AtRisk flag set on events, on-time not flagged, deduplicated by key
 Build: SUCCESS | Lint: SUCCESS | Test: 29 passed
+
+## Feature: cli-auth
+- CLI-001: PASS - CLI starts without errors, help lists all commands (auth, sync, list, config, start, stop, status, log, estimate, add)
+- CLI-002: PASS - auth jira stores URL/email in config.yaml and token in credentials.json, requires all three flags
+- CLI-003: PASS - auth google initiates OAuth flow via CachedToken, caches credentials to google_token.json
+Build: SUCCESS | Lint: SUCCESS | Test: 9 passed

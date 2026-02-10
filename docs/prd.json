@@ -192,7 +192,7 @@
                 "source": "internal/cli/commands/auth.go",
                 "test": "internal/cli/commands/auth_test.go"
             },
-            "passes": false
+            "passes": true
         },
         {
             "id": "cli-sync",
@@ -1038,7 +1038,7 @@
                 "Verify CLI starts without errors",
                 "Verify help is displayed when no command given"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CLI-002",
@@ -1049,7 +1049,7 @@
                 "Verify credentials are stored",
                 "Verify subsequent Jira commands work"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CLI-003",
@@ -1060,7 +1060,7 @@
                 "Verify OAuth flow starts",
                 "Verify credentials are cached after successful auth"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CLI-004",
