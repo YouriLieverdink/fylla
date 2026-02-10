@@ -277,7 +277,7 @@
                 "source": "internal/cli/commands/config.go",
                 "test": "internal/cli/commands/config_test.go"
             },
-            "passes": false
+            "passes": true
         }
     ],
     "requirements": [
@@ -1247,7 +1247,7 @@
                 "Verify all config sections are displayed",
                 "Verify sensitive values are masked"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CLI-021",
@@ -1258,7 +1258,7 @@
                 "Verify config file opens in vim",
                 "Verify changes are saved when editor exits"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CLI-022",
@@ -1269,7 +1269,7 @@
                 "Run 'fylla config show' and verify windowDays is 7",
                 "Verify nested keys work (e.g., projectRules.ADMIN.end)"
             ],
-            "passes": false
+            "passes": true
         }
     ]
 }

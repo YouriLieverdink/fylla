@@ -132,3 +132,9 @@ Build: SUCCESS | Lint: SUCCESS | Test: 13 passed
 - CLI-018: PASS - Quick mode RequiredFields returns only project/summary/estimate, defaults IssueType=Task and Priority=Medium, doesn't override provided values
 - CLI-019: PASS - --project pre-selects project (removed from RequiredFields), used in CreateIssue, works combined with quick mode
 Build: SUCCESS | Lint: SUCCESS | Test: 11 passed
+
+## Feature: cli-config
+- CLI-020: PASS - RunConfigShow loads config and returns YAML with all sections (jira, calendar, scheduling, businessHours, projectRules, weights, typeScores)
+- CLI-021: PASS - ResolveEditor uses explicit arg > $EDITOR > "vi" fallback, config edit opens file in resolved editor
+- CLI-022: PASS - RunConfigSet modifies dotted key paths (scheduling.windowDays, projectRules.ADMIN.end), persists to file, verified via show
+Build: SUCCESS | Lint: SUCCESS | Test: 14 passed
