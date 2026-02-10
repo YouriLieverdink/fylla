@@ -49,7 +49,7 @@
             "name": "Free Slot Finder",
             "requirements": ["SLOT-001", "SLOT-002", "SLOT-003", "SLOT-004", "SLOT-005", "SLOT-006", "SLOT-007"],
             "target": {"source": "internal/calendar/slots.go", "test": "internal/calendar/slots_test.go"},
-            "passes": false
+            "passes": true
         },
         {
             "id": "slot-allocator",
@@ -572,7 +572,7 @@
                 "Run 'fylla sync'",
                 "Verify all scheduled tasks fall within business hours"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SLOT-002",
@@ -583,7 +583,7 @@
                 "Verify no tasks are scheduled for Saturday/Sunday",
                 "Configure workDays to include weekend and verify scheduling"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SLOT-003",
@@ -594,7 +594,7 @@
                 "Verify 15-minute gap between consecutive tasks",
                 "Configure bufferMinutes to 30 and verify 30-minute gaps"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SLOT-004",
@@ -605,7 +605,7 @@
                 "Run 'fylla sync' with ADMIN task",
                 "Verify ADMIN task is only scheduled between 09:00-10:00"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SLOT-005",
@@ -616,7 +616,7 @@
                 "Run 'fylla sync'",
                 "Verify entire vacation period is blocked"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SLOT-006",
@@ -627,7 +627,7 @@
                 "Verify today's tasks are scheduled from 2:00 PM onwards",
                 "Verify no tasks are scheduled in past hours of today"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SLOT-007",
@@ -638,7 +638,7 @@
                 "Run 'fylla sync' with windowDays covering the vacation",
                 "Verify all vacation days are blocked"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "ALLOC-001",

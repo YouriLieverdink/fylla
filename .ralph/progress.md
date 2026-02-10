@@ -55,3 +55,13 @@ Build: SUCCESS | Lint: SUCCESS | Test: 11 passed
 - GCAL-008: PASS - Events with eventType "outOfOffice" detected as OOO via IsOOO()
 - GCAL-009: PASS - Title patterns (OOO, Out of Office, PTO, Vacation) detected as OOO, case-insensitive
 Build: SUCCESS | Lint: SUCCESS | Test: 28 passed
+
+## Feature: free-slot-finder
+- SLOT-001: PASS - Slots filtered to configured business hours (09:00-17:00 default, custom supported)
+- SLOT-002: PASS - Weekends skipped by default, configurable via workDays including weekend support
+- SLOT-003: PASS - Buffer applied after events (15 min default, 30 min configurable, zero supported)
+- SLOT-004: PASS - Project-aware time windows via BusinessHoursFor(), ADMIN gets 09:00-10:00
+- SLOT-005: PASS - OOO events block scheduling (full day, partial day, title pattern detection)
+- SLOT-006: PASS - Today's slots start from current time (not start of day), buffer applied
+- SLOT-007: PASS - Multi-day OOO handled correctly (week-long vacation, partial week, multiple OOO)
+Build: SUCCESS | Lint: SUCCESS | Test: 21 passed
