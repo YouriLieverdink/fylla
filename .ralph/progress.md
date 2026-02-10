@@ -40,3 +40,8 @@ Build: SUCCESS | Lint: SUCCESS | Test: 24 passed
 - SORT-009: PASS - Issue type scoring: Bug=100, Task=70, Story=50
 - SORT-010: PASS - Crunch mode: tasks due within 3 days get extra priority boost
 Build: SUCCESS | Lint: SUCCESS | Test: 28 passed
+
+## Feature: google-oauth
+- GCAL-001: PASS - OAuth flow opens browser with auth URL, callback server exchanges code for token, success message displayed
+- GCAL-002: PASS - Token saved to disk with 0600 permissions, round-trip save/load, CachedToken reuses valid cached token without re-auth
+Build: SUCCESS | Lint: SUCCESS | Test: 11 passed

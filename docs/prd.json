@@ -35,7 +35,7 @@
             "name": "Google OAuth Authentication",
             "requirements": ["GCAL-001", "GCAL-002"],
             "target": {"source": "internal/calendar/oauth.go", "test": "internal/calendar/oauth_test.go"},
-            "passes": false
+            "passes": true
         },
         {
             "id": "calendar-client",
@@ -473,7 +473,7 @@
                 "Verify browser opens for Google OAuth consent",
                 "Verify successful authentication message is displayed"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "GCAL-002",
@@ -484,7 +484,7 @@
                 "Run 'fylla sync' without re-authenticating",
                 "Verify cached credentials are used"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "GCAL-003",
