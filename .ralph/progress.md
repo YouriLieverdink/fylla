@@ -101,3 +101,11 @@ Build: SUCCESS | Lint: SUCCESS | Test: 29 passed
 - CLI-002: PASS - auth jira stores URL/email in config.yaml and token in credentials.json, requires all three flags
 - CLI-003: PASS - auth google initiates OAuth flow via CachedToken, caches credentials to google_token.json
 Build: SUCCESS | Lint: SUCCESS | Test: 9 passed
+
+## Feature: cli-sync
+- CLI-004: PASS - BuildSyncParams + RunSync creates events from Jira tasks, events match allocations
+- CLI-005: PASS - DryRun flag prevents event creation, PrintSyncResult outputs schedule preview
+- CLI-006: PASS - --jql overrides default JQL from config, only matching tasks fetched
+- CLI-007: PASS - --days overrides config windowDays, calendar fetched with correct window
+- CLI-008: PASS - --from/--to set explicit date range, invalid dates return errors, allocations within range
+Build: SUCCESS | Lint: SUCCESS | Test: 14 passed

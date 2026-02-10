@@ -208,7 +208,7 @@
                 "source": "internal/cli/commands/sync.go",
                 "test": "internal/cli/commands/sync_test.go"
             },
-            "passes": false
+            "passes": true
         },
         {
             "id": "cli-list",
@@ -1071,7 +1071,7 @@
                 "Verify [Fylla] events appear in Google Calendar",
                 "Verify events match scheduled tasks"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CLI-005",
@@ -1082,7 +1082,7 @@
                 "Verify schedule is displayed in console",
                 "Verify no events are created in Google Calendar"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CLI-006",
@@ -1093,7 +1093,7 @@
                 "Verify only MYPROJ tasks are scheduled",
                 "Verify default JQL is not used"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CLI-007",
@@ -1104,7 +1104,7 @@
                 "Verify events are created up to 10 days ahead",
                 "Verify default windowDays is overridden"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CLI-008",
@@ -1115,7 +1115,7 @@
                 "Verify events are only created within specified range",
                 "Verify dates outside range are ignored"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CLI-009",

@@ -1,13 +1,16 @@
 package commands
 
 import (
+	"bytes"
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/iruoy/fylla/internal/calendar"
 	"github.com/iruoy/fylla/internal/config"
 	"github.com/iruoy/fylla/internal/jira"
+	"github.com/iruoy/fylla/internal/scheduler"
 )
 
 // mockCalendar records all calendar operations for assertion.
@@ -834,6 +837,345 @@ func TestSYNC008_at_risk_warnings(t *testing.T) {
 		}
 		if count > 1 {
 			t.Errorf("at-risk should be deduplicated, got %d entries for LATE-1", count)
+		}
+	})
+}
+
+func TestCLI004_sync_creates_calendar_events(t *testing.T) {
+	now := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
+
+	t.Run("sync creates events from Jira tasks", func(t *testing.T) {
+		cal := &mockCalendar{}
+		jr := &mockJira{
+			tasks: []jira.Task{
+				{Key: "PROJ-1", Summary: "Task 1", Priority: 1, RemainingEstimate: time.Hour, Project: "PROJ", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+			},
+		}
+
+		cfg := testConfig()
+		jql, start, end, dryRun, err := BuildSyncParams(SyncFlags{}, cfg, now)
+		if err != nil {
+			t.Fatalf("BuildSyncParams: %v", err)
+		}
+
+		result, err := RunSync(context.Background(), SyncParams{
+			Cal: cal, Jira: jr, Cfg: cfg,
+			JQL: jql, Now: now, Start: start, End: end, DryRun: dryRun,
+		})
+		if err != nil {
+			t.Fatalf("RunSync: %v", err)
+		}
+
+		if len(cal.created) == 0 {
+			t.Fatal("expected events to be created")
+		}
+		if cal.created[0].TaskKey != "PROJ-1" {
+			t.Errorf("event key = %q, want PROJ-1", cal.created[0].TaskKey)
+		}
+		if len(result.Allocations) == 0 {
+			t.Fatal("expected allocations in result")
+		}
+	})
+
+	t.Run("events match scheduled tasks", func(t *testing.T) {
+		cal := &mockCalendar{}
+		jr := &mockJira{
+			tasks: []jira.Task{
+				{Key: "A-1", Summary: "Alpha", Priority: 1, RemainingEstimate: 30 * time.Minute, Project: "A", IssueType: "Bug", Created: now.AddDate(0, 0, -2)},
+				{Key: "A-2", Summary: "Beta", Priority: 3, RemainingEstimate: time.Hour, Project: "A", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+			},
+		}
+
+		cfg := testConfig()
+		jql, start, end, dryRun, err := BuildSyncParams(SyncFlags{}, cfg, now)
+		if err != nil {
+			t.Fatalf("BuildSyncParams: %v", err)
+		}
+
+		result, err := RunSync(context.Background(), SyncParams{
+			Cal: cal, Jira: jr, Cfg: cfg,
+			JQL: jql, Now: now, Start: start, End: end, DryRun: dryRun,
+		})
+		if err != nil {
+			t.Fatalf("RunSync: %v", err)
+		}
+
+		if len(cal.created) != len(result.Allocations) {
+			t.Errorf("created %d events, but %d allocations", len(cal.created), len(result.Allocations))
+		}
+		for i, alloc := range result.Allocations {
+			if i < len(cal.created) && cal.created[i].TaskKey != alloc.Task.Key {
+				t.Errorf("event[%d] = %q, allocation = %q", i, cal.created[i].TaskKey, alloc.Task.Key)
+			}
+		}
+	})
+}
+
+func TestCLI005_sync_dry_run(t *testing.T) {
+	now := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
+
+	t.Run("dry-run does not create events", func(t *testing.T) {
+		cal := &mockCalendar{}
+		jr := &mockJira{
+			tasks: []jira.Task{
+				{Key: "T-1", Summary: "Task", Priority: 1, RemainingEstimate: time.Hour, Project: "T", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+			},
+		}
+
+		cfg := testConfig()
+		jql, start, end, dryRun, err := BuildSyncParams(SyncFlags{DryRun: true}, cfg, now)
+		if err != nil {
+			t.Fatalf("BuildSyncParams: %v", err)
+		}
+		if !dryRun {
+			t.Fatal("expected dryRun to be true")
+		}
+
+		result, err := RunSync(context.Background(), SyncParams{
+			Cal: cal, Jira: jr, Cfg: cfg,
+			JQL: jql, Now: now, Start: start, End: end, DryRun: dryRun,
+		})
+		if err != nil {
+			t.Fatalf("RunSync: %v", err)
+		}
+
+		if len(cal.created) != 0 {
+			t.Errorf("dry-run created %d events, want 0", len(cal.created))
+		}
+		if len(result.Allocations) == 0 {
+			t.Error("dry-run should still compute allocations")
+		}
+	})
+
+	t.Run("dry-run output shows schedule", func(t *testing.T) {
+		allocs := []scheduler.Allocation{
+			{Task: jira.Task{Key: "T-1", Summary: "Fix bug"}, Start: now, End: now.Add(time.Hour)},
+		}
+		result := &SyncResult{Allocations: allocs}
+		var buf bytes.Buffer
+		PrintSyncResult(&buf, result, true)
+
+		out := buf.String()
+		if !strings.Contains(out, "Dry run") {
+			t.Errorf("output missing dry-run header, got:\n%s", out)
+		}
+		if !strings.Contains(out, "T-1") {
+			t.Errorf("output missing task key, got:\n%s", out)
+		}
+		if !strings.Contains(out, "Fix bug") {
+			t.Errorf("output missing task summary, got:\n%s", out)
+		}
+	})
+}
+
+func TestCLI006_sync_jql_override(t *testing.T) {
+	now := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
+
+	t.Run("--jql overrides default JQL", func(t *testing.T) {
+		cfg := testConfig()
+		cfg.Jira.DefaultJQL = "assignee = currentUser()"
+
+		jql, _, _, _, err := BuildSyncParams(SyncFlags{JQL: "project = MYPROJ"}, cfg, now)
+		if err != nil {
+			t.Fatalf("BuildSyncParams: %v", err)
+		}
+		if jql != "project = MYPROJ" {
+			t.Errorf("jql = %q, want %q", jql, "project = MYPROJ")
+		}
+	})
+
+	t.Run("default JQL used when --jql not set", func(t *testing.T) {
+		cfg := testConfig()
+		cfg.Jira.DefaultJQL = "assignee = currentUser()"
+
+		jql, _, _, _, err := BuildSyncParams(SyncFlags{}, cfg, now)
+		if err != nil {
+			t.Fatalf("BuildSyncParams: %v", err)
+		}
+		if jql != "assignee = currentUser()" {
+			t.Errorf("jql = %q, want default", jql)
+		}
+	})
+
+	t.Run("only custom JQL tasks fetched", func(t *testing.T) {
+		cal := &mockCalendar{}
+		jr := &mockJira{
+			tasks: []jira.Task{
+				{Key: "MYPROJ-1", Summary: "My task", Priority: 1, RemainingEstimate: time.Hour, Project: "MYPROJ", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+			},
+		}
+
+		cfg := testConfig()
+		jql, start, end, _, err := BuildSyncParams(SyncFlags{JQL: "project = MYPROJ"}, cfg, now)
+		if err != nil {
+			t.Fatalf("BuildSyncParams: %v", err)
+		}
+
+		_, err = RunSync(context.Background(), SyncParams{
+			Cal: cal, Jira: jr, Cfg: cfg,
+			JQL: jql, Now: now, Start: start, End: end,
+		})
+		if err != nil {
+			t.Fatalf("RunSync: %v", err)
+		}
+
+		if jr.jqlUsed != "project = MYPROJ" {
+			t.Errorf("jql sent to Jira = %q, want %q", jr.jqlUsed, "project = MYPROJ")
+		}
+	})
+}
+
+func TestCLI007_sync_days_override(t *testing.T) {
+	now := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
+
+	t.Run("--days overrides windowDays", func(t *testing.T) {
+		cfg := testConfig()
+		cfg.Scheduling.WindowDays = 5
+
+		_, start, end, _, err := BuildSyncParams(SyncFlags{Days: 10}, cfg, now)
+		if err != nil {
+			t.Fatalf("BuildSyncParams: %v", err)
+		}
+
+		expectedEnd := now.AddDate(0, 0, 10)
+		if !end.Equal(expectedEnd) {
+			t.Errorf("end = %v, want %v (10 days)", end, expectedEnd)
+		}
+		if !start.Equal(now) {
+			t.Errorf("start = %v, want now", start)
+		}
+	})
+
+	t.Run("default windowDays used when --days not set", func(t *testing.T) {
+		cfg := testConfig()
+		cfg.Scheduling.WindowDays = 5
+
+		_, _, end, _, err := BuildSyncParams(SyncFlags{}, cfg, now)
+		if err != nil {
+			t.Fatalf("BuildSyncParams: %v", err)
+		}
+
+		expectedEnd := now.AddDate(0, 0, 5)
+		if !end.Equal(expectedEnd) {
+			t.Errorf("end = %v, want %v (5 days)", end, expectedEnd)
+		}
+	})
+
+	t.Run("events created up to N days ahead", func(t *testing.T) {
+		cal := &mockCalendar{}
+		jr := &mockJira{
+			tasks: []jira.Task{
+				{Key: "T-1", Summary: "Task", Priority: 1, RemainingEstimate: time.Hour, Project: "T", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+			},
+		}
+
+		cfg := testConfig()
+		jql, start, end, _, err := BuildSyncParams(SyncFlags{Days: 10}, cfg, now)
+		if err != nil {
+			t.Fatalf("BuildSyncParams: %v", err)
+		}
+
+		_, err = RunSync(context.Background(), SyncParams{
+			Cal: cal, Jira: jr, Cfg: cfg,
+			JQL: jql, Now: now, Start: start, End: end,
+		})
+		if err != nil {
+			t.Fatalf("RunSync: %v", err)
+		}
+
+		if len(cal.fetchCalls) == 0 {
+			t.Fatal("no fetch calls")
+		}
+		window := cal.fetchCalls[0].end.Sub(cal.fetchCalls[0].start)
+		if window != 10*24*time.Hour {
+			t.Errorf("fetch window = %v, want 10 days", window)
+		}
+	})
+}
+
+func TestCLI008_sync_from_to_date_range(t *testing.T) {
+	now := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
+
+	t.Run("--from and --to set explicit date range", func(t *testing.T) {
+		cfg := testConfig()
+		_, start, end, _, err := BuildSyncParams(SyncFlags{
+			From: "2025-01-20",
+			To:   "2025-01-24",
+		}, cfg, now)
+		if err != nil {
+			t.Fatalf("BuildSyncParams: %v", err)
+		}
+
+		expectedStart := time.Date(2025, 1, 20, 0, 0, 0, 0, time.UTC)
+		expectedEnd := time.Date(2025, 1, 25, 0, 0, 0, 0, time.UTC).Add(-time.Nanosecond)
+
+		if !start.Equal(expectedStart) {
+			t.Errorf("start = %v, want %v", start, expectedStart)
+		}
+		if !end.Equal(expectedEnd) {
+			t.Errorf("end = %v, want %v", end, expectedEnd)
+		}
+	})
+
+	t.Run("events only within specified range", func(t *testing.T) {
+		cal := &mockCalendar{}
+		jr := &mockJira{
+			tasks: []jira.Task{
+				{Key: "T-1", Summary: "Task", Priority: 1, RemainingEstimate: time.Hour, Project: "T", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+			},
+		}
+
+		cfg := testConfig()
+		jql, start, end, _, err := BuildSyncParams(SyncFlags{
+			From: "2025-01-20",
+			To:   "2025-01-24",
+		}, cfg, now)
+		if err != nil {
+			t.Fatalf("BuildSyncParams: %v", err)
+		}
+
+		result, err := RunSync(context.Background(), SyncParams{
+			Cal: cal, Jira: jr, Cfg: cfg,
+			JQL: jql, Now: now, Start: start, End: end,
+		})
+		if err != nil {
+			t.Fatalf("RunSync: %v", err)
+		}
+
+		rangeStart := time.Date(2025, 1, 20, 0, 0, 0, 0, time.UTC)
+		rangeEnd := time.Date(2025, 1, 25, 0, 0, 0, 0, time.UTC)
+		for _, alloc := range result.Allocations {
+			if alloc.Start.Before(rangeStart) || alloc.End.After(rangeEnd) {
+				t.Errorf("allocation %v-%v outside range %v-%v", alloc.Start, alloc.End, rangeStart, rangeEnd)
+			}
+		}
+	})
+
+	t.Run("invalid --from date returns error", func(t *testing.T) {
+		cfg := testConfig()
+		_, _, _, _, err := BuildSyncParams(SyncFlags{
+			From: "not-a-date",
+			To:   "2025-01-24",
+		}, cfg, now)
+		if err == nil {
+			t.Fatal("expected error for invalid --from")
+		}
+		if !strings.Contains(err.Error(), "--from") {
+			t.Errorf("error = %q, want to mention --from", err.Error())
+		}
+	})
+
+	t.Run("invalid --to date returns error", func(t *testing.T) {
+		cfg := testConfig()
+		_, _, _, _, err := BuildSyncParams(SyncFlags{
+			From: "2025-01-20",
+			To:   "not-a-date",
+		}, cfg, now)
+		if err == nil {
+			t.Fatal("expected error for invalid --to")
+		}
+		if !strings.Contains(err.Error(), "--to") {
+			t.Errorf("error = %q, want to mention --to", err.Error())
 		}
 	})
 }

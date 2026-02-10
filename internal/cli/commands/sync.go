@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/iruoy/fylla/internal/calendar"
@@ -40,6 +41,89 @@ type SyncParams struct {
 type SyncResult struct {
 	Allocations []scheduler.Allocation
 	AtRisk      []scheduler.Allocation
+}
+
+// SyncFlags holds the parsed CLI flags for the sync command.
+type SyncFlags struct {
+	DryRun bool
+	JQL    string
+	Days   int
+	From   string
+	To     string
+}
+
+// BuildSyncParams computes SyncParams from CLI flags and config.
+func BuildSyncParams(flags SyncFlags, cfg *config.Config, now time.Time) (jql string, start, end time.Time, dryRun bool, err error) {
+	dryRun = flags.DryRun
+
+	// JQL: use flag override or fall back to config default
+	jql = flags.JQL
+	if jql == "" {
+		jql = cfg.Jira.DefaultJQL
+	}
+
+	// Date range: --from/--to take precedence over --days over config windowDays
+	if flags.From != "" && flags.To != "" {
+		start, err = time.Parse("2006-01-02", flags.From)
+		if err != nil {
+			return "", time.Time{}, time.Time{}, false, fmt.Errorf("parse --from: %w", err)
+		}
+		end, err = time.Parse("2006-01-02", flags.To)
+		if err != nil {
+			return "", time.Time{}, time.Time{}, false, fmt.Errorf("parse --to: %w", err)
+		}
+		// Set end to end of day
+		end = end.Add(24*time.Hour - time.Nanosecond)
+	} else {
+		days := cfg.Scheduling.WindowDays
+		if flags.Days > 0 {
+			days = flags.Days
+		}
+		start = now
+		end = now.AddDate(0, 0, days)
+	}
+
+	return jql, start, end, dryRun, nil
+}
+
+// PrintSyncResult writes the sync result to the given writer.
+func PrintSyncResult(w io.Writer, result *SyncResult, dryRun bool) {
+	if dryRun {
+		fmt.Fprintln(w, "Dry run — no events created.")
+		fmt.Fprintln(w)
+	}
+
+	if len(result.Allocations) == 0 {
+		fmt.Fprintln(w, "No tasks to schedule.")
+		return
+	}
+
+	fmt.Fprintf(w, "Scheduled %d event(s):\n", len(result.Allocations))
+	for _, alloc := range result.Allocations {
+		prefix := ""
+		if alloc.AtRisk {
+			prefix = "[LATE] "
+		}
+		fmt.Fprintf(w, "  %s%s: %s  %s – %s\n",
+			prefix,
+			alloc.Task.Key,
+			alloc.Task.Summary,
+			alloc.Start.Format("Mon 15:04"),
+			alloc.End.Format("15:04"),
+		)
+	}
+
+	if len(result.AtRisk) > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "At-risk tasks:")
+		for _, ar := range result.AtRisk {
+			dueStr := "no due date"
+			if ar.Task.DueDate != nil {
+				dueStr = "due " + ar.Task.DueDate.Format("Jan 2")
+			}
+			fmt.Fprintf(w, "  %s: %s (%s)\n", ar.Task.Key, ar.Task.Summary, dueStr)
+		}
+	}
 }
 
 // RunSync executes the full sync process:
