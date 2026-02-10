@@ -76,6 +76,27 @@ func newListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "Show sorted tasks without scheduling",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			client, cfg, err := loadJiraClient()
+			if err != nil {
+				return err
+			}
+
+			jql, _ := cmd.Flags().GetString("jql")
+			if jql == "" {
+				jql = cfg.Jira.DefaultJQL
+			}
+
+			result, err := RunList(cmd.Context(), ListParams{
+				Jira: client,
+				Cfg:  cfg,
+				JQL:  jql,
+				Now:  time.Now(),
+			})
+			if err != nil {
+				return err
+			}
+
+			PrintListResult(cmd.OutOrStdout(), result)
 			return nil
 		},
 	}

@@ -56,6 +56,28 @@ func newLogCmd() *cobra.Command {
 		Short: "Create manual worklog in Jira",
 		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			client, _, err := loadJiraClient()
+			if err != nil {
+				return err
+			}
+
+			taskKey := args[0]
+			duration, err := ParseDuration(args[1])
+			if err != nil {
+				return err
+			}
+			description := args[2]
+
+			if err := RunLog(cmd.Context(), LogParams{
+				TaskKey:     taskKey,
+				Duration:    duration,
+				Description: description,
+				Jira:        client,
+			}); err != nil {
+				return err
+			}
+
+			PrintLogResult(cmd.OutOrStdout(), taskKey, duration)
 			return nil
 		},
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/iruoy/fylla/internal/jira"
 	"github.com/spf13/cobra"
 )
@@ -116,6 +117,68 @@ func newAddCmd() *cobra.Command {
 		Use:   "add",
 		Short: "Create a new Jira task interactively",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			client, _, err := loadJiraClient()
+			if err != nil {
+				return err
+			}
+
+			quick, _ := cmd.Flags().GetBool("quick")
+			project, _ := cmd.Flags().GetString("project")
+
+			p := AddParams{
+				Project: project,
+				Quick:   quick,
+				Jira:    client,
+			}
+
+			for _, field := range RequiredFields(p) {
+				switch field {
+				case "project":
+					prompt := &survey.Input{Message: "Project key:"}
+					if err := survey.AskOne(prompt, &p.Project); err != nil {
+						return fmt.Errorf("prompt project: %w", err)
+					}
+				case "issueType":
+					prompt := &survey.Select{
+						Message: "Issue type:",
+						Options: []string{"Task", "Bug", "Story", "Epic"},
+					}
+					if err := survey.AskOne(prompt, &p.IssueType); err != nil {
+						return fmt.Errorf("prompt issue type: %w", err)
+					}
+				case "summary":
+					prompt := &survey.Input{Message: "Summary:"}
+					if err := survey.AskOne(prompt, &p.Summary); err != nil {
+						return fmt.Errorf("prompt summary: %w", err)
+					}
+				case "description":
+					prompt := &survey.Input{Message: "Description:"}
+					if err := survey.AskOne(prompt, &p.Description); err != nil {
+						return fmt.Errorf("prompt description: %w", err)
+					}
+				case "estimate":
+					prompt := &survey.Input{Message: "Estimate (e.g. 2h, 30m, 1h30m):"}
+					if err := survey.AskOne(prompt, &p.Estimate); err != nil {
+						return fmt.Errorf("prompt estimate: %w", err)
+					}
+				case "priority":
+					prompt := &survey.Select{
+						Message: "Priority:",
+						Options: []string{"Highest", "High", "Medium", "Low", "Lowest"},
+						Default: "Medium",
+					}
+					if err := survey.AskOne(prompt, &p.Priority); err != nil {
+						return fmt.Errorf("prompt priority: %w", err)
+					}
+				}
+			}
+
+			result, err := RunAdd(cmd.Context(), p)
+			if err != nil {
+				return err
+			}
+
+			PrintAddResult(cmd.OutOrStdout(), result)
 			return nil
 		},
 	}

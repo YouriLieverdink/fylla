@@ -20,8 +20,9 @@ type JiraConfig struct {
 
 // CalendarConfig holds Google Calendar settings.
 type CalendarConfig struct {
-	SourceCalendar string `yaml:"sourceCalendar"`
-	FyllaCalendar  string `yaml:"fyllaCalendar"`
+	SourceCalendar    string `yaml:"sourceCalendar"`
+	FyllaCalendar     string `yaml:"fyllaCalendar"`
+	ClientCredentials string `yaml:"clientCredentials"`
 }
 
 // SchedulingConfig holds scheduling parameters.

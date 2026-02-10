@@ -100,14 +100,35 @@ func newAuthJiraCmd() *cobra.Command {
 			email, _ := cmd.Flags().GetString("email")
 			token, _ := cmd.Flags().GetString("token")
 
-			if url == "" || email == "" || token == "" {
-				return fmt.Errorf("--url, --email, and --token are required")
-			}
-
 			cfgPath, err := config.DefaultPath()
 			if err != nil {
 				return err
 			}
+
+			// Fall back to existing config values for url and email
+			if url == "" || email == "" {
+				cfg, err := config.LoadFrom(cfgPath)
+				if err != nil {
+					return fmt.Errorf("load config: %w", err)
+				}
+				if url == "" {
+					url = cfg.Jira.URL
+				}
+				if email == "" {
+					email = cfg.Jira.Email
+				}
+			}
+
+			if url == "" {
+				return fmt.Errorf("--url is required (no existing value in config)")
+			}
+			if email == "" {
+				return fmt.Errorf("--email is required (no existing value in config)")
+			}
+			if token == "" {
+				return fmt.Errorf("--token is required")
+			}
+
 			credPath, err := config.CredentialsPath()
 			if err != nil {
 				return err
@@ -142,7 +163,13 @@ func newAuthGoogleCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			credFile, _ := cmd.Flags().GetString("client-credentials")
 			if credFile == "" {
-				return fmt.Errorf("--client-credentials is required (path to Google OAuth client credentials JSON)")
+				cfg, err := config.Load()
+				if err == nil && cfg.Calendar.ClientCredentials != "" {
+					credFile = cfg.Calendar.ClientCredentials
+				}
+			}
+			if credFile == "" {
+				return fmt.Errorf("set calendar.clientCredentials in config or pass --client-credentials")
 			}
 
 			tokenPath, err := calendar.TokenPath()

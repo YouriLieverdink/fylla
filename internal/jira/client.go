@@ -56,7 +56,8 @@ func (c *Client) do(ctx context.Context, method, path string, body interface{}) 
 
 // searchResponse represents the Jira search API response.
 type searchResponse struct {
-	Issues []issueJSON `json:"issues"`
+	Issues        []issueJSON `json:"issues"`
+	NextPageToken string      `json:"nextPageToken"`
 }
 
 type issueJSON struct {
@@ -138,32 +139,46 @@ func parseIssue(issue issueJSON) Task {
 
 // FetchTasks retrieves issues from Jira matching the given JQL query.
 func (c *Client) FetchTasks(ctx context.Context, jql string) ([]Task, error) {
-	payload := map[string]interface{}{
-		"jql":        jql,
-		"maxResults": 100,
-		"fields":     []string{"summary", "priority", "duedate", "issuetype", "created", "project", "timetracking"},
+	var tasks []Task
+	var nextPageToken string
+
+	for {
+		payload := map[string]interface{}{
+			"jql":    jql,
+			"fields": []string{"summary", "priority", "duedate", "issuetype", "created", "project", "timetracking"},
+		}
+		if nextPageToken != "" {
+			payload["nextPageToken"] = nextPageToken
+		}
+
+		resp, err := c.do(ctx, http.MethodPost, "/rest/api/3/search/jql", payload)
+		if err != nil {
+			return nil, fmt.Errorf("fetch tasks: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return nil, fmt.Errorf("jira search: status %d: %s", resp.StatusCode, string(body))
+		}
+
+		var result searchResponse
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("decode search response: %w", err)
+		}
+		resp.Body.Close()
+
+		for _, issue := range result.Issues {
+			tasks = append(tasks, parseIssue(issue))
+		}
+
+		if result.NextPageToken == "" {
+			break
+		}
+		nextPageToken = result.NextPageToken
 	}
 
-	resp, err := c.do(ctx, http.MethodPost, "/rest/api/3/search", payload)
-	if err != nil {
-		return nil, fmt.Errorf("fetch tasks: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("jira search: status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var result searchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode search response: %w", err)
-	}
-
-	tasks := make([]Task, len(result.Issues))
-	for i, issue := range result.Issues {
-		tasks[i] = parseIssue(issue)
-	}
 	return tasks, nil
 }
 

@@ -227,10 +227,78 @@ func newSyncCmd() *cobra.Command {
 		Use:   "sync",
 		Short: "Schedule Jira tasks into Google Calendar",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			client, cfg, err := loadJiraClient()
+			if err != nil {
+				return err
+			}
+
+			credFile, _ := cmd.Flags().GetString("client-credentials")
+			if credFile == "" {
+				credFile = cfg.Calendar.ClientCredentials
+			}
+			if credFile == "" {
+				return fmt.Errorf("set calendar.clientCredentials in config or pass --client-credentials")
+			}
+
+			oauthCfg, err := calendar.OAuthConfigFromFile(credFile)
+			if err != nil {
+				return fmt.Errorf("load client credentials: %w", err)
+			}
+
+			tokenPath, err := calendar.TokenPath()
+			if err != nil {
+				return err
+			}
+
+			token, err := calendar.CachedToken(cmd.Context(), oauthCfg, tokenPath)
+			if err != nil {
+				return fmt.Errorf("google auth: %w", err)
+			}
+
+			cal, err := calendar.NewGoogleClient(cmd.Context(), oauthCfg, token,
+				cfg.Calendar.SourceCalendar, cfg.Calendar.FyllaCalendar, cfg.Jira.URL)
+			if err != nil {
+				return err
+			}
+
+			now := time.Now()
+			dryRun, _ := cmd.Flags().GetBool("dry-run")
+			jql, _ := cmd.Flags().GetString("jql")
+			days, _ := cmd.Flags().GetInt("days")
+			from, _ := cmd.Flags().GetString("from")
+			to, _ := cmd.Flags().GetString("to")
+
+			jql, start, end, dryRun, err := BuildSyncParams(SyncFlags{
+				DryRun: dryRun,
+				JQL:    jql,
+				Days:   days,
+				From:   from,
+				To:     to,
+			}, cfg, now)
+			if err != nil {
+				return err
+			}
+
+			result, err := RunSync(cmd.Context(), SyncParams{
+				Cal:    cal,
+				Jira:   client,
+				Cfg:    cfg,
+				JQL:    jql,
+				Now:    now,
+				Start:  start,
+				End:    end,
+				DryRun: dryRun,
+			})
+			if err != nil {
+				return err
+			}
+
+			PrintSyncResult(cmd.OutOrStdout(), result, dryRun)
 			return nil
 		},
 	}
 
+	cmd.Flags().String("client-credentials", "", "Path to Google OAuth client credentials JSON file")
 	cmd.Flags().Bool("dry-run", false, "Preview schedule without creating events")
 	cmd.Flags().String("jql", "", "Custom JQL query override")
 	cmd.Flags().Int("days", 0, "Override scheduling window (days)")

@@ -94,6 +94,22 @@ func newEstimateCmd() *cobra.Command {
 		Short: "Set or adjust remaining estimate on a Jira task",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			client, _, err := loadJiraClient()
+			if err != nil {
+				return err
+			}
+
+			result, err := RunEstimate(cmd.Context(), EstimateParams{
+				TaskKey:  args[0],
+				Duration: args[1],
+				Jira:     client,
+				Getter:   client,
+			})
+			if err != nil {
+				return err
+			}
+
+			PrintEstimateResult(cmd.OutOrStdout(), result)
 			return nil
 		},
 	}

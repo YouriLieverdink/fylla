@@ -400,9 +400,13 @@ func TestCLI014_log_manual_worklog(t *testing.T) {
 
 	t.Run("cobra command accepts three args", func(t *testing.T) {
 		root := newTestRootCmd()
-		_, err := executeCommand(root, "log", "PROJ-123", "2h", "Worked on feature")
+		logCmd, _, err := root.Find([]string{"log"})
 		if err != nil {
-			t.Fatalf("log command error: %v", err)
+			t.Fatalf("find log command: %v", err)
+		}
+		// Verify Args validator accepts exactly 3 args
+		if err := logCmd.Args(logCmd, []string{"PROJ-123", "2h", "Worked on feature"}); err != nil {
+			t.Fatalf("log command should accept 3 args: %v", err)
 		}
 	})
 

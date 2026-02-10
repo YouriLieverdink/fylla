@@ -6,6 +6,7 @@ jira:
 calendar:
   sourceCalendar: primary
   fyllaCalendar: fylla
+  clientCredentials: client_credentials.json
 
 scheduling:
   windowDays: 5

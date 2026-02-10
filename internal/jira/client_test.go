@@ -14,7 +14,7 @@ import (
 func TestJIRA001_FetchTasks(t *testing.T) {
 	t.Run("fetches tasks from Jira REST API", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/rest/api/3/search" {
+			if r.URL.Path != "/rest/api/3/search/jql" {
 				t.Errorf("unexpected path: %s", r.URL.Path)
 			}
 			if r.Method != http.MethodPost {

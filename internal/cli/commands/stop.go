@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/iruoy/fylla/internal/timer"
 	"github.com/spf13/cobra"
 )
@@ -62,6 +63,36 @@ func newStopCmd() *cobra.Command {
 		Use:   "stop",
 		Short: "Stop timer and log work to Jira",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			client, _, err := loadJiraClient()
+			if err != nil {
+				return err
+			}
+
+			description, _ := cmd.Flags().GetString("description")
+			if description == "" {
+				prompt := &survey.Input{Message: "Work description:"}
+				if err := survey.AskOne(prompt, &description); err != nil {
+					return fmt.Errorf("prompt description: %w", err)
+				}
+			}
+
+			timerPath, err := timer.DefaultPath()
+			if err != nil {
+				return fmt.Errorf("timer path: %w", err)
+			}
+
+			result, err := RunStop(cmd.Context(), StopParams{
+				TimerPath:    timerPath,
+				RoundMinutes: 5,
+				Now:          time.Now(),
+				Description:  description,
+				Jira:         client,
+			})
+			if err != nil {
+				return err
+			}
+
+			PrintStopResult(cmd.OutOrStdout(), result)
 			return nil
 		},
 	}
