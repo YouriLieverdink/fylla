@@ -295,6 +295,37 @@ func (c *Client) CreateIssue(ctx context.Context, input CreateIssueInput) (strin
 	return result.Key, nil
 }
 
+// getIssueResponse represents a single Jira issue response for field queries.
+type getIssueResponse struct {
+	Fields struct {
+		TimeTracking *timeTrackingJSON `json:"timetracking"`
+	} `json:"fields"`
+}
+
+// GetEstimate fetches the remaining estimate for the specified Jira issue.
+func (c *Client) GetEstimate(ctx context.Context, issueKey string) (time.Duration, error) {
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/rest/api/3/issue/%s?fields=timetracking", issueKey), nil)
+	if err != nil {
+		return 0, fmt.Errorf("get estimate: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return 0, fmt.Errorf("jira get estimate: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result getIssueResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, fmt.Errorf("decode issue response: %w", err)
+	}
+
+	if result.Fields.TimeTracking == nil {
+		return 0, nil
+	}
+	return time.Duration(result.Fields.TimeTracking.RemainingEstimateSeconds) * time.Second, nil
+}
+
 // formatDuration converts a time.Duration to Jira duration string (e.g. "4h", "2h 30m").
 func formatDuration(d time.Duration) string {
 	h := int(d.Hours())

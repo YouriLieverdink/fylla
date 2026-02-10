@@ -249,7 +249,7 @@
                 "source": "internal/cli/commands/estimate.go",
                 "test": "internal/cli/commands/estimate_test.go"
             },
-            "passes": false
+            "passes": true
         },
         {
             "id": "cli-add",
@@ -1192,7 +1192,7 @@
                 "Verify Jira remaining estimate is 4h",
                 "Verify confirmation message is displayed"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CLI-016",
@@ -1203,7 +1203,7 @@
                 "Verify remaining estimate is now 6h",
                 "Run 'fylla estimate PROJ-123 -1h' and verify 5h"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CLI-017",

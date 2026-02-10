@@ -121,3 +121,8 @@ Build: SUCCESS | Lint: SUCCESS | Test: 4 passed
 - CLI-013: PASS - RunStatus returns task key and elapsed time, PrintStatusResult displays running info, nil when no timer
 - CLI-014: PASS - RunLog posts manual worklog to Jira, ParseDuration handles 2h/30m/1h30m formats, cobra accepts 3 args
 Build: SUCCESS | Lint: SUCCESS | Test: 22 passed
+
+## Feature: cli-estimate
+- CLI-015: PASS - RunEstimate sets absolute remaining estimate (4h, 30m, 1h30m), UpdateEstimate called with correct duration, confirmation message displayed
+- CLI-016: PASS - Relative adjustments (+2h adds, -1h subtracts), GetEstimate fetches current, clamps to zero on underflow, invalid durations return errors
+Build: SUCCESS | Lint: SUCCESS | Test: 13 passed
