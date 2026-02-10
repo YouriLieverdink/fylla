@@ -7,7 +7,7 @@
             "name": "Project Setup",
             "requirements": ["SETUP-001", "SETUP-002", "SETUP-003"],
             "target": {"source": "go.mod", "test": null},
-            "passes": false
+            "passes": true
         },
         {
             "id": "config-system",
@@ -132,7 +132,7 @@
                 "Verify dependencies include: github.com/spf13/cobra, google.golang.org/api, golang.org/x/oauth2, gopkg.in/yaml.v3, github.com/AlecAivazis/survey/v2",
                 "Run 'go mod tidy' and verify no errors"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SETUP-002",
@@ -143,7 +143,7 @@
                 "Verify internal/ contains cli, jira, calendar, scheduler, config, timer packages",
                 "Verify config/default_config.yaml exists"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SETUP-003",
@@ -154,7 +154,7 @@
                 "Verify help output lists available commands",
                 "Verify no runtime errors on startup"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CFG-001",

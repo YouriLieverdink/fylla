@@ -1,6 +1,6 @@
 # Ralph Loop
 
-@docs/prd.json @docs/requirements.md @.ralph/progress.md
+@docs/prd.json @docs/requirements.md @.ralph/progress.md @CLAUDE.md
 
 ## Mission
 
