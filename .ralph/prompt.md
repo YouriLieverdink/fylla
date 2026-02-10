@@ -36,7 +36,7 @@ Build: SUCCESS | Lint: SUCCESS | Test: [N] passed
 
 ## Constraints
 
-- One feature per iteration
+- One feature per iteration, EXIT when done
 - Search before creating new files
 - All verification must pass before commit
 - Always commit after verification — never leave changes uncommitted

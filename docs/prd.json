@@ -14,7 +14,7 @@
             "name": "Configuration System",
             "requirements": ["CFG-001", "CFG-002", "CFG-003", "CFG-004", "CFG-005", "CFG-006", "CFG-007", "CFG-008", "CFG-009"],
             "target": {"source": "internal/config", "test": "internal/config/config_test.go"},
-            "passes": false
+            "passes": true
         },
         {
             "id": "jira-client",
@@ -165,7 +165,7 @@
                 "Create config file manually and verify it is loaded",
                 "Verify config directory is created if it doesn't exist"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CFG-002",
@@ -176,7 +176,7 @@
                 "Verify 'fylla list' uses defaultJql for queries",
                 "Verify Jira API calls use configured credentials"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CFG-003",
@@ -187,7 +187,7 @@
                 "Configure calendar.fyllaCalendar (write tasks to)",
                 "Verify sync reads from source and writes to fylla calendar"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CFG-004",
@@ -198,7 +198,7 @@
                 "Set scheduling.minTaskDurationMinutes to 30 and verify slots < 30 min are skipped",
                 "Set scheduling.bufferMinutes to 20 and verify 20 min gap between tasks"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CFG-005",
@@ -209,7 +209,7 @@
                 "Set businessHours.end to '16:00' and verify no tasks after 16:00",
                 "Set businessHours.workDays to [1,2,3,4] and verify no Friday scheduling"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CFG-006",
@@ -220,7 +220,7 @@
                 "Create ADMIN project task and verify it's only scheduled 09:00-10:00",
                 "Verify tasks from other projects use default business hours"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CFG-007",
@@ -231,7 +231,7 @@
                 "Configure weights.dueDate to 0.40 and verify due dates affect sorting more",
                 "Verify all weights sum to 1.0 or are normalized"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CFG-008",
@@ -242,7 +242,7 @@
                 "Create Bug and Task with same priority/due date",
                 "Verify Bug is sorted higher than Task"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CFG-009",
@@ -253,7 +253,7 @@
                 "Verify credentials are not stored in plain text config.yaml",
                 "Verify Google OAuth credentials are cached for reuse"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "JIRA-001",

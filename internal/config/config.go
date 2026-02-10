@@ -1,16 +1,14 @@
 package config
 
-import "gopkg.in/yaml.v3"
-
 // Config represents the fylla configuration file.
 type Config struct {
-	Jira          JiraConfig                `yaml:"jira"`
-	Calendar      CalendarConfig            `yaml:"calendar"`
-	Scheduling    SchedulingConfig          `yaml:"scheduling"`
-	BusinessHours BusinessHoursConfig       `yaml:"businessHours"`
-	ProjectRules  map[string]ProjectRule    `yaml:"projectRules"`
-	Weights       WeightsConfig             `yaml:"weights"`
-	TypeScores    map[string]int            `yaml:"typeScores"`
+	Jira          JiraConfig             `yaml:"jira"`
+	Calendar      CalendarConfig         `yaml:"calendar"`
+	Scheduling    SchedulingConfig       `yaml:"scheduling"`
+	BusinessHours BusinessHoursConfig    `yaml:"businessHours"`
+	ProjectRules  map[string]ProjectRule `yaml:"projectRules"`
+	Weights       WeightsConfig          `yaml:"weights"`
+	TypeScores    map[string]int         `yaml:"typeScores"`
 }
 
 // JiraConfig holds Jira connection settings.
@@ -56,5 +54,16 @@ type WeightsConfig struct {
 	Age       float64 `yaml:"age"`
 }
 
-// ensure yaml import is used
-var _ = yaml.Node{}
+// BusinessHoursFor returns the business hours for a project key.
+// If a project-specific rule exists, it is returned as a BusinessHoursConfig.
+// Otherwise, the default business hours are returned.
+func (c *Config) BusinessHoursFor(projectKey string) BusinessHoursConfig {
+	if rule, ok := c.ProjectRules[projectKey]; ok {
+		return BusinessHoursConfig{
+			Start:    rule.Start,
+			End:      rule.End,
+			WorkDays: rule.WorkDays,
+		}
+	}
+	return c.BusinessHours
+}

@@ -1,0 +1,39 @@
+package config
+
+var defaultConfigYAML = []byte(`jira:
+  url: https://company.atlassian.net
+  email: you@example.com
+  defaultJql: "assignee = currentUser() AND status = 'To Do'"
+
+calendar:
+  sourceCalendar: primary
+  fyllaCalendar: fylla
+
+scheduling:
+  windowDays: 5
+  minTaskDurationMinutes: 25
+  bufferMinutes: 15
+
+businessHours:
+  start: "09:00"
+  end: "17:00"
+  workDays: [1, 2, 3, 4, 5]
+
+projectRules:
+  ADMIN:
+    start: "09:00"
+    end: "10:00"
+    workDays: [1, 2, 3, 4, 5]
+
+weights:
+  priority: 0.40
+  dueDate: 0.30
+  estimate: 0.15
+  issueType: 0.10
+  age: 0.05
+
+typeScores:
+  Bug: 100
+  Task: 70
+  Story: 50
+`)
