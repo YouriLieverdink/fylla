@@ -45,3 +45,13 @@ Build: SUCCESS | Lint: SUCCESS | Test: 28 passed
 - GCAL-001: PASS - OAuth flow opens browser with auth URL, callback server exchanges code for token, success message displayed
 - GCAL-002: PASS - Token saved to disk with 0600 permissions, round-trip save/load, CachedToken reuses valid cached token without re-auth
 Build: SUCCESS | Lint: SUCCESS | Test: 11 passed
+
+## Feature: calendar-client
+- GCAL-003: PASS - FetchEvents retrieves events from source calendar within time range, parsed as busy times
+- GCAL-004: PASS - CreateEvent inserts events on fylla calendar with correct start/end times
+- GCAL-005: PASS - DeleteFyllaEvents removes [Fylla] and [LATE] [Fylla] prefixed events, skips non-Fylla events
+- GCAL-006: PASS - Event title format "[Fylla] PROJ-123: Summary", at-risk tasks get "[LATE] [Fylla]" prefix
+- GCAL-007: PASS - Event description contains Jira issue URL using configured base URL
+- GCAL-008: PASS - Events with eventType "outOfOffice" detected as OOO via IsOOO()
+- GCAL-009: PASS - Title patterns (OOO, Out of Office, PTO, Vacation) detected as OOO, case-insensitive
+Build: SUCCESS | Lint: SUCCESS | Test: 28 passed

@@ -42,7 +42,7 @@
             "name": "Google Calendar Client",
             "requirements": ["GCAL-003", "GCAL-004", "GCAL-005", "GCAL-006", "GCAL-007", "GCAL-008", "GCAL-009"],
             "target": {"source": "internal/calendar/google.go", "test": "internal/calendar/google_test.go"},
-            "passes": false
+            "passes": true
         },
         {
             "id": "free-slot-finder",
@@ -495,7 +495,7 @@
                 "Run 'fylla sync' and verify existing events are detected",
                 "Verify events are used to determine busy times"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "GCAL-004",
@@ -506,7 +506,7 @@
                 "Open Google Calendar and verify events appear on fylla calendar",
                 "Verify events have correct start/end times"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "GCAL-005",
@@ -517,7 +517,7 @@
                 "Run 'fylla sync' again",
                 "Verify old events are deleted before new ones are created"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "GCAL-006",
@@ -528,7 +528,7 @@
                 "Verify event title format is '[Fylla] PROJ-123: Task summary'",
                 "Verify [LATE] prefix is added for at-risk tasks"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "GCAL-007",
@@ -539,7 +539,7 @@
                 "Open event in Google Calendar",
                 "Verify description contains Jira issue URL"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "GCAL-008",
@@ -550,7 +550,7 @@
                 "Run 'fylla sync'",
                 "Verify no tasks are scheduled during OOO period"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "GCAL-009",
@@ -561,7 +561,7 @@
                 "Run 'fylla sync'",
                 "Verify no tasks are scheduled on that day"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SLOT-001",
