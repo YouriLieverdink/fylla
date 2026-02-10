@@ -220,7 +220,7 @@
                 "source": "internal/cli/commands/list.go",
                 "test": "internal/cli/commands/list_test.go"
             },
-            "passes": false
+            "passes": true
         },
         {
             "id": "cli-timer",
@@ -1126,7 +1126,7 @@
                 "Verify tasks are displayed in priority order",
                 "Verify no calendar events are created"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "CLI-010",

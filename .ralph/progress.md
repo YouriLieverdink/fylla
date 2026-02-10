@@ -109,3 +109,7 @@ Build: SUCCESS | Lint: SUCCESS | Test: 9 passed
 - CLI-007: PASS - --days overrides config windowDays, calendar fetched with correct window
 - CLI-008: PASS - --from/--to set explicit date range, invalid dates return errors, allocations within range
 Build: SUCCESS | Lint: SUCCESS | Test: 14 passed
+
+## Feature: cli-list
+- CLI-009: PASS - RunList fetches/sorts tasks without calendar interaction, PrintListResult shows priority-ordered output with scores
+Build: SUCCESS | Lint: SUCCESS | Test: 4 passed
