@@ -21,7 +21,7 @@
             "name": "Jira Client",
             "requirements": ["JIRA-001", "JIRA-002", "JIRA-003", "JIRA-004", "JIRA-005", "JIRA-006", "JIRA-007", "JIRA-008", "JIRA-009"],
             "target": {"source": "internal/jira", "test": "internal/jira/client_test.go"},
-            "passes": false
+            "passes": true
         },
         {
             "id": "task-sorter",
@@ -264,7 +264,7 @@
                 "Verify tasks are fetched from configured Jira instance",
                 "Verify HTTP errors are handled gracefully"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "JIRA-002",
@@ -275,7 +275,7 @@
                 "Verify only tasks matching JQL are fetched",
                 "Verify invalid JQL returns clear error message"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "JIRA-003",
@@ -286,7 +286,7 @@
                 "Verify worklog appears in Jira issue",
                 "Verify time is recorded correctly (2 hours)"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "JIRA-004",
@@ -297,7 +297,7 @@
                 "Verify Jira issue remaining estimate is updated to 4h",
                 "Verify 'fylla estimate PROJ-123 +1h' adds 1 hour to current estimate"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "JIRA-005",
@@ -308,7 +308,7 @@
                 "Verify new issue is created in Jira",
                 "Verify all fields (summary, type, priority, estimate) are set correctly"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "JIRA-006",
@@ -319,7 +319,7 @@
                 "Fetch task with priority 'Lowest' (5)",
                 "Verify priorities are correctly mapped to scores"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "JIRA-007",
@@ -330,7 +330,7 @@
                 "Verify due date is parsed correctly",
                 "Verify tasks without due dates are handled gracefully"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "JIRA-008",
@@ -341,7 +341,7 @@
                 "Fetch task with 2h remaining estimate",
                 "Verify estimates are parsed and used for slot allocation"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "JIRA-009",
@@ -352,7 +352,7 @@
                 "Fetch Task type issue and verify type is 'Task'",
                 "Fetch Story type issue and verify type is 'Story'"
             ],
-            "passes": false
+            "passes": true
         },
         {
             "id": "SORT-001",
