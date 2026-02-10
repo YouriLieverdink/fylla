@@ -1,4 +1,4 @@
-# Fylla - Dart CLI Jira Scheduler
+# Fylla - Go CLI Jira Scheduler
 
 A CLI tool that pulls Jira tasks, sorts them by priority rules, and schedules them into free slots on Google Calendar.
 
@@ -8,58 +8,78 @@ A CLI tool that pulls Jira tasks, sorts them by priority rules, and schedules th
 
 ```
 fylla/
-├── bin/
-│   └── fylla.dart                   # CLI entry point
-├── lib/
-│   └── src/
-│       ├── cli/
-│       │   ├── commands/
-│       │   │   ├── auth_command.dart
-│       │   │   ├── sync_command.dart
-│       │   │   ├── list_command.dart
-│       │   │   ├── config_command.dart
-│       │   │   ├── start_command.dart
-│       │   │   ├── stop_command.dart
-│       │   │   ├── status_command.dart
-│       │   │   ├── log_command.dart
-│       │   │   ├── estimate_command.dart
-│       │   │   └── add_command.dart
-│       │   └── cli_runner.dart
-│       ├── jira/
-│       │   ├── jira_client.dart
-│       │   └── jira_task.dart
-│       ├── calendar/
-│       │   ├── google_calendar_client.dart
-│       │   ├── calendar_event.dart
-│       │   ├── free_slot_finder.dart
-│       │   └── oauth_handler.dart
-│       ├── scheduler/
-│       │   ├── task_sorter.dart
-│       │   ├── sort_config.dart
-│       │   └── slot_allocator.dart
-│       ├── config/
-│       │   ├── app_config.dart
-│       │   └── config_store.dart
-│       └── timer/
-│           └── timer_state.dart         # Active timer persistence
+├── cmd/
+│   └── fylla/
+│       └── main.go                        # CLI entry point
+├── internal/
+│   ├── cli/
+│   │   ├── commands/
+│   │   │   ├── auth.go
+│   │   │   ├── sync.go
+│   │   │   ├── list.go
+│   │   │   ├── config.go
+│   │   │   ├── start.go
+│   │   │   ├── stop.go
+│   │   │   ├── status.go
+│   │   │   ├── log.go
+│   │   │   ├── estimate.go
+│   │   │   └── add.go
+│   │   └── root.go
+│   ├── jira/
+│   │   ├── client.go
+│   │   ├── client_test.go
+│   │   ├── task.go
+│   │   └── task_test.go
+│   ├── calendar/
+│   │   ├── google.go
+│   │   ├── google_test.go
+│   │   ├── event.go
+│   │   ├── slots.go
+│   │   ├── slots_test.go
+│   │   ├── oauth.go
+│   │   └── oauth_test.go
+│   ├── scheduler/
+│   │   ├── sorter.go
+│   │   ├── sorter_test.go
+│   │   ├── sortconfig.go
+│   │   ├── allocator.go
+│   │   └── allocator_test.go
+│   ├── config/
+│   │   ├── config.go
+│   │   ├── config_test.go
+│   │   └── store.go
+│   └── timer/
+│       ├── state.go
+│       └── state_test.go
 ├── config/
 │   └── default_config.yaml
-├── pubspec.yaml
+├── go.mod
+├── go.sum
 └── README.md
 ```
 
 ## Dependencies
 
-```yaml
-dependencies:
-  args: ^2.4.0              # CLI parsing
-  googleapis: ^13.0.0       # Google Calendar API
-  googleapis_auth: ^1.6.0   # OAuth2
-  http: ^1.2.0              # HTTP client
-  yaml: ^3.1.0              # Config parsing
-  path: ^1.9.0              # Path handling
-  interact_cli: ^2.1.1      # Interactive prompts (Input, Select, Confirm)
 ```
+module github.com/yourusername/fylla
+
+go 1.22
+
+require (
+    github.com/spf13/cobra          // CLI framework
+    google.golang.org/api            // Google Calendar API (calendar/v3)
+    golang.org/x/oauth2              // OAuth2 for Google
+    gopkg.in/yaml.v3                 // Config parsing
+    github.com/AlecAivazis/survey/v2 // Interactive prompts (Input, Select, Confirm)
+)
+```
+
+Standard library packages used (no dependency needed):
+- `net/http` — HTTP client
+- `path/filepath` — Path handling
+- `encoding/json` — JSON parsing
+- `time` — Time handling
+- `os` — File system operations
 
 ## Sorting Algorithm
 
@@ -289,7 +309,7 @@ This updates `timetracking.remainingEstimate` in Jira, which the scheduler uses 
 
 ## Quick Add Jira Task
 
-Create tasks directly from the CLI with interactive prompts (using `interact_cli` package):
+Create tasks directly from the CLI with interactive prompts (using `survey` package):
 
 ```
 $ fylla add
@@ -322,7 +342,7 @@ $ fylla add --project PROJ --type Bug --priority High
 
 ## Implementation Order
 
-1. **Project setup** - pubspec.yaml, folder structure
+1. **Project setup** - go.mod, folder structure
 2. **Config system** - Load/save YAML config, credential storage
 3. **Jira client** - Fetch tasks via REST API, worklog API
 4. **Task sorter** - Implement scoring algorithm
@@ -331,12 +351,13 @@ $ fylla add --project PROJ --type Bug --priority High
 7. **Free slot finder** - Business hours logic
 8. **Slot allocator** - First-fit assignment
 9. **Timer system** - Start/stop/status with disk persistence
-10. **CLI commands** - Wire everything together
+10. **CLI commands** - Wire everything together with cobra
 
 ## Verification
 
-1. Run `fylla auth jira ...` and `fylla auth google` to set up credentials
-2. Run `fylla list` to verify Jira tasks are fetched and sorted
-3. Run `fylla sync --dry-run` to see proposed schedule
-4. Run `fylla sync` to create actual calendar events
-5. Check Google Calendar to verify events appear correctly
+1. Run `go build ./cmd/fylla` to compile the binary
+2. Run `fylla auth jira ...` and `fylla auth google` to set up credentials
+3. Run `fylla list` to verify Jira tasks are fetched and sorted
+4. Run `fylla sync --dry-run` to see proposed schedule
+5. Run `fylla sync` to create actual calendar events
+6. Check Google Calendar to verify events appear correctly

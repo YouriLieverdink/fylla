@@ -6,119 +6,119 @@
             "id": "project-setup",
             "name": "Project Setup",
             "requirements": ["SETUP-001", "SETUP-002", "SETUP-003"],
-            "target": {"source": "pubspec.yaml", "test": null},
+            "target": {"source": "go.mod", "test": null},
             "passes": false
         },
         {
             "id": "config-system",
             "name": "Configuration System",
             "requirements": ["CFG-001", "CFG-002", "CFG-003", "CFG-004", "CFG-005", "CFG-006", "CFG-007", "CFG-008", "CFG-009"],
-            "target": {"source": "lib/src/config", "test": "test/config"},
+            "target": {"source": "internal/config", "test": "internal/config/config_test.go"},
             "passes": false
         },
         {
             "id": "jira-client",
             "name": "Jira Client",
             "requirements": ["JIRA-001", "JIRA-002", "JIRA-003", "JIRA-004", "JIRA-005", "JIRA-006", "JIRA-007", "JIRA-008", "JIRA-009"],
-            "target": {"source": "lib/src/jira", "test": "test/jira"},
+            "target": {"source": "internal/jira", "test": "internal/jira/client_test.go"},
             "passes": false
         },
         {
             "id": "task-sorter",
             "name": "Task Sorting Algorithm",
             "requirements": ["SORT-001", "SORT-002", "SORT-003", "SORT-004", "SORT-005", "SORT-006", "SORT-007", "SORT-008", "SORT-009", "SORT-010"],
-            "target": {"source": "lib/src/scheduler/task_sorter.dart", "test": "test/scheduler/task_sorter_test.dart"},
+            "target": {"source": "internal/scheduler/sorter.go", "test": "internal/scheduler/sorter_test.go"},
             "passes": false
         },
         {
             "id": "google-oauth",
             "name": "Google OAuth Authentication",
             "requirements": ["GCAL-001", "GCAL-002"],
-            "target": {"source": "lib/src/calendar/oauth_handler.dart", "test": "test/calendar/oauth_handler_test.dart"},
+            "target": {"source": "internal/calendar/oauth.go", "test": "internal/calendar/oauth_test.go"},
             "passes": false
         },
         {
             "id": "calendar-client",
             "name": "Google Calendar Client",
             "requirements": ["GCAL-003", "GCAL-004", "GCAL-005", "GCAL-006", "GCAL-007", "GCAL-008", "GCAL-009"],
-            "target": {"source": "lib/src/calendar/google_calendar_client.dart", "test": "test/calendar/google_calendar_client_test.dart"},
+            "target": {"source": "internal/calendar/google.go", "test": "internal/calendar/google_test.go"},
             "passes": false
         },
         {
             "id": "free-slot-finder",
             "name": "Free Slot Finder",
             "requirements": ["SLOT-001", "SLOT-002", "SLOT-003", "SLOT-004", "SLOT-005", "SLOT-006", "SLOT-007"],
-            "target": {"source": "lib/src/calendar/free_slot_finder.dart", "test": "test/calendar/free_slot_finder_test.dart"},
+            "target": {"source": "internal/calendar/slots.go", "test": "internal/calendar/slots_test.go"},
             "passes": false
         },
         {
             "id": "slot-allocator",
             "name": "Slot Allocator",
             "requirements": ["ALLOC-001", "ALLOC-002", "ALLOC-003", "ALLOC-004", "ALLOC-005", "ALLOC-006", "ALLOC-007"],
-            "target": {"source": "lib/src/scheduler/slot_allocator.dart", "test": "test/scheduler/slot_allocator_test.dart"},
+            "target": {"source": "internal/scheduler/allocator.go", "test": "internal/scheduler/allocator_test.go"},
             "passes": false
         },
         {
             "id": "timer-system",
             "name": "Timer System",
             "requirements": ["TIMER-001", "TIMER-002", "TIMER-003", "TIMER-004", "TIMER-005", "TIMER-006"],
-            "target": {"source": "lib/src/timer/timer_state.dart", "test": "test/timer/timer_state_test.dart"},
+            "target": {"source": "internal/timer/state.go", "test": "internal/timer/state_test.go"},
             "passes": false
         },
         {
             "id": "sync-process",
             "name": "Sync Process",
             "requirements": ["SYNC-001", "SYNC-002", "SYNC-003", "SYNC-004", "SYNC-005", "SYNC-006", "SYNC-007", "SYNC-008"],
-            "target": {"source": "lib/src/cli/commands/sync_command.dart", "test": "test/cli/commands/sync_command_test.dart"},
+            "target": {"source": "internal/cli/commands/sync.go", "test": "internal/cli/commands/sync_test.go"},
             "passes": false
         },
         {
             "id": "cli-auth",
             "name": "CLI Auth Commands",
             "requirements": ["CLI-001", "CLI-002", "CLI-003"],
-            "target": {"source": "lib/src/cli/commands/auth_command.dart", "test": "test/cli/commands/auth_command_test.dart"},
+            "target": {"source": "internal/cli/commands/auth.go", "test": "internal/cli/commands/auth_test.go"},
             "passes": false
         },
         {
             "id": "cli-sync",
             "name": "CLI Sync Command",
             "requirements": ["CLI-004", "CLI-005", "CLI-006", "CLI-007", "CLI-008"],
-            "target": {"source": "lib/src/cli/commands/sync_command.dart", "test": "test/cli/commands/sync_command_test.dart"},
+            "target": {"source": "internal/cli/commands/sync.go", "test": "internal/cli/commands/sync_test.go"},
             "passes": false
         },
         {
             "id": "cli-list",
             "name": "CLI List Command",
             "requirements": ["CLI-009"],
-            "target": {"source": "lib/src/cli/commands/list_command.dart", "test": "test/cli/commands/list_command_test.dart"},
+            "target": {"source": "internal/cli/commands/list.go", "test": "internal/cli/commands/list_test.go"},
             "passes": false
         },
         {
             "id": "cli-timer",
             "name": "CLI Timer Commands",
             "requirements": ["CLI-010", "CLI-011", "CLI-012", "CLI-013", "CLI-014"],
-            "target": {"source": "lib/src/cli/commands", "test": "test/cli/commands"},
+            "target": {"source": "internal/cli/commands", "test": "internal/cli/commands"},
             "passes": false
         },
         {
             "id": "cli-estimate",
             "name": "CLI Estimate Command",
             "requirements": ["CLI-015", "CLI-016"],
-            "target": {"source": "lib/src/cli/commands/estimate_command.dart", "test": "test/cli/commands/estimate_command_test.dart"},
+            "target": {"source": "internal/cli/commands/estimate.go", "test": "internal/cli/commands/estimate_test.go"},
             "passes": false
         },
         {
             "id": "cli-add",
             "name": "CLI Add Command",
             "requirements": ["CLI-017", "CLI-018", "CLI-019"],
-            "target": {"source": "lib/src/cli/commands/add_command.dart", "test": "test/cli/commands/add_command_test.dart"},
+            "target": {"source": "internal/cli/commands/add.go", "test": "internal/cli/commands/add_test.go"},
             "passes": false
         },
         {
             "id": "cli-config",
             "name": "CLI Config Commands",
             "requirements": ["CLI-020", "CLI-021", "CLI-022"],
-            "target": {"source": "lib/src/cli/commands/config_command.dart", "test": "test/cli/commands/config_command_test.dart"},
+            "target": {"source": "internal/cli/commands/config.go", "test": "internal/cli/commands/config_test.go"},
             "passes": false
         }
     ],
@@ -126,11 +126,11 @@
         {
             "id": "SETUP-001",
             "category": "Project Setup",
-            "description": "Project has valid pubspec.yaml with required dependencies",
+            "description": "Project has valid go.mod with required dependencies",
             "stepsToVerify": [
-                "Verify pubspec.yaml exists in project root",
-                "Verify dependencies include: args, googleapis, googleapis_auth, http, yaml, path, interact_cli",
-                "Run 'dart pub get' and verify no errors"
+                "Verify go.mod exists in project root",
+                "Verify dependencies include: github.com/spf13/cobra, google.golang.org/api, golang.org/x/oauth2, gopkg.in/yaml.v3, github.com/AlecAivazis/survey/v2",
+                "Run 'go mod tidy' and verify no errors"
             ],
             "passes": false
         },
@@ -139,8 +139,8 @@
             "category": "Project Setup",
             "description": "Project structure matches specified folder layout",
             "stepsToVerify": [
-                "Verify bin/fylla.dart exists as CLI entry point",
-                "Verify lib/src/ contains cli, jira, calendar, scheduler, config, timer directories",
+                "Verify cmd/fylla/main.go exists as CLI entry point",
+                "Verify internal/ contains cli, jira, calendar, scheduler, config, timer packages",
                 "Verify config/default_config.yaml exists"
             ],
             "passes": false
@@ -150,7 +150,7 @@
             "category": "Project Setup",
             "description": "CLI entry point is executable and shows help",
             "stepsToVerify": [
-                "Run 'dart run bin/fylla.dart --help'",
+                "Run 'go run ./cmd/fylla --help'",
                 "Verify help output lists available commands",
                 "Verify no runtime errors on startup"
             ],
@@ -874,9 +874,9 @@
         {
             "id": "CLI-001",
             "category": "CLI Commands",
-            "description": "CLI entry point at bin/fylla.dart",
+            "description": "CLI entry point at cmd/fylla/main.go",
             "stepsToVerify": [
-                "Run 'dart run bin/fylla.dart'",
+                "Run 'go run ./cmd/fylla'",
                 "Verify CLI starts without errors",
                 "Verify help is displayed when no command given"
             ],
