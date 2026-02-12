@@ -600,3 +600,166 @@ func Test_GCAL009_DetectOOOByTitlePattern(t *testing.T) {
 		}
 	})
 }
+
+func TestBuildTitle(t *testing.T) {
+	tests := []struct {
+		name    string
+		key     string
+		summary string
+		atRisk  bool
+		want    string
+	}{
+		{"normal", "PROJ-1", "Fix bug", false, "[Fylla] PROJ-1: Fix bug"},
+		{"at-risk", "PROJ-2", "Overdue", true, "[LATE] [Fylla] PROJ-2: Overdue"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := BuildTitle(tt.key, tt.summary, tt.atRisk)
+			if got != tt.want {
+				t.Errorf("BuildTitle() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTaskKeyFromTitle(t *testing.T) {
+	tests := []struct {
+		title string
+		want  string
+	}{
+		{"[Fylla] PROJ-123: Fix login bug", "PROJ-123"},
+		{"[LATE] [Fylla] PROJ-456: Overdue task", "PROJ-456"},
+		{"[Fylla] T-1: Simple", "T-1"},
+		{"Team meeting", ""},
+		{"[Fylla] NOCOLON", "NOCOLON"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("title=%q", tt.title), func(t *testing.T) {
+			got := TaskKeyFromTitle(tt.title)
+			if got != tt.want {
+				t.Errorf("TaskKeyFromTitle(%q) = %q, want %q", tt.title, got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_GCAL010_FetchFyllaEvents(t *testing.T) {
+	t.Run("returns only Fylla-prefixed events", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			resp := googlecalendar.Events{
+				Items: []*googlecalendar.Event{
+					{Id: "f1", Summary: "[Fylla] T-1: Task one", Start: &googlecalendar.EventDateTime{DateTime: "2025-01-20T09:00:00Z"}, End: &googlecalendar.EventDateTime{DateTime: "2025-01-20T10:00:00Z"}},
+					{Id: "m1", Summary: "Meeting", Start: &googlecalendar.EventDateTime{DateTime: "2025-01-20T10:00:00Z"}, End: &googlecalendar.EventDateTime{DateTime: "2025-01-20T11:00:00Z"}},
+					{Id: "f2", Summary: "[LATE] [Fylla] T-2: Late task", Start: &googlecalendar.EventDateTime{DateTime: "2025-01-20T11:00:00Z"}, End: &googlecalendar.EventDateTime{DateTime: "2025-01-20T12:00:00Z"}},
+				},
+			}
+			json.NewEncoder(w).Encode(resp)
+		}))
+		defer server.Close()
+
+		client := newTestClient(t, server, "primary", "fylla", "https://co.atlassian.net")
+		events, err := client.FetchFyllaEvents(context.Background(), time.Now(), time.Now().Add(24*time.Hour))
+		if err != nil {
+			t.Fatalf("FetchFyllaEvents: %v", err)
+		}
+		if len(events) != 2 {
+			t.Fatalf("expected 2 Fylla events, got %d", len(events))
+		}
+		if events[0].ID != "f1" || events[1].ID != "f2" {
+			t.Errorf("got IDs %s, %s, want f1, f2", events[0].ID, events[1].ID)
+		}
+	})
+
+	t.Run("uses fylla calendar", func(t *testing.T) {
+		var calendarID string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			parts := strings.Split(r.URL.Path, "/")
+			for i, p := range parts {
+				if p == "calendars" && i+1 < len(parts) {
+					calendarID = parts[i+1]
+				}
+			}
+			json.NewEncoder(w).Encode(googlecalendar.Events{})
+		}))
+		defer server.Close()
+
+		client := newTestClient(t, server, "source-cal", "my-fylla-cal", "https://co.atlassian.net")
+		_, err := client.FetchFyllaEvents(context.Background(), time.Now(), time.Now().Add(24*time.Hour))
+		if err != nil {
+			t.Fatalf("FetchFyllaEvents: %v", err)
+		}
+		if calendarID != "my-fylla-cal" {
+			t.Errorf("expected fylla calendar, got %q", calendarID)
+		}
+	})
+}
+
+func Test_GCAL011_UpdateEvent(t *testing.T) {
+	t.Run("updates event with correct data", func(t *testing.T) {
+		var updated googlecalendar.Event
+		var method string
+		var eventIDInPath string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			method = r.Method
+			parts := strings.Split(r.URL.Path, "/")
+			eventIDInPath = parts[len(parts)-1]
+			if r.Method == http.MethodPut {
+				json.NewDecoder(r.Body).Decode(&updated)
+				updated.Id = eventIDInPath
+				json.NewEncoder(w).Encode(updated)
+				return
+			}
+			json.NewEncoder(w).Encode(googlecalendar.Events{})
+		}))
+		defer server.Close()
+
+		client := newTestClient(t, server, "primary", "fylla", "https://co.atlassian.net")
+		start := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
+		end := time.Date(2025, 1, 20, 11, 0, 0, 0, time.UTC)
+		err := client.UpdateEvent(context.Background(), "evt-123", CreateEventInput{
+			TaskKey: "PROJ-1",
+			Summary: "Updated task",
+			Start:   start,
+			End:     end,
+			AtRisk:  true,
+		})
+		if err != nil {
+			t.Fatalf("UpdateEvent: %v", err)
+		}
+		if method != http.MethodPut {
+			t.Errorf("expected PUT, got %s", method)
+		}
+		if eventIDInPath != "evt-123" {
+			t.Errorf("expected event ID evt-123 in path, got %s", eventIDInPath)
+		}
+		if updated.Summary != "[LATE] [Fylla] PROJ-1: Updated task" {
+			t.Errorf("title = %q, want [LATE] [Fylla] PROJ-1: Updated task", updated.Summary)
+		}
+	})
+}
+
+func Test_GCAL012_DeleteEvent(t *testing.T) {
+	t.Run("deletes single event by ID", func(t *testing.T) {
+		var deletedID string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodDelete {
+				parts := strings.Split(r.URL.Path, "/")
+				deletedID = parts[len(parts)-1]
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			json.NewEncoder(w).Encode(googlecalendar.Events{})
+		}))
+		defer server.Close()
+
+		client := newTestClient(t, server, "primary", "fylla", "https://co.atlassian.net")
+		err := client.DeleteEvent(context.Background(), "evt-to-delete")
+		if err != nil {
+			t.Fatalf("DeleteEvent: %v", err)
+		}
+		if deletedID != "evt-to-delete" {
+			t.Errorf("deleted ID = %q, want evt-to-delete", deletedID)
+		}
+	})
+}

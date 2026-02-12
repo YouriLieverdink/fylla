@@ -16,8 +16,11 @@ import (
 // mockCalendar records all calendar operations for assertion.
 type mockCalendar struct {
 	events        []calendar.Event
+	fyllaEvents   []calendar.Event
 	deletedRanges []timeRange
 	created       []calendar.CreateEventInput
+	updated       []mockUpdate
+	deletedIDs    []string
 	fetchCalls    []timeRange
 }
 
@@ -25,9 +28,18 @@ type timeRange struct {
 	start, end time.Time
 }
 
+type mockUpdate struct {
+	eventID string
+	input   calendar.CreateEventInput
+}
+
 func (m *mockCalendar) FetchEvents(_ context.Context, start, end time.Time) ([]calendar.Event, error) {
 	m.fetchCalls = append(m.fetchCalls, timeRange{start, end})
 	return m.events, nil
+}
+
+func (m *mockCalendar) FetchFyllaEvents(_ context.Context, start, end time.Time) ([]calendar.Event, error) {
+	return m.fyllaEvents, nil
 }
 
 func (m *mockCalendar) DeleteFyllaEvents(_ context.Context, start, end time.Time) error {
@@ -37,6 +49,16 @@ func (m *mockCalendar) DeleteFyllaEvents(_ context.Context, start, end time.Time
 
 func (m *mockCalendar) CreateEvent(_ context.Context, input calendar.CreateEventInput) error {
 	m.created = append(m.created, input)
+	return nil
+}
+
+func (m *mockCalendar) UpdateEvent(_ context.Context, eventID string, input calendar.CreateEventInput) error {
+	m.updated = append(m.updated, mockUpdate{eventID: eventID, input: input})
+	return nil
+}
+
+func (m *mockCalendar) DeleteEvent(_ context.Context, eventID string) error {
+	m.deletedIDs = append(m.deletedIDs, eventID)
 	return nil
 }
 
@@ -94,7 +116,7 @@ func TestSYNC001_delete_existing_fylla_events(t *testing.T) {
 	start := now
 	end := now.AddDate(0, 0, 5)
 
-	t.Run("deletes fylla events before creating new ones", func(t *testing.T) {
+	t.Run("force mode deletes fylla events before creating new ones", func(t *testing.T) {
 		cal := &mockCalendar{}
 		jr := &mockTaskFetcher{}
 
@@ -106,6 +128,7 @@ func TestSYNC001_delete_existing_fylla_events(t *testing.T) {
 			Now:   now,
 			Start: start,
 			End:   end,
+			Force: true,
 		})
 		if err != nil {
 			t.Fatalf("RunSync: %v", err)
@@ -143,7 +166,38 @@ func TestSYNC001_delete_existing_fylla_events(t *testing.T) {
 		}
 	})
 
-	t.Run("delete is called before event creation", func(t *testing.T) {
+	t.Run("force mode delete is called before event creation", func(t *testing.T) {
+		cal := &mockCalendar{}
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
+				{Key: "TEST-1", Summary: "Task 1", Priority: 1, RemainingEstimate: 30 * time.Minute, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+			},
+		}
+
+		_, err := RunSync(context.Background(), SyncParams{
+			Cal:   cal,
+			Tasks: jr,
+			Cfg:   testConfig(),
+			Query: "project = TEST",
+			Now:   now,
+			Start: start,
+			End:   end,
+			Force: true,
+		})
+		if err != nil {
+			t.Fatalf("RunSync: %v", err)
+		}
+
+		// Delete should have happened (1 call) before events were created
+		if len(cal.deletedRanges) != 1 {
+			t.Fatalf("expected 1 delete call, got %d", len(cal.deletedRanges))
+		}
+		if len(cal.created) == 0 {
+			t.Fatal("expected events to be created")
+		}
+	})
+
+	t.Run("incremental mode does not bulk-delete", func(t *testing.T) {
 		cal := &mockCalendar{}
 		jr := &mockTaskFetcher{
 			tasks: []task.Task{
@@ -164,12 +218,8 @@ func TestSYNC001_delete_existing_fylla_events(t *testing.T) {
 			t.Fatalf("RunSync: %v", err)
 		}
 
-		// Delete should have happened (1 call) before events were created
-		if len(cal.deletedRanges) != 1 {
-			t.Fatalf("expected 1 delete call, got %d", len(cal.deletedRanges))
-		}
-		if len(cal.created) == 0 {
-			t.Fatal("expected events to be created")
+		if len(cal.deletedRanges) != 0 {
+			t.Errorf("incremental mode should not bulk-delete, got %d calls", len(cal.deletedRanges))
 		}
 	})
 }
@@ -1324,7 +1374,7 @@ func TestSYNC010_progress_output(t *testing.T) {
 	start := now
 	end := now.AddDate(0, 0, 5)
 
-	t.Run("progress messages are written during sync", func(t *testing.T) {
+	t.Run("force mode progress messages", func(t *testing.T) {
 		cal := &mockCalendar{}
 		jr := &mockTaskFetcher{
 			tasks: []task.Task{
@@ -1342,6 +1392,7 @@ func TestSYNC010_progress_output(t *testing.T) {
 			Now:      now,
 			Start:    start,
 			End:      end,
+			Force:    true,
 			Progress: &prog,
 		})
 		if err != nil {
@@ -1364,6 +1415,50 @@ func TestSYNC010_progress_output(t *testing.T) {
 			if !strings.Contains(out, msg) {
 				t.Errorf("progress output missing %q, got:\n%s", msg, out)
 			}
+		}
+	})
+
+	t.Run("incremental mode progress messages", func(t *testing.T) {
+		cal := &mockCalendar{}
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
+				{Key: "T-1", Summary: "Task 1", Priority: 1, RemainingEstimate: time.Hour, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+			},
+		}
+
+		var prog bytes.Buffer
+		_, err := RunSync(context.Background(), SyncParams{
+			Cal:      cal,
+			Tasks:    jr,
+			Cfg:      testConfig(),
+			Query:    "project = TEST",
+			Now:      now,
+			Start:    start,
+			End:      end,
+			Progress: &prog,
+		})
+		if err != nil {
+			t.Fatalf("RunSync: %v", err)
+		}
+
+		out := prog.String()
+		expected := []string{
+			"Fetching tasks...",
+			"Sorting 1 tasks...",
+			"Reading calendar...",
+			"Finding free slots...",
+			"Scheduling 1 tasks into available slots...",
+			"Fetching existing Fylla events...",
+			"Reconciled:",
+			"Done.",
+		}
+		for _, msg := range expected {
+			if !strings.Contains(out, msg) {
+				t.Errorf("progress output missing %q, got:\n%s", msg, out)
+			}
+		}
+		if strings.Contains(out, "Clearing previous schedule") {
+			t.Errorf("incremental mode should not show clearing message, got:\n%s", out)
 		}
 	})
 
@@ -1418,6 +1513,328 @@ func TestSYNC010_progress_output(t *testing.T) {
 		})
 		if err != nil {
 			t.Fatalf("RunSync with nil Progress: %v", err)
+		}
+	})
+}
+
+func TestSYNC011_incremental_sync(t *testing.T) {
+	now := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
+	start := now
+	end := now.AddDate(0, 0, 5)
+
+	t.Run("no-op when schedule unchanged", func(t *testing.T) {
+		// Existing events match what would be scheduled.
+		// Note: slots start at now + buffer (09:00 + 15min = 09:15).
+		cal := &mockCalendar{
+			fyllaEvents: []calendar.Event{
+				{
+					ID:    "evt-1",
+					Title: "[Fylla] T-1: Task 1",
+					Start: time.Date(2025, 1, 20, 9, 15, 0, 0, time.UTC),
+					End:   time.Date(2025, 1, 20, 10, 15, 0, 0, time.UTC),
+				},
+			},
+		}
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
+				{Key: "T-1", Summary: "Task 1", Priority: 1, RemainingEstimate: time.Hour, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+			},
+		}
+
+		result, err := RunSync(context.Background(), SyncParams{
+			Cal:   cal,
+			Tasks: jr,
+			Cfg:   testConfig(),
+			Query: "project = TEST",
+			Now:   now,
+			Start: start,
+			End:   end,
+		})
+		if err != nil {
+			t.Fatalf("RunSync: %v", err)
+		}
+
+		if result.Created != 0 {
+			t.Errorf("created = %d, want 0", result.Created)
+		}
+		if result.Updated != 0 {
+			t.Errorf("updated = %d, want 0", result.Updated)
+		}
+		if result.Deleted != 0 {
+			t.Errorf("deleted = %d, want 0", result.Deleted)
+		}
+		if result.Unchanged != 1 {
+			t.Errorf("unchanged = %d, want 1", result.Unchanged)
+		}
+		if len(cal.created) != 0 {
+			t.Errorf("expected no create calls, got %d", len(cal.created))
+		}
+		if len(cal.updated) != 0 {
+			t.Errorf("expected no update calls, got %d", len(cal.updated))
+		}
+		if len(cal.deletedIDs) != 0 {
+			t.Errorf("expected no delete calls, got %d", len(cal.deletedIDs))
+		}
+	})
+
+	t.Run("creates new events for new tasks", func(t *testing.T) {
+		cal := &mockCalendar{
+			fyllaEvents: []calendar.Event{}, // no existing events
+		}
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
+				{Key: "T-1", Summary: "Task 1", Priority: 1, RemainingEstimate: time.Hour, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+				{Key: "T-2", Summary: "Task 2", Priority: 2, RemainingEstimate: 30 * time.Minute, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+			},
+		}
+
+		result, err := RunSync(context.Background(), SyncParams{
+			Cal:   cal,
+			Tasks: jr,
+			Cfg:   testConfig(),
+			Query: "project = TEST",
+			Now:   now,
+			Start: start,
+			End:   end,
+		})
+		if err != nil {
+			t.Fatalf("RunSync: %v", err)
+		}
+
+		if result.Created != len(result.Allocations) {
+			t.Errorf("created = %d, want %d", result.Created, len(result.Allocations))
+		}
+		if len(cal.created) != len(result.Allocations) {
+			t.Errorf("create calls = %d, want %d", len(cal.created), len(result.Allocations))
+		}
+	})
+
+	t.Run("deletes removed events", func(t *testing.T) {
+		cal := &mockCalendar{
+			fyllaEvents: []calendar.Event{
+				{
+					ID:    "evt-old",
+					Title: "[Fylla] OLD-1: Old task",
+					Start: time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
+					End:   time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
+				},
+			},
+		}
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
+				// Different task — OLD-1 is no longer desired
+				{Key: "NEW-1", Summary: "New task", Priority: 1, RemainingEstimate: time.Hour, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+			},
+		}
+
+		result, err := RunSync(context.Background(), SyncParams{
+			Cal:   cal,
+			Tasks: jr,
+			Cfg:   testConfig(),
+			Query: "project = TEST",
+			Now:   now,
+			Start: start,
+			End:   end,
+		})
+		if err != nil {
+			t.Fatalf("RunSync: %v", err)
+		}
+
+		if result.Deleted != 1 {
+			t.Errorf("deleted = %d, want 1", result.Deleted)
+		}
+		if len(cal.deletedIDs) != 1 || cal.deletedIDs[0] != "evt-old" {
+			t.Errorf("deleted IDs = %v, want [evt-old]", cal.deletedIDs)
+		}
+		if result.Created < 1 {
+			t.Errorf("created = %d, want >= 1 (for NEW-1)", result.Created)
+		}
+	})
+
+	t.Run("updates events when times change", func(t *testing.T) {
+		// Existing event at 09:00-10:00 but a meeting blocks that slot,
+		// so task gets rescheduled elsewhere
+		meeting := calendar.Event{
+			Title: "Meeting",
+			Start: time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
+			End:   time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
+		}
+		cal := &mockCalendar{
+			events: []calendar.Event{meeting},
+			fyllaEvents: []calendar.Event{
+				{
+					ID:    "evt-1",
+					Title: "[Fylla] T-1: Task 1",
+					Start: time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
+					End:   time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
+				},
+			},
+		}
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
+				{Key: "T-1", Summary: "Task 1", Priority: 1, RemainingEstimate: time.Hour, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+			},
+		}
+
+		result, err := RunSync(context.Background(), SyncParams{
+			Cal:   cal,
+			Tasks: jr,
+			Cfg:   testConfig(),
+			Query: "project = TEST",
+			Now:   now,
+			Start: start,
+			End:   end,
+		})
+		if err != nil {
+			t.Fatalf("RunSync: %v", err)
+		}
+
+		if result.Updated != 1 {
+			t.Errorf("updated = %d, want 1", result.Updated)
+		}
+		if len(cal.updated) != 1 {
+			t.Fatalf("update calls = %d, want 1", len(cal.updated))
+		}
+		if cal.updated[0].eventID != "evt-1" {
+			t.Errorf("updated event ID = %q, want evt-1", cal.updated[0].eventID)
+		}
+	})
+
+	t.Run("split task reconciliation", func(t *testing.T) {
+		// Task with 2 existing events, only 1 desired
+		cal := &mockCalendar{
+			fyllaEvents: []calendar.Event{
+				{
+					ID:    "evt-1a",
+					Title: "[Fylla] T-1: Task 1",
+					Start: time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
+					End:   time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
+				},
+				{
+					ID:    "evt-1b",
+					Title: "[Fylla] T-1: Task 1",
+					Start: time.Date(2025, 1, 20, 11, 0, 0, 0, time.UTC),
+					End:   time.Date(2025, 1, 20, 12, 0, 0, 0, time.UTC),
+				},
+			},
+		}
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
+				// Small task — will only need 1 slot, not 2
+				{Key: "T-1", Summary: "Task 1", Priority: 1, RemainingEstimate: 30 * time.Minute, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+			},
+		}
+
+		result, err := RunSync(context.Background(), SyncParams{
+			Cal:   cal,
+			Tasks: jr,
+			Cfg:   testConfig(),
+			Query: "project = TEST",
+			Now:   now,
+			Start: start,
+			End:   end,
+		})
+		if err != nil {
+			t.Fatalf("RunSync: %v", err)
+		}
+
+		// Should have 1 allocation, 1 updated or unchanged for the first event,
+		// and 1 deleted for the surplus second event
+		if len(result.Allocations) != 1 {
+			t.Fatalf("allocations = %d, want 1", len(result.Allocations))
+		}
+		if result.Deleted != 1 {
+			t.Errorf("deleted = %d, want 1 (surplus split event)", result.Deleted)
+		}
+		total := result.Created + result.Updated + result.Unchanged
+		if total != 1 {
+			t.Errorf("created+updated+unchanged = %d, want 1", total)
+		}
+	})
+
+	t.Run("force mode does full recreation", func(t *testing.T) {
+		cal := &mockCalendar{
+			fyllaEvents: []calendar.Event{
+				{
+					ID:    "evt-1",
+					Title: "[Fylla] T-1: Task 1",
+					Start: time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
+					End:   time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
+				},
+			},
+		}
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
+				{Key: "T-1", Summary: "Task 1", Priority: 1, RemainingEstimate: time.Hour, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+			},
+		}
+
+		result, err := RunSync(context.Background(), SyncParams{
+			Cal:   cal,
+			Tasks: jr,
+			Cfg:   testConfig(),
+			Query: "project = TEST",
+			Now:   now,
+			Start: start,
+			End:   end,
+			Force: true,
+		})
+		if err != nil {
+			t.Fatalf("RunSync: %v", err)
+		}
+
+		// Force mode uses DeleteFyllaEvents (bulk delete), not individual deletes
+		if len(cal.deletedRanges) != 1 {
+			t.Errorf("expected 1 bulk delete, got %d", len(cal.deletedRanges))
+		}
+		if result.Created != len(result.Allocations) {
+			t.Errorf("created = %d, want %d", result.Created, len(result.Allocations))
+		}
+		// Incremental counts should be zero in force mode
+		if result.Updated != 0 || result.Deleted != 0 || result.Unchanged != 0 {
+			t.Errorf("expected no incremental changes in force mode, got updated=%d deleted=%d unchanged=%d",
+				result.Updated, result.Deleted, result.Unchanged)
+		}
+	})
+
+	t.Run("diff summary appears in output", func(t *testing.T) {
+		allocs := []scheduler.Allocation{
+			{Task: task.Task{Key: "T-1", Summary: "Task"}, Start: now, End: now.Add(time.Hour)},
+		}
+		result := &SyncResult{
+			Allocations: allocs,
+			Created:     1,
+			Updated:     2,
+			Deleted:     3,
+			Unchanged:   4,
+		}
+		var buf bytes.Buffer
+		PrintSyncResult(&buf, result, false)
+		out := buf.String()
+		if !strings.Contains(out, "1 created") {
+			t.Errorf("output missing created count, got:\n%s", out)
+		}
+		if !strings.Contains(out, "2 updated") {
+			t.Errorf("output missing updated count, got:\n%s", out)
+		}
+		if !strings.Contains(out, "3 deleted") {
+			t.Errorf("output missing deleted count, got:\n%s", out)
+		}
+		if !strings.Contains(out, "4 unchanged") {
+			t.Errorf("output missing unchanged count, got:\n%s", out)
+		}
+	})
+
+	t.Run("diff summary not shown in dry-run", func(t *testing.T) {
+		allocs := []scheduler.Allocation{
+			{Task: task.Task{Key: "T-1", Summary: "Task"}, Start: now, End: now.Add(time.Hour)},
+		}
+		result := &SyncResult{Allocations: allocs}
+		var buf bytes.Buffer
+		PrintSyncResult(&buf, result, true)
+		out := buf.String()
+		if strings.Contains(out, "Changes:") {
+			t.Errorf("dry-run should not show changes summary, got:\n%s", out)
 		}
 	})
 }

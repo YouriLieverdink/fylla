@@ -142,6 +142,95 @@ func hasFyllaPrefix(title string) bool {
 		len(title) >= len(latePrefix+fyllaPrefix) && title[:len(latePrefix+fyllaPrefix)] == latePrefix+fyllaPrefix
 }
 
+// BuildTitle constructs the calendar event title for a Fylla task.
+func BuildTitle(taskKey, summary string, atRisk bool) string {
+	if atRisk {
+		return fmt.Sprintf("%s%s%s: %s", latePrefix, fyllaPrefix, taskKey, summary)
+	}
+	return fmt.Sprintf("%s%s: %s", fyllaPrefix, taskKey, summary)
+}
+
+// TaskKeyFromTitle extracts the task key from a Fylla event title.
+// Returns "" if the title does not have a Fylla prefix.
+func TaskKeyFromTitle(title string) string {
+	rest := ""
+	if len(title) >= len(latePrefix+fyllaPrefix) && title[:len(latePrefix+fyllaPrefix)] == latePrefix+fyllaPrefix {
+		rest = title[len(latePrefix+fyllaPrefix):]
+	} else if len(title) >= len(fyllaPrefix) && title[:len(fyllaPrefix)] == fyllaPrefix {
+		rest = title[len(fyllaPrefix):]
+	} else {
+		return ""
+	}
+	// rest is "KEY: Summary" — extract KEY
+	for i := 0; i < len(rest); i++ {
+		if rest[i] == ':' {
+			return rest[:i]
+		}
+	}
+	return rest
+}
+
+// FetchFyllaEvents retrieves only Fylla-prefixed events from the fylla calendar.
+func (c *GoogleClient) FetchFyllaEvents(ctx context.Context, start, end time.Time) ([]Event, error) {
+	var events []Event
+	pageToken := ""
+	for {
+		call := c.Service.Events.List(c.FyllaCalendar).
+			Context(ctx).
+			TimeMin(start.Format(time.RFC3339)).
+			TimeMax(end.Format(time.RFC3339)).
+			SingleEvents(true).
+			OrderBy("startTime")
+		if pageToken != "" {
+			call = call.PageToken(pageToken)
+		}
+		result, err := call.Do()
+		if err != nil {
+			return nil, fmt.Errorf("list fylla events: %w", err)
+		}
+		for _, item := range result.Items {
+			if hasFyllaPrefix(item.Summary) {
+				events = append(events, parseGoogleEvent(item))
+			}
+		}
+		pageToken = result.NextPageToken
+		if pageToken == "" {
+			break
+		}
+	}
+	return events, nil
+}
+
+// UpdateEvent updates an existing event on the fylla calendar.
+func (c *GoogleClient) UpdateEvent(ctx context.Context, eventID string, input CreateEventInput) error {
+	title := BuildTitle(input.TaskKey, input.Summary, input.AtRisk)
+	description := fmt.Sprintf("Jira: %s/browse/%s", c.JiraBaseURL, input.TaskKey)
+
+	event := &googlecalendar.Event{
+		Summary:     title,
+		Description: description,
+		Start: &googlecalendar.EventDateTime{
+			DateTime: input.Start.Format(time.RFC3339),
+		},
+		End: &googlecalendar.EventDateTime{
+			DateTime: input.End.Format(time.RFC3339),
+		},
+	}
+
+	if _, err := c.Service.Events.Update(c.FyllaCalendar, eventID, event).Context(ctx).Do(); err != nil {
+		return fmt.Errorf("update event: %w", err)
+	}
+	return nil
+}
+
+// DeleteEvent deletes a single event from the fylla calendar.
+func (c *GoogleClient) DeleteEvent(ctx context.Context, eventID string) error {
+	if err := c.Service.Events.Delete(c.FyllaCalendar, eventID).Context(ctx).Do(); err != nil {
+		return fmt.Errorf("delete event %s: %w", eventID, err)
+	}
+	return nil
+}
+
 // CreateEventInput holds the fields needed to create a calendar event.
 type CreateEventInput struct {
 	TaskKey  string
@@ -153,11 +242,7 @@ type CreateEventInput struct {
 
 // CreateEvent creates a new event on the fylla calendar.
 func (c *GoogleClient) CreateEvent(ctx context.Context, input CreateEventInput) error {
-	title := fmt.Sprintf("%s%s: %s", fyllaPrefix, input.TaskKey, input.Summary)
-	if input.AtRisk {
-		title = fmt.Sprintf("%s%s%s: %s", latePrefix, fyllaPrefix, input.TaskKey, input.Summary)
-	}
-
+	title := BuildTitle(input.TaskKey, input.Summary, input.AtRisk)
 	description := fmt.Sprintf("Jira: %s/browse/%s", c.JiraBaseURL, input.TaskKey)
 
 	event := &googlecalendar.Event{
