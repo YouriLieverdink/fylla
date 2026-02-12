@@ -340,6 +340,48 @@ func TestFetchTasks_Filter(t *testing.T) {
 	}
 }
 
+func TestCompleteTask(t *testing.T) {
+	t.Run("closes task via POST", func(t *testing.T) {
+		var called bool
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/tasks/1001/close" && r.Method == http.MethodPost {
+				called = true
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			http.NotFound(w, r)
+		}))
+		defer srv.Close()
+
+		client := NewClient("test-token")
+		client.BaseURL = srv.URL
+
+		err := client.CompleteTask(context.Background(), "1001")
+		if err != nil {
+			t.Fatalf("CompleteTask: %v", err)
+		}
+		if !called {
+			t.Error("expected POST to /tasks/1001/close")
+		}
+	})
+
+	t.Run("returns error on failure", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"error":"task not found"}`))
+		}))
+		defer srv.Close()
+
+		client := NewClient("test-token")
+		client.BaseURL = srv.URL
+
+		err := client.CompleteTask(context.Background(), "9999")
+		if err == nil {
+			t.Fatal("expected error for 404 response")
+		}
+	})
+}
+
 func TestAPIPriorityToLevel(t *testing.T) {
 	tests := []struct {
 		api  int

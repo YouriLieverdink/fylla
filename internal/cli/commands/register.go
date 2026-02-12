@@ -14,4 +14,5 @@ func Register(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(newLogCmd())
 	rootCmd.AddCommand(newEstimateCmd())
 	rootCmd.AddCommand(newAddCmd())
+	rootCmd.AddCommand(newDoneCmd())
 }

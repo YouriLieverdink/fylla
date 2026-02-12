@@ -346,6 +346,21 @@ func (c *Client) PostWorklog(ctx context.Context, taskID string, timeSpent time.
 	return nil
 }
 
+// CompleteTask closes a Todoist task by posting to the close endpoint.
+func (c *Client) CompleteTask(ctx context.Context, taskID string) error {
+	resp, err := c.do(ctx, http.MethodPost, "/tasks/"+taskID+"/close", nil)
+	if err != nil {
+		return fmt.Errorf("close task: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("todoist close task: status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
 func (c *Client) fetchTask(ctx context.Context, taskID string) (todoistTask, error) {
 	resp, err := c.do(ctx, http.MethodGet, "/tasks/"+taskID, nil)
 	if err != nil {

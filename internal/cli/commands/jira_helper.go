@@ -12,6 +12,7 @@ import (
 type TaskSource interface {
 	TaskFetcher
 	TaskCreator
+	TaskCompleter
 	WorklogPoster
 	EstimateGetter
 	EstimateUpdater

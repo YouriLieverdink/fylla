@@ -348,6 +348,69 @@ func (c *Client) GetEstimate(ctx context.Context, issueKey string) (time.Duratio
 	return time.Duration(result.Fields.TimeTracking.RemainingEstimateSeconds) * time.Second, nil
 }
 
+// transitionsResponse represents the Jira transitions API response.
+type transitionsResponse struct {
+	Transitions []transition `json:"transitions"`
+}
+
+type transition struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// CompleteTask transitions a Jira issue to "Done" status.
+// It fetches available transitions, finds one matching "Done" (case-insensitive),
+// and posts the transition. If no matching transition is found, it returns an
+// error listing the available transition names.
+func (c *Client) CompleteTask(ctx context.Context, issueKey string) error {
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/rest/api/3/issue/%s/transitions", issueKey), nil)
+	if err != nil {
+		return fmt.Errorf("get transitions: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("jira transitions: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result transitionsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decode transitions: %w", err)
+	}
+
+	var transitionID string
+	var names []string
+	for _, t := range result.Transitions {
+		names = append(names, t.Name)
+		if strings.EqualFold(t.Name, "Done") {
+			transitionID = t.ID
+			break
+		}
+	}
+
+	if transitionID == "" {
+		return fmt.Errorf("no 'Done' transition available for %s (available: %s)", issueKey, strings.Join(names, ", "))
+	}
+
+	payload := map[string]interface{}{
+		"transition": map[string]string{"id": transitionID},
+	}
+
+	postResp, err := c.do(ctx, http.MethodPost, fmt.Sprintf("/rest/api/3/issue/%s/transitions", issueKey), payload)
+	if err != nil {
+		return fmt.Errorf("post transition: %w", err)
+	}
+	defer postResp.Body.Close()
+
+	if postResp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(postResp.Body)
+		return fmt.Errorf("jira transition: status %d: %s", postResp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
 // formatDuration converts a time.Duration to Jira duration string (e.g. "4h", "2h 30m").
 func formatDuration(d time.Duration) string {
 	h := int(d.Hours())
