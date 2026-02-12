@@ -55,6 +55,9 @@ func newLogCmd() *cobra.Command {
 		Use:   "log TASK-KEY DURATION DESCRIPTION",
 		Short: "Create manual worklog",
 		Args:  cobra.ExactArgs(3),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			source, _, err := loadTaskSource()
 			if err != nil {

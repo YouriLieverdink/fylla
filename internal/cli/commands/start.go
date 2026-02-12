@@ -31,6 +31,9 @@ func newStartCmd() *cobra.Command {
 		Use:   "start TASK-KEY",
 		Short: "Start timer for a task",
 		Args:  cobra.ExactArgs(1),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path, err := timer.DefaultPath()
 			if err != nil {

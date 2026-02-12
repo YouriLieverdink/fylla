@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -136,6 +137,43 @@ func setNode(node *yaml.Node, parts []string, value string) error {
 	}
 
 	return fmt.Errorf("key %q not found", parts[0])
+}
+
+// KeyPaths returns the dotted key paths that can be used with Set/SetIn.
+// It walks the default config YAML to discover all settable leaf paths.
+func KeyPaths() []string {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(defaultConfigYAML, &doc); err != nil {
+		return nil
+	}
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
+		return nil
+	}
+	var paths []string
+	collectKeyPaths(doc.Content[0], "", &paths)
+	sort.Strings(paths)
+	return paths
+}
+
+func collectKeyPaths(node *yaml.Node, prefix string, paths *[]string) {
+	if node.Kind != yaml.MappingNode {
+		return
+	}
+	for i := 0; i < len(node.Content)-1; i += 2 {
+		key := node.Content[i].Value
+		val := node.Content[i+1]
+
+		path := key
+		if prefix != "" {
+			path = prefix + "." + key
+		}
+
+		if val.Kind == yaml.MappingNode {
+			collectKeyPaths(val, path, paths)
+		} else {
+			*paths = append(*paths, path)
+		}
+	}
 }
 
 func applyValue(node *yaml.Node, value string) {

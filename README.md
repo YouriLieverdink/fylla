@@ -149,6 +149,24 @@ typeScores:
   Story: 50
 ```
 
+## Shell Completion
+
+Fylla supports shell completions for bash, zsh, fish, and powershell:
+
+```bash
+# Bash
+fylla completion bash > /etc/bash_completion.d/fylla
+
+# Zsh
+fylla completion zsh > "${fpath[1]}/_fylla"
+
+# Fish
+fylla completion fish > ~/.config/fish/completions/fylla.fish
+
+# PowerShell
+fylla completion powershell > fylla.ps1
+```
+
 ## Usage
 
 ```bash

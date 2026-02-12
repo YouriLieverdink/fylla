@@ -42,6 +42,9 @@ func newDoneCmd() *cobra.Command {
 		Use:   "done TASK-KEY",
 		Short: "Mark a task as done",
 		Args:  cobra.ExactArgs(1),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			source, _, err := loadTaskSource()
 			if err != nil {

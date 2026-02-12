@@ -130,6 +130,12 @@ func newConfigSetCmd() *cobra.Command {
 		Use:   "set KEY VALUE",
 		Short: "Set a configuration value",
 		Args:  cobra.ExactArgs(2),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) == 0 {
+				return config.KeyPaths(), cobra.ShellCompDirectiveNoFileComp
+			}
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_, err := config.Set(args[0], args[1])
 			if err != nil {

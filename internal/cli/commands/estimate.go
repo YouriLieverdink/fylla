@@ -93,6 +93,9 @@ func newEstimateCmd() *cobra.Command {
 		Use:   "estimate TASK-KEY DURATION",
 		Short: "Set or adjust remaining estimate on a task",
 		Args:  cobra.ExactArgs(2),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			source, _, err := loadTaskSource()
 			if err != nil {

@@ -471,6 +471,59 @@ func TestValidate(t *testing.T) {
 	})
 }
 
+func TestKeyPaths(t *testing.T) {
+	paths := KeyPaths()
+	if len(paths) == 0 {
+		t.Fatal("KeyPaths returned empty slice")
+	}
+
+	// Verify known leaf paths are present
+	expected := []string{
+		"source",
+		"jira.url",
+		"jira.email",
+		"jira.defaultJql",
+		"todoist.defaultFilter",
+		"calendar.sourceCalendar",
+		"calendar.fyllaCalendar",
+		"scheduling.windowDays",
+		"scheduling.minTaskDurationMinutes",
+		"scheduling.bufferMinutes",
+		"businessHours.start",
+		"businessHours.end",
+		"businessHours.workDays",
+		"weights.priority",
+		"weights.dueDate",
+		"weights.estimate",
+		"weights.issueType",
+		"weights.age",
+	}
+	pathSet := make(map[string]bool, len(paths))
+	for _, p := range paths {
+		pathSet[p] = true
+	}
+	for _, e := range expected {
+		if !pathSet[e] {
+			t.Errorf("expected key path %q not found in %v", e, paths)
+		}
+	}
+
+	// Verify paths are sorted
+	for i := 1; i < len(paths); i++ {
+		if paths[i] < paths[i-1] {
+			t.Errorf("paths not sorted: %q before %q", paths[i-1], paths[i])
+		}
+	}
+
+	// Verify no bare section names (mapping nodes should not appear as paths)
+	for _, p := range paths {
+		switch p {
+		case "jira", "todoist", "calendar", "scheduling", "businessHours", "weights":
+			t.Errorf("section name %q should not be a leaf path", p)
+		}
+	}
+}
+
 // writeTestConfig writes the default config YAML to a temp file and returns its path.
 func writeTestConfig(t *testing.T) string {
 	t.Helper()
