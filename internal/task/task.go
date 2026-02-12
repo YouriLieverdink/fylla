@@ -22,5 +22,6 @@ type CreateInput struct {
 	Summary     string
 	Description string
 	Estimate    time.Duration
+	DueDate     *time.Time
 	Priority    string // Priority name (Highest, High, Medium, Low, Lowest)
 }

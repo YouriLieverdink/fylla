@@ -281,6 +281,10 @@ func (c *Client) CreateTask(ctx context.Context, input task.CreateInput) (string
 		}
 	}
 
+	if input.DueDate != nil {
+		payload["due_date"] = input.DueDate.Format("2006-01-02")
+	}
+
 	if input.IssueType != "" {
 		payload["labels"] = []string{input.IssueType}
 	}
@@ -391,6 +395,46 @@ func (c *Client) GetEstimate(ctx context.Context, taskID string) (time.Duration,
 		return est, nil
 	}
 	return 0, nil
+}
+
+// GetDueDate fetches the current due date for a Todoist task.
+func (c *Client) GetDueDate(ctx context.Context, taskID string) (*time.Time, error) {
+	t, err := c.fetchTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+
+	if t.Due != nil && t.Due.Date != "" {
+		d, err := time.Parse("2006-01-02", t.Due.Date)
+		if err != nil {
+			return nil, fmt.Errorf("parse due date: %w", err)
+		}
+		return &d, nil
+	}
+	return nil, nil
+}
+
+// UpdateDueDate sets the due date on a Todoist task.
+func (c *Client) UpdateDueDate(ctx context.Context, taskID string, dueDate time.Time) error {
+	payload := map[string]interface{}{
+		"due_date": dueDate.Format("2006-01-02"),
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal update: %w", err)
+	}
+
+	resp, err := c.do(ctx, http.MethodPost, "/tasks/"+taskID, strings.NewReader(string(data)))
+	if err != nil {
+		return fmt.Errorf("update due date: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("todoist update due date: status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
 }
 
 // UpdateEstimate updates the estimate in the task title using bracket notation.

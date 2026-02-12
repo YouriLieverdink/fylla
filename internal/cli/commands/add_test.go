@@ -72,7 +72,7 @@ func TestCLI017_add_interactive_creation(t *testing.T) {
 
 	t.Run("full mode requires all fields for prompting", func(t *testing.T) {
 		fields := RequiredFields(AddParams{})
-		expected := []string{"project", "issueType", "summary", "description", "estimate", "priority"}
+		expected := []string{"project", "issueType", "summary", "description", "estimate", "dueDate", "priority"}
 		if len(fields) != len(expected) {
 			t.Fatalf("fields = %v, want %v", fields, expected)
 		}
@@ -132,7 +132,7 @@ func TestCLI017_add_interactive_creation(t *testing.T) {
 func TestCLI018_add_quick_mode(t *testing.T) {
 	t.Run("quick mode only prompts essential fields", func(t *testing.T) {
 		fields := RequiredFields(AddParams{Quick: true})
-		expected := []string{"project", "summary", "estimate"}
+		expected := []string{"project", "summary", "estimate", "dueDate"}
 		if len(fields) != len(expected) {
 			t.Fatalf("fields = %v, want %v", fields, expected)
 		}
@@ -231,7 +231,7 @@ func TestCLI019_add_project_preselect(t *testing.T) {
 
 	t.Run("project flag with quick mode", func(t *testing.T) {
 		fields := RequiredFields(AddParams{Project: "PROJ", Quick: true})
-		expected := []string{"summary", "estimate"}
+		expected := []string{"summary", "estimate", "dueDate"}
 		if len(fields) != len(expected) {
 			t.Fatalf("fields = %v, want %v", fields, expected)
 		}

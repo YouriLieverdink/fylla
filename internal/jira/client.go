@@ -293,6 +293,10 @@ func (c *Client) CreateTask(ctx context.Context, input task.CreateInput) (string
 		}
 	}
 
+	if input.DueDate != nil {
+		fields["duedate"] = input.DueDate.Format("2006-01-02")
+	}
+
 	if input.Priority != "" {
 		fields["priority"] = map[string]string{"name": input.Priority}
 	}
@@ -346,6 +350,62 @@ func (c *Client) GetEstimate(ctx context.Context, issueKey string) (time.Duratio
 		return 0, nil
 	}
 	return time.Duration(result.Fields.TimeTracking.RemainingEstimateSeconds) * time.Second, nil
+}
+
+// UpdateDueDate sets the due date for the specified Jira issue.
+func (c *Client) UpdateDueDate(ctx context.Context, issueKey string, dueDate time.Time) error {
+	payload := map[string]interface{}{
+		"fields": map[string]interface{}{
+			"duedate": dueDate.Format("2006-01-02"),
+		},
+	}
+
+	resp, err := c.do(ctx, http.MethodPut, fmt.Sprintf("/rest/api/3/issue/%s", issueKey), payload)
+	if err != nil {
+		return fmt.Errorf("update due date: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("jira update due date: status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+// getDueDateResponse represents a single Jira issue response for the duedate field.
+type getDueDateResponse struct {
+	Fields struct {
+		DueDate string `json:"duedate"`
+	} `json:"fields"`
+}
+
+// GetDueDate fetches the due date for the specified Jira issue.
+func (c *Client) GetDueDate(ctx context.Context, issueKey string) (*time.Time, error) {
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/rest/api/3/issue/%s?fields=duedate", issueKey), nil)
+	if err != nil {
+		return nil, fmt.Errorf("get due date: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("jira get due date: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result getDueDateResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode issue response: %w", err)
+	}
+
+	if result.Fields.DueDate == "" {
+		return nil, nil
+	}
+	d, err := time.Parse("2006-01-02", result.Fields.DueDate)
+	if err != nil {
+		return nil, fmt.Errorf("parse due date: %w", err)
+	}
+	return &d, nil
 }
 
 // transitionsResponse represents the Jira transitions API response.

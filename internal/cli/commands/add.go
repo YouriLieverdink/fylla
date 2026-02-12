@@ -27,6 +27,7 @@ type AddParams struct {
 	Summary     string
 	Description string
 	Estimate    string // raw duration string
+	DueDate     string // raw date string, e.g. "2025-02-15"
 	Priority    string
 	Quick       bool
 	Creator     TaskCreator
@@ -67,6 +68,14 @@ func BuildCreateInput(p AddParams) (task.CreateInput, error) {
 		input.Estimate = dur
 	}
 
+	if p.DueDate != "" {
+		d, err := ParseDate(p.DueDate)
+		if err != nil {
+			return task.CreateInput{}, fmt.Errorf("parse due date: %w", err)
+		}
+		input.DueDate = &d
+	}
+
 	return input, nil
 }
 
@@ -87,6 +96,7 @@ func RequiredFields(p AddParams) []string {
 		fields = append(fields, "description")
 	}
 	fields = append(fields, "estimate")
+	fields = append(fields, "dueDate")
 	if !p.Quick {
 		if p.Priority == "" {
 			fields = append(fields, "priority")
@@ -182,6 +192,11 @@ func newAddCmd() *cobra.Command {
 					prompt := &survey.Input{Message: "Estimate (e.g. 2h, 30m, 1h30m):"}
 					if err := survey.AskOne(prompt, &p.Estimate); err != nil {
 						return fmt.Errorf("prompt estimate: %w", err)
+					}
+				case "dueDate":
+					prompt := &survey.Input{Message: "Due date (YYYY-MM-DD):"}
+					if err := survey.AskOne(prompt, &p.DueDate); err != nil {
+						return fmt.Errorf("prompt due date: %w", err)
 					}
 				case "priority":
 					prompt := &survey.Select{

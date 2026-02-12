@@ -16,6 +16,8 @@ type TaskSource interface {
 	WorklogPoster
 	EstimateGetter
 	EstimateUpdater
+	DueDateGetter
+	DueDateUpdater
 }
 
 // Compile-time checks that both clients satisfy TaskSource.

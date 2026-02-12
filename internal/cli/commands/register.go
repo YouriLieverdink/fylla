@@ -13,6 +13,7 @@ func Register(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(newStatusCmd())
 	rootCmd.AddCommand(newLogCmd())
 	rootCmd.AddCommand(newEstimateCmd())
+	rootCmd.AddCommand(newDueDateCmd())
 	rootCmd.AddCommand(newAddCmd())
 	rootCmd.AddCommand(newDoneCmd())
 	rootCmd.AddCommand(newNextCmd())
