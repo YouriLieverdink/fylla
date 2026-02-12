@@ -134,7 +134,7 @@ func newAddCmd() *cobra.Command {
 			p := AddParams{
 				Project: project,
 				Quick:   quick,
-				Creator: source.(TaskCreator),
+				Creator: source,
 			}
 			if pl, ok := source.(ProjectLister); ok {
 				p.Projects = pl

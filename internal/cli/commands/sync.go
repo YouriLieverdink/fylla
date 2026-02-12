@@ -296,7 +296,7 @@ func newSyncCmd() *cobra.Command {
 
 			result, err := RunSync(cmd.Context(), SyncParams{
 				Cal:    cal,
-				Tasks:  source.(TaskFetcher),
+				Tasks:  source,
 				Cfg:    cfg,
 				Query:  query,
 				Now:    now,

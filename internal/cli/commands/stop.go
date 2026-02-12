@@ -86,7 +86,7 @@ func newStopCmd() *cobra.Command {
 				RoundMinutes: 5,
 				Now:          time.Now(),
 				Description:  description,
-				Jira:         source.(WorklogPoster),
+				Jira:         source,
 			})
 			if err != nil {
 				return err

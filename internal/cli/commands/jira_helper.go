@@ -8,10 +8,23 @@ import (
 	"github.com/iruoy/fylla/internal/todoist"
 )
 
+// TaskSource combines all task-related interfaces that every source must implement.
+type TaskSource interface {
+	TaskFetcher
+	TaskCreator
+	WorklogPoster
+	EstimateGetter
+	EstimateUpdater
+}
+
+// Compile-time checks that both clients satisfy TaskSource.
+var (
+	_ TaskSource = (*jira.Client)(nil)
+	_ TaskSource = (*todoist.Client)(nil)
+)
+
 // loadTaskSource returns the appropriate task source client based on config.
-// The returned interface implements TaskFetcher, TaskCreator, WorklogPoster,
-// EstimateGetter, and EstimateUpdater.
-func loadTaskSource() (interface{}, *config.Config, error) {
+func loadTaskSource() (TaskSource, *config.Config, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, nil, fmt.Errorf("load config: %w", err)

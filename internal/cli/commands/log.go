@@ -72,7 +72,7 @@ func newLogCmd() *cobra.Command {
 				TaskKey:     taskKey,
 				Duration:    duration,
 				Description: description,
-				Jira:        source.(WorklogPoster),
+				Jira:        source,
 			}); err != nil {
 				return err
 			}

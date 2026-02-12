@@ -103,7 +103,7 @@ func newListCmd() *cobra.Command {
 			}
 
 			result, err := RunList(cmd.Context(), ListParams{
-				Tasks: source.(TaskFetcher),
+				Tasks: source,
 				Cfg:   cfg,
 				Query: query,
 				Now:   time.Now(),

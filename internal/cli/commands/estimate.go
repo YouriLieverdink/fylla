@@ -102,8 +102,8 @@ func newEstimateCmd() *cobra.Command {
 			result, err := RunEstimate(cmd.Context(), EstimateParams{
 				TaskKey:  args[0],
 				Duration: args[1],
-				Jira:     source.(EstimateUpdater),
-				Getter:   source.(EstimateGetter),
+				Jira:     source,
+				Getter:   source,
 			})
 			if err != nil {
 				return err
