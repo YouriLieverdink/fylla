@@ -1318,3 +1318,106 @@ func TestSYNC009_report_unscheduled_tasks(t *testing.T) {
 		}
 	})
 }
+
+func TestSYNC010_progress_output(t *testing.T) {
+	now := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
+	start := now
+	end := now.AddDate(0, 0, 5)
+
+	t.Run("progress messages are written during sync", func(t *testing.T) {
+		cal := &mockCalendar{}
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
+				{Key: "T-1", Summary: "Task 1", Priority: 1, RemainingEstimate: time.Hour, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+				{Key: "T-2", Summary: "Task 2", Priority: 2, RemainingEstimate: 30 * time.Minute, Project: "TEST", IssueType: "Bug", Created: now.AddDate(0, 0, -2)},
+			},
+		}
+
+		var prog bytes.Buffer
+		_, err := RunSync(context.Background(), SyncParams{
+			Cal:      cal,
+			Tasks:    jr,
+			Cfg:      testConfig(),
+			Query:    "project = TEST",
+			Now:      now,
+			Start:    start,
+			End:      end,
+			Progress: &prog,
+		})
+		if err != nil {
+			t.Fatalf("RunSync: %v", err)
+		}
+
+		out := prog.String()
+		expected := []string{
+			"Clearing previous schedule...",
+			"Fetching tasks...",
+			"Sorting 2 tasks...",
+			"Reading calendar...",
+			"Finding free slots...",
+			"Scheduling 2 tasks into available slots...",
+			"Creating",
+			"calendar events...",
+			"Done.",
+		}
+		for _, msg := range expected {
+			if !strings.Contains(out, msg) {
+				t.Errorf("progress output missing %q, got:\n%s", msg, out)
+			}
+		}
+	})
+
+	t.Run("dry-run skips clearing and creating messages", func(t *testing.T) {
+		cal := &mockCalendar{}
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
+				{Key: "T-1", Summary: "Task 1", Priority: 1, RemainingEstimate: time.Hour, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+			},
+		}
+
+		var prog bytes.Buffer
+		_, err := RunSync(context.Background(), SyncParams{
+			Cal:      cal,
+			Tasks:    jr,
+			Cfg:      testConfig(),
+			Query:    "project = TEST",
+			Now:      now,
+			Start:    start,
+			End:      end,
+			DryRun:   true,
+			Progress: &prog,
+		})
+		if err != nil {
+			t.Fatalf("RunSync: %v", err)
+		}
+
+		out := prog.String()
+		if strings.Contains(out, "Clearing previous schedule") {
+			t.Errorf("dry-run should not show clearing message, got:\n%s", out)
+		}
+		if strings.Contains(out, "Creating") {
+			t.Errorf("dry-run should not show creating message, got:\n%s", out)
+		}
+		if !strings.Contains(out, "Done (dry run).") {
+			t.Errorf("dry-run should show 'Done (dry run).', got:\n%s", out)
+		}
+	})
+
+	t.Run("nil progress writer does not panic", func(t *testing.T) {
+		cal := &mockCalendar{}
+		jr := &mockTaskFetcher{}
+
+		_, err := RunSync(context.Background(), SyncParams{
+			Cal:   cal,
+			Tasks: jr,
+			Cfg:   testConfig(),
+			Query: "project = TEST",
+			Now:   now,
+			Start: start,
+			End:   end,
+		})
+		if err != nil {
+			t.Fatalf("RunSync with nil Progress: %v", err)
+		}
+	})
+}

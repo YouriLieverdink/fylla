@@ -27,14 +27,15 @@ type TaskFetcher interface {
 
 // SyncParams holds all inputs for the sync process.
 type SyncParams struct {
-	Cal    CalendarClient
-	Tasks  TaskFetcher
-	Cfg    *config.Config
-	Query  string
-	Now    time.Time
-	Start  time.Time
-	End    time.Time
-	DryRun bool
+	Cal      CalendarClient
+	Tasks    TaskFetcher
+	Cfg      *config.Config
+	Query    string
+	Now      time.Time
+	Start    time.Time
+	End      time.Time
+	DryRun   bool
+	Progress io.Writer
 }
 
 // SyncResult holds the output of a sync operation.
@@ -148,6 +149,12 @@ func PrintSyncResult(w io.Writer, result *SyncResult, dryRun bool) {
 	}
 }
 
+func progress(w io.Writer, format string, args ...interface{}) {
+	if w != nil {
+		fmt.Fprintf(w, format+"\n", args...)
+	}
+}
+
 // RunSync executes the full sync process:
 //  1. Delete existing [Fylla] events from Google Calendar
 //  2. Fetch tasks using the configured source
@@ -160,27 +167,32 @@ func PrintSyncResult(w io.Writer, result *SyncResult, dryRun bool) {
 func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 	// Step 1: Delete existing [Fylla] events (skip on dry-run)
 	if !p.DryRun {
+		progress(p.Progress, "Clearing previous schedule...")
 		if err := p.Cal.DeleteFyllaEvents(ctx, p.Start, p.End); err != nil {
 			return nil, fmt.Errorf("delete fylla events: %w", err)
 		}
 	}
 
 	// Step 2: Fetch tasks
+	progress(p.Progress, "Fetching tasks...")
 	tasks, err := p.Tasks.FetchTasks(ctx, p.Query)
 	if err != nil {
 		return nil, fmt.Errorf("fetch tasks: %w", err)
 	}
 
 	// Step 3: Sort by composite score
+	progress(p.Progress, "Sorting %d tasks...", len(tasks))
 	sorted := scheduler.SortTasks(tasks, p.Cfg.Weights, p.Cfg.TypeScores, p.Now)
 
 	// Step 4: Fetch Google Calendar events
+	progress(p.Progress, "Reading calendar...")
 	events, err := p.Cal.FetchEvents(ctx, p.Start, p.End)
 	if err != nil {
 		return nil, fmt.Errorf("fetch calendar events: %w", err)
 	}
 
 	// Step 5: Find free slots per project
+	progress(p.Progress, "Finding free slots...")
 	slotsByProject := make(map[string][]calendar.Slot)
 
 	defaultSlots, err := calendar.FindFreeSlots(
@@ -209,6 +221,7 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 	}
 
 	// Step 6: Allocate tasks to slots
+	progress(p.Progress, "Scheduling %d tasks into available slots...", len(sorted))
 	allocations := scheduler.Allocate(sorted, slotsByProject, scheduler.AllocateConfig{
 		MinTaskDurationMinutes: p.Cfg.Scheduling.MinTaskDurationMinutes,
 	})
@@ -227,6 +240,7 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 
 	// Step 7: Create calendar events (skip on dry-run)
 	if !p.DryRun {
+		progress(p.Progress, "Creating %d calendar events...", len(allocations))
 		for _, alloc := range allocations {
 			if err := p.Cal.CreateEvent(ctx, calendar.CreateEventInput{
 				TaskKey: alloc.Task.Key,
@@ -248,6 +262,12 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 			atRisk = append(atRisk, alloc)
 			seen[alloc.Task.Key] = true
 		}
+	}
+
+	if p.DryRun {
+		progress(p.Progress, "Done (dry run).")
+	} else {
+		progress(p.Progress, "Done.")
 	}
 
 	return &SyncResult{
@@ -321,14 +341,15 @@ func newSyncCmd() *cobra.Command {
 			}
 
 			result, err := RunSync(cmd.Context(), SyncParams{
-				Cal:    cal,
-				Tasks:  source,
-				Cfg:    cfg,
-				Query:  query,
-				Now:    now,
-				Start:  start,
-				End:    end,
-				DryRun: dryRun,
+				Cal:      cal,
+				Tasks:    source,
+				Cfg:      cfg,
+				Query:    query,
+				Now:      now,
+				Start:    start,
+				End:      end,
+				DryRun:   dryRun,
+				Progress: cmd.ErrOrStderr(),
 			})
 			if err != nil {
 				return err
