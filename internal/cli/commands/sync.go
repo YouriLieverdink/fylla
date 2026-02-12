@@ -8,8 +8,8 @@ import (
 
 	"github.com/iruoy/fylla/internal/calendar"
 	"github.com/iruoy/fylla/internal/config"
-	"github.com/iruoy/fylla/internal/jira"
 	"github.com/iruoy/fylla/internal/scheduler"
+	"github.com/iruoy/fylla/internal/task"
 	"github.com/spf13/cobra"
 )
 
@@ -20,17 +20,17 @@ type CalendarClient interface {
 	CreateEvent(ctx context.Context, input calendar.CreateEventInput) error
 }
 
-// JiraFetcher abstracts Jira task fetching for testing.
-type JiraFetcher interface {
-	FetchTasks(ctx context.Context, jql string) ([]jira.Task, error)
+// TaskFetcher abstracts task fetching for testing.
+type TaskFetcher interface {
+	FetchTasks(ctx context.Context, query string) ([]task.Task, error)
 }
 
 // SyncParams holds all inputs for the sync process.
 type SyncParams struct {
 	Cal    CalendarClient
-	Jira   JiraFetcher
+	Tasks  TaskFetcher
 	Cfg    *config.Config
-	JQL    string
+	Query  string
 	Now    time.Time
 	Start  time.Time
 	End    time.Time
@@ -47,19 +47,28 @@ type SyncResult struct {
 type SyncFlags struct {
 	DryRun bool
 	JQL    string
+	Filter string
 	Days   int
 	From   string
 	To     string
 }
 
 // BuildSyncParams computes SyncParams from CLI flags and config.
-func BuildSyncParams(flags SyncFlags, cfg *config.Config, now time.Time) (jql string, start, end time.Time, dryRun bool, err error) {
+func BuildSyncParams(flags SyncFlags, cfg *config.Config, now time.Time) (query string, start, end time.Time, dryRun bool, err error) {
 	dryRun = flags.DryRun
 
-	// JQL: use flag override or fall back to config default
-	jql = flags.JQL
-	if jql == "" {
-		jql = cfg.Jira.DefaultJQL
+	// Query: source-specific flag/default
+	switch cfg.Source {
+	case "todoist":
+		query = flags.Filter
+		if query == "" {
+			query = cfg.Todoist.DefaultFilter
+		}
+	default:
+		query = flags.JQL
+		if query == "" {
+			query = cfg.Jira.DefaultJQL
+		}
 	}
 
 	// Date range: --from/--to take precedence over --days over config windowDays
@@ -83,7 +92,7 @@ func BuildSyncParams(flags SyncFlags, cfg *config.Config, now time.Time) (jql st
 		end = now.AddDate(0, 0, days)
 	}
 
-	return jql, start, end, dryRun, nil
+	return query, start, end, dryRun, nil
 }
 
 // PrintSyncResult writes the sync result to the given writer.
@@ -128,7 +137,7 @@ func PrintSyncResult(w io.Writer, result *SyncResult, dryRun bool) {
 
 // RunSync executes the full sync process:
 //  1. Delete existing [Fylla] events from Google Calendar
-//  2. Fetch Jira tasks using JQL
+//  2. Fetch tasks using the configured source
 //  3. Sort tasks by composite score
 //  4. Fetch Google Calendar events within scheduling window
 //  5. Find free slots per project respecting time windows
@@ -143,10 +152,10 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 		}
 	}
 
-	// Step 2: Fetch Jira tasks
-	tasks, err := p.Jira.FetchTasks(ctx, p.JQL)
+	// Step 2: Fetch tasks
+	tasks, err := p.Tasks.FetchTasks(ctx, p.Query)
 	if err != nil {
-		return nil, fmt.Errorf("fetch jira tasks: %w", err)
+		return nil, fmt.Errorf("fetch tasks: %w", err)
 	}
 
 	// Step 3: Sort by composite score
@@ -225,9 +234,9 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 func newSyncCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sync",
-		Short: "Schedule Jira tasks into Google Calendar",
+		Short: "Schedule tasks into Google Calendar",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, cfg, err := loadJiraClient()
+			source, cfg, err := loadTaskSource()
 			if err != nil {
 				return err
 			}
@@ -255,8 +264,12 @@ func newSyncCmd() *cobra.Command {
 				return fmt.Errorf("google auth: %w", err)
 			}
 
+			baseURL := cfg.Jira.URL
+			if baseURL == "" {
+				baseURL = "https://todoist.com"
+			}
 			cal, err := calendar.NewGoogleClient(cmd.Context(), oauthCfg, token,
-				cfg.Calendar.SourceCalendar, cfg.Calendar.FyllaCalendar, cfg.Jira.URL)
+				cfg.Calendar.SourceCalendar, cfg.Calendar.FyllaCalendar, baseURL)
 			if err != nil {
 				return err
 			}
@@ -264,13 +277,15 @@ func newSyncCmd() *cobra.Command {
 			now := time.Now()
 			dryRun, _ := cmd.Flags().GetBool("dry-run")
 			jql, _ := cmd.Flags().GetString("jql")
+			filter, _ := cmd.Flags().GetString("filter")
 			days, _ := cmd.Flags().GetInt("days")
 			from, _ := cmd.Flags().GetString("from")
 			to, _ := cmd.Flags().GetString("to")
 
-			jql, start, end, dryRun, err := BuildSyncParams(SyncFlags{
+			query, start, end, dryRun, err := BuildSyncParams(SyncFlags{
 				DryRun: dryRun,
 				JQL:    jql,
+				Filter: filter,
 				Days:   days,
 				From:   from,
 				To:     to,
@@ -281,9 +296,9 @@ func newSyncCmd() *cobra.Command {
 
 			result, err := RunSync(cmd.Context(), SyncParams{
 				Cal:    cal,
-				Jira:   client,
+				Tasks:  source.(TaskFetcher),
 				Cfg:    cfg,
-				JQL:    jql,
+				Query:  query,
 				Now:    now,
 				Start:  start,
 				End:    end,
@@ -300,7 +315,8 @@ func newSyncCmd() *cobra.Command {
 
 	cmd.Flags().String("client-credentials", "", "Path to Google OAuth client credentials JSON file")
 	cmd.Flags().Bool("dry-run", false, "Preview schedule without creating events")
-	cmd.Flags().String("jql", "", "Custom JQL query override")
+	cmd.Flags().String("jql", "", "Custom JQL query override (Jira source)")
+	cmd.Flags().String("filter", "", "Custom filter override (Todoist source)")
 	cmd.Flags().Int("days", 0, "Override scheduling window (days)")
 	cmd.Flags().String("from", "", "Start date (YYYY-MM-DD)")
 	cmd.Flags().String("to", "", "End date (YYYY-MM-DD)")

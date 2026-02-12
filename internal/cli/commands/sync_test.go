@@ -9,8 +9,8 @@ import (
 
 	"github.com/iruoy/fylla/internal/calendar"
 	"github.com/iruoy/fylla/internal/config"
-	"github.com/iruoy/fylla/internal/jira"
 	"github.com/iruoy/fylla/internal/scheduler"
+	"github.com/iruoy/fylla/internal/task"
 )
 
 // mockCalendar records all calendar operations for assertion.
@@ -40,14 +40,14 @@ func (m *mockCalendar) CreateEvent(_ context.Context, input calendar.CreateEvent
 	return nil
 }
 
-// mockJira returns preconfigured tasks.
-type mockJira struct {
-	tasks    []jira.Task
-	jqlUsed  string
+// mockTaskFetcher returns preconfigured tasks.
+type mockTaskFetcher struct {
+	tasks     []task.Task
+	queryUsed string
 }
 
-func (m *mockJira) FetchTasks(_ context.Context, jql string) ([]jira.Task, error) {
-	m.jqlUsed = jql
+func (m *mockTaskFetcher) FetchTasks(_ context.Context, query string) ([]task.Task, error) {
+	m.queryUsed = query
 	return m.tasks, nil
 }
 
@@ -96,13 +96,13 @@ func TestSYNC001_delete_existing_fylla_events(t *testing.T) {
 
 	t.Run("deletes fylla events before creating new ones", func(t *testing.T) {
 		cal := &mockCalendar{}
-		jr := &mockJira{}
+		jr := &mockTaskFetcher{}
 
 		_, err := RunSync(context.Background(), SyncParams{
 			Cal:   cal,
-			Jira:  jr,
+			Tasks: jr,
 			Cfg:   testConfig(),
-			JQL:   "project = TEST",
+			Query: "project = TEST",
 			Now:   now,
 			Start: start,
 			End:   end,
@@ -122,13 +122,13 @@ func TestSYNC001_delete_existing_fylla_events(t *testing.T) {
 
 	t.Run("dry-run skips deletion", func(t *testing.T) {
 		cal := &mockCalendar{}
-		jr := &mockJira{}
+		jr := &mockTaskFetcher{}
 
 		_, err := RunSync(context.Background(), SyncParams{
 			Cal:    cal,
-			Jira:   jr,
+			Tasks:  jr,
 			Cfg:    testConfig(),
-			JQL:    "project = TEST",
+			Query:  "project = TEST",
 			Now:    now,
 			Start:  start,
 			End:    end,
@@ -145,17 +145,17 @@ func TestSYNC001_delete_existing_fylla_events(t *testing.T) {
 
 	t.Run("delete is called before event creation", func(t *testing.T) {
 		cal := &mockCalendar{}
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "TEST-1", Summary: "Task 1", Priority: 1, RemainingEstimate: 30 * time.Minute, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 			},
 		}
 
 		_, err := RunSync(context.Background(), SyncParams{
 			Cal:   cal,
-			Jira:  jr,
+			Tasks: jr,
 			Cfg:   testConfig(),
-			JQL:   "project = TEST",
+			Query: "project = TEST",
 			Now:   now,
 			Start: start,
 			End:   end,
@@ -179,19 +179,19 @@ func TestSYNC002_fetch_jira_tasks_using_jql(t *testing.T) {
 	start := now
 	end := now.AddDate(0, 0, 5)
 
-	t.Run("uses provided JQL query", func(t *testing.T) {
+	t.Run("uses provided query", func(t *testing.T) {
 		cal := &mockCalendar{}
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "PROJ-1", Summary: "Task 1", Priority: 2, RemainingEstimate: time.Hour, Project: "PROJ", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 			},
 		}
 
 		_, err := RunSync(context.Background(), SyncParams{
 			Cal:   cal,
-			Jira:  jr,
+			Tasks: jr,
 			Cfg:   testConfig(),
-			JQL:   "project = MYPROJ",
+			Query: "project = MYPROJ",
 			Now:   now,
 			Start: start,
 			End:   end,
@@ -200,24 +200,24 @@ func TestSYNC002_fetch_jira_tasks_using_jql(t *testing.T) {
 			t.Fatalf("RunSync: %v", err)
 		}
 
-		if jr.jqlUsed != "project = MYPROJ" {
-			t.Errorf("JQL = %q, want %q", jr.jqlUsed, "project = MYPROJ")
+		if jr.queryUsed != "project = MYPROJ" {
+			t.Errorf("query = %q, want %q", jr.queryUsed, "project = MYPROJ")
 		}
 	})
 
 	t.Run("fetched tasks appear in allocations", func(t *testing.T) {
 		cal := &mockCalendar{}
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "PROJ-10", Summary: "Important task", Priority: 1, RemainingEstimate: 30 * time.Minute, Project: "PROJ", IssueType: "Bug", Created: now.AddDate(0, 0, -5)},
 			},
 		}
 
 		result, err := RunSync(context.Background(), SyncParams{
 			Cal:   cal,
-			Jira:  jr,
+			Tasks: jr,
 			Cfg:   testConfig(),
-			JQL:   "project = PROJ",
+			Query: "project = PROJ",
 			Now:   now,
 			Start: start,
 			End:   end,
@@ -243,8 +243,8 @@ func TestSYNC003_sort_tasks_by_composite_score(t *testing.T) {
 	t.Run("higher priority tasks scheduled first", func(t *testing.T) {
 		cal := &mockCalendar{}
 		due := now.AddDate(0, 0, 10)
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "LOW-1", Summary: "Low priority", Priority: 5, DueDate: &due, RemainingEstimate: 30 * time.Minute, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 				{Key: "HIGH-1", Summary: "High priority", Priority: 1, DueDate: &due, RemainingEstimate: 30 * time.Minute, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 			},
@@ -252,9 +252,9 @@ func TestSYNC003_sort_tasks_by_composite_score(t *testing.T) {
 
 		result, err := RunSync(context.Background(), SyncParams{
 			Cal:   cal,
-			Jira:  jr,
+			Tasks: jr,
 			Cfg:   testConfig(),
-			JQL:   "project = TEST",
+			Query: "project = TEST",
 			Now:   now,
 			Start: start,
 			End:   end,
@@ -279,8 +279,8 @@ func TestSYNC003_sort_tasks_by_composite_score(t *testing.T) {
 		cal := &mockCalendar{}
 		soonDue := now.AddDate(0, 0, 1)
 		laterDue := now.AddDate(0, 0, 20)
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				// Same priority, but different due date — sooner due should rank higher
 				{Key: "LATER-1", Summary: "Later due", Priority: 3, DueDate: &laterDue, RemainingEstimate: 30 * time.Minute, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 				{Key: "SOON-1", Summary: "Soon due", Priority: 3, DueDate: &soonDue, RemainingEstimate: 30 * time.Minute, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
@@ -289,9 +289,9 @@ func TestSYNC003_sort_tasks_by_composite_score(t *testing.T) {
 
 		result, err := RunSync(context.Background(), SyncParams{
 			Cal:   cal,
-			Jira:  jr,
+			Tasks: jr,
 			Cfg:   testConfig(),
-			JQL:   "project = TEST",
+			Query: "project = TEST",
 			Now:   now,
 			Start: start,
 			End:   end,
@@ -316,13 +316,13 @@ func TestSYNC004_fetch_calendar_events(t *testing.T) {
 
 	t.Run("fetches events within scheduling window", func(t *testing.T) {
 		cal := &mockCalendar{}
-		jr := &mockJira{}
+		jr := &mockTaskFetcher{}
 
 		_, err := RunSync(context.Background(), SyncParams{
 			Cal:   cal,
-			Jira:  jr,
+			Tasks: jr,
 			Cfg:   testConfig(),
-			JQL:   "project = TEST",
+			Query: "project = TEST",
 			Now:   now,
 			Start: start,
 			End:   end,
@@ -348,17 +348,17 @@ func TestSYNC004_fetch_calendar_events(t *testing.T) {
 			End:   time.Date(2025, 1, 20, 12, 0, 0, 0, time.UTC),
 		}
 		cal := &mockCalendar{events: []calendar.Event{meeting}}
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "TEST-1", Summary: "Task 1", Priority: 1, RemainingEstimate: 30 * time.Minute, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 			},
 		}
 
 		result, err := RunSync(context.Background(), SyncParams{
 			Cal:   cal,
-			Jira:  jr,
+			Tasks: jr,
 			Cfg:   testConfig(),
-			JQL:   "project = TEST",
+			Query: "project = TEST",
 			Now:   now,
 			Start: start,
 			End:   end,
@@ -391,17 +391,17 @@ func TestSYNC005_find_free_slots_per_project(t *testing.T) {
 		}
 
 		cal := &mockCalendar{}
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "ADMIN-1", Summary: "Admin task", Priority: 1, RemainingEstimate: 30 * time.Minute, Project: "ADMIN", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 			},
 		}
 
 		result, err := RunSync(context.Background(), SyncParams{
 			Cal:   cal,
-			Jira:  jr,
+			Tasks: jr,
 			Cfg:   cfg,
-			JQL:   "project = ADMIN",
+			Query: "project = ADMIN",
 			Now:   now,
 			Start: start,
 			End:   end,
@@ -429,17 +429,17 @@ func TestSYNC005_find_free_slots_per_project(t *testing.T) {
 		}
 
 		cal := &mockCalendar{}
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "GEN-1", Summary: "General task", Priority: 1, RemainingEstimate: 30 * time.Minute, Project: "GEN", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 			},
 		}
 
 		result, err := RunSync(context.Background(), SyncParams{
 			Cal:   cal,
-			Jira:  jr,
+			Tasks: jr,
 			Cfg:   cfg,
-			JQL:   "project = GEN",
+			Query: "project = GEN",
 			Now:   now,
 			Start: start,
 			End:   end,
@@ -471,17 +471,17 @@ func TestSYNC005_find_free_slots_per_project(t *testing.T) {
 				},
 			},
 		}
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "TEST-1", Summary: "Task 1", Priority: 1, RemainingEstimate: 30 * time.Minute, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 			},
 		}
 
 		result, err := RunSync(context.Background(), SyncParams{
 			Cal:   cal,
-			Jira:  jr,
+			Tasks: jr,
 			Cfg:   cfg,
-			JQL:   "project = TEST",
+			Query: "project = TEST",
 			Now:   now,
 			Start: start,
 			End:   end,
@@ -506,8 +506,8 @@ func TestSYNC006_allocate_tasks_first_fit(t *testing.T) {
 
 	t.Run("highest priority gets earliest slot", func(t *testing.T) {
 		cal := &mockCalendar{}
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "P5-1", Summary: "Low", Priority: 5, RemainingEstimate: time.Hour, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 				{Key: "P1-1", Summary: "High", Priority: 1, RemainingEstimate: time.Hour, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 			},
@@ -515,9 +515,9 @@ func TestSYNC006_allocate_tasks_first_fit(t *testing.T) {
 
 		result, err := RunSync(context.Background(), SyncParams{
 			Cal:   cal,
-			Jira:  jr,
+			Tasks: jr,
 			Cfg:   testConfig(),
-			JQL:   "project = TEST",
+			Query: "project = TEST",
 			Now:   now,
 			Start: start,
 			End:   end,
@@ -554,17 +554,17 @@ func TestSYNC006_allocate_tasks_first_fit(t *testing.T) {
 		cfg.Scheduling.MinTaskDurationMinutes = 25
 
 		cal := &mockCalendar{}
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "TEST-1", Summary: "Task", Priority: 1, RemainingEstimate: 30 * time.Minute, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 			},
 		}
 
 		result, err := RunSync(context.Background(), SyncParams{
 			Cal:   cal,
-			Jira:  jr,
+			Tasks: jr,
 			Cfg:   cfg,
-			JQL:   "project = TEST",
+			Query: "project = TEST",
 			Now:   now,
 			Start: start,
 			End:   end,
@@ -589,8 +589,8 @@ func TestSYNC007_create_calendar_events(t *testing.T) {
 
 	t.Run("creates events for each allocation", func(t *testing.T) {
 		cal := &mockCalendar{}
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "TEST-1", Summary: "Task 1", Priority: 1, RemainingEstimate: time.Hour, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 				{Key: "TEST-2", Summary: "Task 2", Priority: 2, RemainingEstimate: 30 * time.Minute, Project: "TEST", IssueType: "Bug", Created: now.AddDate(0, 0, -2)},
 			},
@@ -598,9 +598,9 @@ func TestSYNC007_create_calendar_events(t *testing.T) {
 
 		result, err := RunSync(context.Background(), SyncParams{
 			Cal:   cal,
-			Jira:  jr,
+			Tasks: jr,
 			Cfg:   testConfig(),
-			JQL:   "project = TEST",
+			Query: "project = TEST",
 			Now:   now,
 			Start: start,
 			End:   end,
@@ -636,17 +636,17 @@ func TestSYNC007_create_calendar_events(t *testing.T) {
 
 	t.Run("dry-run skips event creation", func(t *testing.T) {
 		cal := &mockCalendar{}
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "TEST-1", Summary: "Task 1", Priority: 1, RemainingEstimate: time.Hour, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 			},
 		}
 
 		result, err := RunSync(context.Background(), SyncParams{
 			Cal:    cal,
-			Jira:   jr,
+			Tasks:  jr,
 			Cfg:    testConfig(),
-			JQL:    "project = TEST",
+			Query:  "project = TEST",
 			Now:    now,
 			Start:  start,
 			End:    end,
@@ -667,17 +667,17 @@ func TestSYNC007_create_calendar_events(t *testing.T) {
 
 	t.Run("events have correct details", func(t *testing.T) {
 		cal := &mockCalendar{}
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "PROJ-42", Summary: "Fix login bug", Priority: 1, RemainingEstimate: time.Hour, Project: "PROJ", IssueType: "Bug", Created: now.AddDate(0, 0, -3)},
 			},
 		}
 
 		_, err := RunSync(context.Background(), SyncParams{
 			Cal:   cal,
-			Jira:  jr,
+			Tasks: jr,
 			Cfg:   testConfig(),
-			JQL:   "project = PROJ",
+			Query: "project = PROJ",
 			Now:   now,
 			Start: start,
 			End:   end,
@@ -708,17 +708,17 @@ func TestSYNC008_at_risk_warnings(t *testing.T) {
 		// LATE-1 has a due date in the past — any scheduling will be after due date
 		dueYesterday := time.Date(2025, 1, 19, 17, 0, 0, 0, time.UTC)
 		cal := &mockCalendar{}
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "LATE-1", Summary: "Overdue task", Priority: 1, DueDate: &dueYesterday, RemainingEstimate: time.Hour, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -5)},
 			},
 		}
 
 		result, err := RunSync(context.Background(), SyncParams{
 			Cal:   cal,
-			Jira:  jr,
+			Tasks: jr,
 			Cfg:   testConfig(),
-			JQL:   "project = TEST",
+			Query: "project = TEST",
 			Now:   now,
 			Start: start,
 			End:   end,
@@ -746,17 +746,17 @@ func TestSYNC008_at_risk_warnings(t *testing.T) {
 	t.Run("at-risk events have AtRisk flag set", func(t *testing.T) {
 		dueYesterday := time.Date(2025, 1, 19, 17, 0, 0, 0, time.UTC)
 		cal := &mockCalendar{}
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "LATE-1", Summary: "Overdue task", Priority: 1, DueDate: &dueYesterday, RemainingEstimate: time.Hour, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -5)},
 			},
 		}
 
 		_, err := RunSync(context.Background(), SyncParams{
 			Cal:   cal,
-			Jira:  jr,
+			Tasks: jr,
 			Cfg:   testConfig(),
-			JQL:   "project = TEST",
+			Query: "project = TEST",
 			Now:   now,
 			Start: start,
 			End:   end,
@@ -781,17 +781,17 @@ func TestSYNC008_at_risk_warnings(t *testing.T) {
 	t.Run("on-time tasks not flagged as at-risk", func(t *testing.T) {
 		farDue := now.AddDate(0, 0, 20)
 		cal := &mockCalendar{}
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "OK-1", Summary: "On time", Priority: 1, DueDate: &farDue, RemainingEstimate: time.Hour, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 			},
 		}
 
 		result, err := RunSync(context.Background(), SyncParams{
 			Cal:   cal,
-			Jira:  jr,
+			Tasks: jr,
 			Cfg:   testConfig(),
-			JQL:   "project = TEST",
+			Query: "project = TEST",
 			Now:   now,
 			Start: start,
 			End:   end,
@@ -808,8 +808,8 @@ func TestSYNC008_at_risk_warnings(t *testing.T) {
 	t.Run("at-risk deduplicated by task key", func(t *testing.T) {
 		dueYesterday := time.Date(2025, 1, 19, 17, 0, 0, 0, time.UTC)
 		cal := &mockCalendar{}
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				// Large overdue task — may be split into multiple allocations
 				{Key: "LATE-1", Summary: "Overdue", Priority: 1, DueDate: &dueYesterday, RemainingEstimate: 3 * time.Hour, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -5)},
 			},
@@ -817,9 +817,9 @@ func TestSYNC008_at_risk_warnings(t *testing.T) {
 
 		result, err := RunSync(context.Background(), SyncParams{
 			Cal:   cal,
-			Jira:  jr,
+			Tasks: jr,
 			Cfg:   testConfig(),
-			JQL:   "project = TEST",
+			Query: "project = TEST",
 			Now:   now,
 			Start: start,
 			End:   end,
@@ -844,23 +844,23 @@ func TestSYNC008_at_risk_warnings(t *testing.T) {
 func TestCLI004_sync_creates_calendar_events(t *testing.T) {
 	now := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
 
-	t.Run("sync creates events from Jira tasks", func(t *testing.T) {
+	t.Run("sync creates events from tasks", func(t *testing.T) {
 		cal := &mockCalendar{}
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "PROJ-1", Summary: "Task 1", Priority: 1, RemainingEstimate: time.Hour, Project: "PROJ", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 			},
 		}
 
 		cfg := testConfig()
-		jql, start, end, dryRun, err := BuildSyncParams(SyncFlags{}, cfg, now)
+		query, start, end, dryRun, err := BuildSyncParams(SyncFlags{}, cfg, now)
 		if err != nil {
 			t.Fatalf("BuildSyncParams: %v", err)
 		}
 
 		result, err := RunSync(context.Background(), SyncParams{
-			Cal: cal, Jira: jr, Cfg: cfg,
-			JQL: jql, Now: now, Start: start, End: end, DryRun: dryRun,
+			Cal: cal, Tasks: jr, Cfg: cfg,
+			Query: query, Now: now, Start: start, End: end, DryRun: dryRun,
 		})
 		if err != nil {
 			t.Fatalf("RunSync: %v", err)
@@ -879,22 +879,22 @@ func TestCLI004_sync_creates_calendar_events(t *testing.T) {
 
 	t.Run("events match scheduled tasks", func(t *testing.T) {
 		cal := &mockCalendar{}
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "A-1", Summary: "Alpha", Priority: 1, RemainingEstimate: 30 * time.Minute, Project: "A", IssueType: "Bug", Created: now.AddDate(0, 0, -2)},
 				{Key: "A-2", Summary: "Beta", Priority: 3, RemainingEstimate: time.Hour, Project: "A", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 			},
 		}
 
 		cfg := testConfig()
-		jql, start, end, dryRun, err := BuildSyncParams(SyncFlags{}, cfg, now)
+		query, start, end, dryRun, err := BuildSyncParams(SyncFlags{}, cfg, now)
 		if err != nil {
 			t.Fatalf("BuildSyncParams: %v", err)
 		}
 
 		result, err := RunSync(context.Background(), SyncParams{
-			Cal: cal, Jira: jr, Cfg: cfg,
-			JQL: jql, Now: now, Start: start, End: end, DryRun: dryRun,
+			Cal: cal, Tasks: jr, Cfg: cfg,
+			Query: query, Now: now, Start: start, End: end, DryRun: dryRun,
 		})
 		if err != nil {
 			t.Fatalf("RunSync: %v", err)
@@ -916,14 +916,14 @@ func TestCLI005_sync_dry_run(t *testing.T) {
 
 	t.Run("dry-run does not create events", func(t *testing.T) {
 		cal := &mockCalendar{}
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "T-1", Summary: "Task", Priority: 1, RemainingEstimate: time.Hour, Project: "T", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 			},
 		}
 
 		cfg := testConfig()
-		jql, start, end, dryRun, err := BuildSyncParams(SyncFlags{DryRun: true}, cfg, now)
+		query, start, end, dryRun, err := BuildSyncParams(SyncFlags{DryRun: true}, cfg, now)
 		if err != nil {
 			t.Fatalf("BuildSyncParams: %v", err)
 		}
@@ -932,8 +932,8 @@ func TestCLI005_sync_dry_run(t *testing.T) {
 		}
 
 		result, err := RunSync(context.Background(), SyncParams{
-			Cal: cal, Jira: jr, Cfg: cfg,
-			JQL: jql, Now: now, Start: start, End: end, DryRun: dryRun,
+			Cal: cal, Tasks: jr, Cfg: cfg,
+			Query: query, Now: now, Start: start, End: end, DryRun: dryRun,
 		})
 		if err != nil {
 			t.Fatalf("RunSync: %v", err)
@@ -949,7 +949,7 @@ func TestCLI005_sync_dry_run(t *testing.T) {
 
 	t.Run("dry-run output shows schedule", func(t *testing.T) {
 		allocs := []scheduler.Allocation{
-			{Task: jira.Task{Key: "T-1", Summary: "Fix bug"}, Start: now, End: now.Add(time.Hour)},
+			{Task: task.Task{Key: "T-1", Summary: "Fix bug"}, Start: now, End: now.Add(time.Hour)},
 		}
 		result := &SyncResult{Allocations: allocs}
 		var buf bytes.Buffer
@@ -975,12 +975,12 @@ func TestCLI006_sync_jql_override(t *testing.T) {
 		cfg := testConfig()
 		cfg.Jira.DefaultJQL = "assignee = currentUser()"
 
-		jql, _, _, _, err := BuildSyncParams(SyncFlags{JQL: "project = MYPROJ"}, cfg, now)
+		query, _, _, _, err := BuildSyncParams(SyncFlags{JQL: "project = MYPROJ"}, cfg, now)
 		if err != nil {
 			t.Fatalf("BuildSyncParams: %v", err)
 		}
-		if jql != "project = MYPROJ" {
-			t.Errorf("jql = %q, want %q", jql, "project = MYPROJ")
+		if query != "project = MYPROJ" {
+			t.Errorf("query = %q, want %q", query, "project = MYPROJ")
 		}
 	})
 
@@ -988,39 +988,39 @@ func TestCLI006_sync_jql_override(t *testing.T) {
 		cfg := testConfig()
 		cfg.Jira.DefaultJQL = "assignee = currentUser()"
 
-		jql, _, _, _, err := BuildSyncParams(SyncFlags{}, cfg, now)
+		query, _, _, _, err := BuildSyncParams(SyncFlags{}, cfg, now)
 		if err != nil {
 			t.Fatalf("BuildSyncParams: %v", err)
 		}
-		if jql != "assignee = currentUser()" {
-			t.Errorf("jql = %q, want default", jql)
+		if query != "assignee = currentUser()" {
+			t.Errorf("query = %q, want default", query)
 		}
 	})
 
-	t.Run("only custom JQL tasks fetched", func(t *testing.T) {
+	t.Run("only custom query tasks fetched", func(t *testing.T) {
 		cal := &mockCalendar{}
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "MYPROJ-1", Summary: "My task", Priority: 1, RemainingEstimate: time.Hour, Project: "MYPROJ", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 			},
 		}
 
 		cfg := testConfig()
-		jql, start, end, _, err := BuildSyncParams(SyncFlags{JQL: "project = MYPROJ"}, cfg, now)
+		query, start, end, _, err := BuildSyncParams(SyncFlags{JQL: "project = MYPROJ"}, cfg, now)
 		if err != nil {
 			t.Fatalf("BuildSyncParams: %v", err)
 		}
 
 		_, err = RunSync(context.Background(), SyncParams{
-			Cal: cal, Jira: jr, Cfg: cfg,
-			JQL: jql, Now: now, Start: start, End: end,
+			Cal: cal, Tasks: jr, Cfg: cfg,
+			Query: query, Now: now, Start: start, End: end,
 		})
 		if err != nil {
 			t.Fatalf("RunSync: %v", err)
 		}
 
-		if jr.jqlUsed != "project = MYPROJ" {
-			t.Errorf("jql sent to Jira = %q, want %q", jr.jqlUsed, "project = MYPROJ")
+		if jr.queryUsed != "project = MYPROJ" {
+			t.Errorf("query sent to source = %q, want %q", jr.queryUsed, "project = MYPROJ")
 		}
 	})
 }
@@ -1063,21 +1063,21 @@ func TestCLI007_sync_days_override(t *testing.T) {
 
 	t.Run("events created up to N days ahead", func(t *testing.T) {
 		cal := &mockCalendar{}
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "T-1", Summary: "Task", Priority: 1, RemainingEstimate: time.Hour, Project: "T", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 			},
 		}
 
 		cfg := testConfig()
-		jql, start, end, _, err := BuildSyncParams(SyncFlags{Days: 10}, cfg, now)
+		query, start, end, _, err := BuildSyncParams(SyncFlags{Days: 10}, cfg, now)
 		if err != nil {
 			t.Fatalf("BuildSyncParams: %v", err)
 		}
 
 		_, err = RunSync(context.Background(), SyncParams{
-			Cal: cal, Jira: jr, Cfg: cfg,
-			JQL: jql, Now: now, Start: start, End: end,
+			Cal: cal, Tasks: jr, Cfg: cfg,
+			Query: query, Now: now, Start: start, End: end,
 		})
 		if err != nil {
 			t.Fatalf("RunSync: %v", err)
@@ -1119,14 +1119,14 @@ func TestCLI008_sync_from_to_date_range(t *testing.T) {
 
 	t.Run("events only within specified range", func(t *testing.T) {
 		cal := &mockCalendar{}
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "T-1", Summary: "Task", Priority: 1, RemainingEstimate: time.Hour, Project: "T", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 			},
 		}
 
 		cfg := testConfig()
-		jql, start, end, _, err := BuildSyncParams(SyncFlags{
+		query, start, end, _, err := BuildSyncParams(SyncFlags{
 			From: "2025-01-20",
 			To:   "2025-01-24",
 		}, cfg, now)
@@ -1135,8 +1135,8 @@ func TestCLI008_sync_from_to_date_range(t *testing.T) {
 		}
 
 		result, err := RunSync(context.Background(), SyncParams{
-			Cal: cal, Jira: jr, Cfg: cfg,
-			JQL: jql, Now: now, Start: start, End: end,
+			Cal: cal, Tasks: jr, Cfg: cfg,
+			Query: query, Now: now, Start: start, End: end,
 		})
 		if err != nil {
 			t.Fatalf("RunSync: %v", err)

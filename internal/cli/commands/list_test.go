@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/iruoy/fylla/internal/jira"
+	"github.com/iruoy/fylla/internal/task"
 )
 
 func TestCLI009_list_shows_sorted_tasks(t *testing.T) {
@@ -15,18 +15,18 @@ func TestCLI009_list_shows_sorted_tasks(t *testing.T) {
 
 	t.Run("tasks displayed in priority order", func(t *testing.T) {
 		due := now.AddDate(0, 0, 10)
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "LOW-1", Summary: "Low task", Priority: 5, DueDate: &due, RemainingEstimate: time.Hour, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 				{Key: "HIGH-1", Summary: "High task", Priority: 1, DueDate: &due, RemainingEstimate: time.Hour, Project: "TEST", IssueType: "Bug", Created: now.AddDate(0, 0, -1)},
 			},
 		}
 
 		result, err := RunList(context.Background(), ListParams{
-			Jira: jr,
-			Cfg:  testConfig(),
-			JQL:  "project = TEST",
-			Now:  now,
+			Tasks: jr,
+			Cfg:   testConfig(),
+			Query: "project = TEST",
+			Now:   now,
 		})
 		if err != nil {
 			t.Fatalf("RunList: %v", err)
@@ -45,18 +45,18 @@ func TestCLI009_list_shows_sorted_tasks(t *testing.T) {
 	})
 
 	t.Run("no calendar events are created", func(t *testing.T) {
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "T-1", Summary: "Task", Priority: 1, RemainingEstimate: time.Hour, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
 			},
 		}
 
 		// RunList does not accept a CalendarClient — no calendar interaction possible
 		_, err := RunList(context.Background(), ListParams{
-			Jira: jr,
-			Cfg:  testConfig(),
-			JQL:  "project = TEST",
-			Now:  now,
+			Tasks: jr,
+			Cfg:   testConfig(),
+			Query: "project = TEST",
+			Now:   now,
 		})
 		if err != nil {
 			t.Fatalf("RunList: %v", err)
@@ -66,17 +66,17 @@ func TestCLI009_list_shows_sorted_tasks(t *testing.T) {
 
 	t.Run("output includes task details", func(t *testing.T) {
 		due := now.AddDate(0, 0, 5)
-		jr := &mockJira{
-			tasks: []jira.Task{
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
 				{Key: "PROJ-42", Summary: "Fix login bug", Priority: 1, DueDate: &due, RemainingEstimate: 2 * time.Hour, Project: "PROJ", IssueType: "Bug", Created: now.AddDate(0, 0, -3)},
 			},
 		}
 
 		result, err := RunList(context.Background(), ListParams{
-			Jira: jr,
-			Cfg:  testConfig(),
-			JQL:  "project = PROJ",
-			Now:  now,
+			Tasks: jr,
+			Cfg:   testConfig(),
+			Query: "project = PROJ",
+			Now:   now,
 		})
 		if err != nil {
 			t.Fatalf("RunList: %v", err)
@@ -101,13 +101,13 @@ func TestCLI009_list_shows_sorted_tasks(t *testing.T) {
 	})
 
 	t.Run("empty task list handled", func(t *testing.T) {
-		jr := &mockJira{}
+		jr := &mockTaskFetcher{}
 
 		result, err := RunList(context.Background(), ListParams{
-			Jira: jr,
-			Cfg:  testConfig(),
-			JQL:  "project = EMPTY",
-			Now:  now,
+			Tasks: jr,
+			Cfg:   testConfig(),
+			Query: "project = EMPTY",
+			Now:   now,
 		})
 		if err != nil {
 			t.Fatalf("RunList: %v", err)

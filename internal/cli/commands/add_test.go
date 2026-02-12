@@ -8,24 +8,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/iruoy/fylla/internal/jira"
+	"github.com/iruoy/fylla/internal/task"
 )
 
-// mockIssueCreator records CreateIssue calls.
-type mockIssueCreator struct {
-	calls []jira.CreateIssueInput
+// mockTaskCreator records CreateTask calls.
+type mockTaskCreator struct {
+	calls []task.CreateInput
 	key   string
 	err   error
 }
 
-func (m *mockIssueCreator) CreateIssue(_ context.Context, input jira.CreateIssueInput) (string, error) {
+func (m *mockTaskCreator) CreateTask(_ context.Context, input task.CreateInput) (string, error) {
 	m.calls = append(m.calls, input)
 	return m.key, m.err
 }
 
 func TestCLI017_add_interactive_creation(t *testing.T) {
 	t.Run("creates issue with all fields", func(t *testing.T) {
-		mock := &mockIssueCreator{key: "PROJ-456"}
+		mock := &mockTaskCreator{key: "PROJ-456"}
 		result, err := RunAdd(context.Background(), AddParams{
 			Project:     "PROJ",
 			IssueType:   "Bug",
@@ -33,7 +33,7 @@ func TestCLI017_add_interactive_creation(t *testing.T) {
 			Description: "Users are being logged out after 5 minutes",
 			Estimate:    "2h",
 			Priority:    "High",
-			Jira:        mock,
+			Creator:     mock,
 		})
 		if err != nil {
 			t.Fatalf("RunAdd: %v", err)
@@ -98,30 +98,30 @@ func TestCLI017_add_interactive_creation(t *testing.T) {
 		}
 	})
 
-	t.Run("returns error from Jira", func(t *testing.T) {
-		mock := &mockIssueCreator{err: fmt.Errorf("jira error")}
+	t.Run("returns error from creator", func(t *testing.T) {
+		mock := &mockTaskCreator{err: fmt.Errorf("create error")}
 		_, err := RunAdd(context.Background(), AddParams{
 			Project:   "PROJ",
 			IssueType: "Task",
 			Summary:   "Test",
 			Estimate:  "1h",
 			Priority:  "Medium",
-			Jira:      mock,
+			Creator:   mock,
 		})
 		if err == nil {
-			t.Fatal("expected error from Jira")
+			t.Fatal("expected error from creator")
 		}
 	})
 
 	t.Run("returns error for invalid estimate", func(t *testing.T) {
-		mock := &mockIssueCreator{key: "PROJ-456"}
+		mock := &mockTaskCreator{key: "PROJ-456"}
 		_, err := RunAdd(context.Background(), AddParams{
 			Project:   "PROJ",
 			IssueType: "Task",
 			Summary:   "Test",
 			Estimate:  "invalid",
 			Priority:  "Medium",
-			Jira:      mock,
+			Creator:   mock,
 		})
 		if err == nil {
 			t.Fatal("expected error for invalid estimate")
@@ -144,13 +144,13 @@ func TestCLI018_add_quick_mode(t *testing.T) {
 	})
 
 	t.Run("quick mode defaults type to Task and priority to Medium", func(t *testing.T) {
-		mock := &mockIssueCreator{key: "PROJ-457"}
+		mock := &mockTaskCreator{key: "PROJ-457"}
 		result, err := RunAdd(context.Background(), AddParams{
 			Project:  "PROJ",
 			Summary:  "Quick bugfix",
 			Estimate: "30m",
 			Quick:    true,
-			Jira:     mock,
+			Creator:  mock,
 		})
 		if err != nil {
 			t.Fatalf("RunAdd: %v", err)
@@ -173,7 +173,7 @@ func TestCLI018_add_quick_mode(t *testing.T) {
 	})
 
 	t.Run("quick mode does not override provided type and priority", func(t *testing.T) {
-		mock := &mockIssueCreator{key: "PROJ-458"}
+		mock := &mockTaskCreator{key: "PROJ-458"}
 		_, err := RunAdd(context.Background(), AddParams{
 			Project:   "PROJ",
 			IssueType: "Bug",
@@ -181,7 +181,7 @@ func TestCLI018_add_quick_mode(t *testing.T) {
 			Estimate:  "2h",
 			Priority:  "High",
 			Quick:     true,
-			Jira:      mock,
+			Creator:   mock,
 		})
 		if err != nil {
 			t.Fatalf("RunAdd: %v", err)
@@ -208,14 +208,14 @@ func TestCLI019_add_project_preselect(t *testing.T) {
 	})
 
 	t.Run("pre-selected project used in issue creation", func(t *testing.T) {
-		mock := &mockIssueCreator{key: "PROJ-459"}
+		mock := &mockTaskCreator{key: "PROJ-459"}
 		result, err := RunAdd(context.Background(), AddParams{
 			Project:   "PROJ",
 			IssueType: "Task",
 			Summary:   "Task with pre-selected project",
 			Estimate:  "1h",
 			Priority:  "Medium",
-			Jira:      mock,
+			Creator:   mock,
 		})
 		if err != nil {
 			t.Fatalf("RunAdd: %v", err)

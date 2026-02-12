@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/iruoy/fylla/internal/calendar"
-	"github.com/iruoy/fylla/internal/jira"
+	"github.com/iruoy/fylla/internal/task"
 )
 
 func date(year int, month time.Month, day, hour, min int) time.Time {
@@ -21,7 +21,7 @@ func Test_ALLOC001_first_fit_highest_priority_first(t *testing.T) {
 	// Two tasks with different priorities; highest priority gets earliest slot.
 	tasks := []ScoredTask{
 		{
-			Task: jira.Task{
+			Task: task.Task{
 				Key:               "HIGH-1",
 				Summary:           "High priority task",
 				Priority:          1,
@@ -31,7 +31,7 @@ func Test_ALLOC001_first_fit_highest_priority_first(t *testing.T) {
 			Score: 90,
 		},
 		{
-			Task: jira.Task{
+			Task: task.Task{
 				Key:               "LOW-2",
 				Summary:           "Low priority task",
 				Priority:          5,
@@ -73,9 +73,9 @@ func Test_ALLOC001_first_fit_highest_priority_first(t *testing.T) {
 
 func Test_ALLOC001_three_tasks_ordered(t *testing.T) {
 	tasks := []ScoredTask{
-		{Task: jira.Task{Key: "A", RemainingEstimate: 30 * time.Minute, Project: "P"}, Score: 100},
-		{Task: jira.Task{Key: "B", RemainingEstimate: 30 * time.Minute, Project: "P"}, Score: 80},
-		{Task: jira.Task{Key: "C", RemainingEstimate: 30 * time.Minute, Project: "P"}, Score: 60},
+		{Task: task.Task{Key: "A", RemainingEstimate: 30 * time.Minute, Project: "P"}, Score: 100},
+		{Task: task.Task{Key: "B", RemainingEstimate: 30 * time.Minute, Project: "P"}, Score: 80},
+		{Task: task.Task{Key: "C", RemainingEstimate: 30 * time.Minute, Project: "P"}, Score: 60},
 	}
 
 	slots := map[string][]calendar.Slot{
@@ -105,7 +105,7 @@ func Test_ALLOC002_project_filtering(t *testing.T) {
 	// ADMIN task should use ADMIN slots, general task should use default slots.
 	tasks := []ScoredTask{
 		{
-			Task: jira.Task{
+			Task: task.Task{
 				Key:               "ADMIN-1",
 				Summary:           "Admin task",
 				RemainingEstimate: 30 * time.Minute,
@@ -114,7 +114,7 @@ func Test_ALLOC002_project_filtering(t *testing.T) {
 			Score: 80,
 		},
 		{
-			Task: jira.Task{
+			Task: task.Task{
 				Key:               "PROJ-2",
 				Summary:           "General task",
 				RemainingEstimate: 1 * time.Hour,
@@ -163,7 +163,7 @@ func Test_ALLOC002_project_filtering(t *testing.T) {
 func Test_ALLOC002_project_falls_back_to_default(t *testing.T) {
 	tasks := []ScoredTask{
 		{
-			Task:  jira.Task{Key: "UNKNOWN-1", RemainingEstimate: 30 * time.Minute, Project: "UNKNOWN"},
+			Task:  task.Task{Key: "UNKNOWN-1", RemainingEstimate: 30 * time.Minute, Project: "UNKNOWN"},
 			Score: 80,
 		},
 	}
@@ -188,7 +188,7 @@ func Test_ALLOC003_default_estimate_one_hour(t *testing.T) {
 	// Task without an estimate should default to 1 hour.
 	tasks := []ScoredTask{
 		{
-			Task: jira.Task{
+			Task: task.Task{
 				Key:               "PROJ-1",
 				Summary:           "No estimate task",
 				RemainingEstimate: 0, // no estimate
@@ -219,7 +219,7 @@ func Test_ALLOC003_default_estimate_one_hour(t *testing.T) {
 func Test_ALLOC003_negative_estimate_defaults(t *testing.T) {
 	tasks := []ScoredTask{
 		{
-			Task:  jira.Task{Key: "X-1", RemainingEstimate: -5 * time.Minute, Project: "P"},
+			Task:  task.Task{Key: "X-1", RemainingEstimate: -5 * time.Minute, Project: "P"},
 			Score: 50,
 		},
 	}
@@ -242,7 +242,7 @@ func Test_ALLOC004_minimum_duration_skips_tiny_slots(t *testing.T) {
 	// 20-minute slot should be skipped when minTaskDurationMinutes is 25.
 	tasks := []ScoredTask{
 		{
-			Task: jira.Task{
+			Task: task.Task{
 				Key:               "PROJ-1",
 				Summary:           "Task",
 				RemainingEstimate: 15 * time.Minute,
@@ -269,7 +269,7 @@ func Test_ALLOC004_minimum_duration_skips_tiny_slots(t *testing.T) {
 func Test_ALLOC004_slot_at_exactly_minimum(t *testing.T) {
 	tasks := []ScoredTask{
 		{
-			Task:  jira.Task{Key: "P-1", RemainingEstimate: 25 * time.Minute, Project: "P"},
+			Task:  task.Task{Key: "P-1", RemainingEstimate: 25 * time.Minute, Project: "P"},
 			Score: 80,
 		},
 	}
@@ -292,7 +292,7 @@ func Test_ALLOC005_splitting_remainder_below_minimum(t *testing.T) {
 	// Remainder would be 15 min < 25 min minimum → task moves to next slot.
 	tasks := []ScoredTask{
 		{
-			Task: jira.Task{
+			Task: task.Task{
 				Key:               "PROJ-1",
 				Summary:           "Big task",
 				RemainingEstimate: 60 * time.Minute,
@@ -329,7 +329,7 @@ func Test_ALLOC005_splitting_remainder_above_minimum(t *testing.T) {
 	// Remainder would be 45 min >= 25 min → split is allowed.
 	tasks := []ScoredTask{
 		{
-			Task: jira.Task{
+			Task: task.Task{
 				Key:               "PROJ-1",
 				Summary:           "Splittable task",
 				RemainingEstimate: 90 * time.Minute,
@@ -369,7 +369,7 @@ func Test_ALLOC006_at_risk_detection(t *testing.T) {
 
 	tasks := []ScoredTask{
 		{
-			Task: jira.Task{
+			Task: task.Task{
 				Key:               "URGENT-1",
 				Summary:           "Fills all of today and tomorrow",
 				RemainingEstimate: 16 * time.Hour,
@@ -378,7 +378,7 @@ func Test_ALLOC006_at_risk_detection(t *testing.T) {
 			Score: 100,
 		},
 		{
-			Task: jira.Task{
+			Task: task.Task{
 				Key:               "LATE-1",
 				Summary:           "Will be late",
 				DueDate:           &dueDate,
@@ -427,7 +427,7 @@ func Test_ALLOC006_not_at_risk_when_before_due(t *testing.T) {
 
 	tasks := []ScoredTask{
 		{
-			Task: jira.Task{
+			Task: task.Task{
 				Key:               "OK-1",
 				Summary:           "On time task",
 				DueDate:           &dueDate,
@@ -458,7 +458,7 @@ func Test_ALLOC006_not_at_risk_when_before_due(t *testing.T) {
 func Test_ALLOC006_no_due_date_not_at_risk(t *testing.T) {
 	tasks := []ScoredTask{
 		{
-			Task: jira.Task{
+			Task: task.Task{
 				Key:               "NODUE-1",
 				RemainingEstimate: 1 * time.Hour,
 				Project:           "PROJ",
@@ -487,7 +487,7 @@ func Test_ALLOC007_at_risk_late_prefix(t *testing.T) {
 
 	tasks := []ScoredTask{
 		{
-			Task: jira.Task{
+			Task: task.Task{
 				Key:               "BLOCKER-1",
 				Summary:           "Takes all morning",
 				RemainingEstimate: 4 * time.Hour,
@@ -496,7 +496,7 @@ func Test_ALLOC007_at_risk_late_prefix(t *testing.T) {
 			Score: 100,
 		},
 		{
-			Task: jira.Task{
+			Task: task.Task{
 				Key:               "ATRISK-1",
 				Summary:           "Due at noon but scheduled after",
 				DueDate:           &dueDate,
@@ -544,7 +544,7 @@ func Test_ALLOC007_split_task_all_parts_at_risk(t *testing.T) {
 
 	tasks := []ScoredTask{
 		{
-			Task: jira.Task{
+			Task: task.Task{
 				Key:               "SPLIT-1",
 				Summary:           "Large task that splits and is late",
 				DueDate:           &dueDate,
@@ -580,11 +580,11 @@ func Test_ALLOC_consumed_time_shared_across_projects(t *testing.T) {
 	// be unavailable for project-specific slots.
 	tasks := []ScoredTask{
 		{
-			Task:  jira.Task{Key: "DEF-1", RemainingEstimate: 1 * time.Hour, Project: "DEF"},
+			Task:  task.Task{Key: "DEF-1", RemainingEstimate: 1 * time.Hour, Project: "DEF"},
 			Score: 100,
 		},
 		{
-			Task:  jira.Task{Key: "ADMIN-1", RemainingEstimate: 30 * time.Minute, Project: "ADMIN"},
+			Task:  task.Task{Key: "ADMIN-1", RemainingEstimate: 30 * time.Minute, Project: "ADMIN"},
 			Score: 80,
 		},
 	}
@@ -613,7 +613,7 @@ func Test_ALLOC_consumed_time_shared_across_projects(t *testing.T) {
 
 func Test_ALLOC_no_slots_no_allocations(t *testing.T) {
 	tasks := []ScoredTask{
-		{Task: jira.Task{Key: "X-1", RemainingEstimate: time.Hour, Project: "P"}, Score: 80},
+		{Task: task.Task{Key: "X-1", RemainingEstimate: time.Hour, Project: "P"}, Score: 80},
 	}
 
 	slots := map[string][]calendar.Slot{

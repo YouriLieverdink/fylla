@@ -10,6 +10,7 @@ import (
 // Credentials holds sensitive authentication tokens stored separately from config.
 type Credentials struct {
 	JiraToken        string `json:"jiraToken"`
+	TodoistToken     string `json:"todoistToken"`
 	GoogleOAuthToken string `json:"googleOAuthToken"`
 }
 

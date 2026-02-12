@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/iruoy/fylla/internal/config"
@@ -13,10 +14,10 @@ import (
 
 // ListParams holds inputs for the list operation.
 type ListParams struct {
-	Jira JiraFetcher
-	Cfg  *config.Config
-	JQL  string
-	Now  time.Time
+	Tasks TaskFetcher
+	Cfg   *config.Config
+	Query string
+	Now   time.Time
 }
 
 // ListResult holds the output of a list operation.
@@ -26,9 +27,9 @@ type ListResult struct {
 
 // RunList fetches and sorts tasks without scheduling.
 func RunList(ctx context.Context, p ListParams) (*ListResult, error) {
-	tasks, err := p.Jira.FetchTasks(ctx, p.JQL)
+	tasks, err := p.Tasks.FetchTasks(ctx, p.Query)
 	if err != nil {
-		return nil, fmt.Errorf("fetch jira tasks: %w", err)
+		return nil, fmt.Errorf("fetch tasks: %w", err)
 	}
 
 	sorted := scheduler.SortTasks(tasks, p.Cfg.Weights, p.Cfg.TypeScores, p.Now)
@@ -45,14 +46,17 @@ func PrintListResult(w io.Writer, result *ListResult) {
 
 	fmt.Fprintf(w, "%d task(s):\n", len(result.Tasks))
 	for i, st := range result.Tasks {
-		dueStr := ""
-		if st.Task.DueDate != nil {
-			dueStr = fmt.Sprintf("  due %s", st.Task.DueDate.Format("Jan 2"))
+		var parts []string
+		if st.Task.IssueType != "" {
+			parts = append(parts, st.Task.IssueType)
 		}
-		est := formatDuration(st.Task.RemainingEstimate)
-		fmt.Fprintf(w, "  %d. %s: %s  [%s %s%s]  (score: %.1f)\n",
+		parts = append(parts, formatDuration(st.Task.RemainingEstimate))
+		if st.Task.DueDate != nil {
+			parts = append(parts, "due "+st.Task.DueDate.Format("Jan 2"))
+		}
+		fmt.Fprintf(w, "  %d. %s: %s [%s] (score: %.1f)\n",
 			i+1, st.Task.Key, st.Task.Summary,
-			st.Task.IssueType, est, dueStr, st.Score)
+			strings.Join(parts, ", "), st.Score)
 	}
 }
 
@@ -76,21 +80,33 @@ func newListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "Show sorted tasks without scheduling",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, cfg, err := loadJiraClient()
+			source, cfg, err := loadTaskSource()
 			if err != nil {
 				return err
 			}
 
 			jql, _ := cmd.Flags().GetString("jql")
-			if jql == "" {
-				jql = cfg.Jira.DefaultJQL
+			filter, _ := cmd.Flags().GetString("filter")
+
+			var query string
+			switch cfg.Source {
+			case "todoist":
+				query = filter
+				if query == "" {
+					query = cfg.Todoist.DefaultFilter
+				}
+			default:
+				query = jql
+				if query == "" {
+					query = cfg.Jira.DefaultJQL
+				}
 			}
 
 			result, err := RunList(cmd.Context(), ListParams{
-				Jira: client,
-				Cfg:  cfg,
-				JQL:  jql,
-				Now:  time.Now(),
+				Tasks: source.(TaskFetcher),
+				Cfg:   cfg,
+				Query: query,
+				Now:   time.Now(),
 			})
 			if err != nil {
 				return err
@@ -101,7 +117,8 @@ func newListCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().String("jql", "", "Custom JQL query override")
+	cmd.Flags().String("jql", "", "Custom JQL query override (Jira source)")
+	cmd.Flags().String("filter", "", "Custom filter override (Todoist source)")
 
 	return cmd
 }

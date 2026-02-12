@@ -53,10 +53,10 @@ func ParseDuration(s string) (time.Duration, error) {
 func newLogCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "log TASK-KEY DURATION DESCRIPTION",
-		Short: "Create manual worklog in Jira",
+		Short: "Create manual worklog",
 		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, _, err := loadJiraClient()
+			source, _, err := loadTaskSource()
 			if err != nil {
 				return err
 			}
@@ -72,7 +72,7 @@ func newLogCmd() *cobra.Command {
 				TaskKey:     taskKey,
 				Duration:    duration,
 				Description: description,
-				Jira:        client,
+				Jira:        source.(WorklogPoster),
 			}); err != nil {
 				return err
 			}

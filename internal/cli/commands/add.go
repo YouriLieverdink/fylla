@@ -6,13 +6,18 @@ import (
 	"io"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/iruoy/fylla/internal/jira"
+	"github.com/iruoy/fylla/internal/task"
 	"github.com/spf13/cobra"
 )
 
-// IssueCreator abstracts Jira issue creation for testing.
-type IssueCreator interface {
-	CreateIssue(ctx context.Context, input jira.CreateIssueInput) (string, error)
+// TaskCreator abstracts task creation for testing.
+type TaskCreator interface {
+	CreateTask(ctx context.Context, input task.CreateInput) (string, error)
+}
+
+// ProjectLister returns available project names.
+type ProjectLister interface {
+	ListProjects(ctx context.Context) ([]string, error)
 }
 
 // AddParams holds inputs for the add command.
@@ -24,7 +29,8 @@ type AddParams struct {
 	Estimate    string // raw duration string
 	Priority    string
 	Quick       bool
-	Jira        IssueCreator
+	Creator     TaskCreator
+	Projects    ProjectLister
 }
 
 // AddResult holds the output of an add operation.
@@ -33,10 +39,10 @@ type AddResult struct {
 	Summary string
 }
 
-// BuildCreateInput converts AddParams into a Jira CreateIssueInput,
+// BuildCreateInput converts AddParams into a task.CreateInput,
 // applying defaults for quick mode.
-func BuildCreateInput(p AddParams) (jira.CreateIssueInput, error) {
-	input := jira.CreateIssueInput{
+func BuildCreateInput(p AddParams) (task.CreateInput, error) {
+	input := task.CreateInput{
 		Project:     p.Project,
 		Summary:     p.Summary,
 		IssueType:   p.IssueType,
@@ -56,7 +62,7 @@ func BuildCreateInput(p AddParams) (jira.CreateIssueInput, error) {
 	if p.Estimate != "" {
 		dur, err := ParseDuration(p.Estimate)
 		if err != nil {
-			return jira.CreateIssueInput{}, fmt.Errorf("parse estimate: %w", err)
+			return task.CreateInput{}, fmt.Errorf("parse estimate: %w", err)
 		}
 		input.Estimate = dur
 	}
@@ -89,16 +95,16 @@ func RequiredFields(p AddParams) []string {
 	return fields
 }
 
-// RunAdd creates a new issue in Jira using the collected parameters.
+// RunAdd creates a new task using the collected parameters.
 func RunAdd(ctx context.Context, p AddParams) (*AddResult, error) {
 	input, err := BuildCreateInput(p)
 	if err != nil {
 		return nil, err
 	}
 
-	key, err := p.Jira.CreateIssue(ctx, input)
+	key, err := p.Creator.CreateTask(ctx, input)
 	if err != nil {
-		return nil, fmt.Errorf("create issue: %w", err)
+		return nil, fmt.Errorf("create task: %w", err)
 	}
 
 	return &AddResult{
@@ -115,9 +121,9 @@ func PrintAddResult(w io.Writer, result *AddResult) {
 func newAddCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add",
-		Short: "Create a new Jira task interactively",
+		Short: "Create a new task interactively",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, _, err := loadJiraClient()
+			source, _, err := loadTaskSource()
 			if err != nil {
 				return err
 			}
@@ -128,12 +134,28 @@ func newAddCmd() *cobra.Command {
 			p := AddParams{
 				Project: project,
 				Quick:   quick,
-				Jira:    client,
+				Creator: source.(TaskCreator),
+			}
+			if pl, ok := source.(ProjectLister); ok {
+				p.Projects = pl
 			}
 
 			for _, field := range RequiredFields(p) {
 				switch field {
 				case "project":
+					if p.Projects != nil {
+						names, err := p.Projects.ListProjects(cmd.Context())
+						if err == nil && len(names) > 0 {
+							prompt := &survey.Select{
+								Message: "Project:",
+								Options: names,
+							}
+							if err := survey.AskOne(prompt, &p.Project); err != nil {
+								return fmt.Errorf("prompt project: %w", err)
+							}
+							break
+						}
+					}
 					prompt := &survey.Input{Message: "Project key:"}
 					if err := survey.AskOne(prompt, &p.Project); err != nil {
 						return fmt.Errorf("prompt project: %w", err)

@@ -61,9 +61,9 @@ func PrintStopResult(w io.Writer, result *StopResult) {
 func newStopCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "stop",
-		Short: "Stop timer and log work to Jira",
+		Short: "Stop timer and log work",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, _, err := loadJiraClient()
+			source, _, err := loadTaskSource()
 			if err != nil {
 				return err
 			}
@@ -86,7 +86,7 @@ func newStopCmd() *cobra.Command {
 				RoundMinutes: 5,
 				Now:          time.Now(),
 				Description:  description,
-				Jira:         client,
+				Jira:         source.(WorklogPoster),
 			})
 			if err != nil {
 				return err

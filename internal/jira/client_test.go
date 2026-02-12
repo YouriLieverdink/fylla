@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/iruoy/fylla/internal/task"
 )
 
 func TestJIRA001_FetchTasks(t *testing.T) {
@@ -244,7 +246,7 @@ func TestJIRA004_UpdateEstimate(t *testing.T) {
 	})
 }
 
-func TestJIRA005_CreateIssue(t *testing.T) {
+func TestJIRA005_CreateTask(t *testing.T) {
 	t.Run("creates issue with all fields", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path != "/rest/api/3/issue" {
@@ -288,7 +290,7 @@ func TestJIRA005_CreateIssue(t *testing.T) {
 		defer srv.Close()
 
 		client := NewClient(srv.URL, "user@test.com", "token123")
-		key, err := client.CreateIssue(context.Background(), CreateIssueInput{
+		key, err := client.CreateTask(context.Background(), task.CreateInput{
 			Project:     "PROJ",
 			IssueType:   "Bug",
 			Summary:     "Fix login bug",
@@ -297,7 +299,7 @@ func TestJIRA005_CreateIssue(t *testing.T) {
 			Priority:    "High",
 		})
 		if err != nil {
-			t.Fatalf("CreateIssue: %v", err)
+			t.Fatalf("CreateTask: %v", err)
 		}
 		if key != "PROJ-456" {
 			t.Errorf("expected key PROJ-456, got %s", key)
@@ -325,13 +327,13 @@ func TestJIRA005_CreateIssue(t *testing.T) {
 		defer srv.Close()
 
 		client := NewClient(srv.URL, "user@test.com", "token123")
-		key, err := client.CreateIssue(context.Background(), CreateIssueInput{
+		key, err := client.CreateTask(context.Background(), task.CreateInput{
 			Project:   "PROJ",
 			IssueType: "Task",
 			Summary:   "Quick bugfix",
 		})
 		if err != nil {
-			t.Fatalf("CreateIssue: %v", err)
+			t.Fatalf("CreateTask: %v", err)
 		}
 		if key != "PROJ-457" {
 			t.Errorf("expected key PROJ-457, got %s", key)

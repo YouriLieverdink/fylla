@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/iruoy/fylla/internal/calendar"
-	"github.com/iruoy/fylla/internal/jira"
+	"github.com/iruoy/fylla/internal/task"
 )
 
 // defaultEstimate is used when a task has no remaining estimate.
@@ -12,7 +12,7 @@ const defaultEstimate = time.Hour
 
 // Allocation represents a task assigned to a time slot.
 type Allocation struct {
-	Task   jira.Task
+	Task   task.Task
 	Start  time.Time
 	End    time.Time
 	AtRisk bool

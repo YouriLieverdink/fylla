@@ -2,7 +2,9 @@ package config
 
 // Config represents the fylla configuration file.
 type Config struct {
+	Source        string                 `yaml:"source"`
 	Jira          JiraConfig             `yaml:"jira"`
+	Todoist       TodoistConfig          `yaml:"todoist"`
 	Calendar      CalendarConfig         `yaml:"calendar"`
 	Scheduling    SchedulingConfig       `yaml:"scheduling"`
 	BusinessHours BusinessHoursConfig    `yaml:"businessHours"`
@@ -16,6 +18,11 @@ type JiraConfig struct {
 	URL        string `yaml:"url"`
 	Email      string `yaml:"email"`
 	DefaultJQL string `yaml:"defaultJql"`
+}
+
+// TodoistConfig holds Todoist connection settings.
+type TodoistConfig struct {
+	DefaultFilter string `yaml:"defaultFilter"`
 }
 
 // CalendarConfig holds Google Calendar settings.

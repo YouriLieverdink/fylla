@@ -79,6 +79,25 @@ func RunAuthGoogle(ctx context.Context, p AuthGoogleParams) error {
 	return nil
 }
 
+// AuthTodoistParams holds inputs for the Todoist auth operation.
+type AuthTodoistParams struct {
+	Token           string
+	CredentialsPath string
+}
+
+// RunAuthTodoist stores the Todoist API token in credentials.
+func RunAuthTodoist(p AuthTodoistParams) error {
+	creds, err := config.LoadCredentialsFrom(p.CredentialsPath)
+	if err != nil {
+		return fmt.Errorf("load credentials: %w", err)
+	}
+	creds.TodoistToken = p.Token
+	if err := config.SaveCredentialsTo(creds, p.CredentialsPath); err != nil {
+		return fmt.Errorf("save credentials: %w", err)
+	}
+	return nil
+}
+
 func newAuthCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
@@ -87,6 +106,7 @@ func newAuthCmd() *cobra.Command {
 
 	cmd.AddCommand(newAuthJiraCmd())
 	cmd.AddCommand(newAuthGoogleCmd())
+	cmd.AddCommand(newAuthTodoistCmd())
 
 	return cmd
 }
@@ -152,6 +172,38 @@ func newAuthJiraCmd() *cobra.Command {
 	cmd.Flags().String("url", "", "Jira instance URL")
 	cmd.Flags().String("email", "", "Jira email address")
 	cmd.Flags().String("token", "", "Jira API token")
+
+	return cmd
+}
+
+func newAuthTodoistCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "todoist",
+		Short: "Configure Todoist authentication",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			token, _ := cmd.Flags().GetString("token")
+			if token == "" {
+				return fmt.Errorf("--token is required")
+			}
+
+			credPath, err := config.CredentialsPath()
+			if err != nil {
+				return err
+			}
+
+			if err := RunAuthTodoist(AuthTodoistParams{
+				Token:           token,
+				CredentialsPath: credPath,
+			}); err != nil {
+				return err
+			}
+
+			fmt.Fprintln(cmd.OutOrStdout(), "Todoist credentials stored successfully.")
+			return nil
+		},
+	}
+
+	cmd.Flags().String("token", "", "Todoist API token")
 
 	return cmd
 }

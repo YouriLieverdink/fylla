@@ -91,10 +91,10 @@ func PrintEstimateResult(w io.Writer, result *EstimateResult) {
 func newEstimateCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "estimate TASK-KEY DURATION",
-		Short: "Set or adjust remaining estimate on a Jira task",
+		Short: "Set or adjust remaining estimate on a task",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, _, err := loadJiraClient()
+			source, _, err := loadTaskSource()
 			if err != nil {
 				return err
 			}
@@ -102,8 +102,8 @@ func newEstimateCmd() *cobra.Command {
 			result, err := RunEstimate(cmd.Context(), EstimateParams{
 				TaskKey:  args[0],
 				Duration: args[1],
-				Jira:     client,
-				Getter:   client,
+				Jira:     source.(EstimateUpdater),
+				Getter:   source.(EstimateGetter),
 			})
 			if err != nil {
 				return err

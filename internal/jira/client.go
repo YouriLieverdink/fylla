@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/iruoy/fylla/internal/task"
 )
 
 // Client handles communication with the Jira REST API.
@@ -66,12 +68,12 @@ type issueJSON struct {
 }
 
 type fieldsJSON struct {
-	Summary  string       `json:"summary"`
-	Priority *priorityJSON `json:"priority"`
-	DueDate  string       `json:"duedate"`
-	IssueType issueTypeJSON `json:"issuetype"`
-	Created  string       `json:"created"`
-	Project  projectJSON  `json:"project"`
+	Summary      string            `json:"summary"`
+	Priority     *priorityJSON     `json:"priority"`
+	DueDate      string            `json:"duedate"`
+	IssueType    issueTypeJSON     `json:"issuetype"`
+	Created      string            `json:"created"`
+	Project      projectJSON       `json:"project"`
 	TimeTracking *timeTrackingJSON `json:"timetracking"`
 }
 
@@ -102,8 +104,8 @@ var priorityNameToLevel = map[string]int{
 	"Lowest":  5,
 }
 
-func parseIssue(issue issueJSON) Task {
-	t := Task{
+func parseIssue(issue issueJSON) task.Task {
+	t := task.Task{
 		Key:       issue.Key,
 		Summary:   issue.Fields.Summary,
 		Priority:  3, // default Medium
@@ -134,12 +136,27 @@ func parseIssue(issue issueJSON) Task {
 		t.RemainingEstimate = time.Duration(tt.RemainingEstimateSeconds) * time.Second
 	}
 
+	// Fallback: parse estimate and due date from title brackets
+	if t.RemainingEstimate == 0 && t.OriginalEstimate == 0 {
+		if est, cleaned := task.ParseTitleEstimate(t.Summary); est > 0 {
+			t.OriginalEstimate = est
+			t.RemainingEstimate = est
+			t.Summary = cleaned
+		}
+	}
+	if t.DueDate == nil {
+		if due, cleaned := task.ParseTitleDueDate(t.Summary); due != nil {
+			t.DueDate = due
+			t.Summary = cleaned
+		}
+	}
+
 	return t
 }
 
 // FetchTasks retrieves issues from Jira matching the given JQL query.
-func (c *Client) FetchTasks(ctx context.Context, jql string) ([]Task, error) {
-	var tasks []Task
+func (c *Client) FetchTasks(ctx context.Context, jql string) ([]task.Task, error) {
+	var tasks []task.Task
 	var nextPageToken string
 
 	for {
@@ -239,23 +256,13 @@ func (c *Client) UpdateEstimate(ctx context.Context, issueKey string, remaining 
 	return nil
 }
 
-// CreateIssueInput holds the fields for creating a new Jira issue.
-type CreateIssueInput struct {
-	Project     string
-	IssueType   string
-	Summary     string
-	Description string
-	Estimate    time.Duration
-	Priority    string // Priority name (Highest, High, Medium, Low, Lowest)
-}
-
 // createIssueResponse represents the Jira create issue API response.
 type createIssueResponse struct {
 	Key string `json:"key"`
 }
 
-// CreateIssue creates a new issue in Jira and returns the issue key.
-func (c *Client) CreateIssue(ctx context.Context, input CreateIssueInput) (string, error) {
+// CreateTask creates a new issue in Jira and returns the issue key.
+func (c *Client) CreateTask(ctx context.Context, input task.CreateInput) (string, error) {
 	fields := map[string]interface{}{
 		"project":   map[string]string{"key": input.Project},
 		"issuetype": map[string]string{"name": input.IssueType},

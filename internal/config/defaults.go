@@ -1,9 +1,14 @@
 package config
 
-var defaultConfigYAML = []byte(`jira:
+var defaultConfigYAML = []byte(`source: jira
+
+jira:
   url: https://company.atlassian.net
   email: you@example.com
   defaultJql: "assignee = currentUser() AND status = 'To Do'"
+
+todoist:
+  defaultFilter: "today | overdue"
 
 calendar:
   sourceCalendar: primary

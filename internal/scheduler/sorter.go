@@ -6,18 +6,18 @@ import (
 	"time"
 
 	"github.com/iruoy/fylla/internal/config"
-	"github.com/iruoy/fylla/internal/jira"
+	"github.com/iruoy/fylla/internal/task"
 )
 
-// ScoredTask pairs a Jira task with its computed composite score.
+// ScoredTask pairs a task with its computed composite score.
 type ScoredTask struct {
-	Task  jira.Task
+	Task  task.Task
 	Score float64
 }
 
 // SortTasks scores and sorts tasks by descending composite score.
 // The now parameter is used for relative date calculations.
-func SortTasks(tasks []jira.Task, cfg config.WeightsConfig, typeScores map[string]int, now time.Time) []ScoredTask {
+func SortTasks(tasks []task.Task, cfg config.WeightsConfig, typeScores map[string]int, now time.Time) []ScoredTask {
 	scored := make([]ScoredTask, len(tasks))
 	for i, t := range tasks {
 		scored[i] = ScoredTask{
@@ -32,7 +32,7 @@ func SortTasks(tasks []jira.Task, cfg config.WeightsConfig, typeScores map[strin
 }
 
 // CompositeScore calculates the weighted composite score for a task.
-func CompositeScore(t jira.Task, w config.WeightsConfig, typeScores map[string]int, now time.Time) float64 {
+func CompositeScore(t task.Task, w config.WeightsConfig, typeScores map[string]int, now time.Time) float64 {
 	score := w.Priority*PriorityScore(t.Priority) +
 		w.DueDate*DueDateScore(t.DueDate, now) +
 		w.Estimate*EstimateScore(t.RemainingEstimate) +

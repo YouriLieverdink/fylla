@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/iruoy/fylla/internal/config"
-	"github.com/iruoy/fylla/internal/jira"
+	"github.com/iruoy/fylla/internal/task"
 )
 
 var defaultWeights = config.WeightsConfig{
@@ -28,11 +28,11 @@ func Test_SORT001_priority_weight(t *testing.T) {
 	now := time.Date(2025, 6, 15, 9, 0, 0, 0, time.UTC)
 	created := now.Add(-24 * time.Hour)
 
-	highPri := jira.Task{Key: "P-1", Priority: 1, IssueType: "Task", Created: created}
-	lowPri := jira.Task{Key: "P-2", Priority: 5, IssueType: "Task", Created: created}
+	highPri := task.Task{Key: "P-1", Priority: 1, IssueType: "Task", Created: created}
+	lowPri := task.Task{Key: "P-2", Priority: 5, IssueType: "Task", Created: created}
 
 	t.Run("higher priority task sorted first", func(t *testing.T) {
-		tasks := []jira.Task{lowPri, highPri}
+		tasks := []task.Task{lowPri, highPri}
 		sorted := SortTasks(tasks, defaultWeights, defaultTypeScores, now)
 		if sorted[0].Task.Key != "P-1" {
 			t.Errorf("expected P-1 first, got %s", sorted[0].Task.Key)
@@ -52,17 +52,17 @@ func Test_SORT002_due_date_weight(t *testing.T) {
 	now := time.Date(2025, 6, 15, 9, 0, 0, 0, time.UTC)
 	created := now.Add(-24 * time.Hour)
 
-	soonDue := jira.Task{
+	soonDue := task.Task{
 		Key: "D-1", Priority: 3, IssueType: "Task", Created: created,
 		DueDate: timePtr(now.Add(24 * time.Hour)),
 	}
-	laterDue := jira.Task{
+	laterDue := task.Task{
 		Key: "D-2", Priority: 3, IssueType: "Task", Created: created,
 		DueDate: timePtr(now.Add(20 * 24 * time.Hour)),
 	}
 
 	t.Run("earlier due date prioritized", func(t *testing.T) {
-		sorted := SortTasks([]jira.Task{laterDue, soonDue}, defaultWeights, defaultTypeScores, now)
+		sorted := SortTasks([]task.Task{laterDue, soonDue}, defaultWeights, defaultTypeScores, now)
 		if sorted[0].Task.Key != "D-1" {
 			t.Errorf("expected D-1 first, got %s", sorted[0].Task.Key)
 		}
@@ -81,17 +81,17 @@ func Test_SORT003_estimate_weight(t *testing.T) {
 	now := time.Date(2025, 6, 15, 9, 0, 0, 0, time.UTC)
 	created := now.Add(-24 * time.Hour)
 
-	small := jira.Task{
+	small := task.Task{
 		Key: "E-1", Priority: 3, IssueType: "Task", Created: created,
 		RemainingEstimate: 30 * time.Minute,
 	}
-	large := jira.Task{
+	large := task.Task{
 		Key: "E-2", Priority: 3, IssueType: "Task", Created: created,
 		RemainingEstimate: 6 * time.Hour,
 	}
 
 	t.Run("smaller task prioritized", func(t *testing.T) {
-		sorted := SortTasks([]jira.Task{large, small}, defaultWeights, defaultTypeScores, now)
+		sorted := SortTasks([]task.Task{large, small}, defaultWeights, defaultTypeScores, now)
 		if sorted[0].Task.Key != "E-1" {
 			t.Errorf("expected E-1 first, got %s", sorted[0].Task.Key)
 		}
@@ -111,11 +111,11 @@ func Test_SORT004_issue_type_weight(t *testing.T) {
 	now := time.Date(2025, 6, 15, 9, 0, 0, 0, time.UTC)
 	created := now.Add(-24 * time.Hour)
 
-	bug := jira.Task{Key: "T-1", Priority: 3, IssueType: "Bug", Created: created}
-	task := jira.Task{Key: "T-2", Priority: 3, IssueType: "Task", Created: created}
+	bug := task.Task{Key: "T-1", Priority: 3, IssueType: "Bug", Created: created}
+	tsk := task.Task{Key: "T-2", Priority: 3, IssueType: "Task", Created: created}
 
 	t.Run("bug prioritized over task", func(t *testing.T) {
-		sorted := SortTasks([]jira.Task{task, bug}, defaultWeights, defaultTypeScores, now)
+		sorted := SortTasks([]task.Task{tsk, bug}, defaultWeights, defaultTypeScores, now)
 		if sorted[0].Task.Key != "T-1" {
 			t.Errorf("expected T-1 (Bug) first, got %s", sorted[0].Task.Key)
 		}
@@ -133,17 +133,17 @@ func Test_SORT004_issue_type_weight(t *testing.T) {
 func Test_SORT005_age_weight(t *testing.T) {
 	now := time.Date(2025, 6, 15, 9, 0, 0, 0, time.UTC)
 
-	old := jira.Task{
+	old := task.Task{
 		Key: "A-1", Priority: 3, IssueType: "Task",
 		Created: now.Add(-20 * 24 * time.Hour),
 	}
-	recent := jira.Task{
+	recent := task.Task{
 		Key: "A-2", Priority: 3, IssueType: "Task",
 		Created: now.Add(-1 * 24 * time.Hour),
 	}
 
 	t.Run("older task gets slight boost", func(t *testing.T) {
-		sorted := SortTasks([]jira.Task{recent, old}, defaultWeights, defaultTypeScores, now)
+		sorted := SortTasks([]task.Task{recent, old}, defaultWeights, defaultTypeScores, now)
 		if sorted[0].Task.Key != "A-1" {
 			t.Errorf("expected A-1 (older) first, got %s", sorted[0].Task.Key)
 		}
@@ -318,15 +318,15 @@ func Test_SORT010_crunch_mode(t *testing.T) {
 
 	t.Run("crunch boost affects sorting", func(t *testing.T) {
 		created := now.Add(-24 * time.Hour)
-		crunch := jira.Task{
+		crunch := task.Task{
 			Key: "C-1", Priority: 3, IssueType: "Task", Created: created,
 			DueDate: timePtr(now.Add(2 * 24 * time.Hour)),
 		}
-		normal := jira.Task{
+		normal := task.Task{
 			Key: "C-2", Priority: 3, IssueType: "Task", Created: created,
 			DueDate: timePtr(now.Add(10 * 24 * time.Hour)),
 		}
-		sorted := SortTasks([]jira.Task{normal, crunch}, defaultWeights, defaultTypeScores, now)
+		sorted := SortTasks([]task.Task{normal, crunch}, defaultWeights, defaultTypeScores, now)
 		if sorted[0].Task.Key != "C-1" {
 			t.Errorf("expected crunch task C-1 first, got %s", sorted[0].Task.Key)
 		}
