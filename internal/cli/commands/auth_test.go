@@ -93,11 +93,11 @@ func TestCLI001_cli_entry_point(t *testing.T) {
 		if !strings.Contains(out, "auth") {
 			t.Errorf("help output missing 'auth' command, got:\n%s", out)
 		}
-		if !strings.Contains(out, "sync") {
-			t.Errorf("help output missing 'sync' command, got:\n%s", out)
+		if !strings.Contains(out, "task") {
+			t.Errorf("help output missing 'task' command, got:\n%s", out)
 		}
-		if !strings.Contains(out, "list") {
-			t.Errorf("help output missing 'list' command, got:\n%s", out)
+		if !strings.Contains(out, "schedule") {
+			t.Errorf("help output missing 'schedule' command, got:\n%s", out)
 		}
 	})
 
@@ -107,7 +107,7 @@ func TestCLI001_cli_entry_point(t *testing.T) {
 		if err != nil {
 			t.Fatalf("help error: %v", err)
 		}
-		expectedCmds := []string{"auth", "sync", "list", "config", "start", "stop", "status", "log", "estimate", "add"}
+		expectedCmds := []string{"auth", "task", "schedule", "timer", "config"}
 		for _, cmd := range expectedCmds {
 			if !strings.Contains(out, cmd) {
 				t.Errorf("help output missing %q command", cmd)

@@ -104,6 +104,15 @@ var priorityNameToLevel = map[string]int{
 	"Lowest":  5,
 }
 
+// priorityLevelToName maps numeric levels back to Jira priority names.
+var priorityLevelToName = map[int]string{
+	1: "Highest",
+	2: "High",
+	3: "Medium",
+	4: "Low",
+	5: "Lowest",
+}
+
 func parseIssue(issue issueJSON) task.Task {
 	t := task.Task{
 		Key:       issue.Key,
@@ -406,6 +415,81 @@ func (c *Client) GetDueDate(ctx context.Context, issueKey string) (*time.Time, e
 		return nil, fmt.Errorf("parse due date: %w", err)
 	}
 	return &d, nil
+}
+
+// getPriorityResponse represents a single Jira issue response for the priority field.
+type getPriorityResponse struct {
+	Fields struct {
+		Priority *priorityJSON `json:"priority"`
+	} `json:"fields"`
+}
+
+// GetPriority fetches the priority level for the specified Jira issue.
+func (c *Client) GetPriority(ctx context.Context, issueKey string) (int, error) {
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/rest/api/3/issue/%s?fields=priority", issueKey), nil)
+	if err != nil {
+		return 0, fmt.Errorf("get priority: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return 0, fmt.Errorf("jira get priority: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result getPriorityResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, fmt.Errorf("decode issue response: %w", err)
+	}
+
+	if result.Fields.Priority == nil {
+		return 3, nil // default Medium
+	}
+	if level, ok := priorityNameToLevel[result.Fields.Priority.Name]; ok {
+		return level, nil
+	}
+	return 3, nil
+}
+
+// UpdatePriority sets the priority for the specified Jira issue.
+func (c *Client) UpdatePriority(ctx context.Context, issueKey string, priority int) error {
+	name, ok := priorityLevelToName[priority]
+	if !ok {
+		return fmt.Errorf("invalid priority level %d (must be 1-5)", priority)
+	}
+
+	payload := map[string]interface{}{
+		"fields": map[string]interface{}{
+			"priority": map[string]string{"name": name},
+		},
+	}
+
+	resp, err := c.do(ctx, http.MethodPut, fmt.Sprintf("/rest/api/3/issue/%s", issueKey), payload)
+	if err != nil {
+		return fmt.Errorf("update priority: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("jira update priority: status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+// DeleteTask permanently deletes a Jira issue.
+func (c *Client) DeleteTask(ctx context.Context, issueKey string) error {
+	resp, err := c.do(ctx, http.MethodDelete, fmt.Sprintf("/rest/api/3/issue/%s", issueKey), nil)
+	if err != nil {
+		return fmt.Errorf("delete issue: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("jira delete issue: status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
 }
 
 // transitionsResponse represents the Jira transitions API response.

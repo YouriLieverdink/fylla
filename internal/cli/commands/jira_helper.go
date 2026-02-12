@@ -13,11 +13,14 @@ type TaskSource interface {
 	TaskFetcher
 	TaskCreator
 	TaskCompleter
+	TaskDeleter
 	WorklogPoster
 	EstimateGetter
 	EstimateUpdater
 	DueDateGetter
 	DueDateUpdater
+	PriorityGetter
+	PriorityUpdater
 }
 
 // Compile-time checks that both clients satisfy TaskSource.

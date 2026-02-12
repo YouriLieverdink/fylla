@@ -229,7 +229,7 @@ func TestCLI012_stop_description_flag(t *testing.T) {
 
 	t.Run("cobra command has description flag", func(t *testing.T) {
 		root := newTestRootCmd()
-		stopCmd, _, err := root.Find([]string{"stop"})
+		stopCmd, _, err := root.Find([]string{"timer", "stop"})
 		if err != nil {
 			t.Fatalf("find stop command: %v", err)
 		}
@@ -400,7 +400,7 @@ func TestCLI014_log_manual_worklog(t *testing.T) {
 
 	t.Run("cobra command accepts three args", func(t *testing.T) {
 		root := newTestRootCmd()
-		logCmd, _, err := root.Find([]string{"log"})
+		logCmd, _, err := root.Find([]string{"timer", "log"})
 		if err != nil {
 			t.Fatalf("find log command: %v", err)
 		}
@@ -412,7 +412,7 @@ func TestCLI014_log_manual_worklog(t *testing.T) {
 
 	t.Run("cobra command rejects wrong arg count", func(t *testing.T) {
 		root := newTestRootCmd()
-		_, err := executeCommand(root, "log", "PROJ-123", "2h")
+		_, err := executeCommand(root, "timer", "log", "PROJ-123", "2h")
 		if err == nil {
 			t.Fatal("expected error with 2 args instead of 3")
 		}

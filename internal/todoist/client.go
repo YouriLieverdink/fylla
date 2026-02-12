@@ -103,13 +103,27 @@ func apiPriorityToLevel(apiPriority int) int {
 	}
 }
 
-// levelToAPIPriority converts fylla priority name back to Todoist API priority.
+// priorityNameToAPI converts fylla priority name back to Todoist API priority.
 var priorityNameToAPI = map[string]int{
 	"Highest": 4,
 	"High":    3,
 	"Medium":  2,
 	"Low":     1,
 	"Lowest":  1,
+}
+
+// levelToAPIPriority converts a fylla priority level (1-5) to Todoist API priority (1-4).
+func levelToAPIPriority(level int) int {
+	switch level {
+	case 1:
+		return 4
+	case 2:
+		return 3
+	case 3:
+		return 2
+	default:
+		return 1
+	}
 }
 
 func (c *Client) loadProjects(ctx context.Context) error {
@@ -365,6 +379,21 @@ func (c *Client) CompleteTask(ctx context.Context, taskID string) error {
 	return nil
 }
 
+// DeleteTask permanently deletes a Todoist task.
+func (c *Client) DeleteTask(ctx context.Context, taskID string) error {
+	resp, err := c.do(ctx, http.MethodDelete, "/tasks/"+taskID, nil)
+	if err != nil {
+		return fmt.Errorf("delete task: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("todoist delete task: status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
 func (c *Client) fetchTask(ctx context.Context, taskID string) (todoistTask, error) {
 	resp, err := c.do(ctx, http.MethodGet, "/tasks/"+taskID, nil)
 	if err != nil {
@@ -463,6 +492,38 @@ func (c *Client) UpdateEstimate(ctx context.Context, taskID string, remaining ti
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("todoist update task: status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+// GetPriority fetches the priority level for a Todoist task.
+func (c *Client) GetPriority(ctx context.Context, taskID string) (int, error) {
+	t, err := c.fetchTask(ctx, taskID)
+	if err != nil {
+		return 0, err
+	}
+	return apiPriorityToLevel(t.Priority), nil
+}
+
+// UpdatePriority sets the priority on a Todoist task.
+func (c *Client) UpdatePriority(ctx context.Context, taskID string, priority int) error {
+	payload := map[string]interface{}{
+		"priority": levelToAPIPriority(priority),
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal update: %w", err)
+	}
+
+	resp, err := c.do(ctx, http.MethodPost, "/tasks/"+taskID, strings.NewReader(string(data)))
+	if err != nil {
+		return fmt.Errorf("update priority: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("todoist update priority: status %d: %s", resp.StatusCode, string(body))
 	}
 	return nil
 }
