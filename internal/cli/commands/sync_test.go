@@ -1179,3 +1179,142 @@ func TestCLI008_sync_from_to_date_range(t *testing.T) {
 		}
 	})
 }
+
+func TestSYNC009_report_unscheduled_tasks(t *testing.T) {
+	// Monday 9am — business hours 09:00-17:00 = 8h per day
+	now := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
+	start := now
+	// End at Monday 17:00 so only Monday's slots are available
+	end := time.Date(2025, 1, 20, 17, 0, 0, 0, time.UTC)
+
+	t.Run("tasks that do not fit are reported as unscheduled", func(t *testing.T) {
+		cal := &mockCalendar{}
+		// Fill most of the day with a meeting (09:00-16:00), leaving ~45min of free time (with buffer)
+		cal.events = []calendar.Event{
+			{
+				Title: "All-day meeting",
+				Start: time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
+				End:   time.Date(2025, 1, 20, 16, 0, 0, 0, time.UTC),
+			},
+		}
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
+				{Key: "FIT-1", Summary: "Small task", Priority: 1, RemainingEstimate: 30 * time.Minute, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+				{Key: "NOFIT-1", Summary: "Big task", Priority: 2, RemainingEstimate: 4 * time.Hour, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+			},
+		}
+
+		cfg := testConfig()
+		result, err := RunSync(context.Background(), SyncParams{
+			Cal:   cal,
+			Tasks: jr,
+			Cfg:   cfg,
+			Query: "project = TEST",
+			Now:   now,
+			Start: start,
+			End:   end,
+		})
+		if err != nil {
+			t.Fatalf("RunSync: %v", err)
+		}
+
+		// FIT-1 should be scheduled, NOFIT-1 should not
+		scheduledKeys := make(map[string]bool)
+		for _, alloc := range result.Allocations {
+			scheduledKeys[alloc.Task.Key] = true
+		}
+		if !scheduledKeys["FIT-1"] {
+			t.Error("FIT-1 should be scheduled")
+		}
+
+		if len(result.Unscheduled) == 0 {
+			t.Fatal("expected unscheduled tasks")
+		}
+		found := false
+		for _, u := range result.Unscheduled {
+			if u.Key == "NOFIT-1" {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("NOFIT-1 should be in Unscheduled list")
+		}
+	})
+
+	t.Run("all tasks fit means no unscheduled", func(t *testing.T) {
+		cal := &mockCalendar{}
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
+				{Key: "T-1", Summary: "Task 1", Priority: 1, RemainingEstimate: 30 * time.Minute, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+				{Key: "T-2", Summary: "Task 2", Priority: 2, RemainingEstimate: 30 * time.Minute, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+			},
+		}
+
+		cfg := testConfig()
+		// Use a wide window so all tasks fit easily
+		wideEnd := now.AddDate(0, 0, 5)
+		result, err := RunSync(context.Background(), SyncParams{
+			Cal:   cal,
+			Tasks: jr,
+			Cfg:   cfg,
+			Query: "project = TEST",
+			Now:   now,
+			Start: start,
+			End:   wideEnd,
+		})
+		if err != nil {
+			t.Fatalf("RunSync: %v", err)
+		}
+
+		if len(result.Unscheduled) != 0 {
+			t.Errorf("expected no unscheduled tasks, got %d", len(result.Unscheduled))
+		}
+	})
+
+	t.Run("unscheduled tasks appear in output", func(t *testing.T) {
+		allocs := []scheduler.Allocation{
+			{Task: task.Task{Key: "T-1", Summary: "Scheduled"}, Start: now, End: now.Add(time.Hour)},
+		}
+		unscheduled := []task.Task{
+			{Key: "T-2", Summary: "Dropped task", RemainingEstimate: 2 * time.Hour},
+			{Key: "T-3", Summary: "Another dropped", RemainingEstimate: 0},
+		}
+		result := &SyncResult{Allocations: allocs, Unscheduled: unscheduled}
+		var buf bytes.Buffer
+		PrintSyncResult(&buf, result, false)
+
+		out := buf.String()
+		if !strings.Contains(out, "Could not schedule 2 task(s)") {
+			t.Errorf("output missing unscheduled header, got:\n%s", out)
+		}
+		if !strings.Contains(out, "T-2") || !strings.Contains(out, "Dropped task") {
+			t.Errorf("output missing unscheduled task T-2, got:\n%s", out)
+		}
+		if !strings.Contains(out, "2h0m0s") {
+			t.Errorf("output missing estimate for T-2, got:\n%s", out)
+		}
+		if !strings.Contains(out, "T-3") || !strings.Contains(out, "no estimate") {
+			t.Errorf("output missing T-3 with no estimate, got:\n%s", out)
+		}
+	})
+
+	t.Run("unscheduled tasks appear in dry-run output", func(t *testing.T) {
+		allocs := []scheduler.Allocation{
+			{Task: task.Task{Key: "T-1", Summary: "Scheduled"}, Start: now, End: now.Add(time.Hour)},
+		}
+		unscheduled := []task.Task{
+			{Key: "T-2", Summary: "Dropped", RemainingEstimate: time.Hour},
+		}
+		result := &SyncResult{Allocations: allocs, Unscheduled: unscheduled}
+		var buf bytes.Buffer
+		PrintSyncResult(&buf, result, true)
+
+		out := buf.String()
+		if !strings.Contains(out, "Dry run") {
+			t.Errorf("output missing dry-run header, got:\n%s", out)
+		}
+		if !strings.Contains(out, "Could not schedule") {
+			t.Errorf("dry-run output missing unscheduled section, got:\n%s", out)
+		}
+	})
+}

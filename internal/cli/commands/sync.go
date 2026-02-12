@@ -41,6 +41,7 @@ type SyncParams struct {
 type SyncResult struct {
 	Allocations []scheduler.Allocation
 	AtRisk      []scheduler.Allocation
+	Unscheduled []task.Task
 }
 
 // SyncFlags holds the parsed CLI flags for the sync command.
@@ -133,6 +134,18 @@ func PrintSyncResult(w io.Writer, result *SyncResult, dryRun bool) {
 			fmt.Fprintf(w, "  %s: %s (%s)\n", ar.Task.Key, ar.Task.Summary, dueStr)
 		}
 	}
+
+	if len(result.Unscheduled) > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintf(w, "Could not schedule %d task(s):\n", len(result.Unscheduled))
+		for _, t := range result.Unscheduled {
+			est := "no estimate"
+			if t.RemainingEstimate > 0 {
+				est = t.RemainingEstimate.String()
+			}
+			fmt.Fprintf(w, "  %s: %s (%s)\n", t.Key, t.Summary, est)
+		}
+	}
 }
 
 // RunSync executes the full sync process:
@@ -200,6 +213,18 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 		MinTaskDurationMinutes: p.Cfg.Scheduling.MinTaskDurationMinutes,
 	})
 
+	// Step 6b: Identify unscheduled tasks
+	scheduled := make(map[string]bool)
+	for _, alloc := range allocations {
+		scheduled[alloc.Task.Key] = true
+	}
+	var unscheduled []task.Task
+	for _, st := range sorted {
+		if !scheduled[st.Task.Key] {
+			unscheduled = append(unscheduled, st.Task)
+		}
+	}
+
 	// Step 7: Create calendar events (skip on dry-run)
 	if !p.DryRun {
 		for _, alloc := range allocations {
@@ -228,6 +253,7 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 	return &SyncResult{
 		Allocations: allocations,
 		AtRisk:      atRisk,
+		Unscheduled: unscheduled,
 	}, nil
 }
 
