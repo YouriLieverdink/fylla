@@ -322,6 +322,155 @@ func TestSet_KeyNotFound(t *testing.T) {
 	}
 }
 
+func TestValidate(t *testing.T) {
+	validConfig := func() Config {
+		return Config{
+			Source: "jira",
+			Scheduling: SchedulingConfig{
+				WindowDays:             5,
+				MinTaskDurationMinutes: 25,
+				BufferMinutes:          15,
+			},
+			BusinessHours: BusinessHoursConfig{
+				Start:    "09:00",
+				End:      "17:00",
+				WorkDays: []int{1, 2, 3, 4, 5},
+			},
+			Weights: WeightsConfig{
+				Priority:  0.40,
+				DueDate:   0.30,
+				Estimate:  0.15,
+				IssueType: 0.10,
+				Age:       0.05,
+			},
+		}
+	}
+
+	t.Run("valid config passes", func(t *testing.T) {
+		cfg := validConfig()
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("empty source is valid", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Source = ""
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("todoist source is valid", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Source = "todoist"
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("invalid source", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Source = "trello"
+		if err := cfg.Validate(); err == nil {
+			t.Error("expected error for invalid source")
+		}
+	})
+
+	t.Run("weights sum too low", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Weights.Priority = 0.10
+		if err := cfg.Validate(); err == nil {
+			t.Error("expected error for weights sum")
+		}
+	})
+
+	t.Run("weights sum too high", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Weights.Priority = 0.80
+		if err := cfg.Validate(); err == nil {
+			t.Error("expected error for weights sum")
+		}
+	})
+
+	t.Run("invalid business hours start format", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.BusinessHours.Start = "9:00"
+		if err := cfg.Validate(); err == nil {
+			t.Error("expected error for invalid start time")
+		}
+	})
+
+	t.Run("invalid business hours end format", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.BusinessHours.End = "25:00"
+		if err := cfg.Validate(); err == nil {
+			t.Error("expected error for invalid end time")
+		}
+	})
+
+	t.Run("business hours start after end", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.BusinessHours.Start = "17:00"
+		cfg.BusinessHours.End = "09:00"
+		if err := cfg.Validate(); err == nil {
+			t.Error("expected error for start after end")
+		}
+	})
+
+	t.Run("invalid work day", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.BusinessHours.WorkDays = []int{0, 1, 2}
+		if err := cfg.Validate(); err == nil {
+			t.Error("expected error for invalid work day 0")
+		}
+	})
+
+	t.Run("work day 8 is invalid", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.BusinessHours.WorkDays = []int{1, 8}
+		if err := cfg.Validate(); err == nil {
+			t.Error("expected error for work day 8")
+		}
+	})
+
+	t.Run("windowDays zero", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Scheduling.WindowDays = 0
+		if err := cfg.Validate(); err == nil {
+			t.Error("expected error for zero windowDays")
+		}
+	})
+
+	t.Run("minTaskDurationMinutes negative", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Scheduling.MinTaskDurationMinutes = -1
+		if err := cfg.Validate(); err == nil {
+			t.Error("expected error for negative minTaskDurationMinutes")
+		}
+	})
+
+	t.Run("invalid project rule", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.ProjectRules = map[string]ProjectRule{
+			"BAD": {Start: "abc", End: "17:00", WorkDays: []int{1}},
+		}
+		if err := cfg.Validate(); err == nil {
+			t.Error("expected error for invalid project rule")
+		}
+	})
+
+	t.Run("project rule start after end", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.ProjectRules = map[string]ProjectRule{
+			"BAD": {Start: "18:00", End: "09:00", WorkDays: []int{1}},
+		}
+		if err := cfg.Validate(); err == nil {
+			t.Error("expected error for project rule start after end")
+		}
+	})
+}
+
 // writeTestConfig writes the default config YAML to a temp file and returns its path.
 func writeTestConfig(t *testing.T) string {
 	t.Helper()
