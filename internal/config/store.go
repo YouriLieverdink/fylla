@@ -11,13 +11,25 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ConfigDir returns the fylla config directory following XDG conventions.
+func ConfigDir() (string, error) {
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		return filepath.Join(xdg, "fylla"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("home dir: %w", err)
+	}
+	return filepath.Join(home, ".config", "fylla"), nil
+}
+
 // DefaultPath returns the default config file path (~/.config/fylla/config.yaml).
 func DefaultPath() (string, error) {
-	dir, err := os.UserConfigDir()
+	dir, err := ConfigDir()
 	if err != nil {
-		return "", fmt.Errorf("config dir: %w", err)
+		return "", err
 	}
-	return filepath.Join(dir, "fylla", "config.yaml"), nil
+	return filepath.Join(dir, "config.yaml"), nil
 }
 
 // LoadFrom reads and parses a YAML config file at the given path.

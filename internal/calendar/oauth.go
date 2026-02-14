@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/iruoy/fylla/internal/config"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	googlecalendar "google.golang.org/api/calendar/v3"
@@ -22,39 +23,94 @@ var OAuthScopes = []string{
 	googlecalendar.CalendarReadonlyScope,
 }
 
-// TokenPath returns the default path for the cached OAuth token.
-func TokenPath() (string, error) {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("config dir: %w", err)
-	}
-	return filepath.Join(dir, "fylla", "google_token.json"), nil
+// GoogleCredentials stores OAuth client config and token in a single file.
+type GoogleCredentials struct {
+	ClientID     string        `json:"clientId"`
+	ClientSecret string        `json:"clientSecret"`
+	AuthURI      string        `json:"authUri"`
+	TokenURI     string        `json:"tokenUri"`
+	Token        *oauth2.Token `json:"token"`
 }
 
-// SaveToken writes an OAuth2 token to the given path with restricted permissions.
-func SaveToken(token *oauth2.Token, path string) error {
+// NewGoogleCredentials creates GoogleCredentials from an OAuth config and token.
+func NewGoogleCredentials(cfg *oauth2.Config, token *oauth2.Token) *GoogleCredentials {
+	return &GoogleCredentials{
+		ClientID:     cfg.ClientID,
+		ClientSecret: cfg.ClientSecret,
+		AuthURI:      cfg.Endpoint.AuthURL,
+		TokenURI:     cfg.Endpoint.TokenURL,
+		Token:        token,
+	}
+}
+
+// OAuthConfig reconstructs an *oauth2.Config from stored fields.
+func (c *GoogleCredentials) OAuthConfig() *oauth2.Config {
+	return &oauth2.Config{
+		ClientID:     c.ClientID,
+		ClientSecret: c.ClientSecret,
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  c.AuthURI,
+			TokenURL: c.TokenURI,
+		},
+		Scopes: OAuthScopes,
+	}
+}
+
+// SaveGoogleCredentials writes GoogleCredentials to the given path with restricted permissions.
+func SaveGoogleCredentials(creds *GoogleCredentials, path string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("create token dir: %w", err)
+		return fmt.Errorf("create credentials dir: %w", err)
 	}
-	data, err := json.MarshalIndent(token, "", "  ")
+	data, err := json.MarshalIndent(creds, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshal token: %w", err)
+		return fmt.Errorf("marshal credentials: %w", err)
 	}
 	return os.WriteFile(path, data, 0600)
 }
 
-// LoadToken reads an OAuth2 token from the given path.
-func LoadToken(path string) (*oauth2.Token, error) {
+// LoadGoogleCredentials reads GoogleCredentials from the given path.
+func LoadGoogleCredentials(path string) (*GoogleCredentials, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var token oauth2.Token
-	if err := json.Unmarshal(data, &token); err != nil {
-		return nil, fmt.Errorf("parse token: %w", err)
+	var creds GoogleCredentials
+	if err := json.Unmarshal(data, &creds); err != nil {
+		return nil, fmt.Errorf("parse credentials: %w", err)
 	}
-	return &token, nil
+	return &creds, nil
+}
+
+// EnsureValidToken checks whether the stored token is valid and refreshes it
+// if expired. The creds.Token field is mutated in place on refresh.
+func EnsureValidToken(ctx context.Context, creds *GoogleCredentials) error {
+	if creds.Token == nil {
+		return fmt.Errorf("no token in credentials")
+	}
+	if creds.Token.Valid() {
+		return nil
+	}
+	if creds.Token.RefreshToken == "" {
+		return fmt.Errorf("token expired and no refresh token available")
+	}
+	cfg := creds.OAuthConfig()
+	src := cfg.TokenSource(ctx, creds.Token)
+	refreshed, err := src.Token()
+	if err != nil {
+		return fmt.Errorf("refresh token: %w", err)
+	}
+	creds.Token = refreshed
+	return nil
+}
+
+// TokenPath returns the default path for the Google credentials file.
+func TokenPath() (string, error) {
+	dir, err := config.ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "google_credentials.json"), nil
 }
 
 // OAuthConfigFromFile parses a Google OAuth client credentials JSON file
@@ -129,38 +185,6 @@ func Authenticate(ctx context.Context, cfg *oauth2.Config) (*oauth2.Token, error
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-}
-
-// CachedToken returns a cached OAuth token from disk, or runs the
-// authentication flow if no valid cached token exists. The token is
-// saved to disk after a successful authentication.
-func CachedToken(ctx context.Context, cfg *oauth2.Config, tokenPath string) (*oauth2.Token, error) {
-	token, err := LoadToken(tokenPath)
-	if err == nil && token.Valid() {
-		return token, nil
-	}
-
-	// If we have a refresh token but the access token expired,
-	// let the oauth2 library handle refresh via TokenSource.
-	if err == nil && token.RefreshToken != "" {
-		src := cfg.TokenSource(ctx, token)
-		refreshed, err := src.Token()
-		if err == nil {
-			if saveErr := SaveToken(refreshed, tokenPath); saveErr != nil {
-				return nil, fmt.Errorf("save refreshed token: %w", saveErr)
-			}
-			return refreshed, nil
-		}
-	}
-
-	token, err = Authenticate(ctx, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("authenticate: %w", err)
-	}
-	if err := SaveToken(token, tokenPath); err != nil {
-		return nil, fmt.Errorf("save token: %w", err)
-	}
-	return token, nil
 }
 
 func openBrowser(url string) error {
