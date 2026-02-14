@@ -1,19 +1,21 @@
-source: jira
+providers: [jira]
 
 jira:
+  credentials: ""
   url: https://company.atlassian.net
   email: you@example.com
   defaultJql: "assignee = currentUser() AND status = 'To Do'"
   defaultProject: ""
 
 todoist:
+  credentials: ""
   defaultFilter: "today | overdue"
   defaultProject: ""
 
 calendar:
+  credentials: ""
   sourceCalendars: [primary]
   fyllaCalendar: fylla
-  clientCredentials: client_credentials.json
 
 scheduling:
   windowDays: 5

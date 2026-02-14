@@ -12,45 +12,48 @@ import (
 
 // OAuthAuthenticator abstracts the Google OAuth flow for testing.
 type OAuthAuthenticator interface {
-	CachedToken(ctx context.Context, cfg *oauth2.Config, tokenPath string) (*oauth2.Token, error)
+	Authenticate(ctx context.Context, cfg *oauth2.Config) (*oauth2.Token, error)
 }
 
 // defaultOAuthAuthenticator delegates to the calendar package.
 type defaultOAuthAuthenticator struct{}
 
-func (d defaultOAuthAuthenticator) CachedToken(ctx context.Context, cfg *oauth2.Config, tokenPath string) (*oauth2.Token, error) {
-	return calendar.CachedToken(ctx, cfg, tokenPath)
+func (d defaultOAuthAuthenticator) Authenticate(ctx context.Context, cfg *oauth2.Config) (*oauth2.Token, error) {
+	return calendar.Authenticate(ctx, cfg)
 }
 
 // AuthJiraParams holds inputs for the Jira auth operation.
 type AuthJiraParams struct {
-	URL             string
-	Email           string
-	Token           string
-	ConfigPath      string
-	CredentialsPath string
+	URL        string
+	Email      string
+	Token      string
+	ConfigPath string
 }
 
-// RunAuthJira stores Jira credentials: url and email in config, token in credentials.
+// RunAuthJira stores Jira credentials: url, email, and credential path in config; token in per-provider file.
 func RunAuthJira(p AuthJiraParams) error {
 	cfg, err := config.LoadFrom(p.ConfigPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
 
+	credPath := cfg.Jira.Credentials
+	if credPath == "" {
+		credPath, err = config.DefaultProviderCredentialsPath("jira")
+		if err != nil {
+			return fmt.Errorf("default credentials path: %w", err)
+		}
+	}
+
 	cfg.Jira.URL = p.URL
 	cfg.Jira.Email = p.Email
+	cfg.Jira.Credentials = credPath
 
 	if err := config.SaveTo(cfg, p.ConfigPath); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	creds, err := config.LoadCredentialsFrom(p.CredentialsPath)
-	if err != nil {
-		return fmt.Errorf("load credentials: %w", err)
-	}
-	creds.JiraToken = p.Token
-	if err := config.SaveCredentialsTo(creds, p.CredentialsPath); err != nil {
+	if err := config.SaveProviderCredentials(&config.ProviderCredentials{Token: p.Token}, credPath); err != nil {
 		return fmt.Errorf("save credentials: %w", err)
 	}
 
@@ -59,21 +62,57 @@ func RunAuthJira(p AuthJiraParams) error {
 
 // AuthGoogleParams holds inputs for the Google auth operation.
 type AuthGoogleParams struct {
-	ClientCredentialsPath string
-	TokenPath             string
-	Auth                  OAuthAuthenticator
+	ClientFile      string // input: Google OAuth client credentials JSON
+	CredentialsPath string // output: where to save combined google_credentials.json
+	ConfigPath      string
+	Auth            OAuthAuthenticator
 }
 
-// RunAuthGoogle runs the Google OAuth flow and caches the token.
+// RunAuthGoogle runs the Google OAuth flow and saves client config + token together.
+// When ConfigPath is set, the credentials path is saved to config.
 func RunAuthGoogle(ctx context.Context, p AuthGoogleParams) error {
-	oauthCfg, err := calendar.OAuthConfigFromFile(p.ClientCredentialsPath)
+	// Try loading existing credentials and refreshing the token
+	if p.CredentialsPath != "" {
+		creds, err := calendar.LoadGoogleCredentials(p.CredentialsPath)
+		if err == nil && creds.Token != nil {
+			if refreshErr := calendar.EnsureValidToken(ctx, creds); refreshErr == nil {
+				if saveErr := calendar.SaveGoogleCredentials(creds, p.CredentialsPath); saveErr != nil {
+					return fmt.Errorf("save refreshed credentials: %w", saveErr)
+				}
+				return nil
+			}
+		}
+	}
+
+	// Need a client file to create new credentials
+	if p.ClientFile == "" {
+		return fmt.Errorf("no existing credentials and no --client-credentials provided; run 'fylla auth google --client-credentials path/to/client.json'")
+	}
+
+	oauthCfg, err := calendar.OAuthConfigFromFile(p.ClientFile)
 	if err != nil {
 		return fmt.Errorf("load client credentials: %w", err)
 	}
 
-	_, err = p.Auth.CachedToken(ctx, oauthCfg, p.TokenPath)
+	token, err := p.Auth.Authenticate(ctx, oauthCfg)
 	if err != nil {
 		return fmt.Errorf("google auth: %w", err)
+	}
+
+	creds := calendar.NewGoogleCredentials(oauthCfg, token)
+	if err := calendar.SaveGoogleCredentials(creds, p.CredentialsPath); err != nil {
+		return fmt.Errorf("save credentials: %w", err)
+	}
+
+	if p.ConfigPath != "" {
+		cfg, loadErr := config.LoadFrom(p.ConfigPath)
+		if loadErr != nil {
+			return fmt.Errorf("load config: %w", loadErr)
+		}
+		cfg.Calendar.Credentials = p.CredentialsPath
+		if saveErr := config.SaveTo(cfg, p.ConfigPath); saveErr != nil {
+			return fmt.Errorf("save config: %w", saveErr)
+		}
 	}
 
 	return nil
@@ -81,20 +120,34 @@ func RunAuthGoogle(ctx context.Context, p AuthGoogleParams) error {
 
 // AuthTodoistParams holds inputs for the Todoist auth operation.
 type AuthTodoistParams struct {
-	Token           string
-	CredentialsPath string
+	Token      string
+	ConfigPath string
 }
 
-// RunAuthTodoist stores the Todoist API token in credentials.
+// RunAuthTodoist stores the Todoist API token in a per-provider credential file.
 func RunAuthTodoist(p AuthTodoistParams) error {
-	creds, err := config.LoadCredentialsFrom(p.CredentialsPath)
+	cfg, err := config.LoadFrom(p.ConfigPath)
 	if err != nil {
-		return fmt.Errorf("load credentials: %w", err)
+		return fmt.Errorf("load config: %w", err)
 	}
-	creds.TodoistToken = p.Token
-	if err := config.SaveCredentialsTo(creds, p.CredentialsPath); err != nil {
+
+	credPath := cfg.Todoist.Credentials
+	if credPath == "" {
+		credPath, err = config.DefaultProviderCredentialsPath("todoist")
+		if err != nil {
+			return fmt.Errorf("default credentials path: %w", err)
+		}
+	}
+
+	cfg.Todoist.Credentials = credPath
+	if err := config.SaveTo(cfg, p.ConfigPath); err != nil {
+		return fmt.Errorf("save config: %w", err)
+	}
+
+	if err := config.SaveProviderCredentials(&config.ProviderCredentials{Token: p.Token}, credPath); err != nil {
 		return fmt.Errorf("save credentials: %w", err)
 	}
+
 	return nil
 }
 
@@ -149,17 +202,11 @@ func newAuthJiraCmd() *cobra.Command {
 				return fmt.Errorf("--token is required")
 			}
 
-			credPath, err := config.CredentialsPath()
-			if err != nil {
-				return err
-			}
-
 			if err := RunAuthJira(AuthJiraParams{
-				URL:             url,
-				Email:           email,
-				Token:           token,
-				ConfigPath:      cfgPath,
-				CredentialsPath: credPath,
+				URL:        url,
+				Email:      email,
+				Token:      token,
+				ConfigPath: cfgPath,
 			}); err != nil {
 				return err
 			}
@@ -186,14 +233,14 @@ func newAuthTodoistCmd() *cobra.Command {
 				return fmt.Errorf("--token is required")
 			}
 
-			credPath, err := config.CredentialsPath()
+			cfgPath, err := config.DefaultPath()
 			if err != nil {
 				return err
 			}
 
 			if err := RunAuthTodoist(AuthTodoistParams{
-				Token:           token,
-				CredentialsPath: credPath,
+				Token:      token,
+				ConfigPath: cfgPath,
 			}); err != nil {
 				return err
 			}
@@ -213,26 +260,31 @@ func newAuthGoogleCmd() *cobra.Command {
 		Use:   "google",
 		Short: "Authenticate with Google Calendar via OAuth",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			credFile, _ := cmd.Flags().GetString("client-credentials")
-			if credFile == "" {
-				cfg, err := config.Load()
-				if err == nil && cfg.Calendar.ClientCredentials != "" {
-					credFile = cfg.Calendar.ClientCredentials
-				}
-			}
-			if credFile == "" {
-				return fmt.Errorf("set calendar.clientCredentials in config or pass --client-credentials")
-			}
+			clientFile, _ := cmd.Flags().GetString("client-credentials")
 
-			tokenPath, err := calendar.TokenPath()
+			cfgPath, err := config.DefaultPath()
 			if err != nil {
 				return err
 			}
 
+			// Determine output credentials path
+			credPath := ""
+			cfg, loadErr := config.LoadFrom(cfgPath)
+			if loadErr == nil && cfg.Calendar.Credentials != "" {
+				credPath = cfg.Calendar.Credentials
+			}
+			if credPath == "" {
+				credPath, err = calendar.TokenPath()
+				if err != nil {
+					return err
+				}
+			}
+
 			if err := RunAuthGoogle(cmd.Context(), AuthGoogleParams{
-				ClientCredentialsPath: credFile,
-				TokenPath:             tokenPath,
-				Auth:                  defaultOAuthAuthenticator{},
+				ClientFile:      clientFile,
+				CredentialsPath: credPath,
+				ConfigPath:      cfgPath,
+				Auth:            defaultOAuthAuthenticator{},
 			}); err != nil {
 				return err
 			}

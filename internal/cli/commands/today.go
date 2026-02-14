@@ -6,7 +6,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/iruoy/fylla/internal/calendar"
+	"github.com/iruoy/fylla/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -81,40 +81,12 @@ func newTodayCmd() *cobra.Command {
 		Use:   "today",
 		Short: "Show all Fylla tasks scheduled for today",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, cfg, err := loadTaskSource()
+			cfg, err := config.Load()
 			if err != nil {
-				return err
+				return fmt.Errorf("load config: %w", err)
 			}
 
-			credFile, _ := cmd.Flags().GetString("client-credentials")
-			if credFile == "" {
-				credFile = cfg.Calendar.ClientCredentials
-			}
-			if credFile == "" {
-				return fmt.Errorf("set calendar.clientCredentials in config or pass --client-credentials")
-			}
-
-			oauthCfg, err := calendar.OAuthConfigFromFile(credFile)
-			if err != nil {
-				return fmt.Errorf("load client credentials: %w", err)
-			}
-
-			tokenPath, err := calendar.TokenPath()
-			if err != nil {
-				return err
-			}
-
-			token, err := calendar.CachedToken(cmd.Context(), oauthCfg, tokenPath)
-			if err != nil {
-				return fmt.Errorf("google auth: %w", err)
-			}
-
-			baseURL := cfg.Jira.URL
-			if baseURL == "" {
-				baseURL = "https://todoist.com"
-			}
-			cal, err := calendar.NewGoogleClient(cmd.Context(), oauthCfg, token,
-				cfg.Calendar.SourceCalendars, cfg.Calendar.FyllaCalendar, baseURL, cfg.Source)
+			cal, err := loadCalendarClient(cmd.Context(), cfg)
 			if err != nil {
 				return err
 			}

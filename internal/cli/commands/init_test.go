@@ -9,18 +9,21 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/iruoy/fylla/internal/calendar"
 	"github.com/iruoy/fylla/internal/config"
 	"golang.org/x/oauth2"
 )
 
 // mockSurveyor provides canned responses for testing init flow.
 type mockSurveyor struct {
-	selectAnswers  []string
-	inputAnswers   []string
-	passwordAnswer []string
-	selectIdx      int
-	inputIdx       int
-	passwordIdx    int
+	selectAnswers      []string
+	multiSelectAnswers [][]string
+	inputAnswers       []string
+	passwordAnswer     []string
+	selectIdx          int
+	multiSelectIdx     int
+	inputIdx           int
+	passwordIdx        int
 }
 
 func (m *mockSurveyor) Select(message string, options []string) (string, error) {
@@ -29,6 +32,15 @@ func (m *mockSurveyor) Select(message string, options []string) (string, error) 
 	}
 	answer := m.selectAnswers[m.selectIdx]
 	m.selectIdx++
+	return answer, nil
+}
+
+func (m *mockSurveyor) MultiSelect(message string, options []string) ([]string, error) {
+	if m.multiSelectIdx >= len(m.multiSelectAnswers) {
+		return nil, fmt.Errorf("unexpected MultiSelect call: %s", message)
+	}
+	answer := m.multiSelectAnswers[m.multiSelectIdx]
+	m.multiSelectIdx++
 	return answer, nil
 }
 
@@ -53,8 +65,7 @@ func (m *mockSurveyor) Password(message string) (string, error) {
 func TestRunInit_Jira(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
-	credPath := filepath.Join(dir, "credentials.json")
-	tokenPath := filepath.Join(dir, "google_token.json")
+	credPath := filepath.Join(dir, "google_credentials.json")
 
 	writeDefaultConfig(t, cfgPath)
 
@@ -66,9 +77,9 @@ func TestRunInit_Jira(t *testing.T) {
 	}
 
 	mock := &mockSurveyor{
-		selectAnswers:  []string{"jira"},
-		inputAnswers:   []string{"https://company.atlassian.net", "user@example.com", clientCredsPath},
-		passwordAnswer: []string{"jira-token-123"},
+		multiSelectAnswers: [][]string{{"jira"}},
+		inputAnswers:       []string{"https://company.atlassian.net", "user@example.com", clientCredsPath},
+		passwordAnswer:     []string{"jira-token-123"},
 	}
 
 	oauthMock := &mockOAuthAuthenticator{
@@ -85,7 +96,6 @@ func TestRunInit_Jira(t *testing.T) {
 		Auth:            oauthMock,
 		ConfigPath:      cfgPath,
 		CredentialsPath: credPath,
-		TokenPath:       tokenPath,
 	})
 	if err != nil {
 		t.Fatalf("RunInit: %v", err)
@@ -96,8 +106,8 @@ func TestRunInit_Jira(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFrom: %v", err)
 	}
-	if cfg.Source != "jira" {
-		t.Errorf("source = %q, want jira", cfg.Source)
+	if len(cfg.Providers) != 1 || cfg.Providers[0] != "jira" {
+		t.Errorf("providers = %v, want [jira]", cfg.Providers)
 	}
 	if cfg.Jira.URL != "https://company.atlassian.net" {
 		t.Errorf("jira.url = %q", cfg.Jira.URL)
@@ -105,17 +115,20 @@ func TestRunInit_Jira(t *testing.T) {
 	if cfg.Jira.Email != "user@example.com" {
 		t.Errorf("jira.email = %q", cfg.Jira.Email)
 	}
-	if cfg.Calendar.ClientCredentials != clientCredsPath {
-		t.Errorf("calendar.clientCredentials = %q", cfg.Calendar.ClientCredentials)
+	if cfg.Calendar.Credentials != credPath {
+		t.Errorf("calendar.credentials = %q, want %q", cfg.Calendar.Credentials, credPath)
 	}
 
-	// Verify credentials
-	creds, err := config.LoadCredentialsFrom(credPath)
-	if err != nil {
-		t.Fatalf("LoadCredentialsFrom: %v", err)
+	// Verify per-provider jira credentials
+	if cfg.Jira.Credentials == "" {
+		t.Fatal("jira.credentials should be set")
 	}
-	if creds.JiraToken != "jira-token-123" {
-		t.Errorf("jiraToken = %q", creds.JiraToken)
+	creds, err := config.LoadProviderCredentials(cfg.Jira.Credentials)
+	if err != nil {
+		t.Fatalf("LoadProviderCredentials: %v", err)
+	}
+	if creds.Token != "jira-token-123" {
+		t.Errorf("jira token = %q", creds.Token)
 	}
 
 	// Verify OAuth was called
@@ -123,10 +136,22 @@ func TestRunInit_Jira(t *testing.T) {
 		t.Error("expected OAuth flow to be called")
 	}
 
+	// Verify google_credentials.json contains client config + token
+	googleCreds, err := calendar.LoadGoogleCredentials(credPath)
+	if err != nil {
+		t.Fatalf("LoadGoogleCredentials: %v", err)
+	}
+	if googleCreds.ClientID != "test-id" {
+		t.Errorf("clientId = %q, want %q", googleCreds.ClientID, "test-id")
+	}
+	if googleCreds.Token.AccessToken != "test-access" {
+		t.Errorf("access token = %q, want %q", googleCreds.Token.AccessToken, "test-access")
+	}
+
 	// Verify output
 	out := buf.String()
-	if !strings.Contains(out, "Source set to jira") {
-		t.Errorf("output missing source confirmation, got:\n%s", out)
+	if !strings.Contains(out, "Providers set to [jira]") {
+		t.Errorf("output missing providers confirmation, got:\n%s", out)
 	}
 	if !strings.Contains(out, "Setup complete") {
 		t.Errorf("output missing completion message, got:\n%s", out)
@@ -136,8 +161,7 @@ func TestRunInit_Jira(t *testing.T) {
 func TestRunInit_Todoist(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
-	credPath := filepath.Join(dir, "credentials.json")
-	tokenPath := filepath.Join(dir, "google_token.json")
+	credPath := filepath.Join(dir, "google_credentials.json")
 
 	writeDefaultConfig(t, cfgPath)
 
@@ -148,9 +172,9 @@ func TestRunInit_Todoist(t *testing.T) {
 	}
 
 	mock := &mockSurveyor{
-		selectAnswers:  []string{"todoist"},
-		inputAnswers:   []string{clientCredsPath},
-		passwordAnswer: []string{"todoist-token-456"},
+		multiSelectAnswers: [][]string{{"todoist"}},
+		inputAnswers:       []string{clientCredsPath},
+		passwordAnswer:     []string{"todoist-token-456"},
 	}
 
 	oauthMock := &mockOAuthAuthenticator{
@@ -167,7 +191,6 @@ func TestRunInit_Todoist(t *testing.T) {
 		Auth:            oauthMock,
 		ConfigPath:      cfgPath,
 		CredentialsPath: credPath,
-		TokenPath:       tokenPath,
 	})
 	if err != nil {
 		t.Fatalf("RunInit: %v", err)
@@ -177,21 +200,25 @@ func TestRunInit_Todoist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFrom: %v", err)
 	}
-	if cfg.Source != "todoist" {
-		t.Errorf("source = %q, want todoist", cfg.Source)
+	if len(cfg.Providers) != 1 || cfg.Providers[0] != "todoist" {
+		t.Errorf("providers = %v, want [todoist]", cfg.Providers)
 	}
 
-	creds, err := config.LoadCredentialsFrom(credPath)
-	if err != nil {
-		t.Fatalf("LoadCredentialsFrom: %v", err)
+	// Verify per-provider todoist credentials
+	if cfg.Todoist.Credentials == "" {
+		t.Fatal("todoist.credentials should be set")
 	}
-	if creds.TodoistToken != "todoist-token-456" {
-		t.Errorf("todoistToken = %q", creds.TodoistToken)
+	creds, err := config.LoadProviderCredentials(cfg.Todoist.Credentials)
+	if err != nil {
+		t.Fatalf("LoadProviderCredentials: %v", err)
+	}
+	if creds.Token != "todoist-token-456" {
+		t.Errorf("todoist token = %q", creds.Token)
 	}
 
 	out := buf.String()
-	if !strings.Contains(out, "Source set to todoist") {
-		t.Errorf("output missing source confirmation, got:\n%s", out)
+	if !strings.Contains(out, "Providers set to [todoist]") {
+		t.Errorf("output missing providers confirmation, got:\n%s", out)
 	}
 	if !strings.Contains(out, "Todoist credentials stored") {
 		t.Errorf("output missing todoist confirmation, got:\n%s", out)

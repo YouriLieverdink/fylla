@@ -1,16 +1,19 @@
 package config
 
-var defaultConfigYAML = []byte(`source: jira
+var defaultConfigYAML = []byte(`providers: [jira]
 
 jira:
+  credentials: ""
   url: https://company.atlassian.net
   email: you@example.com
   defaultJql: "assignee = currentUser() AND status = 'To Do'"
 
 todoist:
+  credentials: ""
   defaultFilter: "today | overdue"
 
 calendar:
+  credentials: ""
   sourceCalendars: [primary]
   fyllaCalendar: fylla
 

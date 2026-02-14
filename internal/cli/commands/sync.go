@@ -67,8 +67,9 @@ type SyncFlags struct {
 func BuildSyncParams(flags SyncFlags, cfg *config.Config, now time.Time) (query string, start, end time.Time, dryRun bool, err error) {
 	dryRun = flags.DryRun
 
-	// Query: source-specific flag/default
-	switch cfg.Source {
+	// Query: use first provider's default as the single query for backward compat
+	providers := cfg.ActiveProviders()
+	switch providers[0] {
 	case "todoist":
 		query = flags.Filter
 		if query == "" {
@@ -439,35 +440,7 @@ func newSyncCmd() *cobra.Command {
 				return err
 			}
 
-			credFile, _ := cmd.Flags().GetString("client-credentials")
-			if credFile == "" {
-				credFile = cfg.Calendar.ClientCredentials
-			}
-			if credFile == "" {
-				return fmt.Errorf("set calendar.clientCredentials in config or pass --client-credentials")
-			}
-
-			oauthCfg, err := calendar.OAuthConfigFromFile(credFile)
-			if err != nil {
-				return fmt.Errorf("load client credentials: %w", err)
-			}
-
-			tokenPath, err := calendar.TokenPath()
-			if err != nil {
-				return err
-			}
-
-			token, err := calendar.CachedToken(cmd.Context(), oauthCfg, tokenPath)
-			if err != nil {
-				return fmt.Errorf("google auth: %w", err)
-			}
-
-			baseURL := cfg.Jira.URL
-			if baseURL == "" {
-				baseURL = "https://todoist.com"
-			}
-			cal, err := calendar.NewGoogleClient(cmd.Context(), oauthCfg, token,
-				cfg.Calendar.SourceCalendars, cfg.Calendar.FyllaCalendar, baseURL, cfg.Source)
+			cal, err := loadCalendarClient(cmd.Context(), cfg)
 			if err != nil {
 				return err
 			}
@@ -493,9 +466,20 @@ func newSyncCmd() *cobra.Command {
 				return err
 			}
 
+			// Use multiFetcher for multi-provider, or the source directly
+			var fetcher TaskFetcher
+			if ms, ok := source.(*MultiTaskSource); ok {
+				fetcher = &multiFetcher{
+					queries: buildProviderQueries(cfg, jql, filter),
+					sources: ms.sources,
+				}
+			} else {
+				fetcher = source
+			}
+
 			result, err := RunSync(cmd.Context(), SyncParams{
 				Cal:      cal,
-				Tasks:    source,
+				Tasks:    fetcher,
 				Cfg:      cfg,
 				Query:    query,
 				Now:      now,
@@ -514,7 +498,6 @@ func newSyncCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().String("client-credentials", "", "Path to Google OAuth client credentials JSON file")
 	cmd.Flags().Bool("dry-run", false, "Preview schedule without creating events")
 	cmd.Flags().Bool("force", false, "Delete all events and recreate (skip incremental sync)")
 	cmd.Flags().String("jql", "", "Custom JQL query override (Jira source)")

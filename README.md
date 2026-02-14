@@ -1,8 +1,10 @@
 # Fylla
 
-Fylla is a Go CLI that pulls tasks from Jira or Todoist, scores and sorts them
+Fylla is a Go CLI that pulls tasks from Jira and/or Todoist, scores and sorts them
 by configurable priority rules, finds free time in Google Calendar, and
-schedules tasks into those slots.
+schedules tasks into those slots. Multiple task providers can be used
+simultaneously — tasks from all sources are pooled and merged into a single
+schedule.
 
 > **Name origin:** *Fylla* (Swedish) means "to fill".
 
@@ -21,9 +23,10 @@ schedules tasks into those slots.
 ### Prerequisites
 
 - Go `1.24` or newer
-- A task source — **one** of:
+- One or more task sources:
   - Jira Cloud instance + API token
   - Todoist account + API token
+  - Both can be used simultaneously
 - A Google Cloud OAuth client for Calendar API access
 
 ### Build locally
@@ -55,9 +58,14 @@ fylla auth jira --url https://company.atlassian.net --email you@example.com --to
 # Todoist
 fylla auth todoist --token YOUR_API_TOKEN
 
+# - and -
+
 # Google Calendar (both sources need this)
 fylla auth google --client-credentials path/to/client_credentials.json
 ```
+
+Each `auth` command stores the token in a per-provider credential file and saves
+the file path to config, so subsequent commands need no credential flags.
 
 ## Configuration
 
@@ -65,23 +73,33 @@ Default config path:
 
 - `~/.config/fylla/config.yaml`
 
-Credentials/token files:
+Per-provider credential files (created by `fylla auth`):
 
-- `~/.config/fylla/credentials.json` (Jira/Todoist tokens)
-- `~/.config/fylla/google_token.json` (Google OAuth access/refresh token)
+- `~/.config/fylla/jira_credentials.json`
+- `~/.config/fylla/todoist_credentials.json`
+
+Other data files:
+
+- `~/.config/fylla/google_credentials.json` (Google OAuth client config + access/refresh token)
 - `~/.config/fylla/timer.json` (running timer state)
 
-### Jira config example
+### Multi-provider config example (Jira + Todoist)
 
 ```yaml
-source: jira
+providers: [jira, todoist]
 
 jira:
+  credentials: ~/.config/fylla/jira_credentials.json  # set by fylla auth jira
   url: https://company.atlassian.net
   email: you@example.com
   defaultJql: "assignee = currentUser() AND status = 'To Do'"
 
+todoist:
+  credentials: ~/.config/fylla/todoist_credentials.json  # set by fylla auth todoist
+  defaultFilter: "today | overdue"
+
 calendar:
+  credentials: ~/.config/fylla/google_credentials.json  # set by fylla auth google
   sourceCalendars: [primary]
   fyllaCalendar: fylla
 
@@ -114,40 +132,25 @@ typeScores:
   Story: 50
 ```
 
-### Todoist config example
+### Single-provider config example (Jira only)
 
 ```yaml
-source: todoist
+providers: [jira]
 
-todoist:
-  defaultFilter: "today | overdue"
+jira:
+  credentials: ~/.config/fylla/jira_credentials.json
+  url: https://company.atlassian.net
+  email: you@example.com
+  defaultJql: "assignee = currentUser() AND status = 'To Do'"
 
 calendar:
+  credentials: path/to/client_credentials.json
   sourceCalendars: [primary]
   fyllaCalendar: fylla
-
-scheduling:
-  windowDays: 5
-  minTaskDurationMinutes: 25
-  bufferMinutes: 15
-
-businessHours:
-  start: "09:00"
-  end: "17:00"
-  workDays: [1, 2, 3, 4, 5]
-
-weights:
-  priority: 0.40
-  dueDate: 0.30
-  estimate: 0.15
-  issueType: 0.10
-  age: 0.05
-
-typeScores:
-  Bug: 100
-  Task: 70
-  Story: 50
 ```
+
+> **Backward compatibility:** The legacy `source: jira` field still works.
+> If `providers` is not set, Fylla falls back to `source`, then defaults to `["jira"]`.
 
 ## Shell Completion
 
@@ -171,30 +174,39 @@ fylla completion powershell > fylla.ps1
 
 ```bash
 # List tasks sorted by priority score
-fylla list                          # uses default query from config
-fylla list --jql "project = WEB"    # Jira: custom JQL
-fylla list --filter "today"         # Todoist: custom filter
+fylla task list                          # uses default query from config
+fylla task list --jql "project = WEB"    # Jira: custom JQL
+fylla task list --filter "today"         # Todoist: custom filter
+# Multi-provider: both --jql and --filter are used for their respective providers
 
 # Schedule tasks into Google Calendar
-fylla sync                          # schedule using defaults
-fylla sync --dry-run                # preview without creating events
-fylla sync --days 3                 # override scheduling window
-fylla sync --from 2025-03-01 --to 2025-03-07
+fylla schedule sync                      # schedule using defaults
+fylla schedule sync --dry-run            # preview without creating events
+fylla schedule sync --days 3             # override scheduling window
+fylla schedule sync --from 2025-03-01 --to 2025-03-07
+# Multi-provider: tasks from all providers are merged into one schedule
+
+# View today's schedule
+fylla schedule today                     # show all Fylla tasks for today
+fylla schedule next                      # show current/next task
 
 # Time tracking
-fylla start TASK-KEY                # start timer
-fylla status                        # check running timer
-fylla stop -d "worked on feature"   # stop timer and log work
-fylla log TASK-KEY 2h "description" # manual worklog
+fylla timer start TASK-KEY               # start timer
+fylla timer status                       # check running timer
+fylla timer stop -d "worked on feature"  # stop timer and log work
+fylla timer log TASK-KEY 2h "description" # manual worklog
+# Multi-provider: task key format routes to correct provider (PROJ-123 → Jira, 12345 → Todoist)
 
 # Task management
-fylla add                           # create task interactively
-fylla add --quick --project WEB     # quick mode with defaults
-fylla estimate TASK-KEY 4h          # set remaining estimate
-fylla estimate TASK-KEY +1h         # adjust estimate relatively
+fylla task add                           # create task interactively
+fylla task add --provider todoist        # create on specific provider
+fylla task done PROJ-123                 # complete task (routes to Jira)
+fylla task done 8765432101               # complete task (routes to Todoist)
+fylla task estimate TASK-KEY 4h          # set remaining estimate
+fylla task estimate TASK-KEY +1h         # adjust estimate relatively
 
 # Configuration
-fylla config show                   # display current config
-fylla config edit                   # open config in editor
-fylla config set source todoist     # set a config value
+fylla config show                        # display current config
+fylla config edit                        # open config in editor
+fylla config set providers "[jira, todoist]"  # set providers
 ```

@@ -16,11 +16,10 @@ type GoogleClient struct {
 	SourceCalendars []string
 	FyllaCalendar   string
 	JiraBaseURL     string
-	Source          string
 }
 
 // NewGoogleClient creates a GoogleClient using the given OAuth2 token.
-func NewGoogleClient(ctx context.Context, cfg *oauth2.Config, token *oauth2.Token, sourceCalendars []string, fyllaCalendar, jiraBaseURL, source string) (*GoogleClient, error) {
+func NewGoogleClient(ctx context.Context, cfg *oauth2.Config, token *oauth2.Token, sourceCalendars []string, fyllaCalendar, jiraBaseURL string) (*GoogleClient, error) {
 	src := cfg.TokenSource(ctx, token)
 	svc, err := googlecalendar.NewService(ctx, option.WithTokenSource(src))
 	if err != nil {
@@ -31,7 +30,6 @@ func NewGoogleClient(ctx context.Context, cfg *oauth2.Config, token *oauth2.Toke
 		SourceCalendars: sourceCalendars,
 		FyllaCalendar:   fyllaCalendar,
 		JiraBaseURL:     jiraBaseURL,
-		Source:          source,
 	}, nil
 }
 
@@ -157,11 +155,26 @@ func BuildTitle(taskKey, summary string, atRisk bool) string {
 }
 
 // BuildDescription constructs the calendar event description for a Fylla task.
-func BuildDescription(taskKey, source, baseURL string) string {
-	if source == "todoist" {
+// It infers the source from the task key: numeric keys are Todoist tasks,
+// otherwise the key is treated as a Jira issue key.
+func BuildDescription(taskKey, jiraBaseURL string) string {
+	if isNumericKey(taskKey) {
 		return fmt.Sprintf("%s %s\nhttps://todoist.com/app/task/%s", fyllaMarker, taskKey, taskKey)
 	}
-	return fmt.Sprintf("%s %s\n%s/browse/%s", fyllaMarker, taskKey, baseURL, taskKey)
+	return fmt.Sprintf("%s %s\n%s/browse/%s", fyllaMarker, taskKey, jiraBaseURL, taskKey)
+}
+
+// isNumericKey returns true if key consists entirely of digits (Todoist task ID).
+func isNumericKey(key string) bool {
+	if key == "" {
+		return false
+	}
+	for _, c := range key {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // TaskKeyFromDescription extracts the task key from a Fylla event description.
@@ -226,7 +239,7 @@ func (c *GoogleClient) FetchFyllaEvents(ctx context.Context, start, end time.Tim
 // UpdateEvent updates an existing event on the fylla calendar.
 func (c *GoogleClient) UpdateEvent(ctx context.Context, eventID string, input CreateEventInput) error {
 	title := BuildTitle(input.TaskKey, input.Summary, input.AtRisk)
-	description := BuildDescription(input.TaskKey, c.Source, c.JiraBaseURL)
+	description := BuildDescription(input.TaskKey, c.JiraBaseURL)
 
 	event := &googlecalendar.Event{
 		Summary:     title,
@@ -265,7 +278,7 @@ type CreateEventInput struct {
 // CreateEvent creates a new event on the fylla calendar.
 func (c *GoogleClient) CreateEvent(ctx context.Context, input CreateEventInput) error {
 	title := BuildTitle(input.TaskKey, input.Summary, input.AtRisk)
-	description := BuildDescription(input.TaskKey, c.Source, c.JiraBaseURL)
+	description := BuildDescription(input.TaskKey, c.JiraBaseURL)
 
 	event := &googlecalendar.Event{
 		Summary:     title,

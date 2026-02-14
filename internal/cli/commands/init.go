@@ -14,6 +14,7 @@ import (
 // Surveyor abstracts interactive prompts for testing.
 type Surveyor interface {
 	Select(message string, options []string) (string, error)
+	MultiSelect(message string, options []string) ([]string, error)
 	Input(message string) (string, error)
 	Password(message string) (string, error)
 }
@@ -28,6 +29,15 @@ func (d defaultSurveyor) Select(message string, options []string) (string, error
 		Options: options,
 	}, &answer)
 	return answer, err
+}
+
+func (d defaultSurveyor) MultiSelect(message string, options []string) ([]string, error) {
+	var answers []string
+	err := survey.AskOne(&survey.MultiSelect{
+		Message: message,
+		Options: options,
+	}, &answers)
+	return answers, err
 }
 
 func (d defaultSurveyor) Input(message string) (string, error) {
@@ -48,7 +58,6 @@ type InitParams struct {
 	Auth            OAuthAuthenticator
 	ConfigPath      string
 	CredentialsPath string
-	TokenPath       string
 }
 
 // RunInit walks through first-time setup interactively.
@@ -59,75 +68,72 @@ func RunInit(ctx context.Context, w io.Writer, p InitParams) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	// 1. Source selection
-	source, err := p.Survey.Select("Task source:", []string{"jira", "todoist"})
+	// 1. Provider selection (multi-select)
+	providers, err := p.Survey.MultiSelect("Task providers:", []string{"jira", "todoist"})
 	if err != nil {
-		return fmt.Errorf("source selection: %w", err)
+		return fmt.Errorf("provider selection: %w", err)
 	}
-	cfg.Source = source
+	if len(providers) == 0 {
+		return fmt.Errorf("at least one provider must be selected")
+	}
+	cfg.Providers = providers
+	cfg.Source = "" // Clear legacy field
 	if err := config.SaveTo(cfg, p.ConfigPath); err != nil {
-		return fmt.Errorf("save source: %w", err)
+		return fmt.Errorf("save providers: %w", err)
 	}
-	fmt.Fprintf(w, "Source set to %s.\n", source)
+	fmt.Fprintf(w, "Providers set to %v.\n", providers)
 
-	// 2. Source credentials
-	switch source {
-	case "jira":
-		url, err := p.Survey.Input("Jira URL (e.g. https://company.atlassian.net):")
-		if err != nil {
-			return fmt.Errorf("jira url prompt: %w", err)
+	// 2. Source credentials for each selected provider
+	for _, provider := range providers {
+		switch provider {
+		case "jira":
+			url, err := p.Survey.Input("Jira URL (e.g. https://company.atlassian.net):")
+			if err != nil {
+				return fmt.Errorf("jira url prompt: %w", err)
+			}
+			email, err := p.Survey.Input("Jira email:")
+			if err != nil {
+				return fmt.Errorf("jira email prompt: %w", err)
+			}
+			token, err := p.Survey.Password("Jira API token:")
+			if err != nil {
+				return fmt.Errorf("jira token prompt: %w", err)
+			}
+			if err := RunAuthJira(AuthJiraParams{
+				URL:        url,
+				Email:      email,
+				Token:      token,
+				ConfigPath: p.ConfigPath,
+			}); err != nil {
+				return fmt.Errorf("auth jira: %w", err)
+			}
+			fmt.Fprintln(w, "Jira credentials stored.")
+		case "todoist":
+			token, err := p.Survey.Password("Todoist API token:")
+			if err != nil {
+				return fmt.Errorf("todoist token prompt: %w", err)
+			}
+			if err := RunAuthTodoist(AuthTodoistParams{
+				Token:      token,
+				ConfigPath: p.ConfigPath,
+			}); err != nil {
+				return fmt.Errorf("auth todoist: %w", err)
+			}
+			fmt.Fprintln(w, "Todoist credentials stored.")
 		}
-		email, err := p.Survey.Input("Jira email:")
-		if err != nil {
-			return fmt.Errorf("jira email prompt: %w", err)
-		}
-		token, err := p.Survey.Password("Jira API token:")
-		if err != nil {
-			return fmt.Errorf("jira token prompt: %w", err)
-		}
-		if err := RunAuthJira(AuthJiraParams{
-			URL:             url,
-			Email:           email,
-			Token:           token,
-			ConfigPath:      p.ConfigPath,
-			CredentialsPath: p.CredentialsPath,
-		}); err != nil {
-			return fmt.Errorf("auth jira: %w", err)
-		}
-		fmt.Fprintln(w, "Jira credentials stored.")
-	case "todoist":
-		token, err := p.Survey.Password("Todoist API token:")
-		if err != nil {
-			return fmt.Errorf("todoist token prompt: %w", err)
-		}
-		if err := RunAuthTodoist(AuthTodoistParams{
-			Token:           token,
-			CredentialsPath: p.CredentialsPath,
-		}); err != nil {
-			return fmt.Errorf("auth todoist: %w", err)
-		}
-		fmt.Fprintln(w, "Todoist credentials stored.")
 	}
 
 	// 3. Google Calendar
-	credFile, err := p.Survey.Input("Path to Google client_credentials.json:")
+	clientFile, err := p.Survey.Input("Path to Google client_credentials.json:")
 	if err != nil {
 		return fmt.Errorf("credentials path prompt: %w", err)
 	}
 
-	cfg, err = config.LoadFrom(p.ConfigPath)
-	if err != nil {
-		return fmt.Errorf("reload config: %w", err)
-	}
-	cfg.Calendar.ClientCredentials = credFile
-	if err := config.SaveTo(cfg, p.ConfigPath); err != nil {
-		return fmt.Errorf("save calendar config: %w", err)
-	}
-
 	if err := RunAuthGoogle(ctx, AuthGoogleParams{
-		ClientCredentialsPath: credFile,
-		TokenPath:             p.TokenPath,
-		Auth:                  p.Auth,
+		ClientFile:      clientFile,
+		CredentialsPath: p.CredentialsPath,
+		ConfigPath:      p.ConfigPath,
+		Auth:            p.Auth,
 	}); err != nil {
 		return fmt.Errorf("auth google: %w", err)
 	}
@@ -155,12 +161,7 @@ func newInitCmd() *cobra.Command {
 				return loadErr
 			}
 
-			credPath, err := config.CredentialsPath()
-			if err != nil {
-				return err
-			}
-
-			tokenPath, err := calendar.TokenPath()
+			credPath, err := calendar.TokenPath()
 			if err != nil {
 				return err
 			}
@@ -170,7 +171,6 @@ func newInitCmd() *cobra.Command {
 				Auth:            defaultOAuthAuthenticator{},
 				ConfigPath:      cfgPath,
 				CredentialsPath: credPath,
-				TokenPath:       tokenPath,
 			})
 		},
 	}

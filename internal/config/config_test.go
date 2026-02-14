@@ -192,10 +192,10 @@ func TestCFG008_TypeScores(t *testing.T) {
 	}
 }
 
-func TestCFG009_Credentials(t *testing.T) {
-	t.Run("path separate from config", func(t *testing.T) {
+func TestCFG009_ProviderCredentials(t *testing.T) {
+	t.Run("default path separate from config", func(t *testing.T) {
 		cfgPath, _ := DefaultPath()
-		credPath, _ := CredentialsPath()
+		credPath, _ := DefaultProviderCredentialsPath("jira")
 		if cfgPath == credPath {
 			t.Error("credentials path should differ from config path")
 		}
@@ -204,43 +204,51 @@ func TestCFG009_Credentials(t *testing.T) {
 		}
 	})
 
+	t.Run("provider name in path", func(t *testing.T) {
+		jiraPath, _ := DefaultProviderCredentialsPath("jira")
+		todoistPath, _ := DefaultProviderCredentialsPath("todoist")
+		if jiraPath == todoistPath {
+			t.Error("jira and todoist paths should differ")
+		}
+		if filepath.Base(jiraPath) != "jira_credentials.json" {
+			t.Errorf("jira path = %q", filepath.Base(jiraPath))
+		}
+		if filepath.Base(todoistPath) != "todoist_credentials.json" {
+			t.Errorf("todoist path = %q", filepath.Base(todoistPath))
+		}
+	})
+
 	t.Run("missing file returns empty credentials", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "creds.json")
-		creds, err := LoadCredentialsFrom(path)
+		creds, err := LoadProviderCredentials(path)
 		if err != nil {
-			t.Fatalf("LoadCredentialsFrom: %v", err)
+			t.Fatalf("LoadProviderCredentials: %v", err)
 		}
-		if creds.JiraToken != "" || creds.GoogleOAuthToken != "" {
-			t.Error("expected empty credentials")
+		if creds.Token != "" {
+			t.Error("expected empty token")
 		}
 	})
 
 	t.Run("round-trip save and load", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "creds.json")
-		original := &Credentials{
-			JiraToken:        "jira-secret",
-			GoogleOAuthToken: "google-secret",
-		}
-		if err := SaveCredentialsTo(original, path); err != nil {
-			t.Fatalf("SaveCredentialsTo: %v", err)
+		original := &ProviderCredentials{Token: "my-secret"}
+		if err := SaveProviderCredentials(original, path); err != nil {
+			t.Fatalf("SaveProviderCredentials: %v", err)
 		}
 
-		loaded, err := LoadCredentialsFrom(path)
+		loaded, err := LoadProviderCredentials(path)
 		if err != nil {
-			t.Fatalf("LoadCredentialsFrom: %v", err)
+			t.Fatalf("LoadProviderCredentials: %v", err)
 		}
-		if loaded.JiraToken != original.JiraToken {
-			t.Errorf("JiraToken = %q, want %q", loaded.JiraToken, original.JiraToken)
-		}
-		if loaded.GoogleOAuthToken != original.GoogleOAuthToken {
-			t.Errorf("GoogleOAuthToken = %q, want %q", loaded.GoogleOAuthToken, original.GoogleOAuthToken)
+		if loaded.Token != original.Token {
+			t.Errorf("Token = %q, want %q", loaded.Token, original.Token)
 		}
 	})
 
 	t.Run("file permissions are 0600", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "creds.json")
-		if err := SaveCredentialsTo(&Credentials{}, path); err != nil {
-			t.Fatalf("SaveCredentialsTo: %v", err)
+		if err := SaveProviderCredentials(&ProviderCredentials{}, path); err != nil {
+			t.Fatalf("SaveProviderCredentials: %v", err)
 		}
 		info, err := os.Stat(path)
 		if err != nil {
@@ -479,7 +487,7 @@ func TestKeyPaths(t *testing.T) {
 
 	// Verify known leaf paths are present
 	expected := []string{
-		"source",
+		"providers",
 		"jira.url",
 		"jira.email",
 		"jira.defaultJql",
@@ -522,6 +530,104 @@ func TestKeyPaths(t *testing.T) {
 			t.Errorf("section name %q should not be a leaf path", p)
 		}
 	}
+}
+
+func TestValidateProviders(t *testing.T) {
+	validConfig := func() Config {
+		return Config{
+			Scheduling: SchedulingConfig{
+				WindowDays:             5,
+				MinTaskDurationMinutes: 25,
+				BufferMinutes:          15,
+			},
+			BusinessHours: BusinessHoursConfig{
+				Start:    "09:00",
+				End:      "17:00",
+				WorkDays: []int{1, 2, 3, 4, 5},
+			},
+			Weights: WeightsConfig{
+				Priority:  0.40,
+				DueDate:   0.30,
+				Estimate:  0.15,
+				IssueType: 0.10,
+				Age:       0.05,
+			},
+		}
+	}
+
+	t.Run("single provider is valid", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Providers = []string{"jira"}
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("multiple providers is valid", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Providers = []string{"jira", "todoist"}
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("unknown provider is invalid", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Providers = []string{"trello"}
+		if err := cfg.Validate(); err == nil {
+			t.Error("expected error for unknown provider")
+		}
+	})
+
+	t.Run("duplicate provider is invalid", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Providers = []string{"jira", "jira"}
+		if err := cfg.Validate(); err == nil {
+			t.Error("expected error for duplicate provider")
+		}
+	})
+
+	t.Run("empty providers is valid (uses fallback)", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Providers = nil
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+}
+
+func TestActiveProviders(t *testing.T) {
+	t.Run("uses Providers when set", func(t *testing.T) {
+		cfg := Config{Providers: []string{"jira", "todoist"}}
+		got := cfg.ActiveProviders()
+		if len(got) != 2 || got[0] != "jira" || got[1] != "todoist" {
+			t.Errorf("ActiveProviders() = %v, want [jira todoist]", got)
+		}
+	})
+
+	t.Run("falls back to Source", func(t *testing.T) {
+		cfg := Config{Source: "todoist"}
+		got := cfg.ActiveProviders()
+		if len(got) != 1 || got[0] != "todoist" {
+			t.Errorf("ActiveProviders() = %v, want [todoist]", got)
+		}
+	})
+
+	t.Run("defaults to jira", func(t *testing.T) {
+		cfg := Config{}
+		got := cfg.ActiveProviders()
+		if len(got) != 1 || got[0] != "jira" {
+			t.Errorf("ActiveProviders() = %v, want [jira]", got)
+		}
+	})
+
+	t.Run("Providers takes precedence over Source", func(t *testing.T) {
+		cfg := Config{Source: "todoist", Providers: []string{"jira"}}
+		got := cfg.ActiveProviders()
+		if len(got) != 1 || got[0] != "jira" {
+			t.Errorf("ActiveProviders() = %v, want [jira]", got)
+		}
+	})
 }
 
 // writeTestConfig writes the default config YAML to a temp file and returns its path.

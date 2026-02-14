@@ -1,4 +1,4 @@
-# Fylla - Go CLI Jira Scheduler
+# Fylla - Go CLI Task Scheduler
 
 ## Build & Test Commands
 
@@ -14,9 +14,27 @@ go run ./cmd/fylla          # Run
 ## Project Structure
 
 - Entry point: `cmd/fylla/main.go`
-- Internal packages: `internal/{cli,jira,calendar,scheduler,config,timer}`
+- Internal packages: `internal/{cli,jira,calendar,scheduler,config,timer,todoist}`
 - Config template: `config/default_config.yaml`
 - Tests: colocated `_test.go` files (Go convention)
+
+## Architecture
+
+### Multi-Provider System
+Fylla supports multiple task providers (Jira, Todoist) simultaneously via the `providers` array in config. Key concepts:
+
+- **Config:** `providers: [jira, todoist]` — replaces legacy `source` field (backward compatible via `ActiveProviders()` fallback)
+- **Provider routing:** `isJiraKey()` / `providerForKey()` infers provider from task key format (`PROJ-123` → Jira, numeric → Todoist)
+- **MultiTaskSource:** wraps multiple `TaskSource` instances, routes key-based operations to the correct provider
+- **multiFetcher:** concurrent fetch from all providers, merges results, handles partial failures
+- **Per-provider credentials:** each provider stores credentials in a separate file (`jira_credentials.json`, `todoist_credentials.json`), path saved in config (`jira.credentials`, `todoist.credentials`)
+- **Calendar descriptions:** `BuildDescription()` infers source from task key to generate correct URLs (Jira browse link vs Todoist app link)
+
+### Key Interfaces
+- `TaskSource` — composite interface combining all task operations (fetch, create, complete, delete, estimate, priority, due date, worklog)
+- `TaskFetcher` — single-method interface for fetching tasks
+- `CalendarClient` — abstracts Google Calendar operations
+- `Surveyor` — abstracts interactive prompts (supports `Select`, `MultiSelect`, `Input`, `Password`)
 
 ## Dependencies
 
@@ -39,9 +57,3 @@ go run ./cmd/fylla          # Run
 - Tests: table-driven with `t.Run` subtests, use `testify` only if already a dependency
 - Context: pass `context.Context` as first param where needed (HTTP calls, calendar API)
 - No `init()` functions; no global mutable state
-
-## Docs
-
-- Requirements: `docs/requirements.md`
-- PRD (feature tracking): `docs/prd.json`
-- Ralph progress: `.ralph/progress.md`

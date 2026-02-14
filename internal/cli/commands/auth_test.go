@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/iruoy/fylla/internal/calendar"
 	"github.com/iruoy/fylla/internal/config"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
@@ -21,10 +22,14 @@ func writeDefaultConfig(t *testing.T, path string) {
 		t.Fatalf("mkdir: %v", err)
 	}
 	content := `jira:
+  credentials: ""
   url: ""
   email: ""
   defaultJql: "assignee = currentUser()"
+todoist:
+  credentials: ""
 calendar:
+  credentials: ""
   sourceCalendars: [primary]
   fyllaCalendar: fylla
 scheduling:
@@ -63,15 +68,13 @@ func executeCommand(root *cobra.Command, args ...string) (string, error) {
 
 // mockOAuthAuthenticator records calls and returns a preset token.
 type mockOAuthAuthenticator struct {
-	called    bool
-	token     *oauth2.Token
-	err       error
-	usedPath  string
+	called bool
+	token  *oauth2.Token
+	err    error
 }
 
-func (m *mockOAuthAuthenticator) CachedToken(_ context.Context, _ *oauth2.Config, tokenPath string) (*oauth2.Token, error) {
+func (m *mockOAuthAuthenticator) Authenticate(_ context.Context, _ *oauth2.Config) (*oauth2.Token, error) {
 	m.called = true
-	m.usedPath = tokenPath
 	return m.token, m.err
 }
 
@@ -117,18 +120,16 @@ func TestCLI001_cli_entry_point(t *testing.T) {
 }
 
 func TestCLI002_auth_jira_command(t *testing.T) {
-	t.Run("stores credentials with --url, --email, --token", func(t *testing.T) {
+	t.Run("stores credentials in per-provider file and saves path to config", func(t *testing.T) {
 		dir := t.TempDir()
 		cfgPath := filepath.Join(dir, "config.yaml")
-		credPath := filepath.Join(dir, "credentials.json")
 		writeDefaultConfig(t, cfgPath)
 
 		err := RunAuthJira(AuthJiraParams{
-			URL:             "https://company.atlassian.net",
-			Email:           "you@example.com",
-			Token:           "secret-token-123",
-			ConfigPath:      cfgPath,
-			CredentialsPath: credPath,
+			URL:        "https://company.atlassian.net",
+			Email:      "you@example.com",
+			Token:      "secret-token-123",
+			ConfigPath: cfgPath,
 		})
 		if err != nil {
 			t.Fatalf("RunAuthJira: %v", err)
@@ -145,29 +146,30 @@ func TestCLI002_auth_jira_command(t *testing.T) {
 		if cfg.Jira.Email != "you@example.com" {
 			t.Errorf("jira.email = %q, want %q", cfg.Jira.Email, "you@example.com")
 		}
-
-		// Verify credentials were stored
-		creds, err := config.LoadCredentialsFrom(credPath)
-		if err != nil {
-			t.Fatalf("LoadCredentialsFrom: %v", err)
+		if cfg.Jira.Credentials == "" {
+			t.Fatal("jira.credentials should be set")
 		}
-		if creds.JiraToken != "secret-token-123" {
-			t.Errorf("jiraToken = %q, want %q", creds.JiraToken, "secret-token-123")
+
+		// Verify per-provider credentials were stored
+		creds, err := config.LoadProviderCredentials(cfg.Jira.Credentials)
+		if err != nil {
+			t.Fatalf("LoadProviderCredentials: %v", err)
+		}
+		if creds.Token != "secret-token-123" {
+			t.Errorf("token = %q, want %q", creds.Token, "secret-token-123")
 		}
 	})
 
 	t.Run("subsequent Jira commands can use stored credentials", func(t *testing.T) {
 		dir := t.TempDir()
 		cfgPath := filepath.Join(dir, "config.yaml")
-		credPath := filepath.Join(dir, "credentials.json")
 		writeDefaultConfig(t, cfgPath)
 
 		err := RunAuthJira(AuthJiraParams{
-			URL:             "https://test.atlassian.net",
-			Email:           "test@example.com",
-			Token:           "api-token-456",
-			ConfigPath:      cfgPath,
-			CredentialsPath: credPath,
+			URL:        "https://test.atlassian.net",
+			Email:      "test@example.com",
+			Token:      "api-token-456",
+			ConfigPath: cfgPath,
 		})
 		if err != nil {
 			t.Fatalf("RunAuthJira: %v", err)
@@ -178,20 +180,19 @@ func TestCLI002_auth_jira_command(t *testing.T) {
 		if err != nil {
 			t.Fatalf("LoadFrom: %v", err)
 		}
-		creds, err := config.LoadCredentialsFrom(credPath)
+		creds, err := config.LoadProviderCredentials(cfg.Jira.Credentials)
 		if err != nil {
-			t.Fatalf("LoadCredentialsFrom: %v", err)
+			t.Fatalf("LoadProviderCredentials: %v", err)
 		}
 
-		// These are what a Jira client would use
 		if cfg.Jira.URL != "https://test.atlassian.net" {
 			t.Errorf("url = %q", cfg.Jira.URL)
 		}
 		if cfg.Jira.Email != "test@example.com" {
 			t.Errorf("email = %q", cfg.Jira.Email)
 		}
-		if creds.JiraToken != "api-token-456" {
-			t.Errorf("token = %q", creds.JiraToken)
+		if creds.Token != "api-token-456" {
+			t.Errorf("token = %q", creds.Token)
 		}
 	})
 
@@ -208,9 +209,11 @@ func TestCLI002_auth_jira_command(t *testing.T) {
 }
 
 func TestCLI003_auth_google_command(t *testing.T) {
-	t.Run("initiates OAuth flow with client credentials", func(t *testing.T) {
+	t.Run("initiates OAuth flow and saves client config with token", func(t *testing.T) {
 		dir := t.TempDir()
-		tokenPath := filepath.Join(dir, "google_token.json")
+		credPath := filepath.Join(dir, "google_credentials.json")
+		cfgPath := filepath.Join(dir, "config.yaml")
+		writeDefaultConfig(t, cfgPath)
 
 		// Write a fake client credentials file
 		clientCredsPath := filepath.Join(dir, "client.json")
@@ -228,9 +231,10 @@ func TestCLI003_auth_google_command(t *testing.T) {
 		}
 
 		err := RunAuthGoogle(context.Background(), AuthGoogleParams{
-			ClientCredentialsPath: clientCredsPath,
-			TokenPath:             tokenPath,
-			Auth:                  mock,
+			ClientFile:      clientCredsPath,
+			CredentialsPath: credPath,
+			ConfigPath:      cfgPath,
+			Auth:            mock,
 		})
 		if err != nil {
 			t.Fatalf("RunAuthGoogle: %v", err)
@@ -239,14 +243,38 @@ func TestCLI003_auth_google_command(t *testing.T) {
 		if !mock.called {
 			t.Error("expected OAuth flow to be called")
 		}
-		if mock.usedPath != tokenPath {
-			t.Errorf("token path = %q, want %q", mock.usedPath, tokenPath)
+
+		// Verify config was updated with credentials path
+		cfg, err := config.LoadFrom(cfgPath)
+		if err != nil {
+			t.Fatalf("LoadFrom: %v", err)
+		}
+		if cfg.Calendar.Credentials != credPath {
+			t.Errorf("calendar.credentials = %q, want %q", cfg.Calendar.Credentials, credPath)
+		}
+
+		// Verify google_credentials.json contains client config + token
+		creds, err := calendar.LoadGoogleCredentials(credPath)
+		if err != nil {
+			t.Fatalf("LoadGoogleCredentials: %v", err)
+		}
+		if creds.ClientID != "test-id" {
+			t.Errorf("clientId = %q, want %q", creds.ClientID, "test-id")
+		}
+		if creds.ClientSecret != "test-secret" {
+			t.Errorf("clientSecret = %q, want %q", creds.ClientSecret, "test-secret")
+		}
+		if creds.Token.AccessToken != "test-access-token" {
+			t.Errorf("access token = %q, want %q", creds.Token.AccessToken, "test-access-token")
+		}
+		if creds.Token.RefreshToken != "test-refresh-token" {
+			t.Errorf("refresh token = %q, want %q", creds.Token.RefreshToken, "test-refresh-token")
 		}
 	})
 
 	t.Run("credentials are cached for reuse", func(t *testing.T) {
 		dir := t.TempDir()
-		tokenPath := filepath.Join(dir, "google_token.json")
+		credPath := filepath.Join(dir, "google_credentials.json")
 
 		clientCredsPath := filepath.Join(dir, "client.json")
 		clientCreds := `{"installed":{"client_id":"test-id","client_secret":"test-secret","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","redirect_uris":["http://localhost"]}}`
@@ -262,11 +290,11 @@ func TestCLI003_auth_google_command(t *testing.T) {
 			},
 		}
 
-		// First call: authenticates
+		// First call: authenticates (no ConfigPath — skip config save)
 		err := RunAuthGoogle(context.Background(), AuthGoogleParams{
-			ClientCredentialsPath: clientCredsPath,
-			TokenPath:             tokenPath,
-			Auth:                  mock,
+			ClientFile:      clientCredsPath,
+			CredentialsPath: credPath,
+			Auth:            mock,
 		})
 		if err != nil {
 			t.Fatalf("first RunAuthGoogle: %v", err)
@@ -275,24 +303,79 @@ func TestCLI003_auth_google_command(t *testing.T) {
 			t.Error("expected OAuth to be called on first run")
 		}
 
-		// CachedToken is responsible for caching — verify it's called with correct path
-		if mock.usedPath != tokenPath {
-			t.Errorf("CachedToken called with path %q, want %q", mock.usedPath, tokenPath)
+		// Verify credentials were saved
+		creds, err := calendar.LoadGoogleCredentials(credPath)
+		if err != nil {
+			t.Fatalf("LoadGoogleCredentials: %v", err)
+		}
+		if creds.Token.AccessToken != "cached-token" {
+			t.Errorf("access token = %q, want %q", creds.Token.AccessToken, "cached-token")
+		}
+		if creds.ClientID != "test-id" {
+			t.Errorf("clientId = %q, want %q", creds.ClientID, "test-id")
+		}
+	})
+
+	t.Run("error when no client file and no existing credentials", func(t *testing.T) {
+		dir := t.TempDir()
+		err := RunAuthGoogle(context.Background(), AuthGoogleParams{
+			CredentialsPath: filepath.Join(dir, "google_credentials.json"),
+			Auth:            &mockOAuthAuthenticator{},
+		})
+		if err == nil {
+			t.Fatal("expected error when no client file and no existing credentials")
+		}
+		if !strings.Contains(err.Error(), "no existing credentials") {
+			t.Errorf("error = %q, want to contain 'no existing credentials'", err.Error())
 		}
 	})
 
 	t.Run("error on missing client credentials file", func(t *testing.T) {
 		dir := t.TempDir()
 		err := RunAuthGoogle(context.Background(), AuthGoogleParams{
-			ClientCredentialsPath: filepath.Join(dir, "nonexistent.json"),
-			TokenPath:             filepath.Join(dir, "token.json"),
-			Auth:                  &mockOAuthAuthenticator{},
+			ClientFile:      filepath.Join(dir, "nonexistent.json"),
+			CredentialsPath: filepath.Join(dir, "google_credentials.json"),
+			Auth:            &mockOAuthAuthenticator{},
 		})
 		if err == nil {
 			t.Fatal("expected error for missing client credentials")
 		}
 		if !strings.Contains(err.Error(), "client credentials") {
 			t.Errorf("error = %q, want to contain 'client credentials'", err.Error())
+		}
+	})
+}
+
+func TestCLI004_auth_todoist_command(t *testing.T) {
+	t.Run("stores credentials in per-provider file and saves path to config", func(t *testing.T) {
+		dir := t.TempDir()
+		cfgPath := filepath.Join(dir, "config.yaml")
+		writeDefaultConfig(t, cfgPath)
+
+		err := RunAuthTodoist(AuthTodoistParams{
+			Token:      "todoist-secret-789",
+			ConfigPath: cfgPath,
+		})
+		if err != nil {
+			t.Fatalf("RunAuthTodoist: %v", err)
+		}
+
+		// Verify config was updated
+		cfg, err := config.LoadFrom(cfgPath)
+		if err != nil {
+			t.Fatalf("LoadFrom: %v", err)
+		}
+		if cfg.Todoist.Credentials == "" {
+			t.Fatal("todoist.credentials should be set")
+		}
+
+		// Verify per-provider credentials were stored
+		creds, err := config.LoadProviderCredentials(cfg.Todoist.Credentials)
+		if err != nil {
+			t.Fatalf("LoadProviderCredentials: %v", err)
+		}
+		if creds.Token != "todoist-secret-789" {
+			t.Errorf("token = %q, want %q", creds.Token, "todoist-secret-789")
 		}
 	})
 }

@@ -5,6 +5,7 @@ import "fmt"
 // Config represents the fylla configuration file.
 type Config struct {
 	Source        string                 `yaml:"source"`
+	Providers     []string               `yaml:"providers"`
 	Jira          JiraConfig             `yaml:"jira"`
 	Todoist       TodoistConfig          `yaml:"todoist"`
 	Calendar      CalendarConfig         `yaml:"calendar"`
@@ -15,8 +16,21 @@ type Config struct {
 	TypeScores    map[string]int         `yaml:"typeScores"`
 }
 
+// ActiveProviders returns the list of configured providers.
+// It uses Providers if set, falls back to Source, and defaults to ["jira"].
+func (c *Config) ActiveProviders() []string {
+	if len(c.Providers) > 0 {
+		return c.Providers
+	}
+	if c.Source != "" {
+		return []string{c.Source}
+	}
+	return []string{"jira"}
+}
+
 // JiraConfig holds Jira connection settings.
 type JiraConfig struct {
+	Credentials    string `yaml:"credentials"`
 	URL            string `yaml:"url"`
 	Email          string `yaml:"email"`
 	DefaultJQL     string `yaml:"defaultJql"`
@@ -25,15 +39,16 @@ type JiraConfig struct {
 
 // TodoistConfig holds Todoist connection settings.
 type TodoistConfig struct {
+	Credentials    string `yaml:"credentials"`
 	DefaultFilter  string `yaml:"defaultFilter"`
 	DefaultProject string `yaml:"defaultProject"`
 }
 
 // CalendarConfig holds Google Calendar settings.
 type CalendarConfig struct {
-	SourceCalendars   []string `yaml:"sourceCalendars"`
-	FyllaCalendar     string   `yaml:"fyllaCalendar"`
-	ClientCredentials string   `yaml:"clientCredentials"`
+	Credentials     string   `yaml:"credentials"`
+	SourceCalendars []string `yaml:"sourceCalendars"`
+	FyllaCalendar   string   `yaml:"fyllaCalendar"`
 }
 
 // SchedulingConfig holds scheduling parameters.
@@ -75,6 +90,22 @@ func (c *Config) Validate() error {
 	case "", "jira", "todoist":
 	default:
 		return fmt.Errorf("source must be 'jira' or 'todoist', got %q", c.Source)
+	}
+
+	// Validate providers if set
+	if len(c.Providers) > 0 {
+		seen := make(map[string]bool)
+		for _, p := range c.Providers {
+			switch p {
+			case "jira", "todoist":
+			default:
+				return fmt.Errorf("unknown provider %q (must be 'jira' or 'todoist')", p)
+			}
+			if seen[p] {
+				return fmt.Errorf("duplicate provider %q", p)
+			}
+			seen[p] = true
+		}
 	}
 
 	// Weights must sum to 1.0 (with float tolerance)

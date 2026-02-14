@@ -88,22 +88,33 @@ func newListCmd() *cobra.Command {
 			jql, _ := cmd.Flags().GetString("jql")
 			filter, _ := cmd.Flags().GetString("filter")
 
+			// Use multiFetcher for multi-provider, or the source directly
+			var fetcher TaskFetcher
 			var query string
-			switch cfg.Source {
-			case "todoist":
-				query = filter
-				if query == "" {
-					query = cfg.Todoist.DefaultFilter
+			if ms, ok := source.(*MultiTaskSource); ok {
+				fetcher = &multiFetcher{
+					queries: buildProviderQueries(cfg, jql, filter),
+					sources: ms.sources,
 				}
-			default:
-				query = jql
-				if query == "" {
-					query = cfg.Jira.DefaultJQL
+			} else {
+				fetcher = source
+				providers := cfg.ActiveProviders()
+				switch providers[0] {
+				case "todoist":
+					query = filter
+					if query == "" {
+						query = cfg.Todoist.DefaultFilter
+					}
+				default:
+					query = jql
+					if query == "" {
+						query = cfg.Jira.DefaultJQL
+					}
 				}
 			}
 
 			result, err := RunList(cmd.Context(), ListParams{
-				Tasks: source,
+				Tasks: fetcher,
 				Cfg:   cfg,
 				Query: query,
 				Now:   time.Now(),

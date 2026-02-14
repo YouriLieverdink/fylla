@@ -13,9 +13,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// defaultProject returns the configured default project for the active source.
-func defaultProject(cfg *config.Config) string {
-	switch cfg.Source {
+// defaultProject returns the configured default project for the given provider.
+func defaultProject(cfg *config.Config, provider string) string {
+	switch provider {
 	case "todoist":
 		return cfg.Todoist.DefaultProject
 	default:
@@ -210,16 +210,33 @@ Extracted attributes inside ():
 				return err
 			}
 
+			providerFlag, _ := cmd.Flags().GetString("provider")
+			if providerFlag == "" {
+				providerFlag = cfg.ActiveProviders()[0]
+			}
+
 			project, _ := cmd.Flags().GetString("project")
 			if project == "" {
-				project = defaultProject(cfg)
+				project = defaultProject(cfg, providerFlag)
+			}
+
+			// Route creation to the specified provider when using MultiTaskSource
+			var creator TaskCreator
+			if ms, ok := source.(*MultiTaskSource); ok {
+				if src, exists := ms.sources[providerFlag]; exists {
+					creator = src
+				} else {
+					creator = source
+				}
+			} else {
+				creator = source
 			}
 
 			p := AddParams{
 				Project: project,
-				Creator: source,
+				Creator: creator,
 			}
-			if pl, ok := source.(ProjectLister); ok {
+			if pl, ok := creator.(ProjectLister); ok {
 				p.Projects = pl
 			}
 
@@ -304,6 +321,7 @@ Extracted attributes inside ():
 	}
 
 	cmd.Flags().String("project", "", "Pre-select project")
+	cmd.Flags().String("provider", "", "Provider to create the task on (defaults to first configured)")
 
 	return cmd
 }

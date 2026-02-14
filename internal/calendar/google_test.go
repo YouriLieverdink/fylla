@@ -29,7 +29,6 @@ func newTestClient(t *testing.T, server *httptest.Server, sourceCalendars []stri
 		SourceCalendars: sourceCalendars,
 		FyllaCalendar:   fyllaCalendar,
 		JiraBaseURL:     jiraBaseURL,
-		Source:          "jira",
 	}
 }
 
@@ -628,18 +627,17 @@ func TestBuildTitle(t *testing.T) {
 
 func TestBuildDescription(t *testing.T) {
 	tests := []struct {
-		name    string
-		key     string
-		source  string
-		baseURL string
-		want    string
+		name        string
+		key         string
+		jiraBaseURL string
+		want        string
 	}{
-		{"jira", "PROJ-123", "jira", "https://company.atlassian.net", "fylla: PROJ-123\nhttps://company.atlassian.net/browse/PROJ-123"},
-		{"todoist", "123456", "todoist", "", "fylla: 123456\nhttps://todoist.com/app/task/123456"},
+		{"jira key", "PROJ-123", "https://company.atlassian.net", "fylla: PROJ-123\nhttps://company.atlassian.net/browse/PROJ-123"},
+		{"todoist numeric key", "123456", "https://company.atlassian.net", "fylla: 123456\nhttps://todoist.com/app/task/123456"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := BuildDescription(tt.key, tt.source, tt.baseURL)
+			got := BuildDescription(tt.key, tt.jiraBaseURL)
 			if got != tt.want {
 				t.Errorf("BuildDescription() = %q, want %q", got, tt.want)
 			}
