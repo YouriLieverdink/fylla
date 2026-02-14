@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/tj/go-naturaldate"
 )
 
 // DueDateGetter abstracts fetching the current due date from Jira.
@@ -39,14 +40,19 @@ type DueDateResult struct {
 var dateRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 var relativeDaysRe = regexp.MustCompile(`^(\d+)d$`)
 
-// ParseDate parses a date string in YYYY-MM-DD format.
+// ParseDate parses a date string in YYYY-MM-DD format, or falls back
+// to natural language parsing (e.g. "Friday", "next Monday", "tomorrow").
 func ParseDate(s string) (time.Time, error) {
-	if !dateRe.MatchString(s) {
-		return time.Time{}, fmt.Errorf("invalid date %q (expected format: YYYY-MM-DD)", s)
+	if dateRe.MatchString(s) {
+		d, err := time.Parse("2006-01-02", s)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("invalid date %q: %w", s, err)
+		}
+		return d, nil
 	}
-	d, err := time.Parse("2006-01-02", s)
+	d, err := naturaldate.Parse(s, time.Now(), naturaldate.WithDirection(naturaldate.Future))
 	if err != nil {
-		return time.Time{}, fmt.Errorf("invalid date %q: %w", s, err)
+		return time.Time{}, fmt.Errorf("could not parse date %q: %w", s, err)
 	}
 	return d, nil
 }

@@ -70,7 +70,7 @@ func TestCLI017_add_interactive_creation(t *testing.T) {
 		}
 	})
 
-	t.Run("full mode requires all fields for prompting", func(t *testing.T) {
+	t.Run("interactive mode requires all fields for prompting", func(t *testing.T) {
 		fields := RequiredFields(AddParams{})
 		expected := []string{"project", "issueType", "summary", "description", "estimate", "dueDate", "priority"}
 		if len(fields) != len(expected) {
@@ -129,10 +129,10 @@ func TestCLI017_add_interactive_creation(t *testing.T) {
 	})
 }
 
-func TestCLI018_add_quick_mode(t *testing.T) {
-	t.Run("quick mode only prompts essential fields", func(t *testing.T) {
-		fields := RequiredFields(AddParams{Quick: true})
-		expected := []string{"project", "summary", "estimate", "dueDate"}
+func TestCLI018_add_inline_mode(t *testing.T) {
+	t.Run("inline mode only prompts project", func(t *testing.T) {
+		fields := RequiredFields(AddParams{Inline: true, Summary: "Task"})
+		expected := []string{"project"}
 		if len(fields) != len(expected) {
 			t.Fatalf("fields = %v, want %v", fields, expected)
 		}
@@ -143,14 +143,20 @@ func TestCLI018_add_quick_mode(t *testing.T) {
 		}
 	})
 
-	t.Run("quick mode defaults type to Task and priority to Medium", func(t *testing.T) {
+	t.Run("inline mode skips project prompt when pre-selected", func(t *testing.T) {
+		fields := RequiredFields(AddParams{Inline: true, Project: "PROJ", Summary: "Task"})
+		if len(fields) != 0 {
+			t.Fatalf("fields = %v, want empty", fields)
+		}
+	})
+
+	t.Run("inline mode defaults type to Task and priority to Medium", func(t *testing.T) {
 		mock := &mockTaskCreator{key: "PROJ-457"}
 		result, err := RunAdd(context.Background(), AddParams{
-			Project:  "PROJ",
-			Summary:  "Quick bugfix",
-			Estimate: "30m",
-			Quick:    true,
-			Creator:  mock,
+			Project: "PROJ",
+			Summary: "Quick bugfix",
+			Inline:  true,
+			Creator: mock,
 		})
 		if err != nil {
 			t.Fatalf("RunAdd: %v", err)
@@ -163,24 +169,20 @@ func TestCLI018_add_quick_mode(t *testing.T) {
 		if c.Priority != "Medium" {
 			t.Errorf("Priority = %q, want Medium (default)", c.Priority)
 		}
-		if c.Estimate != 30*time.Minute {
-			t.Errorf("Estimate = %v, want 30m", c.Estimate)
-		}
 
 		if result.Key != "PROJ-457" {
 			t.Errorf("result.Key = %q, want PROJ-457", result.Key)
 		}
 	})
 
-	t.Run("quick mode does not override provided type and priority", func(t *testing.T) {
+	t.Run("inline mode does not override provided type and priority", func(t *testing.T) {
 		mock := &mockTaskCreator{key: "PROJ-458"}
 		_, err := RunAdd(context.Background(), AddParams{
 			Project:   "PROJ",
 			IssueType: "Bug",
 			Summary:   "Important bug",
-			Estimate:  "2h",
 			Priority:  "High",
-			Quick:     true,
+			Inline:    true,
 			Creator:   mock,
 		})
 		if err != nil {
@@ -193,6 +195,61 @@ func TestCLI018_add_quick_mode(t *testing.T) {
 		}
 		if c.Priority != "High" {
 			t.Errorf("Priority = %q, want High (not overridden)", c.Priority)
+		}
+	})
+
+	t.Run("description flows through to CreateInput", func(t *testing.T) {
+		mock := &mockTaskCreator{key: "PROJ-460"}
+		_, err := RunAdd(context.Background(), AddParams{
+			Project:     "PROJ",
+			Summary:     "Task with desc",
+			Description: "Some details",
+			Inline:      true,
+			Creator:     mock,
+		})
+		if err != nil {
+			t.Fatalf("RunAdd: %v", err)
+		}
+		if mock.calls[0].Description != "Some details" {
+			t.Errorf("Description = %q, want %q", mock.calls[0].Description, "Some details")
+		}
+	})
+}
+
+func TestRequiredFields_interactive_populated(t *testing.T) {
+	t.Run("summary populated skips summary prompt", func(t *testing.T) {
+		fields := RequiredFields(AddParams{Summary: "Already set"})
+		for _, f := range fields {
+			if f == "summary" {
+				t.Error("summary should not be in required fields when already set")
+			}
+		}
+	})
+
+	t.Run("estimate populated skips estimate prompt", func(t *testing.T) {
+		fields := RequiredFields(AddParams{Estimate: "2h"})
+		for _, f := range fields {
+			if f == "estimate" {
+				t.Error("estimate should not be in required fields when already set")
+			}
+		}
+	})
+
+	t.Run("due date populated skips due date prompt", func(t *testing.T) {
+		fields := RequiredFields(AddParams{DueDate: "2025-02-15"})
+		for _, f := range fields {
+			if f == "dueDate" {
+				t.Error("dueDate should not be in required fields when already set")
+			}
+		}
+	})
+
+	t.Run("priority populated skips priority prompt", func(t *testing.T) {
+		fields := RequiredFields(AddParams{Priority: "High"})
+		for _, f := range fields {
+			if f == "priority" {
+				t.Error("priority should not be in required fields when already set")
+			}
 		}
 	})
 }
@@ -229,16 +286,10 @@ func TestCLI019_add_project_preselect(t *testing.T) {
 		}
 	})
 
-	t.Run("project flag with quick mode", func(t *testing.T) {
-		fields := RequiredFields(AddParams{Project: "PROJ", Quick: true})
-		expected := []string{"summary", "estimate", "dueDate"}
-		if len(fields) != len(expected) {
-			t.Fatalf("fields = %v, want %v", fields, expected)
-		}
-		for i, f := range expected {
-			if fields[i] != f {
-				t.Errorf("fields[%d] = %q, want %q", i, fields[i], f)
-			}
+	t.Run("project flag with inline mode", func(t *testing.T) {
+		fields := RequiredFields(AddParams{Project: "PROJ", Inline: true})
+		if len(fields) != 0 {
+			t.Fatalf("fields = %v, want empty", fields)
 		}
 	})
 }

@@ -81,15 +81,15 @@ func TestDueDate_sets_absolute(t *testing.T) {
 		}
 	})
 
-	t.Run("returns error for invalid date", func(t *testing.T) {
+	t.Run("returns error for unparseable date", func(t *testing.T) {
 		updater := &mockDueDateUpdater{}
 		_, err := RunDueDate(context.Background(), DueDateParams{
 			TaskKey: "PROJ-123",
-			Date:    "invalid",
+			Date:    "!!@@##",
 			Jira:    updater,
 		})
 		if err == nil {
-			t.Fatal("expected error for invalid date")
+			t.Fatal("expected error for unparseable date")
 		}
 	})
 

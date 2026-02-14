@@ -17,14 +17,16 @@ type Config struct {
 
 // JiraConfig holds Jira connection settings.
 type JiraConfig struct {
-	URL        string `yaml:"url"`
-	Email      string `yaml:"email"`
-	DefaultJQL string `yaml:"defaultJql"`
+	URL            string `yaml:"url"`
+	Email          string `yaml:"email"`
+	DefaultJQL     string `yaml:"defaultJql"`
+	DefaultProject string `yaml:"defaultProject"`
 }
 
 // TodoistConfig holds Todoist connection settings.
 type TodoistConfig struct {
-	DefaultFilter string `yaml:"defaultFilter"`
+	DefaultFilter  string `yaml:"defaultFilter"`
+	DefaultProject string `yaml:"defaultProject"`
 }
 
 // CalendarConfig holds Google Calendar settings.

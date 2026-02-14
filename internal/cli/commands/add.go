@@ -4,11 +4,24 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
+	"time"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/iruoy/fylla/internal/config"
 	"github.com/iruoy/fylla/internal/task"
 	"github.com/spf13/cobra"
 )
+
+// defaultProject returns the configured default project for the active source.
+func defaultProject(cfg *config.Config) string {
+	switch cfg.Source {
+	case "todoist":
+		return cfg.Todoist.DefaultProject
+	default:
+		return cfg.Jira.DefaultProject
+	}
+}
 
 // TaskCreator abstracts task creation for testing.
 type TaskCreator interface {
@@ -29,7 +42,7 @@ type AddParams struct {
 	Estimate    string // raw duration string
 	DueDate     string // raw date string, e.g. "2025-02-15"
 	Priority    string
-	Quick       bool
+	Inline      bool // true when args were provided on the command line
 	Creator     TaskCreator
 	Projects    ProjectLister
 }
@@ -41,23 +54,21 @@ type AddResult struct {
 }
 
 // BuildCreateInput converts AddParams into a task.CreateInput,
-// applying defaults for quick mode.
+// applying sensible defaults when fields are empty.
 func BuildCreateInput(p AddParams) (task.CreateInput, error) {
 	input := task.CreateInput{
 		Project:     p.Project,
 		Summary:     p.Summary,
-		IssueType:   p.IssueType,
 		Description: p.Description,
+		IssueType:   p.IssueType,
 		Priority:    p.Priority,
 	}
 
-	if p.Quick {
-		if input.IssueType == "" {
-			input.IssueType = "Task"
-		}
-		if input.Priority == "" {
-			input.Priority = "Medium"
-		}
+	if input.IssueType == "" {
+		input.IssueType = "Task"
+	}
+	if input.Priority == "" {
+		input.Priority = "Medium"
 	}
 
 	if p.Estimate != "" {
@@ -79,28 +90,34 @@ func BuildCreateInput(p AddParams) (task.CreateInput, error) {
 	return input, nil
 }
 
-// RequiredFields returns the list of field names that need prompting
-// based on which values are already set and whether quick mode is active.
+// RequiredFields returns the list of field names that need prompting.
+// In inline mode (args provided), only project is prompted if missing.
+// In interactive mode (no args), all empty fields are prompted.
 func RequiredFields(p AddParams) []string {
 	var fields []string
 	if p.Project == "" {
 		fields = append(fields, "project")
 	}
-	if !p.Quick {
-		if p.IssueType == "" {
-			fields = append(fields, "issueType")
-		}
+	if p.Inline {
+		return fields
 	}
-	fields = append(fields, "summary")
-	if !p.Quick {
+	if p.IssueType == "" {
+		fields = append(fields, "issueType")
+	}
+	if p.Summary == "" {
+		fields = append(fields, "summary")
+	}
+	if p.Description == "" {
 		fields = append(fields, "description")
 	}
-	fields = append(fields, "estimate")
-	fields = append(fields, "dueDate")
-	if !p.Quick {
-		if p.Priority == "" {
-			fields = append(fields, "priority")
-		}
+	if p.Estimate == "" {
+		fields = append(fields, "estimate")
+	}
+	if p.DueDate == "" {
+		fields = append(fields, "dueDate")
+	}
+	if p.Priority == "" {
+		fields = append(fields, "priority")
 	}
 	return fields
 }
@@ -128,26 +145,82 @@ func PrintAddResult(w io.Writer, result *AddResult) {
 	fmt.Fprintf(w, "Created %s: %s\n", result.Key, result.Summary)
 }
 
+// applyParsedInput populates AddParams from a ParsedInput result.
+func applyParsedInput(p *AddParams, parsed task.ParsedInput) {
+	if parsed.Summary != "" {
+		p.Summary = parsed.Summary
+	}
+	if parsed.Estimate > 0 {
+		p.Estimate = formatEstimate(parsed.Estimate)
+	}
+	if parsed.DueDate != nil {
+		p.DueDate = parsed.DueDate.Format("2006-01-02")
+	}
+	if parsed.Priority != "" {
+		p.Priority = parsed.Priority
+	}
+	if parsed.Description != "" {
+		p.Description = parsed.Description
+	}
+}
+
+func formatEstimate(d time.Duration) string {
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	if h > 0 && m > 0 {
+		return fmt.Sprintf("%dh%dm", h, m)
+	}
+	if h > 0 {
+		return fmt.Sprintf("%dh", h)
+	}
+	return fmt.Sprintf("%dm", m)
+}
+
 func newAddCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "add",
-		Short: "Create a new task interactively",
+		Use:   "add [inline task description]",
+		Short: "Create a new task",
+		Long: `Create a new task interactively or with inline attributes.
+
+Inline syntax:
+  fylla task add 'Write the docs [30m] (due Friday priority:critical not before Monday upnext nosplit)'
+
+The estimate goes in [brackets]. Due date, priority, and description are extracted
+from (parentheses). Everything else inside () is left in the title as scheduling hints.
+
+Extracted attributes inside ():
+  due <date>          Due date (natural language or YYYY-MM-DD)
+  priority:<level>    Priority (critical/p1, high/p2, medium/p3, low/p4, lowest/p5)
+  desc:<description>  Description text (must be last attribute)
+
+Kept in title (scheduling hints):
+  not before <date>   Earliest start date
+  upnext              Mark as up next
+  nosplit             Mark as non-splittable`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			source, _, err := loadTaskSource()
+			source, cfg, err := loadTaskSource()
 			if err != nil {
 				return err
 			}
 
-			quick, _ := cmd.Flags().GetBool("quick")
 			project, _ := cmd.Flags().GetString("project")
+			if project == "" {
+				project = defaultProject(cfg)
+			}
 
 			p := AddParams{
 				Project: project,
-				Quick:   quick,
 				Creator: source,
 			}
 			if pl, ok := source.(ProjectLister); ok {
 				p.Projects = pl
+			}
+
+			// If positional args are provided, parse them as inline input
+			if len(args) > 0 {
+				parsed := task.ParseInput(strings.Join(args, " "), time.Now())
+				applyParsedInput(&p, parsed)
+				p.Inline = true
 			}
 
 			for _, field := range RequiredFields(p) {
@@ -179,10 +252,13 @@ func newAddCmd() *cobra.Command {
 						return fmt.Errorf("prompt issue type: %w", err)
 					}
 				case "summary":
+					var raw string
 					prompt := &survey.Input{Message: "Summary:"}
-					if err := survey.AskOne(prompt, &p.Summary); err != nil {
+					if err := survey.AskOne(prompt, &raw); err != nil {
 						return fmt.Errorf("prompt summary: %w", err)
 					}
+					parsed := task.ParseInput(raw, time.Now())
+					applyParsedInput(&p, parsed)
 				case "description":
 					prompt := &survey.Input{Message: "Description:"}
 					if err := survey.AskOne(prompt, &p.Description); err != nil {
@@ -194,7 +270,7 @@ func newAddCmd() *cobra.Command {
 						return fmt.Errorf("prompt estimate: %w", err)
 					}
 				case "dueDate":
-					prompt := &survey.Input{Message: "Due date (YYYY-MM-DD):"}
+					prompt := &survey.Input{Message: "Due date (YYYY-MM-DD or natural language):"}
 					if err := survey.AskOne(prompt, &p.DueDate); err != nil {
 						return fmt.Errorf("prompt due date: %w", err)
 					}
@@ -220,7 +296,6 @@ func newAddCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().Bool("quick", false, "Quick mode - only essential fields")
 	cmd.Flags().String("project", "", "Pre-select project")
 
 	return cmd

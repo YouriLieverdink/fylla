@@ -100,4 +100,138 @@ func TestSetTitleEstimate(t *testing.T) {
 	}
 }
 
+func TestParseInput(t *testing.T) {
+	// Use a fixed reference time for deterministic date assertions
+	ref := time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC)
+
+	// Helper to get the weekday date for the next occurrence of a weekday
+	nextWeekday := func(wd time.Weekday) time.Time {
+		d := ref
+		for {
+			d = d.AddDate(0, 0, 1)
+			if d.Weekday() == wd {
+				return d
+			}
+		}
+	}
+
+	tests := []struct {
+		name         string
+		input        string
+		wantSummary  string
+		wantEstimate time.Duration
+		wantPriority string
+		wantDueDay   *time.Weekday
+		wantDesc     string
+	}{
+		{
+			name:         "full syntax with scheduling hints left in title",
+			input:        "Write the docs [30m] (due Friday not before Monday priority:critical upnext nosplit)",
+			wantSummary:  "Write the docs not before Monday upnext nosplit",
+			wantEstimate: 30 * time.Minute,
+			wantPriority: "Highest",
+			wantDueDay:   weekdayPtr(time.Friday),
+		},
+		{
+			name:         "only estimate",
+			input:        "Fix bug [2h]",
+			wantSummary:  "Fix bug",
+			wantEstimate: 2 * time.Hour,
+		},
+		{
+			name:        "only due in parens",
+			input:       "Fix bug (due Friday)",
+			wantSummary: "Fix bug",
+			wantDueDay:  weekdayPtr(time.Friday),
+		},
+		{
+			name:         "only priority in parens",
+			input:        "Fix bug (priority:p1)",
+			wantSummary:  "Fix bug",
+			wantPriority: "Highest",
+		},
+		{
+			name:        "not before stays in title",
+			input:       "Task (not before next Monday)",
+			wantSummary: "Task not before next Monday",
+		},
+		{
+			name:        "upnext and nosplit stay in title",
+			input:       "Task (upnext nosplit)",
+			wantSummary: "Task upnext nosplit",
+		},
+		{
+			name:        "no attributes",
+			input:       "Just a plain task",
+			wantSummary: "Just a plain task",
+		},
+		{
+			name:         "estimate and parens",
+			input:        "Fix bug [1h] (due Friday priority:high)",
+			wantSummary:  "Fix bug",
+			wantEstimate: time.Hour,
+			wantPriority: "High",
+			wantDueDay:   weekdayPtr(time.Friday),
+		},
+		{
+			name:         "case insensitive priority",
+			input:        "Fix bug (priority:HIGH)",
+			wantSummary:  "Fix bug",
+			wantPriority: "High",
+		},
+		{
+			name:         "priority aliases",
+			input:        "Fix bug (priority:p2)",
+			wantSummary:  "Fix bug",
+			wantPriority: "High",
+		},
+		{
+			name:        "due and not before together",
+			input:       "Write report (not before Monday due Friday)",
+			wantSummary: "Write report not before Monday",
+			wantDueDay:  weekdayPtr(time.Friday),
+		},
+		{
+			name:        "desc extracted from parens",
+			input:       "Fix bug (due Friday desc:detailed description here)",
+			wantSummary: "Fix bug",
+			wantDueDay:  weekdayPtr(time.Friday),
+			wantDesc:    "detailed description here",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ParseInput(tc.input, ref)
+
+			if got.Summary != tc.wantSummary {
+				t.Errorf("Summary = %q, want %q", got.Summary, tc.wantSummary)
+			}
+			if got.Estimate != tc.wantEstimate {
+				t.Errorf("Estimate = %v, want %v", got.Estimate, tc.wantEstimate)
+			}
+			if got.Priority != tc.wantPriority {
+				t.Errorf("Priority = %q, want %q", got.Priority, tc.wantPriority)
+			}
+			if got.Description != tc.wantDesc {
+				t.Errorf("Description = %q, want %q", got.Description, tc.wantDesc)
+			}
+
+			if tc.wantDueDay != nil {
+				if got.DueDate == nil {
+					t.Fatalf("DueDate = nil, want %v", *tc.wantDueDay)
+				}
+				wantDate := nextWeekday(*tc.wantDueDay)
+				if got.DueDate.Weekday() != wantDate.Weekday() {
+					t.Errorf("DueDate weekday = %v, want %v", got.DueDate.Weekday(), wantDate.Weekday())
+				}
+			} else if got.DueDate != nil {
+				t.Errorf("DueDate = %v, want nil", got.DueDate)
+			}
+		})
+	}
+}
+
+func weekdayPtr(wd time.Weekday) *time.Weekday { return &wd }
+
 func timePtr(t time.Time) *time.Time { return &t }
