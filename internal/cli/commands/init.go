@@ -77,7 +77,6 @@ func RunInit(ctx context.Context, w io.Writer, p InitParams) error {
 		return fmt.Errorf("at least one provider must be selected")
 	}
 	cfg.Providers = providers
-	cfg.Source = "" // Clear legacy field
 	if err := config.SaveTo(cfg, p.ConfigPath); err != nil {
 		return fmt.Errorf("save providers: %w", err)
 	}

@@ -4,7 +4,6 @@ import "fmt"
 
 // Config represents the fylla configuration file.
 type Config struct {
-	Source        string                 `yaml:"source"`
 	Providers     []string               `yaml:"providers"`
 	Jira          JiraConfig             `yaml:"jira"`
 	Todoist       TodoistConfig          `yaml:"todoist"`
@@ -16,13 +15,10 @@ type Config struct {
 }
 
 // ActiveProviders returns the list of configured providers.
-// It uses Providers if set, falls back to Source, and defaults to ["jira"].
+// It returns Providers if set, and defaults to ["jira"].
 func (c *Config) ActiveProviders() []string {
 	if len(c.Providers) > 0 {
 		return c.Providers
-	}
-	if c.Source != "" {
-		return []string{c.Source}
 	}
 	return []string{"jira"}
 }
@@ -84,13 +80,6 @@ type WeightsConfig struct {
 
 // Validate checks config invariants and returns an error if any are violated.
 func (c *Config) Validate() error {
-	// Source must be jira, todoist, or empty (defaults to jira)
-	switch c.Source {
-	case "", "jira", "todoist":
-	default:
-		return fmt.Errorf("source must be 'jira' or 'todoist', got %q", c.Source)
-	}
-
 	// Validate providers if set
 	if len(c.Providers) > 0 {
 		seen := make(map[string]bool)

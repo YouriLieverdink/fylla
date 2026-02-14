@@ -23,7 +23,7 @@ go run ./cmd/fylla          # Run
 ### Multi-Provider System
 Fylla supports multiple task providers (Jira, Todoist) simultaneously via the `providers` array in config. Key concepts:
 
-- **Config:** `providers: [jira, todoist]` — replaces legacy `source` field (backward compatible via `ActiveProviders()` fallback)
+- **Config:** `providers: [jira, todoist]` — configures which task providers to use, defaults to `["jira"]` when unset
 - **Provider routing:** `isJiraKey()` / `providerForKey()` infers provider from task key format (`PROJ-123` → Jira, numeric → Todoist)
 - **MultiTaskSource:** wraps multiple `TaskSource` instances, routes key-based operations to the correct provider
 - **multiFetcher:** concurrent fetch from all providers, merges results, handles partial failures

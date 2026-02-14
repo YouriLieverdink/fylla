@@ -143,9 +143,6 @@ calendar:
   fyllaCalendar: fylla
 ```
 
-> **Backward compatibility:** The legacy `source: jira` field still works.
-> If `providers` is not set, Fylla falls back to `source`, then defaults to `["jira"]`.
-
 ## Shell Completion
 
 Fylla supports shell completions for bash, zsh, fish, and powershell:

@@ -312,7 +312,6 @@ func TestSet_KeyNotFound(t *testing.T) {
 func TestValidate(t *testing.T) {
 	validConfig := func() Config {
 		return Config{
-			Source: "jira",
 			Scheduling: SchedulingConfig{
 				WindowDays:             5,
 				MinTaskDurationMinutes: 25,
@@ -337,30 +336,6 @@ func TestValidate(t *testing.T) {
 		cfg := validConfig()
 		if err := cfg.Validate(); err != nil {
 			t.Errorf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("empty source is valid", func(t *testing.T) {
-		cfg := validConfig()
-		cfg.Source = ""
-		if err := cfg.Validate(); err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("todoist source is valid", func(t *testing.T) {
-		cfg := validConfig()
-		cfg.Source = "todoist"
-		if err := cfg.Validate(); err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("invalid source", func(t *testing.T) {
-		cfg := validConfig()
-		cfg.Source = "trello"
-		if err := cfg.Validate(); err == nil {
-			t.Error("expected error for invalid source")
 		}
 	})
 
@@ -584,14 +559,6 @@ func TestActiveProviders(t *testing.T) {
 		}
 	})
 
-	t.Run("falls back to Source", func(t *testing.T) {
-		cfg := Config{Source: "todoist"}
-		got := cfg.ActiveProviders()
-		if len(got) != 1 || got[0] != "todoist" {
-			t.Errorf("ActiveProviders() = %v, want [todoist]", got)
-		}
-	})
-
 	t.Run("defaults to jira", func(t *testing.T) {
 		cfg := Config{}
 		got := cfg.ActiveProviders()
@@ -600,13 +567,6 @@ func TestActiveProviders(t *testing.T) {
 		}
 	})
 
-	t.Run("Providers takes precedence over Source", func(t *testing.T) {
-		cfg := Config{Source: "todoist", Providers: []string{"jira"}}
-		got := cfg.ActiveProviders()
-		if len(got) != 1 || got[0] != "jira" {
-			t.Errorf("ActiveProviders() = %v, want [jira]", got)
-		}
-	})
 }
 
 // writeTestConfig writes the default config YAML to a temp file and returns its path.
