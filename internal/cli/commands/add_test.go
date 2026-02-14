@@ -70,8 +70,8 @@ func TestCLI017_add_interactive_creation(t *testing.T) {
 		}
 	})
 
-	t.Run("interactive mode requires all fields for prompting", func(t *testing.T) {
-		fields := RequiredFields(AddParams{})
+	t.Run("interactive mode requires all fields for jira", func(t *testing.T) {
+		fields := RequiredFields(AddParams{}, "jira")
 		expected := []string{"project", "issueType", "summary", "description", "estimate", "dueDate", "priority"}
 		if len(fields) != len(expected) {
 			t.Fatalf("fields = %v, want %v", fields, expected)
@@ -79,6 +79,15 @@ func TestCLI017_add_interactive_creation(t *testing.T) {
 		for i, f := range expected {
 			if fields[i] != f {
 				t.Errorf("fields[%d] = %q, want %q", i, fields[i], f)
+			}
+		}
+	})
+
+	t.Run("interactive mode omits issueType for todoist", func(t *testing.T) {
+		fields := RequiredFields(AddParams{}, "todoist")
+		for _, f := range fields {
+			if f == "issueType" {
+				t.Error("issueType should not be in required fields for todoist provider")
 			}
 		}
 	})
@@ -131,7 +140,7 @@ func TestCLI017_add_interactive_creation(t *testing.T) {
 
 func TestCLI018_add_inline_mode(t *testing.T) {
 	t.Run("inline mode only prompts project", func(t *testing.T) {
-		fields := RequiredFields(AddParams{Inline: true, Summary: "Task"})
+		fields := RequiredFields(AddParams{Inline: true, Summary: "Task"}, "jira")
 		expected := []string{"project"}
 		if len(fields) != len(expected) {
 			t.Fatalf("fields = %v, want %v", fields, expected)
@@ -144,13 +153,13 @@ func TestCLI018_add_inline_mode(t *testing.T) {
 	})
 
 	t.Run("inline mode skips project prompt when pre-selected", func(t *testing.T) {
-		fields := RequiredFields(AddParams{Inline: true, Project: "PROJ", Summary: "Task"})
+		fields := RequiredFields(AddParams{Inline: true, Project: "PROJ", Summary: "Task"}, "jira")
 		if len(fields) != 0 {
 			t.Fatalf("fields = %v, want empty", fields)
 		}
 	})
 
-	t.Run("inline mode defaults type to Task and priority to Medium", func(t *testing.T) {
+	t.Run("inline mode defaults priority to Medium", func(t *testing.T) {
 		mock := &mockTaskCreator{key: "PROJ-457"}
 		result, err := RunAdd(context.Background(), AddParams{
 			Project: "PROJ",
@@ -163,9 +172,6 @@ func TestCLI018_add_inline_mode(t *testing.T) {
 		}
 
 		c := mock.calls[0]
-		if c.IssueType != "Task" {
-			t.Errorf("IssueType = %q, want Task (default)", c.IssueType)
-		}
 		if c.Priority != "Medium" {
 			t.Errorf("Priority = %q, want Medium (default)", c.Priority)
 		}
@@ -218,7 +224,7 @@ func TestCLI018_add_inline_mode(t *testing.T) {
 
 func TestRequiredFields_interactive_populated(t *testing.T) {
 	t.Run("summary populated skips summary prompt", func(t *testing.T) {
-		fields := RequiredFields(AddParams{Summary: "Already set"})
+		fields := RequiredFields(AddParams{Summary: "Already set"}, "jira")
 		for _, f := range fields {
 			if f == "summary" {
 				t.Error("summary should not be in required fields when already set")
@@ -227,7 +233,7 @@ func TestRequiredFields_interactive_populated(t *testing.T) {
 	})
 
 	t.Run("estimate populated skips estimate prompt", func(t *testing.T) {
-		fields := RequiredFields(AddParams{Estimate: "2h"})
+		fields := RequiredFields(AddParams{Estimate: "2h"}, "jira")
 		for _, f := range fields {
 			if f == "estimate" {
 				t.Error("estimate should not be in required fields when already set")
@@ -236,7 +242,7 @@ func TestRequiredFields_interactive_populated(t *testing.T) {
 	})
 
 	t.Run("due date populated skips due date prompt", func(t *testing.T) {
-		fields := RequiredFields(AddParams{DueDate: "2025-02-15"})
+		fields := RequiredFields(AddParams{DueDate: "2025-02-15"}, "jira")
 		for _, f := range fields {
 			if f == "dueDate" {
 				t.Error("dueDate should not be in required fields when already set")
@@ -245,7 +251,7 @@ func TestRequiredFields_interactive_populated(t *testing.T) {
 	})
 
 	t.Run("priority populated skips priority prompt", func(t *testing.T) {
-		fields := RequiredFields(AddParams{Priority: "High"})
+		fields := RequiredFields(AddParams{Priority: "High"}, "jira")
 		for _, f := range fields {
 			if f == "priority" {
 				t.Error("priority should not be in required fields when already set")
@@ -256,7 +262,7 @@ func TestRequiredFields_interactive_populated(t *testing.T) {
 
 func TestCLI019_add_project_preselect(t *testing.T) {
 	t.Run("project flag skips project prompt", func(t *testing.T) {
-		fields := RequiredFields(AddParams{Project: "PROJ"})
+		fields := RequiredFields(AddParams{Project: "PROJ"}, "jira")
 		for _, f := range fields {
 			if f == "project" {
 				t.Error("project should not be in required fields when pre-selected")
@@ -287,7 +293,7 @@ func TestCLI019_add_project_preselect(t *testing.T) {
 	})
 
 	t.Run("project flag with inline mode", func(t *testing.T) {
-		fields := RequiredFields(AddParams{Project: "PROJ", Inline: true})
+		fields := RequiredFields(AddParams{Project: "PROJ", Inline: true}, "jira")
 		if len(fields) != 0 {
 			t.Fatalf("fields = %v, want empty", fields)
 		}

@@ -96,16 +96,10 @@ func testConfig() *config.Config {
 			WorkDays: []int{1, 2, 3, 4, 5},
 		},
 		Weights: config.WeightsConfig{
-			Priority:  0.40,
-			DueDate:   0.30,
-			Estimate:  0.15,
-			IssueType: 0.10,
-			Age:       0.05,
-		},
-		TypeScores: map[string]int{
-			"Bug":   100,
-			"Task":  70,
-			"Story": 50,
+			Priority: 0.45,
+			DueDate:  0.30,
+			Estimate: 0.15,
+			Age:      0.10,
 		},
 	}
 }
@@ -655,6 +649,7 @@ func TestSYNC007_create_calendar_events(t *testing.T) {
 			Now:   now,
 			Start: start,
 			End:   end,
+			Force: true,
 		})
 		if err != nil {
 			t.Fatalf("RunSync: %v", err)

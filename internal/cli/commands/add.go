@@ -64,9 +64,6 @@ func BuildCreateInput(p AddParams) (task.CreateInput, error) {
 		Priority:    p.Priority,
 	}
 
-	if input.IssueType == "" {
-		input.IssueType = "Task"
-	}
 	if input.Priority == "" {
 		input.Priority = "Medium"
 	}
@@ -93,7 +90,8 @@ func BuildCreateInput(p AddParams) (task.CreateInput, error) {
 // RequiredFields returns the list of field names that need prompting.
 // In inline mode (args provided), only project is prompted if missing.
 // In interactive mode (no args), all empty fields are prompted.
-func RequiredFields(p AddParams) []string {
+// The provider parameter controls provider-specific fields (e.g. issueType for Jira only).
+func RequiredFields(p AddParams, provider string) []string {
 	var fields []string
 	if p.Project == "" {
 		fields = append(fields, "project")
@@ -101,7 +99,7 @@ func RequiredFields(p AddParams) []string {
 	if p.Inline {
 		return fields
 	}
-	if p.IssueType == "" {
+	if provider == "jira" && p.IssueType == "" {
 		fields = append(fields, "issueType")
 	}
 	if p.Summary == "" {
@@ -247,7 +245,12 @@ Extracted attributes inside ():
 				p.Inline = true
 			}
 
-			for _, field := range RequiredFields(p) {
+			// Default IssueType to "Task" for Jira when not provided
+		if providerFlag == "jira" && p.IssueType == "" {
+			p.IssueType = "Task"
+		}
+
+		for _, field := range RequiredFields(p, providerFlag) {
 				switch field {
 				case "project":
 					if p.Projects != nil {

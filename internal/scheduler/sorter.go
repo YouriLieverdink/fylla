@@ -17,12 +17,12 @@ type ScoredTask struct {
 
 // SortTasks scores and sorts tasks by descending composite score.
 // The now parameter is used for relative date calculations.
-func SortTasks(tasks []task.Task, cfg config.WeightsConfig, typeScores map[string]int, now time.Time) []ScoredTask {
+func SortTasks(tasks []task.Task, cfg config.WeightsConfig, now time.Time) []ScoredTask {
 	scored := make([]ScoredTask, len(tasks))
 	for i, t := range tasks {
 		scored[i] = ScoredTask{
 			Task:  t,
-			Score: CompositeScore(t, cfg, typeScores, now),
+			Score: CompositeScore(t, cfg, now),
 		}
 	}
 
@@ -34,11 +34,10 @@ func SortTasks(tasks []task.Task, cfg config.WeightsConfig, typeScores map[strin
 }
 
 // CompositeScore calculates the weighted composite score for a task.
-func CompositeScore(t task.Task, w config.WeightsConfig, typeScores map[string]int, now time.Time) float64 {
+func CompositeScore(t task.Task, w config.WeightsConfig, now time.Time) float64 {
 	score := w.Priority*PriorityScore(t.Priority) +
 		w.DueDate*DueDateScore(t.DueDate, now) +
 		w.Estimate*EstimateScore(t.RemainingEstimate) +
-		w.IssueType*IssueTypeScore(t.IssueType, typeScores) +
 		w.Age*AgeScore(t.Created, now)
 
 	score += CrunchBoost(t.DueDate, now)
@@ -89,15 +88,6 @@ func EstimateScore(estimate time.Duration) float64 {
 		return 0
 	}
 	return 100 * (1 - hours/8)
-}
-
-// IssueTypeScore returns the configured score for an issue type.
-// Returns 0 if the type is not found in the map.
-func IssueTypeScore(issueType string, typeScores map[string]int) float64 {
-	if s, ok := typeScores[issueType]; ok {
-		return float64(s)
-	}
-	return 0
 }
 
 // AgeScore gives older tasks a slight boost.

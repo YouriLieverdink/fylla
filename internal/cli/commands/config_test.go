@@ -29,15 +29,10 @@ projectRules:
     end: "10:00"
     workDays: [1, 2, 3, 4, 5]
 weights:
-  priority: 0.40
+  priority: 0.45
   dueDate: 0.30
   estimate: 0.15
-  issueType: 0.10
-  age: 0.05
-typeScores:
-  Bug: 100
-  Task: 70
-  Story: 50
+  age: 0.10
 `
 
 func writeTestConfig(t *testing.T) string {
@@ -58,7 +53,7 @@ func TestCLI020_config_show(t *testing.T) {
 			t.Fatalf("RunConfigShow: %v", err)
 		}
 
-		sections := []string{"jira:", "calendar:", "scheduling:", "businessHours:", "projectRules:", "weights:", "typeScores:"}
+		sections := []string{"jira:", "calendar:", "scheduling:", "businessHours:", "projectRules:", "weights:"}
 		for _, section := range sections {
 			if !strings.Contains(yamlText, section) {
 				t.Errorf("output missing section %q", section)

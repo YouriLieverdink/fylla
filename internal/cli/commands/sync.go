@@ -198,7 +198,7 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 
 	// Step 2: Sort by composite score
 	progress(p.Progress, "Sorting %d tasks...", len(tasks))
-	sorted := scheduler.SortTasks(tasks, p.Cfg.Weights, p.Cfg.TypeScores, p.Now)
+	sorted := scheduler.SortTasks(tasks, p.Cfg.Weights, p.Now)
 
 	// Step 3: Fetch Google Calendar events
 	progress(p.Progress, "Reading calendar...")

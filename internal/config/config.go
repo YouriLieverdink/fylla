@@ -13,7 +13,6 @@ type Config struct {
 	BusinessHours BusinessHoursConfig    `yaml:"businessHours"`
 	ProjectRules  map[string]ProjectRule `yaml:"projectRules"`
 	Weights       WeightsConfig          `yaml:"weights"`
-	TypeScores    map[string]int         `yaml:"typeScores"`
 }
 
 // ActiveProviders returns the list of configured providers.
@@ -76,12 +75,11 @@ type ProjectRule struct {
 
 // WeightsConfig holds sorting algorithm weights.
 type WeightsConfig struct {
-	Priority  float64 `yaml:"priority"`
-	DueDate   float64 `yaml:"dueDate"`
-	Estimate  float64 `yaml:"estimate"`
-	IssueType float64 `yaml:"issueType"`
-	Age       float64 `yaml:"age"`
-	UpNext    float64 `yaml:"upNext"`
+	Priority float64 `yaml:"priority"`
+	DueDate  float64 `yaml:"dueDate"`
+	Estimate float64 `yaml:"estimate"`
+	Age      float64 `yaml:"age"`
+	UpNext   float64 `yaml:"upNext"`
 }
 
 // Validate checks config invariants and returns an error if any are violated.
@@ -110,7 +108,7 @@ func (c *Config) Validate() error {
 	}
 
 	// Weights must sum to 1.0 (with float tolerance)
-	sum := c.Weights.Priority + c.Weights.DueDate + c.Weights.Estimate + c.Weights.IssueType + c.Weights.Age
+	sum := c.Weights.Priority + c.Weights.DueDate + c.Weights.Estimate + c.Weights.Age
 	if sum < 0.99 || sum > 1.01 {
 		return fmt.Errorf("weights must sum to 1.0, got %.2f", sum)
 	}

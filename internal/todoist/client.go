@@ -183,11 +183,6 @@ func (c *Client) parseTask(t todoistTask) task.Task {
 		Priority: apiPriorityToLevel(t.Priority),
 	}
 
-	// Labels → IssueType (first label)
-	if len(t.Labels) > 0 {
-		result.IssueType = t.Labels[0]
-	}
-
 	// Project
 	result.Project = c.projectName(t.ProjectID)
 
@@ -304,10 +299,6 @@ func (c *Client) CreateTask(ctx context.Context, input task.CreateInput) (string
 
 	if input.DueDate != nil {
 		payload["due_date"] = input.DueDate.Format("2006-01-02")
-	}
-
-	if input.IssueType != "" {
-		payload["labels"] = []string{input.IssueType}
 	}
 
 	data, err := json.Marshal(payload)

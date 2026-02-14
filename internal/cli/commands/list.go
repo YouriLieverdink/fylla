@@ -32,7 +32,7 @@ func RunList(ctx context.Context, p ListParams) (*ListResult, error) {
 		return nil, fmt.Errorf("fetch tasks: %w", err)
 	}
 
-	sorted := scheduler.SortTasks(tasks, p.Cfg.Weights, p.Cfg.TypeScores, p.Now)
+	sorted := scheduler.SortTasks(tasks, p.Cfg.Weights, p.Now)
 
 	return &ListResult{Tasks: sorted}, nil
 }

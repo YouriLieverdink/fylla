@@ -79,9 +79,6 @@ func TestFetchTasks(t *testing.T) {
 	if result[0].Project != "Work" {
 		t.Errorf("task[0].Project = %q, want Work", result[0].Project)
 	}
-	if result[0].IssueType != "Bug" {
-		t.Errorf("task[0].IssueType = %q, want Bug", result[0].IssueType)
-	}
 	if result[0].DueDate == nil {
 		t.Fatal("task[0].DueDate is nil")
 	}
@@ -195,9 +192,6 @@ func TestCreateTask(t *testing.T) {
 	// Priority "High" → API 3
 	if pri, ok := received["priority"].(float64); !ok || int(pri) != 3 {
 		t.Errorf("priority = %v, want 3", received["priority"])
-	}
-	if labels, ok := received["labels"].([]interface{}); !ok || len(labels) != 1 || labels[0] != "Bug" {
-		t.Errorf("labels = %v, want [Bug]", received["labels"])
 	}
 }
 

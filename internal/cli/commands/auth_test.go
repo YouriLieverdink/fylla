@@ -41,15 +41,10 @@ businessHours:
   end: "17:00"
   workDays: [1, 2, 3, 4, 5]
 weights:
-  priority: 0.40
+  priority: 0.45
   dueDate: 0.30
   estimate: 0.15
-  issueType: 0.10
-  age: 0.05
-typeScores:
-  Bug: 100
-  Task: 70
-  Story: 50
+  age: 0.10
 `
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatalf("write config: %v", err)

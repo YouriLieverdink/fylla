@@ -9,18 +9,11 @@ import (
 )
 
 var defaultWeights = config.WeightsConfig{
-	Priority:  0.40,
-	DueDate:   0.30,
-	Estimate:  0.15,
-	IssueType: 0.10,
-	Age:       0.05,
-	UpNext:    50,
-}
-
-var defaultTypeScores = map[string]int{
-	"Bug":   100,
-	"Task":  70,
-	"Story": 50,
+	Priority: 0.45,
+	DueDate:  0.30,
+	Estimate: 0.15,
+	Age:      0.10,
+	UpNext:   50,
 }
 
 func timePtr(t time.Time) *time.Time { return &t }
@@ -34,17 +27,17 @@ func Test_SORT001_priority_weight(t *testing.T) {
 
 	t.Run("higher priority task sorted first", func(t *testing.T) {
 		tasks := []task.Task{lowPri, highPri}
-		sorted := SortTasks(tasks, defaultWeights, defaultTypeScores, now)
+		sorted := SortTasks(tasks, defaultWeights, now)
 		if sorted[0].Task.Key != "P-1" {
 			t.Errorf("expected P-1 first, got %s", sorted[0].Task.Key)
 		}
 	})
 
-	t.Run("priority contributes 40 percent", func(t *testing.T) {
-		// Priority 1 score = 100, weight = 0.40 → contribution = 40
+	t.Run("priority contributes 45 percent", func(t *testing.T) {
+		// Priority 1 score = 100, weight = 0.45 → contribution = 45
 		contrib := defaultWeights.Priority * PriorityScore(1)
-		if Round(contrib, 2) != 40.0 {
-			t.Errorf("expected priority contribution 40, got %.2f", contrib)
+		if Round(contrib, 2) != 45.0 {
+			t.Errorf("expected priority contribution 45, got %.2f", contrib)
 		}
 	})
 }
@@ -63,7 +56,7 @@ func Test_SORT002_due_date_weight(t *testing.T) {
 	}
 
 	t.Run("earlier due date prioritized", func(t *testing.T) {
-		sorted := SortTasks([]task.Task{laterDue, soonDue}, defaultWeights, defaultTypeScores, now)
+		sorted := SortTasks([]task.Task{laterDue, soonDue}, defaultWeights, now)
 		if sorted[0].Task.Key != "D-1" {
 			t.Errorf("expected D-1 first, got %s", sorted[0].Task.Key)
 		}
@@ -92,7 +85,7 @@ func Test_SORT003_estimate_weight(t *testing.T) {
 	}
 
 	t.Run("smaller task prioritized", func(t *testing.T) {
-		sorted := SortTasks([]task.Task{large, small}, defaultWeights, defaultTypeScores, now)
+		sorted := SortTasks([]task.Task{large, small}, defaultWeights, now)
 		if sorted[0].Task.Key != "E-1" {
 			t.Errorf("expected E-1 first, got %s", sorted[0].Task.Key)
 		}
@@ -104,29 +97,6 @@ func Test_SORT003_estimate_weight(t *testing.T) {
 		maxContrib := defaultWeights.Estimate * 100
 		if Round(maxContrib, 2) != 15.0 {
 			t.Errorf("expected max estimate contribution 15, got %.2f", maxContrib)
-		}
-	})
-}
-
-func Test_SORT004_issue_type_weight(t *testing.T) {
-	now := time.Date(2025, 6, 15, 9, 0, 0, 0, time.UTC)
-	created := now.Add(-24 * time.Hour)
-
-	bug := task.Task{Key: "T-1", Priority: 3, IssueType: "Bug", Created: created}
-	tsk := task.Task{Key: "T-2", Priority: 3, IssueType: "Task", Created: created}
-
-	t.Run("bug prioritized over task", func(t *testing.T) {
-		sorted := SortTasks([]task.Task{tsk, bug}, defaultWeights, defaultTypeScores, now)
-		if sorted[0].Task.Key != "T-1" {
-			t.Errorf("expected T-1 (Bug) first, got %s", sorted[0].Task.Key)
-		}
-	})
-
-	t.Run("issue type contributes 10 percent", func(t *testing.T) {
-		// Bug=100, weight=0.10 → contribution = 10
-		contrib := defaultWeights.IssueType * IssueTypeScore("Bug", defaultTypeScores)
-		if Round(contrib, 2) != 10.0 {
-			t.Errorf("expected issue type contribution 10, got %.2f", contrib)
 		}
 	})
 }
@@ -144,17 +114,17 @@ func Test_SORT005_age_weight(t *testing.T) {
 	}
 
 	t.Run("older task gets slight boost", func(t *testing.T) {
-		sorted := SortTasks([]task.Task{recent, old}, defaultWeights, defaultTypeScores, now)
+		sorted := SortTasks([]task.Task{recent, old}, defaultWeights, now)
 		if sorted[0].Task.Key != "A-1" {
 			t.Errorf("expected A-1 (older) first, got %s", sorted[0].Task.Key)
 		}
 	})
 
-	t.Run("age contributes 5 percent", func(t *testing.T) {
-		// 30-day old task = 100, weight = 0.05 → max contribution = 5
+	t.Run("age contributes 10 percent", func(t *testing.T) {
+		// 30-day old task = 100, weight = 0.10 → max contribution = 10
 		maxContrib := defaultWeights.Age * 100
-		if Round(maxContrib, 2) != 5.0 {
-			t.Errorf("expected max age contribution 5, got %.2f", maxContrib)
+		if Round(maxContrib, 2) != 10.0 {
+			t.Errorf("expected max age contribution 10, got %.2f", maxContrib)
 		}
 	})
 }
@@ -266,33 +236,6 @@ func Test_SORT008_estimate_scoring(t *testing.T) {
 	})
 }
 
-func Test_SORT009_issue_type_scoring(t *testing.T) {
-	tests := []struct {
-		name     string
-		itype    string
-		expected float64
-	}{
-		{"Bug=100", "Bug", 100},
-		{"Task=70", "Task", 70},
-		{"Story=50", "Story", 50},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := IssueTypeScore(tt.itype, defaultTypeScores)
-			if got != tt.expected {
-				t.Errorf("IssueTypeScore(%s) = %.0f, want %.0f", tt.itype, got, tt.expected)
-			}
-		})
-	}
-
-	t.Run("unknown type scores 0", func(t *testing.T) {
-		got := IssueTypeScore("Epic", defaultTypeScores)
-		if got != 0 {
-			t.Errorf("expected 0 for unknown type, got %.0f", got)
-		}
-	})
-}
-
 func Test_SORT010_crunch_mode(t *testing.T) {
 	now := time.Date(2025, 6, 15, 9, 0, 0, 0, time.UTC)
 
@@ -327,7 +270,7 @@ func Test_SORT010_crunch_mode(t *testing.T) {
 			Key: "C-2", Priority: 3, IssueType: "Task", Created: created,
 			DueDate: timePtr(now.Add(10 * 24 * time.Hour)),
 		}
-		sorted := SortTasks([]task.Task{normal, crunch}, defaultWeights, defaultTypeScores, now)
+		sorted := SortTasks([]task.Task{normal, crunch}, defaultWeights, now)
 		if sorted[0].Task.Key != "C-1" {
 			t.Errorf("expected crunch task C-1 first, got %s", sorted[0].Task.Key)
 		}
@@ -357,7 +300,7 @@ func Test_SORT011_upnext_overrides_score(t *testing.T) {
 		highScore := task.Task{Key: "REG-1", Priority: 1, IssueType: "Bug", Created: created}
 		lowScoreUpnext := task.Task{Key: "UP-1", Priority: 5, IssueType: "Task", Created: created, UpNext: true}
 
-		sorted := SortTasks([]task.Task{highScore, lowScoreUpnext}, defaultWeights, defaultTypeScores, now)
+		sorted := SortTasks([]task.Task{highScore, lowScoreUpnext}, defaultWeights, now)
 
 		if sorted[0].Task.Key != "UP-1" {
 			t.Errorf("expected upnext task UP-1 first, got %s", sorted[0].Task.Key)
@@ -375,13 +318,13 @@ func Test_SORT011_upnext_overrides_score(t *testing.T) {
 		}
 		lowUpnext := task.Task{Key: "UP-1", Priority: 5, IssueType: "Task", Created: created, UpNext: true}
 
-		sorted := SortTasks([]task.Task{lowUpnext, urgent}, defaultWeights, defaultTypeScores, now)
+		sorted := SortTasks([]task.Task{lowUpnext, urgent}, defaultWeights, now)
 
 		if sorted[0].Task.Key != "URG-1" {
 			t.Errorf("expected urgent task URG-1 first, got %s (scores: URG-1=%.2f, UP-1=%.2f)",
 				sorted[0].Task.Key,
-				CompositeScore(urgent, defaultWeights, defaultTypeScores, now),
-				CompositeScore(lowUpnext, defaultWeights, defaultTypeScores, now))
+				CompositeScore(urgent, defaultWeights, now),
+				CompositeScore(lowUpnext, defaultWeights, now))
 		}
 	})
 
@@ -390,7 +333,7 @@ func Test_SORT011_upnext_overrides_score(t *testing.T) {
 		up2 := task.Task{Key: "UP-LOW", Priority: 5, IssueType: "Task", Created: created, UpNext: true}
 		regular := task.Task{Key: "REG-1", Priority: 1, IssueType: "Bug", Created: created}
 
-		sorted := SortTasks([]task.Task{regular, up2, up1}, defaultWeights, defaultTypeScores, now)
+		sorted := SortTasks([]task.Task{regular, up2, up1}, defaultWeights, now)
 
 		if sorted[0].Task.Key != "UP-HIGH" {
 			t.Errorf("expected UP-HIGH first, got %s", sorted[0].Task.Key)
@@ -407,7 +350,7 @@ func Test_SORT011_upnext_overrides_score(t *testing.T) {
 		high := task.Task{Key: "H-1", Priority: 1, IssueType: "Task", Created: created}
 		low := task.Task{Key: "L-1", Priority: 5, IssueType: "Task", Created: created}
 
-		sorted := SortTasks([]task.Task{low, high}, defaultWeights, defaultTypeScores, now)
+		sorted := SortTasks([]task.Task{low, high}, defaultWeights, now)
 
 		if sorted[0].Task.Key != "H-1" {
 			t.Errorf("expected H-1 first, got %s", sorted[0].Task.Key)

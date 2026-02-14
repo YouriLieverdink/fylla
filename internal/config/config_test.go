@@ -156,38 +156,16 @@ func TestCFG007_Weights(t *testing.T) {
 		got  float64
 		want float64
 	}{
-		{"Priority", cfg.Weights.Priority, 0.40},
+		{"Priority", cfg.Weights.Priority, 0.45},
 		{"DueDate", cfg.Weights.DueDate, 0.30},
 		{"Estimate", cfg.Weights.Estimate, 0.15},
-		{"IssueType", cfg.Weights.IssueType, 0.10},
-		{"Age", cfg.Weights.Age, 0.05},
+		{"Age", cfg.Weights.Age, 0.10},
 		{"UpNext", cfg.Weights.UpNext, 50},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.got != tt.want {
 				t.Errorf("%s = %v, want %v", tt.name, tt.got, tt.want)
-			}
-		})
-	}
-}
-
-func TestCFG008_TypeScores(t *testing.T) {
-	path := writeTestConfig(t)
-	cfg, err := LoadFrom(path)
-	if err != nil {
-		t.Fatalf("LoadFrom: %v", err)
-	}
-
-	expected := map[string]int{"Bug": 100, "Task": 70, "Story": 50}
-	for k, want := range expected {
-		t.Run(k, func(t *testing.T) {
-			got, ok := cfg.TypeScores[k]
-			if !ok {
-				t.Fatalf("missing key %q", k)
-			}
-			if got != want {
-				t.Errorf("%s = %d, want %d", k, got, want)
 			}
 		})
 	}
@@ -346,12 +324,11 @@ func TestValidate(t *testing.T) {
 				WorkDays: []int{1, 2, 3, 4, 5},
 			},
 			Weights: WeightsConfig{
-				Priority:  0.40,
-				DueDate:   0.30,
-				Estimate:  0.15,
-				IssueType: 0.10,
-				Age:       0.05,
-				UpNext:    50,
+				Priority: 0.45,
+				DueDate:  0.30,
+				Estimate: 0.15,
+				Age:      0.10,
+				UpNext:   50,
 			},
 		}
 	}
@@ -505,7 +482,6 @@ func TestKeyPaths(t *testing.T) {
 		"weights.priority",
 		"weights.dueDate",
 		"weights.estimate",
-		"weights.issueType",
 		"weights.age",
 		"weights.upNext",
 	}
@@ -549,12 +525,11 @@ func TestValidateProviders(t *testing.T) {
 				WorkDays: []int{1, 2, 3, 4, 5},
 			},
 			Weights: WeightsConfig{
-				Priority:  0.40,
-				DueDate:   0.30,
-				Estimate:  0.15,
-				IssueType: 0.10,
-				Age:       0.05,
-				UpNext:    50,
+				Priority: 0.45,
+				DueDate:  0.30,
+				Estimate: 0.15,
+				Age:      0.10,
+				UpNext:   50,
 			},
 		}
 	}
