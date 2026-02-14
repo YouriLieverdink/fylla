@@ -16,7 +16,6 @@ type ScoredTask struct {
 }
 
 // SortTasks scores and sorts tasks by descending composite score.
-// UpNext tasks are sorted first (by score among themselves), followed by regular tasks.
 // The now parameter is used for relative date calculations.
 func SortTasks(tasks []task.Task, cfg config.WeightsConfig, typeScores map[string]int, now time.Time) []ScoredTask {
 	scored := make([]ScoredTask, len(tasks))
@@ -27,23 +26,11 @@ func SortTasks(tasks []task.Task, cfg config.WeightsConfig, typeScores map[strin
 		}
 	}
 
-	var upnext, regular []ScoredTask
-	for _, st := range scored {
-		if st.Task.UpNext {
-			upnext = append(upnext, st)
-		} else {
-			regular = append(regular, st)
-		}
-	}
-
-	sort.SliceStable(upnext, func(i, j int) bool {
-		return upnext[i].Score > upnext[j].Score
-	})
-	sort.SliceStable(regular, func(i, j int) bool {
-		return regular[i].Score > regular[j].Score
+	sort.SliceStable(scored, func(i, j int) bool {
+		return scored[i].Score > scored[j].Score
 	})
 
-	return append(upnext, regular...)
+	return scored
 }
 
 // CompositeScore calculates the weighted composite score for a task.
@@ -55,6 +42,10 @@ func CompositeScore(t task.Task, w config.WeightsConfig, typeScores map[string]i
 		w.Age*AgeScore(t.Created, now)
 
 	score += CrunchBoost(t.DueDate, now)
+
+	if t.UpNext {
+		score += w.UpNext
+	}
 
 	return score
 }
@@ -123,14 +114,17 @@ func AgeScore(created time.Time, now time.Time) float64 {
 }
 
 // CrunchBoost adds extra priority for tasks due within 3 days.
-// Returns a flat 20-point bonus scaled by urgency.
+// Overdue tasks (days <= 0) receive the maximum 20-point boost.
 func CrunchBoost(dueDate *time.Time, now time.Time) float64 {
 	if dueDate == nil {
 		return 0
 	}
 	days := dueDate.Sub(now).Hours() / 24
-	if days < 0 || days > 3 {
+	if days > 3 {
 		return 0
+	}
+	if days <= 0 {
+		return 20
 	}
 	return 20 * (1 - days/3)
 }

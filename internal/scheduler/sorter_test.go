@@ -14,6 +14,7 @@ var defaultWeights = config.WeightsConfig{
 	Estimate:  0.15,
 	IssueType: 0.10,
 	Age:       0.05,
+	UpNext:    50,
 }
 
 var defaultTypeScores = map[string]int{
@@ -332,6 +333,14 @@ func Test_SORT010_crunch_mode(t *testing.T) {
 		}
 	})
 
+	t.Run("overdue task gets max boost", func(t *testing.T) {
+		due := now.Add(-2 * 24 * time.Hour)
+		boost := CrunchBoost(&due, now)
+		if boost != 20 {
+			t.Errorf("expected 20 for overdue task, got %.2f", boost)
+		}
+	})
+
 	t.Run("no due date means no boost", func(t *testing.T) {
 		boost := CrunchBoost(nil, now)
 		if boost != 0 {
@@ -355,6 +364,24 @@ func Test_SORT011_upnext_overrides_score(t *testing.T) {
 		}
 		if sorted[1].Task.Key != "REG-1" {
 			t.Errorf("expected regular task REG-1 second, got %s", sorted[1].Task.Key)
+		}
+	})
+
+	t.Run("high-priority urgent task can beat low-priority upnext", func(t *testing.T) {
+		// Priority-1 Bug due today with crunch boost should outscore a Priority-5 UpNext Task
+		urgent := task.Task{
+			Key: "URG-1", Priority: 1, IssueType: "Bug", Created: created,
+			DueDate: timePtr(now),
+		}
+		lowUpnext := task.Task{Key: "UP-1", Priority: 5, IssueType: "Task", Created: created, UpNext: true}
+
+		sorted := SortTasks([]task.Task{lowUpnext, urgent}, defaultWeights, defaultTypeScores, now)
+
+		if sorted[0].Task.Key != "URG-1" {
+			t.Errorf("expected urgent task URG-1 first, got %s (scores: URG-1=%.2f, UP-1=%.2f)",
+				sorted[0].Task.Key,
+				CompositeScore(urgent, defaultWeights, defaultTypeScores, now),
+				CompositeScore(lowUpnext, defaultWeights, defaultTypeScores, now))
 		}
 	})
 

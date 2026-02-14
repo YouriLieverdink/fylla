@@ -81,6 +81,7 @@ type WeightsConfig struct {
 	Estimate  float64 `yaml:"estimate"`
 	IssueType float64 `yaml:"issueType"`
 	Age       float64 `yaml:"age"`
+	UpNext    float64 `yaml:"upNext"`
 }
 
 // Validate checks config invariants and returns an error if any are violated.

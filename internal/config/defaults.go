@@ -39,6 +39,7 @@ weights:
   estimate: 0.15
   issueType: 0.10
   age: 0.05
+  upNext: 50
 
 typeScores:
   Bug: 100

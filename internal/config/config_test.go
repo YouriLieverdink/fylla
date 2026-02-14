@@ -161,6 +161,7 @@ func TestCFG007_Weights(t *testing.T) {
 		{"Estimate", cfg.Weights.Estimate, 0.15},
 		{"IssueType", cfg.Weights.IssueType, 0.10},
 		{"Age", cfg.Weights.Age, 0.05},
+		{"UpNext", cfg.Weights.UpNext, 50},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -350,6 +351,7 @@ func TestValidate(t *testing.T) {
 				Estimate:  0.15,
 				IssueType: 0.10,
 				Age:       0.05,
+				UpNext:    50,
 			},
 		}
 	}
@@ -505,6 +507,7 @@ func TestKeyPaths(t *testing.T) {
 		"weights.estimate",
 		"weights.issueType",
 		"weights.age",
+		"weights.upNext",
 	}
 	pathSet := make(map[string]bool, len(paths))
 	for _, p := range paths {
@@ -551,6 +554,7 @@ func TestValidateProviders(t *testing.T) {
 				Estimate:  0.15,
 				IssueType: 0.10,
 				Age:       0.05,
+				UpNext:    50,
 			},
 		}
 	}
