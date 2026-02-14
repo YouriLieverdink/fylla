@@ -178,7 +178,7 @@ func extractNotBeforeClause(text string, ref time.Time) (string, *time.Time) {
 		return text, nil
 	}
 	// Verify word boundary at start
-	if idx > 0 && text[idx-1] != ' ' {
+	if idx > 0 && text[idx-1] != ' ' && text[idx-1] != '(' {
 		return text, nil
 	}
 
@@ -192,6 +192,10 @@ func extractNotBeforeClause(text string, ref time.Time) (string, *time.Time) {
 
 	for n := 1; n <= len(words); n++ {
 		candidate := strings.Join(words[:n], " ")
+		candidate = strings.TrimRight(candidate, ")")
+		if candidate == "" {
+			continue
+		}
 		parsed, err := parseNaturalDate(candidate, ref)
 		if err != nil {
 			continue
@@ -199,8 +203,13 @@ func extractNotBeforeClause(text string, ref time.Time) (string, *time.Time) {
 		if parsed.Equal(ref) {
 			continue
 		}
+		prefix := text[:idx]
+		if idx > 0 && text[idx-1] == '(' {
+			prefix = strings.TrimRight(text[:idx-1], " ")
+		}
 		remaining := strings.Join(words[n:], " ")
-		cleaned := text[:idx] + remaining
+		remaining = strings.TrimRight(remaining, ")")
+		cleaned := prefix + " " + remaining
 		return strings.TrimSpace(spacesRe.ReplaceAllString(cleaned, " ")), &parsed
 	}
 
@@ -237,7 +246,7 @@ func extractDueClause(text string, ref time.Time) (string, *time.Time) {
 		return text, nil
 	}
 	// Verify word boundary at start
-	if idx > 0 && text[idx-1] != ' ' {
+	if idx > 0 && text[idx-1] != ' ' && text[idx-1] != '(' {
 		return text, nil
 	}
 
@@ -252,6 +261,10 @@ func extractDueClause(text string, ref time.Time) (string, *time.Time) {
 	// Try progressively longer word sequences (1 word, 2 words, etc.)
 	for n := 1; n <= len(words); n++ {
 		candidate := strings.Join(words[:n], " ")
+		candidate = strings.TrimRight(candidate, ")")
+		if candidate == "" {
+			continue
+		}
 		parsed, err := parseNaturalDate(candidate, ref)
 		if err != nil {
 			continue
@@ -260,8 +273,13 @@ func extractDueClause(text string, ref time.Time) (string, *time.Time) {
 			continue
 		}
 		// Found a valid date — remove "due" + consumed words
+		prefix := text[:idx]
+		if idx > 0 && text[idx-1] == '(' {
+			prefix = strings.TrimRight(text[:idx-1], " ")
+		}
 		remaining := strings.Join(words[n:], " ")
-		cleaned := text[:idx] + remaining
+		remaining = strings.TrimRight(remaining, ")")
+		cleaned := prefix + " " + remaining
 		return strings.TrimSpace(spacesRe.ReplaceAllString(cleaned, " ")), &parsed
 	}
 

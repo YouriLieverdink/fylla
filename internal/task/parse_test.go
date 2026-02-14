@@ -305,6 +305,28 @@ func TestExtractConstraints(t *testing.T) {
 		}
 	})
 
+	t.Run("parenthesized not before", func(t *testing.T) {
+		cleaned, notBefore, upNext, noSplit := ExtractConstraints(
+			"Write docs (not before 2025-03-01)", ref,
+		)
+		if cleaned != "Write docs" {
+			t.Errorf("cleaned = %q, want %q", cleaned, "Write docs")
+		}
+		if notBefore == nil {
+			t.Fatal("notBefore = nil")
+		}
+		want := time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC)
+		if !notBefore.Equal(want) {
+			t.Errorf("notBefore = %v, want %v", *notBefore, want)
+		}
+		if upNext {
+			t.Error("upNext = true, want false")
+		}
+		if noSplit {
+			t.Error("noSplit = true, want false")
+		}
+	})
+
 	t.Run("no constraints", func(t *testing.T) {
 		cleaned, notBefore, upNext, noSplit := ExtractConstraints("Plain task", ref)
 		if cleaned != "Plain task" {
@@ -320,6 +342,41 @@ func TestExtractConstraints(t *testing.T) {
 			t.Error("noSplit = true, want false")
 		}
 	})
+}
+
+func TestParseInput_not_before_iso_in_parens(t *testing.T) {
+	ref := time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC)
+	got := ParseInput("Task [5m] (not before 2025-03-01)", ref)
+
+	if got.Summary != "Task" {
+		t.Errorf("Summary = %q, want %q", got.Summary, "Task")
+	}
+	if got.Estimate != 5*time.Minute {
+		t.Errorf("Estimate = %v, want %v", got.Estimate, 5*time.Minute)
+	}
+	if got.NotBefore == nil {
+		t.Fatal("NotBefore = nil, want 2025-03-01")
+	}
+	want := time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC)
+	if !got.NotBefore.Equal(want) {
+		t.Errorf("NotBefore = %v, want %v", *got.NotBefore, want)
+	}
+}
+
+func TestParseInput_due_in_parens(t *testing.T) {
+	ref := time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC)
+	got := ParseInput("Write docs (due 2025-03-01)", ref)
+
+	if got.Summary != "Write docs" {
+		t.Errorf("Summary = %q, want %q", got.Summary, "Write docs")
+	}
+	if got.DueDate == nil {
+		t.Fatal("DueDate = nil, want 2025-03-01")
+	}
+	want := time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC)
+	if !got.DueDate.Equal(want) {
+		t.Errorf("DueDate = %v, want %v", *got.DueDate, want)
+	}
 }
 
 func weekdayPtr(wd time.Weekday) *time.Weekday { return &wd }
