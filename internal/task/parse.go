@@ -16,25 +16,28 @@ var (
 	spacesRe   = regexp.MustCompile(`\s{2,}`)
 	attrsRe    = regexp.MustCompile(`\(([^)]+)\)`)
 	priorityRe = regexp.MustCompile(`(?i)\bpriority:(\S+)`)
-	descRe     = regexp.MustCompile(`(?i)\bdesc:(.+)`)
 	isoDateRe  = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	nosplitRe  = regexp.MustCompile(`(?i)\bnosplit\b`)
+	upnextRe   = regexp.MustCompile(`(?i)\bupnext\b`)
 )
 
 var priorityAliases = map[string]string{
-	"critical": "Highest", "p1": "Highest", "highest": "Highest",
-	"high": "High", "p2": "High",
-	"medium": "Medium", "p3": "Medium",
-	"low": "Low", "p4": "Low",
-	"lowest": "Lowest", "p5": "Lowest",
+	"p1": "Highest",
+	"p2": "High",
+	"p3": "Medium",
+	"p4": "Low",
+	"p5": "Lowest",
 }
 
 // ParsedInput holds the result of parsing a free-form task input string.
 type ParsedInput struct {
-	Summary     string
-	Estimate    time.Duration
-	DueDate     *time.Time
-	Priority    string
-	Description string
+	Summary   string
+	Estimate  time.Duration
+	DueDate   *time.Time
+	Priority  string
+	NotBefore *time.Time
+	UpNext    bool
+	NoSplit   bool
 }
 
 // ParseTitleEstimate extracts a duration like [2h], [30m], or [1h30m] from text.
@@ -105,10 +108,8 @@ func formatBracketDuration(d time.Duration) string {
 // ParseInput parses a free-form task input string, extracting inline attributes.
 // Attributes are placed inside parentheses:
 //
-//	Write the docs [30m] (due Friday priority:critical not before Monday upnext nosplit)
+//	Write the docs [30m] (due Friday priority:p1 not before Monday upnext nosplit)
 //
-// Only due, priority, and desc are extracted. Everything else (not before, upnext,
-// nosplit, etc.) is left in the title as scheduling hints.
 // The ref time is used as the reference point for natural language date parsing.
 func ParseInput(text string, ref time.Time) ParsedInput {
 	var result ParsedInput
@@ -136,8 +137,8 @@ func ParseInput(text string, ref time.Time) ParsedInput {
 }
 
 // parseAttrs parses the content inside the (...) attributes block.
-// Extracts due, priority:, and desc:. Returns any remaining text (not before,
-// upnext, nosplit, etc.) to be appended back to the title.
+// Extracts due, not before, upnext, nosplit, and priority:.
+// Returns any remaining unrecognized text to be appended back to the title.
 func parseAttrs(result *ParsedInput, attrs string, ref time.Time) string {
 	// Extract priority:X
 	if m := priorityRe.FindStringSubmatch(attrs); m != nil {
@@ -147,16 +148,84 @@ func parseAttrs(result *ParsedInput, attrs string, ref time.Time) string {
 		attrs = strings.TrimSpace(priorityRe.ReplaceAllString(attrs, ""))
 	}
 
-	// Extract desc:... (greedy, must be extracted before due to avoid consuming date text)
-	if m := descRe.FindStringSubmatch(attrs); m != nil {
-		result.Description = strings.TrimSpace(m[1])
-		attrs = strings.TrimSpace(descRe.ReplaceAllString(attrs, ""))
+	// Extract nosplit
+	if nosplitRe.MatchString(attrs) {
+		result.NoSplit = true
+		attrs = strings.TrimSpace(nosplitRe.ReplaceAllString(attrs, ""))
 	}
 
-	// Extract "due <date>" — try progressively longer word sequences after "due"
+	// Extract upnext
+	if upnextRe.MatchString(attrs) {
+		result.UpNext = true
+		attrs = strings.TrimSpace(upnextRe.ReplaceAllString(attrs, ""))
+	}
+
+	// Extract "not before <date>" before "due" to avoid misparsing
+	attrs, result.NotBefore = extractNotBeforeClause(attrs, ref)
+
+	// Extract "due <date>"
 	attrs, result.DueDate = extractDueClause(attrs, ref)
 
 	return strings.TrimSpace(attrs)
+}
+
+// extractNotBeforeClause extracts "not before <date>" from the attributes text.
+// It tries progressively longer word sequences to find the shortest valid date.
+func extractNotBeforeClause(text string, ref time.Time) (string, *time.Time) {
+	lower := strings.ToLower(text)
+	idx := strings.Index(lower, "not before ")
+	if idx == -1 {
+		return text, nil
+	}
+	// Verify word boundary at start
+	if idx > 0 && text[idx-1] != ' ' {
+		return text, nil
+	}
+
+	afterKeyword := idx + 11 // len("not before ")
+	rest := strings.TrimSpace(text[afterKeyword:])
+	if rest == "" {
+		return text, nil
+	}
+
+	words := strings.Fields(rest)
+
+	for n := 1; n <= len(words); n++ {
+		candidate := strings.Join(words[:n], " ")
+		parsed, err := parseNaturalDate(candidate, ref)
+		if err != nil {
+			continue
+		}
+		if parsed.Equal(ref) {
+			continue
+		}
+		remaining := strings.Join(words[n:], " ")
+		cleaned := text[:idx] + remaining
+		return strings.TrimSpace(spacesRe.ReplaceAllString(cleaned, " ")), &parsed
+	}
+
+	return text, nil
+}
+
+// ExtractConstraints extracts scheduling constraints (not before, upnext, nosplit)
+// from a task summary string. Returns the cleaned summary and extracted values.
+// This is used by Jira/Todoist clients when reading tasks back.
+func ExtractConstraints(summary string, ref time.Time) (cleaned string, notBefore *time.Time, upNext, noSplit bool) {
+	cleaned = summary
+
+	if nosplitRe.MatchString(cleaned) {
+		noSplit = true
+		cleaned = strings.TrimSpace(nosplitRe.ReplaceAllString(cleaned, ""))
+	}
+
+	if upnextRe.MatchString(cleaned) {
+		upNext = true
+		cleaned = strings.TrimSpace(upnextRe.ReplaceAllString(cleaned, ""))
+	}
+
+	cleaned, notBefore = extractNotBeforeClause(cleaned, ref)
+	cleaned = strings.TrimSpace(spacesRe.ReplaceAllString(cleaned, " "))
+	return
 }
 
 // extractDueClause extracts "due <date>" from the attributes text.

@@ -45,6 +45,11 @@ func Allocate(tasks []ScoredTask, slotsByProject map[string][]calendar.Slot, cfg
 		slots := projectSlots(slotsByProject, st.Task.Project)
 		available := availableSlots(slots, consumed, minDur)
 
+		// Filter out slots that start before the task's not-before date
+		if st.Task.NotBefore != nil {
+			available = filterSlotsNotBefore(available, *st.Task.NotBefore)
+		}
+
 		remaining := estimate
 		var taskAllocs []Allocation
 
@@ -66,6 +71,11 @@ func Allocate(tasks []ScoredTask, slotsByProject map[string][]calendar.Slot, cfg
 				consumed = append(consumed, allocRange{start: alloc.Start, end: alloc.End})
 				remaining = 0
 				break
+			}
+
+			// NoSplit: task must fit in a single slot, skip if it doesn't
+			if st.Task.NoSplit {
+				continue
 			}
 
 			// Task doesn't fit entirely — check if splitting is viable.
@@ -110,6 +120,22 @@ func projectSlots(slotsByProject map[string][]calendar.Slot, project string) []c
 
 type allocRange struct {
 	start, end time.Time
+}
+
+// filterSlotsNotBefore removes slots that start before the given time.
+// Slots that span the boundary are trimmed to start at notBefore.
+func filterSlotsNotBefore(slots []calendar.Slot, notBefore time.Time) []calendar.Slot {
+	var result []calendar.Slot
+	for _, s := range slots {
+		if !s.End.After(notBefore) {
+			continue
+		}
+		if s.Start.Before(notBefore) {
+			s.Start = notBefore
+		}
+		result = append(result, s)
+	}
+	return result
 }
 
 // availableSlots returns slots with consumed ranges removed, filtered by minDur.

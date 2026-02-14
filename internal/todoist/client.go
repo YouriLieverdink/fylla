@@ -224,6 +224,13 @@ func (c *Client) parseTask(t todoistTask) task.Task {
 		result.RemainingEstimate = result.OriginalEstimate
 	}
 
+	// Extract scheduling constraints from summary
+	cleaned, notBefore, upNext, noSplit := task.ExtractConstraints(result.Summary, time.Now())
+	result.Summary = cleaned
+	result.NotBefore = notBefore
+	result.UpNext = upNext
+	result.NoSplit = noSplit
+
 	return result
 }
 

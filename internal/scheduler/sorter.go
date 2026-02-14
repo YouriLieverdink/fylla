@@ -16,6 +16,7 @@ type ScoredTask struct {
 }
 
 // SortTasks scores and sorts tasks by descending composite score.
+// UpNext tasks are sorted first (by score among themselves), followed by regular tasks.
 // The now parameter is used for relative date calculations.
 func SortTasks(tasks []task.Task, cfg config.WeightsConfig, typeScores map[string]int, now time.Time) []ScoredTask {
 	scored := make([]ScoredTask, len(tasks))
@@ -25,10 +26,24 @@ func SortTasks(tasks []task.Task, cfg config.WeightsConfig, typeScores map[strin
 			Score: CompositeScore(t, cfg, typeScores, now),
 		}
 	}
-	sort.SliceStable(scored, func(i, j int) bool {
-		return scored[i].Score > scored[j].Score
+
+	var upnext, regular []ScoredTask
+	for _, st := range scored {
+		if st.Task.UpNext {
+			upnext = append(upnext, st)
+		} else {
+			regular = append(regular, st)
+		}
+	}
+
+	sort.SliceStable(upnext, func(i, j int) bool {
+		return upnext[i].Score > upnext[j].Score
 	})
-	return scored
+	sort.SliceStable(regular, func(i, j int) bool {
+		return regular[i].Score > regular[j].Score
+	})
+
+	return append(upnext, regular...)
 }
 
 // CompositeScore calculates the weighted composite score for a task.

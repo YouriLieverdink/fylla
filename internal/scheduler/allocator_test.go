@@ -638,3 +638,218 @@ func Test_ALLOC_empty_tasks(t *testing.T) {
 		t.Errorf("expected 0 allocations with no tasks, got %d", len(result))
 	}
 }
+
+func Test_ALLOC008_not_before_constraint(t *testing.T) {
+	notBefore := date(2025, 1, 21, 9, 0)
+
+	t.Run("task skips slots before not-before date", func(t *testing.T) {
+		tasks := []ScoredTask{
+			{
+				Task: task.Task{
+					Key:               "NB-1",
+					RemainingEstimate: 1 * time.Hour,
+					Project:           "PROJ",
+					NotBefore:         &notBefore,
+				},
+				Score: 80,
+			},
+		}
+
+		slots := map[string][]calendar.Slot{
+			"": {
+				{Start: date(2025, 1, 20, 9, 0), End: date(2025, 1, 20, 17, 0)},  // Jan 20 — before not-before
+				{Start: date(2025, 1, 21, 9, 0), End: date(2025, 1, 21, 17, 0)},  // Jan 21 — on/after not-before
+			},
+		}
+
+		result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+
+		if len(result) != 1 {
+			t.Fatalf("expected 1 allocation, got %d", len(result))
+		}
+		if result[0].Start.Before(notBefore) {
+			t.Errorf("expected task to start at or after %v, got %v", notBefore, result[0].Start)
+		}
+	})
+
+	t.Run("unscheduled when all slots are before not-before", func(t *testing.T) {
+		tasks := []ScoredTask{
+			{
+				Task: task.Task{
+					Key:               "NB-2",
+					RemainingEstimate: 1 * time.Hour,
+					Project:           "PROJ",
+					NotBefore:         &notBefore,
+				},
+				Score: 80,
+			},
+		}
+
+		slots := map[string][]calendar.Slot{
+			"": {
+				{Start: date(2025, 1, 20, 9, 0), End: date(2025, 1, 20, 17, 0)}, // all before not-before
+			},
+		}
+
+		result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+
+		if len(result) != 0 {
+			t.Errorf("expected 0 allocations when all slots before not-before, got %d", len(result))
+		}
+	})
+
+	t.Run("slot spanning not-before is trimmed", func(t *testing.T) {
+		nb := date(2025, 1, 20, 12, 0)
+		tasks := []ScoredTask{
+			{
+				Task: task.Task{
+					Key:               "NB-3",
+					RemainingEstimate: 1 * time.Hour,
+					Project:           "PROJ",
+					NotBefore:         &nb,
+				},
+				Score: 80,
+			},
+		}
+
+		slots := map[string][]calendar.Slot{
+			"": {
+				{Start: date(2025, 1, 20, 9, 0), End: date(2025, 1, 20, 17, 0)},
+			},
+		}
+
+		result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+
+		if len(result) != 1 {
+			t.Fatalf("expected 1 allocation, got %d", len(result))
+		}
+		if result[0].Start.Before(nb) {
+			t.Errorf("expected task to start at or after %v, got %v", nb, result[0].Start)
+		}
+	})
+}
+
+func Test_ALLOC009_nosplit_constraint(t *testing.T) {
+	t.Run("nosplit task placed in single slot only", func(t *testing.T) {
+		tasks := []ScoredTask{
+			{
+				Task: task.Task{
+					Key:               "NS-1",
+					RemainingEstimate: 90 * time.Minute,
+					Project:           "PROJ",
+					NoSplit:           true,
+				},
+				Score: 80,
+			},
+		}
+
+		slots := map[string][]calendar.Slot{
+			"": {
+				{Start: date(2025, 1, 20, 9, 0), End: date(2025, 1, 20, 9, 45)},  // too small
+				{Start: date(2025, 1, 20, 10, 0), End: date(2025, 1, 20, 12, 0)}, // fits
+			},
+		}
+
+		result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+
+		if len(result) != 1 {
+			t.Fatalf("expected 1 allocation, got %d", len(result))
+		}
+		if result[0].Start != date(2025, 1, 20, 10, 0) {
+			t.Errorf("expected nosplit task in second slot at 10:00, got %v", result[0].Start)
+		}
+	})
+
+	t.Run("unscheduled when no single slot fits", func(t *testing.T) {
+		tasks := []ScoredTask{
+			{
+				Task: task.Task{
+					Key:               "NS-2",
+					RemainingEstimate: 3 * time.Hour,
+					Project:           "PROJ",
+					NoSplit:           true,
+				},
+				Score: 80,
+			},
+		}
+
+		slots := map[string][]calendar.Slot{
+			"": {
+				{Start: date(2025, 1, 20, 9, 0), End: date(2025, 1, 20, 10, 0)},
+				{Start: date(2025, 1, 20, 11, 0), End: date(2025, 1, 20, 12, 0)},
+			},
+		}
+
+		result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+
+		if len(result) != 0 {
+			t.Errorf("expected 0 allocations for nosplit task that doesn't fit, got %d", len(result))
+		}
+	})
+
+	t.Run("normal task would split but nosplit prevents it", func(t *testing.T) {
+		tasks := []ScoredTask{
+			{
+				Task: task.Task{
+					Key:               "NS-3",
+					RemainingEstimate: 90 * time.Minute,
+					Project:           "PROJ",
+					NoSplit:           true,
+				},
+				Score: 80,
+			},
+		}
+
+		// Two 45-min slots — a normal task would split, but nosplit must not
+		slots := map[string][]calendar.Slot{
+			"": {
+				{Start: date(2025, 1, 20, 9, 0), End: date(2025, 1, 20, 9, 45)},
+				{Start: date(2025, 1, 20, 10, 0), End: date(2025, 1, 20, 10, 45)},
+			},
+		}
+
+		result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+
+		if len(result) != 0 {
+			t.Errorf("expected 0 allocations (nosplit prevents split), got %d", len(result))
+		}
+	})
+}
+
+func Test_ALLOC010_combined_constraints(t *testing.T) {
+	notBefore := date(2025, 1, 21, 9, 0)
+
+	tasks := []ScoredTask{
+		{
+			Task: task.Task{
+				Key:               "COMBO-1",
+				RemainingEstimate: 2 * time.Hour,
+				Project:           "PROJ",
+				UpNext:            true,
+				NoSplit:           true,
+				NotBefore:         &notBefore,
+			},
+			Score: 80,
+		},
+	}
+
+	slots := map[string][]calendar.Slot{
+		"": {
+			{Start: date(2025, 1, 20, 9, 0), End: date(2025, 1, 20, 17, 0)},  // before not-before
+			{Start: date(2025, 1, 21, 9, 0), End: date(2025, 1, 21, 10, 0)},  // too small for nosplit
+			{Start: date(2025, 1, 21, 11, 0), End: date(2025, 1, 21, 17, 0)}, // fits
+		},
+	}
+
+	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 allocation, got %d", len(result))
+	}
+	if result[0].Start != date(2025, 1, 21, 11, 0) {
+		t.Errorf("expected combined constraint task at 11:00 on Jan 21, got %v", result[0].Start)
+	}
+	if result[0].End != date(2025, 1, 21, 13, 0) {
+		t.Errorf("expected task to end at 13:00, got %v", result[0].End)
+	}
+}

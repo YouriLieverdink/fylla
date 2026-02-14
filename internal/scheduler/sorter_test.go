@@ -339,3 +339,51 @@ func Test_SORT010_crunch_mode(t *testing.T) {
 		}
 	})
 }
+
+func Test_SORT011_upnext_overrides_score(t *testing.T) {
+	now := time.Date(2025, 6, 15, 9, 0, 0, 0, time.UTC)
+	created := now.Add(-24 * time.Hour)
+
+	t.Run("upnext task with low score sorts before high-score regular task", func(t *testing.T) {
+		highScore := task.Task{Key: "REG-1", Priority: 1, IssueType: "Bug", Created: created}
+		lowScoreUpnext := task.Task{Key: "UP-1", Priority: 5, IssueType: "Task", Created: created, UpNext: true}
+
+		sorted := SortTasks([]task.Task{highScore, lowScoreUpnext}, defaultWeights, defaultTypeScores, now)
+
+		if sorted[0].Task.Key != "UP-1" {
+			t.Errorf("expected upnext task UP-1 first, got %s", sorted[0].Task.Key)
+		}
+		if sorted[1].Task.Key != "REG-1" {
+			t.Errorf("expected regular task REG-1 second, got %s", sorted[1].Task.Key)
+		}
+	})
+
+	t.Run("multiple upnext tasks sort by score among themselves", func(t *testing.T) {
+		up1 := task.Task{Key: "UP-HIGH", Priority: 1, IssueType: "Task", Created: created, UpNext: true}
+		up2 := task.Task{Key: "UP-LOW", Priority: 5, IssueType: "Task", Created: created, UpNext: true}
+		regular := task.Task{Key: "REG-1", Priority: 1, IssueType: "Bug", Created: created}
+
+		sorted := SortTasks([]task.Task{regular, up2, up1}, defaultWeights, defaultTypeScores, now)
+
+		if sorted[0].Task.Key != "UP-HIGH" {
+			t.Errorf("expected UP-HIGH first, got %s", sorted[0].Task.Key)
+		}
+		if sorted[1].Task.Key != "UP-LOW" {
+			t.Errorf("expected UP-LOW second, got %s", sorted[1].Task.Key)
+		}
+		if sorted[2].Task.Key != "REG-1" {
+			t.Errorf("expected REG-1 third, got %s", sorted[2].Task.Key)
+		}
+	})
+
+	t.Run("no upnext tasks preserves normal ordering", func(t *testing.T) {
+		high := task.Task{Key: "H-1", Priority: 1, IssueType: "Task", Created: created}
+		low := task.Task{Key: "L-1", Priority: 5, IssueType: "Task", Created: created}
+
+		sorted := SortTasks([]task.Task{low, high}, defaultWeights, defaultTypeScores, now)
+
+		if sorted[0].Task.Key != "H-1" {
+			t.Errorf("expected H-1 first, got %s", sorted[0].Task.Key)
+		}
+	})
+}

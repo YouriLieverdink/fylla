@@ -116,21 +116,26 @@ func TestParseInput(t *testing.T) {
 	}
 
 	tests := []struct {
-		name         string
-		input        string
-		wantSummary  string
-		wantEstimate time.Duration
-		wantPriority string
-		wantDueDay   *time.Weekday
-		wantDesc     string
+		name          string
+		input         string
+		wantSummary   string
+		wantEstimate  time.Duration
+		wantPriority  string
+		wantDueDay    *time.Weekday
+		wantNotBefore *time.Weekday
+		wantUpNext    bool
+		wantNoSplit   bool
 	}{
 		{
-			name:         "full syntax with scheduling hints left in title",
-			input:        "Write the docs [30m] (due Friday not before Monday priority:critical upnext nosplit)",
-			wantSummary:  "Write the docs not before Monday upnext nosplit",
-			wantEstimate: 30 * time.Minute,
-			wantPriority: "Highest",
-			wantDueDay:   weekdayPtr(time.Friday),
+			name:          "full syntax with scheduling constraints extracted",
+			input:         "Write the docs [30m] (due Friday not before Monday priority:p1 upnext nosplit)",
+			wantSummary:   "Write the docs",
+			wantEstimate:  30 * time.Minute,
+			wantPriority:  "Highest",
+			wantDueDay:    weekdayPtr(time.Friday),
+			wantNotBefore: weekdayPtr(time.Monday),
+			wantUpNext:    true,
+			wantNoSplit:   true,
 		},
 		{
 			name:         "only estimate",
@@ -145,20 +150,34 @@ func TestParseInput(t *testing.T) {
 			wantDueDay:  weekdayPtr(time.Friday),
 		},
 		{
-			name:         "only priority in parens",
+			name:         "priority p1",
 			input:        "Fix bug (priority:p1)",
 			wantSummary:  "Fix bug",
 			wantPriority: "Highest",
 		},
 		{
-			name:        "not before stays in title",
-			input:       "Task (not before next Monday)",
-			wantSummary: "Task not before next Monday",
+			name:         "priority p2",
+			input:        "Fix bug (priority:p2)",
+			wantSummary:  "Fix bug",
+			wantPriority: "High",
 		},
 		{
-			name:        "upnext and nosplit stay in title",
+			name:        "unknown priority alias ignored",
+			input:       "Fix bug (priority:critical)",
+			wantSummary: "Fix bug",
+		},
+		{
+			name:          "not before extracted",
+			input:         "Task (not before next Monday)",
+			wantSummary:   "Task",
+			wantNotBefore: weekdayPtr(time.Monday),
+		},
+		{
+			name:        "upnext and nosplit extracted",
 			input:       "Task (upnext nosplit)",
-			wantSummary: "Task upnext nosplit",
+			wantSummary: "Task",
+			wantUpNext:  true,
+			wantNoSplit: true,
 		},
 		{
 			name:        "no attributes",
@@ -166,37 +185,37 @@ func TestParseInput(t *testing.T) {
 			wantSummary: "Just a plain task",
 		},
 		{
-			name:         "estimate and parens",
-			input:        "Fix bug [1h] (due Friday priority:high)",
+			name:         "estimate and due with priority",
+			input:        "Fix bug [1h] (due Friday priority:p2)",
 			wantSummary:  "Fix bug",
 			wantEstimate: time.Hour,
 			wantPriority: "High",
 			wantDueDay:   weekdayPtr(time.Friday),
 		},
 		{
-			name:         "case insensitive priority",
-			input:        "Fix bug (priority:HIGH)",
-			wantSummary:  "Fix bug",
-			wantPriority: "High",
+			name:          "due and not before together",
+			input:         "Write report (not before Monday due Friday)",
+			wantSummary:   "Write report",
+			wantDueDay:    weekdayPtr(time.Friday),
+			wantNotBefore: weekdayPtr(time.Monday),
 		},
 		{
-			name:         "priority aliases",
-			input:        "Fix bug (priority:p2)",
-			wantSummary:  "Fix bug",
-			wantPriority: "High",
+			name:        "upnext only",
+			input:       "Deploy (upnext)",
+			wantSummary: "Deploy",
+			wantUpNext:  true,
 		},
 		{
-			name:        "due and not before together",
-			input:       "Write report (not before Monday due Friday)",
-			wantSummary: "Write report not before Monday",
-			wantDueDay:  weekdayPtr(time.Friday),
+			name:        "nosplit only",
+			input:       "Deep work (nosplit)",
+			wantSummary: "Deep work",
+			wantNoSplit: true,
 		},
 		{
-			name:        "desc extracted from parens",
-			input:       "Fix bug (due Friday desc:detailed description here)",
-			wantSummary: "Fix bug",
-			wantDueDay:  weekdayPtr(time.Friday),
-			wantDesc:    "detailed description here",
+			name:          "not before with ISO date",
+			input:         "Task (not before 2025-03-01)",
+			wantSummary:   "Task",
+			wantNotBefore: nil, // checked separately below
 		},
 	}
 
@@ -213,8 +232,11 @@ func TestParseInput(t *testing.T) {
 			if got.Priority != tc.wantPriority {
 				t.Errorf("Priority = %q, want %q", got.Priority, tc.wantPriority)
 			}
-			if got.Description != tc.wantDesc {
-				t.Errorf("Description = %q, want %q", got.Description, tc.wantDesc)
+			if got.UpNext != tc.wantUpNext {
+				t.Errorf("UpNext = %v, want %v", got.UpNext, tc.wantUpNext)
+			}
+			if got.NoSplit != tc.wantNoSplit {
+				t.Errorf("NoSplit = %v, want %v", got.NoSplit, tc.wantNoSplit)
 			}
 
 			if tc.wantDueDay != nil {
@@ -228,8 +250,76 @@ func TestParseInput(t *testing.T) {
 			} else if got.DueDate != nil {
 				t.Errorf("DueDate = %v, want nil", got.DueDate)
 			}
+
+			if tc.wantNotBefore != nil {
+				if got.NotBefore == nil {
+					t.Fatalf("NotBefore = nil, want %v", *tc.wantNotBefore)
+				}
+				wantDate := nextWeekday(*tc.wantNotBefore)
+				if got.NotBefore.Weekday() != wantDate.Weekday() {
+					t.Errorf("NotBefore weekday = %v, want %v", got.NotBefore.Weekday(), wantDate.Weekday())
+				}
+			}
 		})
 	}
+}
+
+func TestParseInput_not_before_iso(t *testing.T) {
+	ref := time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC)
+	got := ParseInput("Task (not before 2025-03-01)", ref)
+
+	if got.Summary != "Task" {
+		t.Errorf("Summary = %q, want %q", got.Summary, "Task")
+	}
+	if got.NotBefore == nil {
+		t.Fatal("NotBefore = nil, want 2025-03-01")
+	}
+	want := time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC)
+	if !got.NotBefore.Equal(want) {
+		t.Errorf("NotBefore = %v, want %v", *got.NotBefore, want)
+	}
+}
+
+func TestExtractConstraints(t *testing.T) {
+	ref := time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC)
+
+	t.Run("all constraints", func(t *testing.T) {
+		cleaned, notBefore, upNext, noSplit := ExtractConstraints(
+			"Write docs not before 2025-03-01 upnext nosplit", ref,
+		)
+		if cleaned != "Write docs" {
+			t.Errorf("cleaned = %q, want %q", cleaned, "Write docs")
+		}
+		if notBefore == nil {
+			t.Fatal("notBefore = nil")
+		}
+		want := time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC)
+		if !notBefore.Equal(want) {
+			t.Errorf("notBefore = %v, want %v", *notBefore, want)
+		}
+		if !upNext {
+			t.Error("upNext = false, want true")
+		}
+		if !noSplit {
+			t.Error("noSplit = false, want true")
+		}
+	})
+
+	t.Run("no constraints", func(t *testing.T) {
+		cleaned, notBefore, upNext, noSplit := ExtractConstraints("Plain task", ref)
+		if cleaned != "Plain task" {
+			t.Errorf("cleaned = %q, want %q", cleaned, "Plain task")
+		}
+		if notBefore != nil {
+			t.Errorf("notBefore = %v, want nil", notBefore)
+		}
+		if upNext {
+			t.Error("upNext = true, want false")
+		}
+		if noSplit {
+			t.Error("noSplit = true, want false")
+		}
+	})
 }
 
 func weekdayPtr(wd time.Weekday) *time.Weekday { return &wd }

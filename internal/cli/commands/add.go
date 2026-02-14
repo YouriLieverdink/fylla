@@ -147,8 +147,21 @@ func PrintAddResult(w io.Writer, result *AddResult) {
 
 // applyParsedInput populates AddParams from a ParsedInput result.
 func applyParsedInput(p *AddParams, parsed task.ParsedInput) {
-	if parsed.Summary != "" {
-		p.Summary = parsed.Summary
+	summary := parsed.Summary
+
+	// Append constraints back to summary using ISO dates for reliable re-parsing
+	if parsed.NotBefore != nil {
+		summary += " not before " + parsed.NotBefore.Format("2006-01-02")
+	}
+	if parsed.UpNext {
+		summary += " upnext"
+	}
+	if parsed.NoSplit {
+		summary += " nosplit"
+	}
+
+	if summary != "" {
+		p.Summary = strings.TrimSpace(summary)
 	}
 	if parsed.Estimate > 0 {
 		p.Estimate = formatEstimate(parsed.Estimate)
@@ -158,9 +171,6 @@ func applyParsedInput(p *AddParams, parsed task.ParsedInput) {
 	}
 	if parsed.Priority != "" {
 		p.Priority = parsed.Priority
-	}
-	if parsed.Description != "" {
-		p.Description = parsed.Description
 	}
 }
 
@@ -183,20 +193,17 @@ func newAddCmd() *cobra.Command {
 		Long: `Create a new task interactively or with inline attributes.
 
 Inline syntax:
-  fylla task add 'Write the docs [30m] (due Friday priority:critical not before Monday upnext nosplit)'
+  fylla task add 'Write the docs [30m] (due Friday priority:p1 not before Monday upnext nosplit)'
 
-The estimate goes in [brackets]. Due date, priority, and description are extracted
-from (parentheses). Everything else inside () is left in the title as scheduling hints.
+The estimate goes in [brackets]. Attributes inside (parentheses) are extracted
+and used for scheduling.
 
 Extracted attributes inside ():
   due <date>          Due date (natural language or YYYY-MM-DD)
-  priority:<level>    Priority (critical/p1, high/p2, medium/p3, low/p4, lowest/p5)
-  desc:<description>  Description text (must be last attribute)
-
-Kept in title (scheduling hints):
-  not before <date>   Earliest start date
-  upnext              Mark as up next
-  nosplit             Mark as non-splittable`,
+  not before <date>   Earliest scheduling date (natural language or YYYY-MM-DD)
+  priority:<level>    Priority (p1=Highest, p2=High, p3=Medium, p4=Low, p5=Lowest)
+  upnext              Schedule before other tasks
+  nosplit             Prevent splitting across multiple slots`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			source, cfg, err := loadTaskSource()
 			if err != nil {
