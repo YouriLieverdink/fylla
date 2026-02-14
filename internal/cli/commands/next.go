@@ -4,28 +4,29 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
-	"github.com/iruoy/fylla/internal/calendar"
 	"github.com/iruoy/fylla/internal/config"
 	"github.com/spf13/cobra"
 )
 
 // NextParams holds all inputs for the next command.
 type NextParams struct {
-	Cal           CalendarClient
-	Now           time.Time
-	FyllaCalendar string
+	Cal   CalendarClient
+	Tasks TaskFetcher
+	Cfg   *config.Config
+	Query string
+	Now   time.Time
 }
 
-// FyllaEvent represents a parsed Fylla calendar event.
+// FyllaEvent represents a scheduled Fylla task event or a calendar event.
 type FyllaEvent struct {
-	TaskKey string
-	Summary string
-	Start   time.Time
-	End     time.Time
-	AtRisk  bool
+	TaskKey         string
+	Summary         string
+	Start           time.Time
+	End             time.Time
+	AtRisk          bool
+	IsCalendarEvent bool
 }
 
 // NextResult holds the output of a next operation.
@@ -36,74 +37,25 @@ type NextResult struct {
 
 // RunNext finds the current or next upcoming Fylla task for today.
 func RunNext(ctx context.Context, p NextParams) (*NextResult, error) {
-	startOfDay := time.Date(p.Now.Year(), p.Now.Month(), p.Now.Day(), 0, 0, 0, 0, p.Now.Location())
-	endOfDay := startOfDay.Add(24*time.Hour - time.Nanosecond)
-
-	events, err := p.Cal.FetchEvents(ctx, startOfDay, endOfDay)
+	events, err := allocateToday(ctx, p.Cal, p.Tasks, p.Cfg, p.Query, p.Now)
 	if err != nil {
-		return nil, fmt.Errorf("fetch events: %w", err)
-	}
-
-	var fyllaEvents []FyllaEvent
-	for _, e := range events {
-		if fe, ok := parseFyllaEvent(e); ok {
-			fyllaEvents = append(fyllaEvents, fe)
-		}
+		return nil, err
 	}
 
 	var result NextResult
-	for _, fe := range fyllaEvents {
+	for _, fe := range events {
 		if !p.Now.Before(fe.Start) && p.Now.Before(fe.End) {
-			result.Current = &FyllaEvent{
-				TaskKey: fe.TaskKey,
-				Summary: fe.Summary,
-				Start:   fe.Start,
-				End:     fe.End,
-				AtRisk:  fe.AtRisk,
-			}
+			current := fe
+			result.Current = &current
 			continue
 		}
 		if fe.Start.After(p.Now) && result.Next == nil {
-			result.Next = &FyllaEvent{
-				TaskKey: fe.TaskKey,
-				Summary: fe.Summary,
-				Start:   fe.Start,
-				End:     fe.End,
-				AtRisk:  fe.AtRisk,
-			}
+			next := fe
+			result.Next = &next
 		}
 	}
 
 	return &result, nil
-}
-
-// parseFyllaEvent extracts task info from a calendar event with Fylla prefix.
-func parseFyllaEvent(e calendar.Event) (FyllaEvent, bool) {
-	title := e.Title
-	atRisk := false
-
-	if strings.HasPrefix(title, "[LATE] [Fylla] ") {
-		title = strings.TrimPrefix(title, "[LATE] [Fylla] ")
-		atRisk = true
-	} else if strings.HasPrefix(title, "[Fylla] ") {
-		title = strings.TrimPrefix(title, "[Fylla] ")
-	} else {
-		return FyllaEvent{}, false
-	}
-
-	// Parse "TASK-KEY: Summary"
-	idx := strings.Index(title, ": ")
-	if idx < 0 {
-		return FyllaEvent{}, false
-	}
-
-	return FyllaEvent{
-		TaskKey: title[:idx],
-		Summary: title[idx+2:],
-		Start:   e.Start,
-		End:     e.End,
-		AtRisk:  atRisk,
-	}, true
 }
 
 // PrintNextResult writes the next task info to the given writer.
@@ -114,52 +66,75 @@ func PrintNextResult(w io.Writer, result *NextResult, now time.Time) {
 	}
 
 	if result.Current != nil {
-		prefix := ""
-		if result.Current.AtRisk {
-			prefix = "[LATE] "
+		if result.Current.IsCalendarEvent {
+			fmt.Fprintf(w, "Current: %s (until %s)\n",
+				result.Current.Summary,
+				result.Current.End.Format("15:04"),
+			)
+		} else {
+			prefix := ""
+			if result.Current.AtRisk {
+				prefix = "[LATE] "
+			}
+			fmt.Fprintf(w, "Current: %s%s: %s (until %s)\n",
+				prefix,
+				result.Current.TaskKey,
+				result.Current.Summary,
+				result.Current.End.Format("15:04"),
+			)
 		}
-		fmt.Fprintf(w, "Current: %s%s: %s (until %s)\n",
-			prefix,
-			result.Current.TaskKey,
-			result.Current.Summary,
-			result.Current.End.Format("15:04"),
-		)
 	}
 
 	if result.Next != nil {
-		prefix := ""
-		if result.Next.AtRisk {
-			prefix = "[LATE] "
-		}
 		until := result.Next.Start.Sub(now)
 		minutes := int(until.Minutes())
-		if minutes < 60 {
-			fmt.Fprintf(w, "Next:    %s%s: %s (starts in %dm)\n",
-				prefix,
-				result.Next.TaskKey,
-				result.Next.Summary,
-				minutes,
-			)
+
+		if result.Next.IsCalendarEvent {
+			if minutes < 60 {
+				fmt.Fprintf(w, "Next:    %s (starts in %dm)\n",
+					result.Next.Summary,
+					minutes,
+				)
+			} else {
+				fmt.Fprintf(w, "Next:    %s (%s – %s)\n",
+					result.Next.Summary,
+					result.Next.Start.Format("15:04"),
+					result.Next.End.Format("15:04"),
+				)
+			}
 		} else {
-			fmt.Fprintf(w, "Next:    %s%s: %s (%s – %s)\n",
-				prefix,
-				result.Next.TaskKey,
-				result.Next.Summary,
-				result.Next.Start.Format("15:04"),
-				result.Next.End.Format("15:04"),
-			)
+			prefix := ""
+			if result.Next.AtRisk {
+				prefix = "[LATE] "
+			}
+			if minutes < 60 {
+				fmt.Fprintf(w, "Next:    %s%s: %s (starts in %dm)\n",
+					prefix,
+					result.Next.TaskKey,
+					result.Next.Summary,
+					minutes,
+				)
+			} else {
+				fmt.Fprintf(w, "Next:    %s%s: %s (%s – %s)\n",
+					prefix,
+					result.Next.TaskKey,
+					result.Next.Summary,
+					result.Next.Start.Format("15:04"),
+					result.Next.End.Format("15:04"),
+				)
+			}
 		}
 	}
 }
 
 func newNextCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "next",
 		Short: "Show the current or next scheduled task",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
+			source, cfg, err := loadTaskSource()
 			if err != nil {
-				return fmt.Errorf("load config: %w", err)
+				return err
 			}
 
 			cal, err := loadCalendarClient(cmd.Context(), cfg)
@@ -167,11 +142,40 @@ func newNextCmd() *cobra.Command {
 				return err
 			}
 
+			jql, _ := cmd.Flags().GetString("jql")
+			filter, _ := cmd.Flags().GetString("filter")
+
+			var fetcher TaskFetcher
+			var query string
+			if ms, ok := source.(*MultiTaskSource); ok {
+				fetcher = &multiFetcher{
+					queries: buildProviderQueries(cfg, jql, filter),
+					sources: ms.sources,
+				}
+			} else {
+				fetcher = source
+				providers := cfg.ActiveProviders()
+				switch providers[0] {
+				case "todoist":
+					query = filter
+					if query == "" {
+						query = cfg.Todoist.DefaultFilter
+					}
+				default:
+					query = jql
+					if query == "" {
+						query = cfg.Jira.DefaultJQL
+					}
+				}
+			}
+
 			now := time.Now()
 			result, err := RunNext(cmd.Context(), NextParams{
-				Cal:           cal,
-				Now:           now,
-				FyllaCalendar: cfg.Calendar.FyllaCalendar,
+				Cal:   cal,
+				Tasks: fetcher,
+				Cfg:   cfg,
+				Query: query,
+				Now:   now,
 			})
 			if err != nil {
 				return err
@@ -181,4 +185,9 @@ func newNextCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().String("jql", "", "Custom JQL query override (Jira source)")
+	cmd.Flags().String("filter", "", "Custom filter override (Todoist source)")
+
+	return cmd
 }
