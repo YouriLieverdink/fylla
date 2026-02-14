@@ -98,7 +98,7 @@ func BuildSyncParams(flags SyncFlags, cfg *config.Config, now time.Time) (query 
 		if flags.Days > 0 {
 			days = flags.Days
 		}
-		start = now
+		start = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 		end = now.AddDate(0, 0, days)
 	}
 
@@ -260,12 +260,14 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 	}
 
 	// Step 6: Apply schedule to calendar
+	// Cleanup covers all past Fylla events, not just the scheduling window.
+	cleanupStart := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	var created, updated, deleted, unchanged int
 	if !p.DryRun {
 		if p.Force {
 			// Force mode: delete all existing events, then create fresh
 			progress(p.Progress, "Clearing previous schedule...")
-			if err := p.Cal.DeleteFyllaEvents(ctx, p.Start, p.End); err != nil {
+			if err := p.Cal.DeleteFyllaEvents(ctx, cleanupStart, p.End); err != nil {
 				return nil, fmt.Errorf("delete fylla events: %w", err)
 			}
 			progress(p.Progress, "Creating %d calendar events...", len(allocations))
@@ -284,7 +286,7 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 		} else {
 			// Incremental mode: reconcile desired vs existing
 			progress(p.Progress, "Fetching existing Fylla events...")
-			existing, err := p.Cal.FetchFyllaEvents(ctx, p.Start, p.End)
+			existing, err := p.Cal.FetchFyllaEvents(ctx, cleanupStart, p.End)
 			if err != nil {
 				return nil, fmt.Errorf("fetch fylla events: %w", err)
 			}

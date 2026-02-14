@@ -137,9 +137,10 @@ func TestSYNC001_delete_existing_fylla_events(t *testing.T) {
 		if len(cal.deletedRanges) != 1 {
 			t.Fatalf("expected 1 delete call, got %d", len(cal.deletedRanges))
 		}
-		if !cal.deletedRanges[0].start.Equal(start) || !cal.deletedRanges[0].end.Equal(end) {
+		cleanupStart := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+		if !cal.deletedRanges[0].start.Equal(cleanupStart) || !cal.deletedRanges[0].end.Equal(end) {
 			t.Errorf("delete range = %v-%v, want %v-%v",
-				cal.deletedRanges[0].start, cal.deletedRanges[0].end, start, end)
+				cal.deletedRanges[0].start, cal.deletedRanges[0].end, cleanupStart, end)
 		}
 	})
 
@@ -1096,8 +1097,9 @@ func TestCLI007_sync_days_override(t *testing.T) {
 		if !end.Equal(expectedEnd) {
 			t.Errorf("end = %v, want %v (10 days)", end, expectedEnd)
 		}
-		if !start.Equal(now) {
-			t.Errorf("start = %v, want now", start)
+		expectedStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		if !start.Equal(expectedStart) {
+			t.Errorf("start = %v, want start of day %v", start, expectedStart)
 		}
 	})
 
@@ -1141,9 +1143,15 @@ func TestCLI007_sync_days_override(t *testing.T) {
 		if len(cal.fetchCalls) == 0 {
 			t.Fatal("no fetch calls")
 		}
-		window := cal.fetchCalls[0].end.Sub(cal.fetchCalls[0].start)
-		if window != 10*24*time.Hour {
-			t.Errorf("fetch window = %v, want 10 days", window)
+		// end should be 10 days from now
+		expectedEnd := now.AddDate(0, 0, 10)
+		if !cal.fetchCalls[0].end.Equal(expectedEnd) {
+			t.Errorf("fetch end = %v, want %v", cal.fetchCalls[0].end, expectedEnd)
+		}
+		// start should be start of day (midnight)
+		expectedStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		if !cal.fetchCalls[0].start.Equal(expectedStart) {
+			t.Errorf("fetch start = %v, want %v", cal.fetchCalls[0].start, expectedStart)
 		}
 	})
 }
