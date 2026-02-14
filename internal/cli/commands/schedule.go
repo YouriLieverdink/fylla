@@ -10,6 +10,7 @@ func newScheduleCmd() *cobra.Command {
 
 	cmd.AddCommand(newSyncCmd())
 	cmd.AddCommand(newNextCmd())
+	cmd.AddCommand(newTodayCmd())
 
 	return cmd
 }

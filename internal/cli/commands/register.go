@@ -9,4 +9,5 @@ func Register(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(newTimerCmd())
 	rootCmd.AddCommand(newAuthCmd())
 	rootCmd.AddCommand(newConfigCmd())
+	rootCmd.AddCommand(newInitCmd())
 }
