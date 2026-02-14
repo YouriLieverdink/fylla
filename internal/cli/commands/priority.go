@@ -6,8 +6,6 @@ import (
 	"io"
 	"strconv"
 	"strings"
-
-	"github.com/spf13/cobra"
 )
 
 // PriorityGetter abstracts fetching the current priority from a task source.
@@ -110,36 +108,3 @@ func PrintPriorityResult(w io.Writer, result *PriorityResult) {
 	fmt.Fprintf(w, "Priority for %s set to %s (%d)\n", result.TaskKey, result.Name, result.Priority)
 }
 
-func newPriorityCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "priority TASK-KEY PRIORITY",
-		Short: "Set or adjust priority on a task",
-		Long:  "Set an absolute priority (Highest, High, Medium, Low, Lowest or 1-5) or adjust relative to current (+1, -1)",
-		Args:  cobra.ExactArgs(2),
-		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-			if len(args) == 1 {
-				return []string{"Highest", "High", "Medium", "Low", "Lowest"}, cobra.ShellCompDirectiveNoFileComp
-			}
-			return nil, cobra.ShellCompDirectiveNoFileComp
-		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			source, _, err := loadTaskSource()
-			if err != nil {
-				return err
-			}
-
-			result, err := RunPriority(cmd.Context(), PriorityParams{
-				TaskKey:  args[0],
-				Priority: args[1],
-				Updater:  source,
-				Getter:   source,
-			})
-			if err != nil {
-				return err
-			}
-
-			PrintPriorityResult(cmd.OutOrStdout(), result)
-			return nil
-		},
-	}
-}

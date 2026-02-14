@@ -14,6 +14,21 @@ import (
 	"github.com/iruoy/fylla/internal/todoist"
 )
 
+// DueDateRemover abstracts clearing the due date from a task.
+type DueDateRemover interface {
+	RemoveDueDate(ctx context.Context, issueKey string) error
+}
+
+// SummaryGetter abstracts fetching the raw summary/title of a task.
+type SummaryGetter interface {
+	GetSummary(ctx context.Context, issueKey string) (string, error)
+}
+
+// SummaryUpdater abstracts updating the summary/title of a task.
+type SummaryUpdater interface {
+	UpdateSummary(ctx context.Context, issueKey string, summary string) error
+}
+
 // TaskSource combines all task-related interfaces that every source must implement.
 type TaskSource interface {
 	TaskFetcher
@@ -25,8 +40,11 @@ type TaskSource interface {
 	EstimateUpdater
 	DueDateGetter
 	DueDateUpdater
+	DueDateRemover
 	PriorityGetter
 	PriorityUpdater
+	SummaryGetter
+	SummaryUpdater
 }
 
 // Compile-time checks that both clients satisfy TaskSource.
@@ -127,6 +145,18 @@ func (m *MultiTaskSource) GetPriority(ctx context.Context, issueKey string) (int
 
 func (m *MultiTaskSource) UpdatePriority(ctx context.Context, issueKey string, priority int) error {
 	return m.routeTo(issueKey).UpdatePriority(ctx, issueKey, priority)
+}
+
+func (m *MultiTaskSource) RemoveDueDate(ctx context.Context, issueKey string) error {
+	return m.routeTo(issueKey).RemoveDueDate(ctx, issueKey)
+}
+
+func (m *MultiTaskSource) GetSummary(ctx context.Context, issueKey string) (string, error) {
+	return m.routeTo(issueKey).GetSummary(ctx, issueKey)
+}
+
+func (m *MultiTaskSource) UpdateSummary(ctx context.Context, issueKey string, summary string) error {
+	return m.routeTo(issueKey).UpdateSummary(ctx, issueKey, summary)
 }
 
 // multiFetcher implements TaskFetcher by concurrently querying multiple providers

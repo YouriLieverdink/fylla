@@ -12,9 +12,7 @@ func newTaskCmd() *cobra.Command {
 	cmd.AddCommand(newListCmd())
 	cmd.AddCommand(newDoneCmd())
 	cmd.AddCommand(newDeleteCmd())
-	cmd.AddCommand(newEstimateCmd())
-	cmd.AddCommand(newDueDateCmd())
-	cmd.AddCommand(newPriorityCmd())
+	cmd.AddCommand(newEditCmd())
 
 	return cmd
 }

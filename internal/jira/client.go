@@ -484,6 +484,75 @@ func (c *Client) UpdatePriority(ctx context.Context, issueKey string, priority i
 	return nil
 }
 
+// RemoveDueDate clears the due date for the specified Jira issue.
+func (c *Client) RemoveDueDate(ctx context.Context, issueKey string) error {
+	payload := map[string]interface{}{
+		"fields": map[string]interface{}{
+			"duedate": nil,
+		},
+	}
+
+	resp, err := c.do(ctx, http.MethodPut, fmt.Sprintf("/rest/api/3/issue/%s", issueKey), payload)
+	if err != nil {
+		return fmt.Errorf("remove due date: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("jira remove due date: status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+// getSummaryResponse represents a single Jira issue response for the summary field.
+type getSummaryResponse struct {
+	Fields struct {
+		Summary string `json:"summary"`
+	} `json:"fields"`
+}
+
+// GetSummary fetches the raw summary for the specified Jira issue.
+func (c *Client) GetSummary(ctx context.Context, issueKey string) (string, error) {
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/rest/api/3/issue/%s?fields=summary", issueKey), nil)
+	if err != nil {
+		return "", fmt.Errorf("get summary: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("jira get summary: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result getSummaryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decode issue response: %w", err)
+	}
+	return result.Fields.Summary, nil
+}
+
+// UpdateSummary sets the summary for the specified Jira issue.
+func (c *Client) UpdateSummary(ctx context.Context, issueKey string, summary string) error {
+	payload := map[string]interface{}{
+		"fields": map[string]interface{}{
+			"summary": summary,
+		},
+	}
+
+	resp, err := c.do(ctx, http.MethodPut, fmt.Sprintf("/rest/api/3/issue/%s", issueKey), payload)
+	if err != nil {
+		return fmt.Errorf("update summary: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("jira update summary: status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
 // DeleteTask permanently deletes a Jira issue.
 func (c *Client) DeleteTask(ctx context.Context, issueKey string) error {
 	resp, err := c.do(ctx, http.MethodDelete, fmt.Sprintf("/rest/api/3/issue/%s", issueKey), nil)

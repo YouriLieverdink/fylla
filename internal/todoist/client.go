@@ -503,6 +503,61 @@ func (c *Client) GetPriority(ctx context.Context, taskID string) (int, error) {
 	return apiPriorityToLevel(t.Priority), nil
 }
 
+// RemoveDueDate clears the due date on a Todoist task.
+func (c *Client) RemoveDueDate(ctx context.Context, taskID string) error {
+	payload := map[string]interface{}{
+		"due_date": nil,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal update: %w", err)
+	}
+
+	resp, err := c.do(ctx, http.MethodPost, "/tasks/"+taskID, strings.NewReader(string(data)))
+	if err != nil {
+		return fmt.Errorf("remove due date: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("todoist remove due date: status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+// GetSummary fetches the raw content (title) for a Todoist task.
+func (c *Client) GetSummary(ctx context.Context, taskID string) (string, error) {
+	t, err := c.fetchTask(ctx, taskID)
+	if err != nil {
+		return "", err
+	}
+	return t.Content, nil
+}
+
+// UpdateSummary sets the content (title) for a Todoist task.
+func (c *Client) UpdateSummary(ctx context.Context, taskID string, summary string) error {
+	payload := map[string]interface{}{
+		"content": summary,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal update: %w", err)
+	}
+
+	resp, err := c.do(ctx, http.MethodPost, "/tasks/"+taskID, strings.NewReader(string(data)))
+	if err != nil {
+		return fmt.Errorf("update summary: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("todoist update summary: status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
 // UpdatePriority sets the priority on a Todoist task.
 func (c *Client) UpdatePriority(ctx context.Context, taskID string, priority int) error {
 	payload := map[string]interface{}{

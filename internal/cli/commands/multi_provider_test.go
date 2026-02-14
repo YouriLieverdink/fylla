@@ -56,11 +56,13 @@ func TestProviderForKey(t *testing.T) {
 
 // mockSource records method calls for testing MultiTaskSource routing.
 type mockSource struct {
-	name         string
-	completedKey string
-	deletedKey   string
-	fetchQuery   string
-	tasks        []task.Task
+	name           string
+	completedKey   string
+	deletedKey     string
+	fetchQuery     string
+	tasks          []task.Task
+	summary        string
+	updatedSummary string
 }
 
 func (m *mockSource) FetchTasks(_ context.Context, query string) ([]task.Task, error) {
@@ -107,6 +109,19 @@ func (m *mockSource) GetPriority(_ context.Context, _ string) (int, error) {
 }
 
 func (m *mockSource) UpdatePriority(_ context.Context, _ string, _ int) error {
+	return nil
+}
+
+func (m *mockSource) RemoveDueDate(_ context.Context, _ string) error {
+	return nil
+}
+
+func (m *mockSource) GetSummary(_ context.Context, _ string) (string, error) {
+	return m.summary, nil
+}
+
+func (m *mockSource) UpdateSummary(_ context.Context, _ string, summary string) error {
+	m.updatedSummary = summary
 	return nil
 }
 

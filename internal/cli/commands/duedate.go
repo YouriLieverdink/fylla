@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/tj/go-naturaldate"
 )
 
@@ -120,33 +119,3 @@ func PrintDueDateResult(w io.Writer, result *DueDateResult) {
 	fmt.Fprintf(w, "Due date for %s set to %s\n", result.TaskKey, result.DueDate.Format("2006-01-02"))
 }
 
-func newDueDateCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "due TASK-KEY DATE",
-		Short: "Set or adjust due date on a task",
-		Long:  "Set an absolute date (YYYY-MM-DD) or adjust relative to current due date (+7d, -3d)",
-		Args:  cobra.ExactArgs(2),
-		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-			return nil, cobra.ShellCompDirectiveNoFileComp
-		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			source, _, err := loadTaskSource()
-			if err != nil {
-				return err
-			}
-
-			result, err := RunDueDate(cmd.Context(), DueDateParams{
-				TaskKey: args[0],
-				Date:    args[1],
-				Jira:    source,
-				Getter:  source,
-			})
-			if err != nil {
-				return err
-			}
-
-			PrintDueDateResult(cmd.OutOrStdout(), result)
-			return nil
-		},
-	}
-}

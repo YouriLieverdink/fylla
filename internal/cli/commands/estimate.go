@@ -6,8 +6,6 @@ import (
 	"io"
 	"strings"
 	"time"
-
-	"github.com/spf13/cobra"
 )
 
 // EstimateGetter abstracts fetching the current remaining estimate from Jira.
@@ -88,32 +86,3 @@ func PrintEstimateResult(w io.Writer, result *EstimateResult) {
 	fmt.Fprintf(w, "Remaining estimate for %s set to %s\n", result.TaskKey, formatElapsed(result.Duration))
 }
 
-func newEstimateCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "estimate TASK-KEY DURATION",
-		Short: "Set or adjust remaining estimate on a task",
-		Args:  cobra.ExactArgs(2),
-		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-			return nil, cobra.ShellCompDirectiveNoFileComp
-		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			source, _, err := loadTaskSource()
-			if err != nil {
-				return err
-			}
-
-			result, err := RunEstimate(cmd.Context(), EstimateParams{
-				TaskKey:  args[0],
-				Duration: args[1],
-				Jira:     source,
-				Getter:   source,
-			})
-			if err != nil {
-				return err
-			}
-
-			PrintEstimateResult(cmd.OutOrStdout(), result)
-			return nil
-		},
-	}
-}
