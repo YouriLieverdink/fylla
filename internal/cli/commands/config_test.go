@@ -13,7 +13,7 @@ const testConfigYAML = `jira:
   email: you@example.com
   defaultJql: "assignee = currentUser() AND status = 'To Do'"
 calendar:
-  sourceCalendar: primary
+  sourceCalendars: [primary]
   fyllaCalendar: fylla
 scheduling:
   windowDays: 5
@@ -76,7 +76,7 @@ func TestCLI020_config_show(t *testing.T) {
 		checks := []string{
 			"windowDays: 5",
 			"bufferMinutes: 15",
-			"sourceCalendar: primary",
+			"sourceCalendars:",
 			"fyllaCalendar: fylla",
 		}
 		for _, check := range checks {

@@ -31,9 +31,9 @@ type TodoistConfig struct {
 
 // CalendarConfig holds Google Calendar settings.
 type CalendarConfig struct {
-	SourceCalendar    string `yaml:"sourceCalendar"`
-	FyllaCalendar     string `yaml:"fyllaCalendar"`
-	ClientCredentials string `yaml:"clientCredentials"`
+	SourceCalendars   []string `yaml:"sourceCalendars"`
+	FyllaCalendar     string   `yaml:"fyllaCalendar"`
+	ClientCredentials string   `yaml:"clientCredentials"`
 }
 
 // SchedulingConfig holds scheduling parameters.

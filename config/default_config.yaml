@@ -11,7 +11,7 @@ todoist:
   defaultProject: ""
 
 calendar:
-  sourceCalendar: primary
+  sourceCalendars: [primary]
   fyllaCalendar: fylla
   clientCredentials: client_credentials.json
 

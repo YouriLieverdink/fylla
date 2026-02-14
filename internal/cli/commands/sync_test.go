@@ -82,7 +82,7 @@ func testConfig() *config.Config {
 			DefaultJQL: "assignee = currentUser()",
 		},
 		Calendar: config.CalendarConfig{
-			SourceCalendar: "primary",
+			SourceCalendars: []string{"primary"},
 			FyllaCalendar:  "fylla",
 		},
 		Scheduling: config.SchedulingConfig{

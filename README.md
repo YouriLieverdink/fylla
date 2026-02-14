@@ -82,7 +82,7 @@ jira:
   defaultJql: "assignee = currentUser() AND status = 'To Do'"
 
 calendar:
-  sourceCalendar: primary
+  sourceCalendars: [primary]
   fyllaCalendar: fylla
 
 scheduling:
@@ -123,7 +123,7 @@ todoist:
   defaultFilter: "today | overdue"
 
 calendar:
-  sourceCalendar: primary
+  sourceCalendars: [primary]
   fyllaCalendar: fylla
 
 scheduling:

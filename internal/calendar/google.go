@@ -12,53 +12,55 @@ import (
 
 // GoogleClient wraps the Google Calendar API for fetching and creating events.
 type GoogleClient struct {
-	Service        *googlecalendar.Service
-	SourceCalendar string
-	FyllaCalendar  string
-	JiraBaseURL    string
-	Source         string
+	Service         *googlecalendar.Service
+	SourceCalendars []string
+	FyllaCalendar   string
+	JiraBaseURL     string
+	Source          string
 }
 
 // NewGoogleClient creates a GoogleClient using the given OAuth2 token.
-func NewGoogleClient(ctx context.Context, cfg *oauth2.Config, token *oauth2.Token, sourceCalendar, fyllaCalendar, jiraBaseURL, source string) (*GoogleClient, error) {
+func NewGoogleClient(ctx context.Context, cfg *oauth2.Config, token *oauth2.Token, sourceCalendars []string, fyllaCalendar, jiraBaseURL, source string) (*GoogleClient, error) {
 	src := cfg.TokenSource(ctx, token)
 	svc, err := googlecalendar.NewService(ctx, option.WithTokenSource(src))
 	if err != nil {
 		return nil, fmt.Errorf("create calendar service: %w", err)
 	}
 	return &GoogleClient{
-		Service:        svc,
-		SourceCalendar: sourceCalendar,
-		FyllaCalendar:  fyllaCalendar,
-		JiraBaseURL:    jiraBaseURL,
-		Source:         source,
+		Service:         svc,
+		SourceCalendars: sourceCalendars,
+		FyllaCalendar:   fyllaCalendar,
+		JiraBaseURL:     jiraBaseURL,
+		Source:          source,
 	}, nil
 }
 
-// FetchEvents retrieves events from the source calendar within the given time range.
+// FetchEvents retrieves events from all source calendars within the given time range.
 func (c *GoogleClient) FetchEvents(ctx context.Context, start, end time.Time) ([]Event, error) {
 	var events []Event
-	pageToken := ""
-	for {
-		call := c.Service.Events.List(c.SourceCalendar).
-			Context(ctx).
-			TimeMin(start.Format(time.RFC3339)).
-			TimeMax(end.Format(time.RFC3339)).
-			SingleEvents(true).
-			OrderBy("startTime")
-		if pageToken != "" {
-			call = call.PageToken(pageToken)
-		}
-		result, err := call.Do()
-		if err != nil {
-			return nil, fmt.Errorf("list events: %w", err)
-		}
-		for _, item := range result.Items {
-			events = append(events, parseGoogleEvent(item))
-		}
-		pageToken = result.NextPageToken
-		if pageToken == "" {
-			break
+	for _, calID := range c.SourceCalendars {
+		pageToken := ""
+		for {
+			call := c.Service.Events.List(calID).
+				Context(ctx).
+				TimeMin(start.Format(time.RFC3339)).
+				TimeMax(end.Format(time.RFC3339)).
+				SingleEvents(true).
+				OrderBy("startTime")
+			if pageToken != "" {
+				call = call.PageToken(pageToken)
+			}
+			result, err := call.Do()
+			if err != nil {
+				return nil, fmt.Errorf("list events from %s: %w", calID, err)
+			}
+			for _, item := range result.Items {
+				events = append(events, parseGoogleEvent(item))
+			}
+			pageToken = result.NextPageToken
+			if pageToken == "" {
+				break
+			}
 		}
 	}
 	return events, nil

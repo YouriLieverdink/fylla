@@ -25,7 +25,7 @@ func writeDefaultConfig(t *testing.T, path string) {
   email: ""
   defaultJql: "assignee = currentUser()"
 calendar:
-  sourceCalendar: primary
+  sourceCalendars: [primary]
   fyllaCalendar: fylla
 scheduling:
   windowDays: 5

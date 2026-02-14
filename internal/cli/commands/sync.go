@@ -465,7 +465,7 @@ func newSyncCmd() *cobra.Command {
 				baseURL = "https://todoist.com"
 			}
 			cal, err := calendar.NewGoogleClient(cmd.Context(), oauthCfg, token,
-				cfg.Calendar.SourceCalendar, cfg.Calendar.FyllaCalendar, baseURL, cfg.Source)
+				cfg.Calendar.SourceCalendars, cfg.Calendar.FyllaCalendar, baseURL, cfg.Source)
 			if err != nil {
 				return err
 			}

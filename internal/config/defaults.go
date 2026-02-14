@@ -11,7 +11,7 @@ todoist:
   defaultFilter: "today | overdue"
 
 calendar:
-  sourceCalendar: primary
+  sourceCalendars: [primary]
   fyllaCalendar: fylla
 
 scheduling:

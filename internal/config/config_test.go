@@ -72,8 +72,8 @@ func TestCFG003_CalendarConfig(t *testing.T) {
 		t.Fatalf("LoadFrom: %v", err)
 	}
 
-	if cfg.Calendar.SourceCalendar != "primary" {
-		t.Errorf("SourceCalendar = %q", cfg.Calendar.SourceCalendar)
+	if len(cfg.Calendar.SourceCalendars) != 1 || cfg.Calendar.SourceCalendars[0] != "primary" {
+		t.Errorf("SourceCalendars = %v", cfg.Calendar.SourceCalendars)
 	}
 	if cfg.Calendar.FyllaCalendar != "fylla" {
 		t.Errorf("FyllaCalendar = %q", cfg.Calendar.FyllaCalendar)
@@ -484,7 +484,7 @@ func TestKeyPaths(t *testing.T) {
 		"jira.email",
 		"jira.defaultJql",
 		"todoist.defaultFilter",
-		"calendar.sourceCalendar",
+		"calendar.sourceCalendars",
 		"calendar.fyllaCalendar",
 		"scheduling.windowDays",
 		"scheduling.minTaskDurationMinutes",
