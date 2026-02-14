@@ -7,6 +7,7 @@ type Event struct {
 	ID          string
 	Title       string
 	Description string
+	Location    string
 	Start       time.Time
 	End         time.Time
 	EventType   string // e.g. "outOfOffice", "default"

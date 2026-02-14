@@ -31,7 +31,7 @@ func Test_SLOT001_filter_slots_to_business_hours(t *testing.T) {
 			End:      "17:00",
 			WorkDays: []int{1, 2, 3, 4, 5},
 		}
-		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, hours, 0, 1, nil)
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, hours, 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -54,7 +54,7 @@ func Test_SLOT001_filter_slots_to_business_hours(t *testing.T) {
 			End:      "16:00",
 			WorkDays: []int{1, 2, 3, 4, 5},
 		}
-		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, hours, 0, 1, nil)
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, hours, 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -72,7 +72,7 @@ func Test_SLOT001_filter_slots_to_business_hours(t *testing.T) {
 			End:      "17:00",
 			WorkDays: []int{1, 2, 3, 4, 5},
 		}
-		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, hours, 0, 1, nil)
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, hours, 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -93,7 +93,7 @@ func Test_SLOT002_skip_weekends(t *testing.T) {
 	rangeEnd := dt(2025, 1, 20, 23, 59)
 
 	t.Run("no tasks scheduled on Saturday or Sunday", func(t *testing.T) {
-		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, defaultHours(), 0, 1, nil)
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, defaultHours(), 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -125,7 +125,7 @@ func Test_SLOT002_skip_weekends(t *testing.T) {
 			End:      "17:00",
 			WorkDays: []int{1, 2, 3, 4, 5, 6}, // include Saturday
 		}
-		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, hours, 0, 1, nil)
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, hours, 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -148,7 +148,7 @@ func Test_SLOT002_skip_weekends(t *testing.T) {
 		rangeStart := dt(2025, 1, 15, 0, 0)
 		rangeEnd := dt(2025, 1, 17, 23, 59)
 		now := dt(2025, 1, 15, 7, 0)
-		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, hours, 0, 1, nil)
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, hours, 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -173,7 +173,7 @@ func Test_SLOT003_buffer_between_tasks(t *testing.T) {
 	}
 
 	t.Run("15-minute buffer after meeting", func(t *testing.T) {
-		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{meeting}, defaultHours(), 15, 1, nil)
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{meeting}, defaultHours(), 15, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -188,7 +188,7 @@ func Test_SLOT003_buffer_between_tasks(t *testing.T) {
 	})
 
 	t.Run("30-minute buffer configured", func(t *testing.T) {
-		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{meeting}, defaultHours(), 30, 1, nil)
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{meeting}, defaultHours(), 30, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -202,7 +202,7 @@ func Test_SLOT003_buffer_between_tasks(t *testing.T) {
 	})
 
 	t.Run("zero buffer means slots are adjacent", func(t *testing.T) {
-		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{meeting}, defaultHours(), 0, 1, nil)
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{meeting}, defaultHours(), 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -227,7 +227,7 @@ func Test_SLOT004_project_aware_time_windows(t *testing.T) {
 			End:      "10:00",
 			WorkDays: []int{1, 2, 3, 4, 5},
 		}
-		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, adminHours, 0, 1, nil)
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, adminHours, 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -240,7 +240,7 @@ func Test_SLOT004_project_aware_time_windows(t *testing.T) {
 	})
 
 	t.Run("default tasks use full business hours", func(t *testing.T) {
-		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, defaultHours(), 0, 1, nil)
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, defaultHours(), 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -288,7 +288,7 @@ func Test_SLOT005_block_OOO_time_ranges(t *testing.T) {
 			EventType: "outOfOffice",
 			AllDay:    true,
 		}
-		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{ooo}, defaultHours(), 0, 1, nil)
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{ooo}, defaultHours(), 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -304,7 +304,7 @@ func Test_SLOT005_block_OOO_time_ranges(t *testing.T) {
 			End:       dt(2025, 1, 20, 15, 0),
 			EventType: "outOfOffice",
 		}
-		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{ooo}, defaultHours(), 0, 1, nil)
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{ooo}, defaultHours(), 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -327,7 +327,7 @@ func Test_SLOT005_block_OOO_time_ranges(t *testing.T) {
 			End:    dt(2025, 1, 21, 0, 0),
 			AllDay: true,
 		}
-		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{ooo}, defaultHours(), 0, 1, nil)
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{ooo}, defaultHours(), 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -344,7 +344,7 @@ func Test_SLOT006_events_start_from_current_time(t *testing.T) {
 	rangeEnd := dt(2025, 1, 20, 23, 59)
 
 	t.Run("today slots start from now, not start of day", func(t *testing.T) {
-		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, defaultHours(), 0, 1, nil)
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, defaultHours(), 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -358,7 +358,7 @@ func Test_SLOT006_events_start_from_current_time(t *testing.T) {
 	})
 
 	t.Run("no tasks scheduled in past hours", func(t *testing.T) {
-		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, defaultHours(), 0, 1, nil)
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, defaultHours(), 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -372,7 +372,7 @@ func Test_SLOT006_events_start_from_current_time(t *testing.T) {
 	t.Run("future days start from business hours start", func(t *testing.T) {
 		// Range covers Monday and Tuesday
 		rangeEnd := dt(2025, 1, 21, 23, 59)
-		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, defaultHours(), 0, 1, nil)
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, defaultHours(), 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -388,7 +388,7 @@ func Test_SLOT006_events_start_from_current_time(t *testing.T) {
 	})
 
 	t.Run("now with buffer pushes start forward", func(t *testing.T) {
-		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, defaultHours(), 15, 1, nil)
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, defaultHours(), 15, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -416,7 +416,7 @@ func Test_SLOT007_multi_day_OOO_handled(t *testing.T) {
 			EventType: "outOfOffice",
 			AllDay:    true,
 		}
-		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{vacation}, defaultHours(), 0, 1, nil)
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{vacation}, defaultHours(), 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -433,7 +433,7 @@ func Test_SLOT007_multi_day_OOO_handled(t *testing.T) {
 			EventType: "outOfOffice",
 			AllDay:    true,
 		}
-		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{ooo}, defaultHours(), 0, 1, nil)
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{ooo}, defaultHours(), 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -465,7 +465,7 @@ func Test_SLOT007_multi_day_OOO_handled(t *testing.T) {
 			EventType: "outOfOffice",
 			AllDay:    true,
 		}
-		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{ooo1, ooo2}, defaultHours(), 0, 1, nil)
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{ooo1, ooo2}, defaultHours(), 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

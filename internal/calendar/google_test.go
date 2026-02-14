@@ -29,6 +29,7 @@ func newTestClient(t *testing.T, server *httptest.Server, sourceCalendar, fyllaC
 		SourceCalendar: sourceCalendar,
 		FyllaCalendar:  fyllaCalendar,
 		JiraBaseURL:    jiraBaseURL,
+		Source:         "jira",
 	}
 }
 
@@ -346,7 +347,7 @@ func Test_GCAL006_EventTitleFormat(t *testing.T) {
 		}
 	})
 
-	t.Run("at-risk event has LATE prefix", func(t *testing.T) {
+	t.Run("at-risk event has warning emoji prefix", func(t *testing.T) {
 		var created googlecalendar.Event
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodPost {
@@ -370,7 +371,7 @@ func Test_GCAL006_EventTitleFormat(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateEvent: %v", err)
 		}
-		expected := "[LATE] Overdue task"
+		expected := "⚠️ Overdue task"
 		if created.Summary != expected {
 			t.Errorf("expected title %q, got %q", expected, created.Summary)
 		}
@@ -613,7 +614,7 @@ func TestBuildTitle(t *testing.T) {
 		want    string
 	}{
 		{"normal", "PROJ-1", "Fix bug", false, "Fix bug"},
-		{"at-risk", "PROJ-2", "Overdue", true, "[LATE] Overdue"},
+		{"at-risk", "PROJ-2", "Overdue", true, "⚠️ Overdue"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -629,15 +630,16 @@ func TestBuildDescription(t *testing.T) {
 	tests := []struct {
 		name    string
 		key     string
+		source  string
 		baseURL string
 		want    string
 	}{
-		{"jira", "PROJ-123", "https://company.atlassian.net", "fylla: PROJ-123\nhttps://company.atlassian.net/browse/PROJ-123"},
-		{"todoist", "T-1", "https://todoist.com", "fylla: T-1\nhttps://todoist.com/browse/T-1"},
+		{"jira", "PROJ-123", "jira", "https://company.atlassian.net", "fylla: PROJ-123\nhttps://company.atlassian.net/browse/PROJ-123"},
+		{"todoist", "123456", "todoist", "", "fylla: 123456\nhttps://todoist.com/app/task/123456"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := BuildDescription(tt.key, tt.baseURL)
+			got := BuildDescription(tt.key, tt.source, tt.baseURL)
 			if got != tt.want {
 				t.Errorf("BuildDescription() = %q, want %q", got, tt.want)
 			}
@@ -754,8 +756,8 @@ func Test_GCAL011_UpdateEvent(t *testing.T) {
 		if eventIDInPath != "evt-123" {
 			t.Errorf("expected event ID evt-123 in path, got %s", eventIDInPath)
 		}
-		if updated.Summary != "[LATE] Updated task" {
-			t.Errorf("title = %q, want [LATE] Updated task", updated.Summary)
+		if updated.Summary != "⚠️ Updated task" {
+			t.Errorf("title = %q, want ⚠️ Updated task", updated.Summary)
 		}
 	})
 }

@@ -30,6 +30,7 @@ func (s Slot) Duration() time.Duration {
 //   - hours: business hours configuration to apply
 //   - bufferMinutes: gap to leave between busy events and free slots
 //   - minDurationMinutes: minimum slot size to return
+//   - travelBufferMinutes: extra buffer before events that have a location
 func FindFreeSlots(
 	now time.Time,
 	rangeStart, rangeEnd time.Time,
@@ -38,6 +39,7 @@ func FindFreeSlots(
 	bufferMinutes int,
 	minDurationMinutes int,
 	snapMinutes []int,
+	travelBufferMinutes int,
 ) ([]Slot, error) {
 	dayStart, err := parseTimeOfDay(hours.Start)
 	if err != nil {
@@ -54,7 +56,7 @@ func FindFreeSlots(
 	}
 
 	oooRanges := collectOOORanges(events)
-	busy := collectBusyRanges(events, bufferMinutes)
+	busy := collectBusyRanges(events, bufferMinutes, travelBufferMinutes)
 
 	buffer := time.Duration(bufferMinutes) * time.Minute
 	minDur := time.Duration(minDurationMinutes) * time.Minute
@@ -155,15 +157,20 @@ func collectOOORanges(events []Event) []timeRange {
 	return ranges
 }
 
-func collectBusyRanges(events []Event, bufferMinutes int) []timeRange {
+func collectBusyRanges(events []Event, bufferMinutes, travelBufferMinutes int) []timeRange {
 	buffer := time.Duration(bufferMinutes) * time.Minute
+	travelBuffer := time.Duration(travelBufferMinutes) * time.Minute
 	var ranges []timeRange
 	for _, e := range events {
 		if e.IsOOO() {
 			continue // OOO handled separately
 		}
+		start := e.Start
+		if e.Location != "" {
+			start = start.Add(-travelBuffer)
+		}
 		ranges = append(ranges, timeRange{
-			start: e.Start,
+			start: start,
 			end:   e.End.Add(buffer),
 		})
 	}

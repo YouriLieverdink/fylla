@@ -953,9 +953,14 @@ func TestCLI004_sync_creates_calendar_events(t *testing.T) {
 		if len(cal.created) != len(result.Allocations) {
 			t.Errorf("created %d events, but %d allocations", len(cal.created), len(result.Allocations))
 		}
-		for i, alloc := range result.Allocations {
-			if i < len(cal.created) && cal.created[i].TaskKey != alloc.Task.Key {
-				t.Errorf("event[%d] = %q, allocation = %q", i, cal.created[i].TaskKey, alloc.Task.Key)
+		// Compare as sets — incremental reconcile may create in any order.
+		createdKeys := make(map[string]bool)
+		for _, ev := range cal.created {
+			createdKeys[ev.TaskKey] = true
+		}
+		for _, alloc := range result.Allocations {
+			if !createdKeys[alloc.Task.Key] {
+				t.Errorf("allocation %q not found in created events", alloc.Task.Key)
 			}
 		}
 	})

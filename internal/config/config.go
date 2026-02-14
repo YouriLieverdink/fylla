@@ -41,6 +41,7 @@ type SchedulingConfig struct {
 	WindowDays             int   `yaml:"windowDays"`
 	MinTaskDurationMinutes int   `yaml:"minTaskDurationMinutes"`
 	BufferMinutes          int   `yaml:"bufferMinutes"`
+	TravelBufferMinutes    int   `yaml:"travelBufferMinutes"`
 	SnapMinutes            []int `yaml:"snapMinutes"`
 }
 

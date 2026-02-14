@@ -121,7 +121,7 @@ func PrintSyncResult(w io.Writer, result *SyncResult, dryRun bool) {
 	for _, alloc := range result.Allocations {
 		prefix := ""
 		if alloc.AtRisk {
-			prefix = "[LATE] "
+			prefix = "⚠️ "
 		}
 		fmt.Fprintf(w, "  %s%s: %s  %s – %s\n",
 			prefix,
@@ -216,6 +216,7 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 		p.Cfg.Scheduling.BufferMinutes,
 		p.Cfg.Scheduling.MinTaskDurationMinutes,
 		p.Cfg.Scheduling.SnapMinutes,
+		p.Cfg.Scheduling.TravelBufferMinutes,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("find default slots: %w", err)
@@ -230,6 +231,7 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 			p.Cfg.Scheduling.BufferMinutes,
 			p.Cfg.Scheduling.MinTaskDurationMinutes,
 			p.Cfg.Scheduling.SnapMinutes,
+			p.Cfg.Scheduling.TravelBufferMinutes,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("find slots for project %s: %w", project, err)
@@ -463,7 +465,7 @@ func newSyncCmd() *cobra.Command {
 				baseURL = "https://todoist.com"
 			}
 			cal, err := calendar.NewGoogleClient(cmd.Context(), oauthCfg, token,
-				cfg.Calendar.SourceCalendar, cfg.Calendar.FyllaCalendar, baseURL)
+				cfg.Calendar.SourceCalendar, cfg.Calendar.FyllaCalendar, baseURL, cfg.Source)
 			if err != nil {
 				return err
 			}

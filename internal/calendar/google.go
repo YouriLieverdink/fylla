@@ -16,10 +16,11 @@ type GoogleClient struct {
 	SourceCalendar string
 	FyllaCalendar  string
 	JiraBaseURL    string
+	Source         string
 }
 
 // NewGoogleClient creates a GoogleClient using the given OAuth2 token.
-func NewGoogleClient(ctx context.Context, cfg *oauth2.Config, token *oauth2.Token, sourceCalendar, fyllaCalendar, jiraBaseURL string) (*GoogleClient, error) {
+func NewGoogleClient(ctx context.Context, cfg *oauth2.Config, token *oauth2.Token, sourceCalendar, fyllaCalendar, jiraBaseURL, source string) (*GoogleClient, error) {
 	src := cfg.TokenSource(ctx, token)
 	svc, err := googlecalendar.NewService(ctx, option.WithTokenSource(src))
 	if err != nil {
@@ -30,6 +31,7 @@ func NewGoogleClient(ctx context.Context, cfg *oauth2.Config, token *oauth2.Toke
 		SourceCalendar: sourceCalendar,
 		FyllaCalendar:  fyllaCalendar,
 		JiraBaseURL:    jiraBaseURL,
+		Source:         source,
 	}, nil
 }
 
@@ -68,6 +70,7 @@ func parseGoogleEvent(item *googlecalendar.Event) Event {
 		ID:          item.Id,
 		Title:       item.Summary,
 		Description: item.Description,
+		Location:    item.Location,
 		EventType:   item.EventType,
 	}
 
@@ -101,7 +104,7 @@ func parseGoogleEvent(item *googlecalendar.Event) Event {
 }
 
 // latePrefix is added before the summary for at-risk tasks.
-const latePrefix = "[LATE] "
+const latePrefix = "⚠️ "
 
 // fyllaMarker is written into event descriptions to identify Fylla-managed events.
 const fyllaMarker = "fylla:"
@@ -152,8 +155,11 @@ func BuildTitle(taskKey, summary string, atRisk bool) string {
 }
 
 // BuildDescription constructs the calendar event description for a Fylla task.
-func BuildDescription(taskKey, jiraBaseURL string) string {
-	return fmt.Sprintf("%s %s\n%s/browse/%s", fyllaMarker, taskKey, jiraBaseURL, taskKey)
+func BuildDescription(taskKey, source, baseURL string) string {
+	if source == "todoist" {
+		return fmt.Sprintf("%s %s\nhttps://todoist.com/app/task/%s", fyllaMarker, taskKey, taskKey)
+	}
+	return fmt.Sprintf("%s %s\n%s/browse/%s", fyllaMarker, taskKey, baseURL, taskKey)
 }
 
 // TaskKeyFromDescription extracts the task key from a Fylla event description.
@@ -218,7 +224,7 @@ func (c *GoogleClient) FetchFyllaEvents(ctx context.Context, start, end time.Tim
 // UpdateEvent updates an existing event on the fylla calendar.
 func (c *GoogleClient) UpdateEvent(ctx context.Context, eventID string, input CreateEventInput) error {
 	title := BuildTitle(input.TaskKey, input.Summary, input.AtRisk)
-	description := BuildDescription(input.TaskKey, c.JiraBaseURL)
+	description := BuildDescription(input.TaskKey, c.Source, c.JiraBaseURL)
 
 	event := &googlecalendar.Event{
 		Summary:     title,
@@ -257,7 +263,7 @@ type CreateEventInput struct {
 // CreateEvent creates a new event on the fylla calendar.
 func (c *GoogleClient) CreateEvent(ctx context.Context, input CreateEventInput) error {
 	title := BuildTitle(input.TaskKey, input.Summary, input.AtRisk)
-	description := BuildDescription(input.TaskKey, c.JiraBaseURL)
+	description := BuildDescription(input.TaskKey, c.Source, c.JiraBaseURL)
 
 	event := &googlecalendar.Event{
 		Summary:     title,
