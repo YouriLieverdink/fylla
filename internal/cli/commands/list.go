@@ -38,26 +38,68 @@ func RunList(ctx context.Context, p ListParams) (*ListResult, error) {
 }
 
 // PrintListResult writes the sorted task list to the given writer.
-func PrintListResult(w io.Writer, result *ListResult) {
+func PrintListResult(w io.Writer, result *ListResult, verbose bool) {
 	if len(result.Tasks) == 0 {
 		fmt.Fprintln(w, "No tasks found.")
 		return
 	}
 
+	// Compute column widths for alignment.
+	maxKey := 0
+	maxSummary := 0
+	for _, st := range result.Tasks {
+		if len(st.Task.Key) > maxKey {
+			maxKey = len(st.Task.Key)
+		}
+		if len(st.Task.Summary) > maxSummary {
+			maxSummary = len(st.Task.Summary)
+		}
+	}
+
+	indexWidth := len(fmt.Sprintf("%d", len(result.Tasks)))
+
 	fmt.Fprintf(w, "%d task(s):\n", len(result.Tasks))
 	for i, st := range result.Tasks {
-		var parts []string
-		if st.Task.IssueType != "" {
-			parts = append(parts, st.Task.IssueType)
+		fmt.Fprintf(w, "  %*d. %-*s  %-*s  %5.1f\n",
+			indexWidth, i+1,
+			maxKey, st.Task.Key,
+			maxSummary, st.Task.Summary,
+			st.Score)
+
+		if verbose {
+			details := formatTaskDetails(st)
+			if details != "" {
+				fmt.Fprintf(w, "  %*s  %-*s  %s\n",
+					indexWidth, "",
+					maxKey, "",
+					details)
+			}
 		}
-		parts = append(parts, formatDuration(st.Task.RemainingEstimate))
-		if st.Task.DueDate != nil {
-			parts = append(parts, "due "+st.Task.DueDate.Format("Jan 2"))
-		}
-		fmt.Fprintf(w, "  %d. %s: %s [%s] (score: %.1f)\n",
-			i+1, st.Task.Key, st.Task.Summary,
-			strings.Join(parts, ", "), st.Score)
 	}
+}
+
+func formatTaskDetails(st scheduler.ScoredTask) string {
+	var parts []string
+	if st.Task.IssueType != "" {
+		parts = append(parts, st.Task.IssueType)
+	}
+	parts = append(parts, formatDuration(st.Task.RemainingEstimate))
+	if st.Task.DueDate != nil {
+		parts = append(parts, "Due: "+st.Task.DueDate.Format("Jan 2"))
+	}
+	if name, ok := priorityLevelNames[st.Task.Priority]; ok && st.Task.Priority != 0 {
+		parts = append(parts, "Priority: "+name)
+	}
+	if st.Task.NotBefore != nil {
+		parts = append(parts, "Not Before: "+st.Task.NotBefore.Format("Jan 2"))
+	}
+	if st.Task.UpNext {
+		parts = append(parts, "Up Next")
+	}
+	if st.Task.NoSplit {
+		parts = append(parts, "No Split")
+	}
+	return strings.Join(parts, " | ")
 }
 
 func formatDuration(d time.Duration) string {
@@ -123,11 +165,13 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			PrintListResult(cmd.OutOrStdout(), result)
+			verbose, _ := cmd.Flags().GetBool("verbose")
+			PrintListResult(cmd.OutOrStdout(), result, verbose)
 			return nil
 		},
 	}
 
+	cmd.Flags().BoolP("verbose", "v", false, "Show detailed task metadata on a second line")
 	cmd.Flags().String("jql", "", "Custom JQL query override (Jira source)")
 	cmd.Flags().String("filter", "", "Custom filter override (Todoist source)")
 

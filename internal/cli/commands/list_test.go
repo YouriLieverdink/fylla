@@ -83,7 +83,7 @@ func TestCLI009_list_shows_sorted_tasks(t *testing.T) {
 		}
 
 		var buf bytes.Buffer
-		PrintListResult(&buf, result)
+		PrintListResult(&buf, result, false)
 		out := buf.String()
 
 		if !strings.Contains(out, "PROJ-42") {
@@ -92,11 +92,39 @@ func TestCLI009_list_shows_sorted_tasks(t *testing.T) {
 		if !strings.Contains(out, "Fix login bug") {
 			t.Errorf("output missing summary, got:\n%s", out)
 		}
-		if !strings.Contains(out, "Bug") {
-			t.Errorf("output missing issue type, got:\n%s", out)
+		// Default mode should not include detail tags like issue type
+		if strings.Contains(out, "Bug") {
+			t.Errorf("default output should not include issue type, got:\n%s", out)
 		}
-		if !strings.Contains(out, "score:") {
-			t.Errorf("output missing score, got:\n%s", out)
+	})
+
+	t.Run("verbose output includes detail line", func(t *testing.T) {
+		due := now.AddDate(0, 0, 5)
+		notBefore := now.AddDate(0, 0, 2)
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
+				{Key: "PROJ-42", Summary: "Fix login bug", Priority: 2, DueDate: &due, RemainingEstimate: 2 * time.Hour, Project: "PROJ", IssueType: "Bug", Created: now.AddDate(0, 0, -3), NotBefore: &notBefore, UpNext: true},
+			},
+		}
+
+		result, err := RunList(context.Background(), ListParams{
+			Tasks: jr,
+			Cfg:   testConfig(),
+			Query: "project = PROJ",
+			Now:   now,
+		})
+		if err != nil {
+			t.Fatalf("RunList: %v", err)
+		}
+
+		var buf bytes.Buffer
+		PrintListResult(&buf, result, true)
+		out := buf.String()
+
+		for _, want := range []string{"Bug", "2h", "Due: Jan 25", "Priority: High", "Not Before: Jan 22", "Up Next"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("verbose output missing %q, got:\n%s", want, out)
+			}
 		}
 	})
 
@@ -114,7 +142,7 @@ func TestCLI009_list_shows_sorted_tasks(t *testing.T) {
 		}
 
 		var buf bytes.Buffer
-		PrintListResult(&buf, result)
+		PrintListResult(&buf, result, false)
 		if !strings.Contains(buf.String(), "No tasks found") {
 			t.Errorf("expected 'No tasks found' message, got:\n%s", buf.String())
 		}
