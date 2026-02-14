@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/iruoy/fylla/internal/calendar"
@@ -97,6 +98,14 @@ func Allocate(tasks []ScoredTask, slotsByProject map[string][]calendar.Slot, cfg
 			taskAllocs = append(taskAllocs, alloc)
 			consumed = append(consumed, allocRange{start: slot.Start, end: slot.End.Add(buffer)})
 			remaining -= slotDur
+		}
+
+		// Split label: annotate each part when a task is split across slots.
+		if len(taskAllocs) > 1 {
+			total := len(taskAllocs)
+			for i := range taskAllocs {
+				taskAllocs[i].Task.Summary = fmt.Sprintf("%s (%d/%d)", taskAllocs[i].Task.Summary, i+1, total)
+			}
 		}
 
 		// At-risk detection: task's last block ends after its due date

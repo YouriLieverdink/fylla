@@ -356,10 +356,16 @@ func Test_ALLOC005_splitting_remainder_above_minimum(t *testing.T) {
 	if result[0].Start != date(2025, 1, 20, 9, 0) || result[0].End != date(2025, 1, 20, 9, 45) {
 		t.Errorf("expected first part at 09:00-09:45, got %v-%v", result[0].Start, result[0].End)
 	}
+	if result[0].Task.Summary != "Splittable task (1/2)" {
+		t.Errorf("expected first part summary 'Splittable task (1/2)', got %q", result[0].Task.Summary)
+	}
 
 	// Second part (45 min remaining) goes to the next slot
 	if result[1].Start != date(2025, 1, 20, 10, 0) || result[1].End != date(2025, 1, 20, 10, 45) {
 		t.Errorf("expected second part at 10:00-10:45, got %v-%v", result[1].Start, result[1].End)
+	}
+	if result[1].Task.Summary != "Splittable task (2/2)" {
+		t.Errorf("expected second part summary 'Splittable task (2/2)', got %q", result[1].Task.Summary)
 	}
 }
 
@@ -851,5 +857,69 @@ func Test_ALLOC010_combined_constraints(t *testing.T) {
 	}
 	if result[0].End != date(2025, 1, 21, 13, 0) {
 		t.Errorf("expected task to end at 13:00, got %v", result[0].End)
+	}
+}
+
+func Test_ALLOC_split_label_not_added_for_single_allocation(t *testing.T) {
+	tasks := []ScoredTask{
+		{
+			Task: task.Task{
+				Key:               "SINGLE-1",
+				Summary:           "Single slot task",
+				RemainingEstimate: 1 * time.Hour,
+				Project:           "PROJ",
+			},
+			Score: 80,
+		},
+	}
+
+	slots := map[string][]calendar.Slot{
+		"": {
+			{Start: date(2025, 1, 20, 9, 0), End: date(2025, 1, 20, 17, 0)},
+		},
+	}
+
+	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 allocation, got %d", len(result))
+	}
+	if result[0].Task.Summary != "Single slot task" {
+		t.Errorf("expected unmodified summary 'Single slot task', got %q", result[0].Task.Summary)
+	}
+}
+
+func Test_ALLOC_split_label_three_parts(t *testing.T) {
+	tasks := []ScoredTask{
+		{
+			Task: task.Task{
+				Key:               "BIG-1",
+				Summary:           "Big task",
+				RemainingEstimate: 3 * time.Hour,
+				Project:           "PROJ",
+			},
+			Score: 80,
+		},
+	}
+
+	slots := map[string][]calendar.Slot{
+		"": {
+			{Start: date(2025, 1, 20, 9, 0), End: date(2025, 1, 20, 10, 0)},
+			{Start: date(2025, 1, 20, 11, 0), End: date(2025, 1, 20, 12, 0)},
+			{Start: date(2025, 1, 20, 13, 0), End: date(2025, 1, 20, 14, 0)},
+		},
+	}
+
+	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+
+	if len(result) != 3 {
+		t.Fatalf("expected 3 allocations, got %d", len(result))
+	}
+
+	expected := []string{"Big task (1/3)", "Big task (2/3)", "Big task (3/3)"}
+	for i, want := range expected {
+		if result[i].Task.Summary != want {
+			t.Errorf("allocation %d: expected summary %q, got %q", i, want, result[i].Task.Summary)
+		}
 	}
 }
