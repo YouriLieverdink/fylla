@@ -65,9 +65,10 @@ func (c *GoogleClient) FetchEvents(ctx context.Context, start, end time.Time) ([
 // parseGoogleEvent converts a Google Calendar event to our Event type.
 func parseGoogleEvent(item *googlecalendar.Event) Event {
 	e := Event{
-		ID:        item.Id,
-		Title:     item.Summary,
-		EventType: item.EventType,
+		ID:          item.Id,
+		Title:       item.Summary,
+		Description: item.Description,
+		EventType:   item.EventType,
 	}
 
 	if item.Start != nil {
@@ -99,13 +100,13 @@ func parseGoogleEvent(item *googlecalendar.Event) Event {
 	return e
 }
 
-// fyllaPrefix is the prefix used for all Fylla-created calendar events.
-const fyllaPrefix = "[Fylla] "
-
-// latePrefix is added before fyllaPrefix for at-risk tasks.
+// latePrefix is added before the summary for at-risk tasks.
 const latePrefix = "[LATE] "
 
-// DeleteFyllaEvents removes all events with the [Fylla] prefix from the fylla calendar
+// fyllaMarker is written into event descriptions to identify Fylla-managed events.
+const fyllaMarker = "fylla:"
+
+// DeleteFyllaEvents removes all Fylla-managed events from the fylla calendar
 // within the given time range.
 func (c *GoogleClient) DeleteFyllaEvents(ctx context.Context, start, end time.Time) error {
 	pageToken := ""
@@ -123,7 +124,7 @@ func (c *GoogleClient) DeleteFyllaEvents(ctx context.Context, start, end time.Ti
 			return fmt.Errorf("list fylla events: %w", err)
 		}
 		for _, item := range result.Items {
-			if hasFyllaPrefix(item.Summary) {
+			if isFyllaEvent(item.Description) {
 				if err := c.Service.Events.Delete(c.FyllaCalendar, item.Id).Context(ctx).Do(); err != nil {
 					return fmt.Errorf("delete event %s: %w", item.Id, err)
 				}
@@ -137,40 +138,53 @@ func (c *GoogleClient) DeleteFyllaEvents(ctx context.Context, start, end time.Ti
 	return nil
 }
 
-func hasFyllaPrefix(title string) bool {
-	return len(title) >= len(fyllaPrefix) && title[:len(fyllaPrefix)] == fyllaPrefix ||
-		len(title) >= len(latePrefix+fyllaPrefix) && title[:len(latePrefix+fyllaPrefix)] == latePrefix+fyllaPrefix
+// isFyllaEvent checks whether an event description contains the Fylla marker.
+func isFyllaEvent(description string) bool {
+	return len(description) >= len(fyllaMarker) && containsStr(description, fyllaMarker)
 }
 
 // BuildTitle constructs the calendar event title for a Fylla task.
 func BuildTitle(taskKey, summary string, atRisk bool) string {
 	if atRisk {
-		return fmt.Sprintf("%s%s%s: %s", latePrefix, fyllaPrefix, taskKey, summary)
+		return latePrefix + summary
 	}
-	return fmt.Sprintf("%s%s: %s", fyllaPrefix, taskKey, summary)
+	return summary
 }
 
-// TaskKeyFromTitle extracts the task key from a Fylla event title.
-// Returns "" if the title does not have a Fylla prefix.
-func TaskKeyFromTitle(title string) string {
-	rest := ""
-	if len(title) >= len(latePrefix+fyllaPrefix) && title[:len(latePrefix+fyllaPrefix)] == latePrefix+fyllaPrefix {
-		rest = title[len(latePrefix+fyllaPrefix):]
-	} else if len(title) >= len(fyllaPrefix) && title[:len(fyllaPrefix)] == fyllaPrefix {
-		rest = title[len(fyllaPrefix):]
-	} else {
+// BuildDescription constructs the calendar event description for a Fylla task.
+func BuildDescription(taskKey, jiraBaseURL string) string {
+	return fmt.Sprintf("%s %s\n%s/browse/%s", fyllaMarker, taskKey, jiraBaseURL, taskKey)
+}
+
+// TaskKeyFromDescription extracts the task key from a Fylla event description.
+// Returns "" if the description does not contain the Fylla marker.
+func TaskKeyFromDescription(description string) string {
+	// Description format: "fylla: KEY\n..."
+	if !containsStr(description, fyllaMarker) {
 		return ""
 	}
-	// rest is "KEY: Summary" — extract KEY
-	for i := 0; i < len(rest); i++ {
-		if rest[i] == ':' {
-			return rest[:i]
+	// Find the marker and extract the key after it
+	for i := 0; i <= len(description)-len(fyllaMarker); i++ {
+		if description[i:i+len(fyllaMarker)] == fyllaMarker {
+			rest := description[i+len(fyllaMarker):]
+			// Skip whitespace
+			start := 0
+			for start < len(rest) && rest[start] == ' ' {
+				start++
+			}
+			rest = rest[start:]
+			// Read until newline or end
+			end := 0
+			for end < len(rest) && rest[end] != '\n' {
+				end++
+			}
+			return rest[:end]
 		}
 	}
-	return rest
+	return ""
 }
 
-// FetchFyllaEvents retrieves only Fylla-prefixed events from the fylla calendar.
+// FetchFyllaEvents retrieves only Fylla-managed events from the fylla calendar.
 func (c *GoogleClient) FetchFyllaEvents(ctx context.Context, start, end time.Time) ([]Event, error) {
 	var events []Event
 	pageToken := ""
@@ -189,7 +203,7 @@ func (c *GoogleClient) FetchFyllaEvents(ctx context.Context, start, end time.Tim
 			return nil, fmt.Errorf("list fylla events: %w", err)
 		}
 		for _, item := range result.Items {
-			if hasFyllaPrefix(item.Summary) {
+			if isFyllaEvent(item.Description) {
 				events = append(events, parseGoogleEvent(item))
 			}
 		}
@@ -204,7 +218,7 @@ func (c *GoogleClient) FetchFyllaEvents(ctx context.Context, start, end time.Tim
 // UpdateEvent updates an existing event on the fylla calendar.
 func (c *GoogleClient) UpdateEvent(ctx context.Context, eventID string, input CreateEventInput) error {
 	title := BuildTitle(input.TaskKey, input.Summary, input.AtRisk)
-	description := fmt.Sprintf("Jira: %s/browse/%s", c.JiraBaseURL, input.TaskKey)
+	description := BuildDescription(input.TaskKey, c.JiraBaseURL)
 
 	event := &googlecalendar.Event{
 		Summary:     title,
@@ -243,7 +257,7 @@ type CreateEventInput struct {
 // CreateEvent creates a new event on the fylla calendar.
 func (c *GoogleClient) CreateEvent(ctx context.Context, input CreateEventInput) error {
 	title := BuildTitle(input.TaskKey, input.Summary, input.AtRisk)
-	description := fmt.Sprintf("Jira: %s/browse/%s", c.JiraBaseURL, input.TaskKey)
+	description := BuildDescription(input.TaskKey, c.JiraBaseURL)
 
 	event := &googlecalendar.Event{
 		Summary:     title,

@@ -215,15 +215,15 @@ func Test_GCAL004_CreateEventsOnFyllaCalendar(t *testing.T) {
 	})
 }
 
-func Test_GCAL005_DeleteFyllaPrefixedEvents(t *testing.T) {
-	t.Run("deletes existing Fylla events on sync", func(t *testing.T) {
+func Test_GCAL005_DeleteFyllaEvents(t *testing.T) {
+	t.Run("deletes Fylla-managed events on sync", func(t *testing.T) {
 		var deletedIDs []string
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodGet {
 				resp := googlecalendar.Events{
 					Items: []*googlecalendar.Event{
-						{Id: "fylla-1", Summary: "[Fylla] PROJ-1: Old task"},
-						{Id: "fylla-2", Summary: "[Fylla] PROJ-2: Another old task"},
+						{Id: "fylla-1", Summary: "Old task", Description: "fylla: PROJ-1\nhttps://co.atlassian.net/browse/PROJ-1"},
+						{Id: "fylla-2", Summary: "Another old task", Description: "fylla: PROJ-2\nhttps://co.atlassian.net/browse/PROJ-2"},
 						{Id: "meeting-1", Summary: "Team meeting"},
 					},
 				}
@@ -284,13 +284,13 @@ func Test_GCAL005_DeleteFyllaPrefixedEvents(t *testing.T) {
 		}
 	})
 
-	t.Run("also deletes LATE prefixed Fylla events", func(t *testing.T) {
+	t.Run("also deletes LATE Fylla events", func(t *testing.T) {
 		var deletedIDs []string
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodGet {
 				resp := googlecalendar.Events{
 					Items: []*googlecalendar.Event{
-						{Id: "late-1", Summary: "[LATE] [Fylla] PROJ-1: Overdue task"},
+						{Id: "late-1", Summary: "[LATE] Overdue task", Description: "fylla: PROJ-1\nhttps://co.atlassian.net/browse/PROJ-1"},
 					},
 				}
 				json.NewEncoder(w).Encode(resp)
@@ -317,7 +317,7 @@ func Test_GCAL005_DeleteFyllaPrefixedEvents(t *testing.T) {
 }
 
 func Test_GCAL006_EventTitleFormat(t *testing.T) {
-	t.Run("normal event has Fylla prefix with key and summary", func(t *testing.T) {
+	t.Run("normal event has summary as title", func(t *testing.T) {
 		var created googlecalendar.Event
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodPost {
@@ -340,7 +340,7 @@ func Test_GCAL006_EventTitleFormat(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateEvent: %v", err)
 		}
-		expected := "[Fylla] PROJ-123: Fix login bug"
+		expected := "Fix login bug"
 		if created.Summary != expected {
 			t.Errorf("expected title %q, got %q", expected, created.Summary)
 		}
@@ -370,7 +370,7 @@ func Test_GCAL006_EventTitleFormat(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateEvent: %v", err)
 		}
-		expected := "[LATE] [Fylla] PROJ-456: Overdue task"
+		expected := "[LATE] Overdue task"
 		if created.Summary != expected {
 			t.Errorf("expected title %q, got %q", expected, created.Summary)
 		}
@@ -378,7 +378,7 @@ func Test_GCAL006_EventTitleFormat(t *testing.T) {
 }
 
 func Test_GCAL007_EventDescriptionIncludesJiraLink(t *testing.T) {
-	t.Run("description contains Jira issue URL", func(t *testing.T) {
+	t.Run("description contains task key and Jira issue URL", func(t *testing.T) {
 		var created googlecalendar.Event
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodPost {
@@ -400,6 +400,9 @@ func Test_GCAL007_EventDescriptionIncludesJiraLink(t *testing.T) {
 		})
 		if err != nil {
 			t.Fatalf("CreateEvent: %v", err)
+		}
+		if !strings.Contains(created.Description, "fylla: PROJ-123") {
+			t.Errorf("expected description to contain fylla marker, got %q", created.Description)
 		}
 		expectedURL := "https://company.atlassian.net/browse/PROJ-123"
 		if !strings.Contains(created.Description, expectedURL) {
@@ -609,8 +612,8 @@ func TestBuildTitle(t *testing.T) {
 		atRisk  bool
 		want    string
 	}{
-		{"normal", "PROJ-1", "Fix bug", false, "[Fylla] PROJ-1: Fix bug"},
-		{"at-risk", "PROJ-2", "Overdue", true, "[LATE] [Fylla] PROJ-2: Overdue"},
+		{"normal", "PROJ-1", "Fix bug", false, "Fix bug"},
+		{"at-risk", "PROJ-2", "Overdue", true, "[LATE] Overdue"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -622,36 +625,54 @@ func TestBuildTitle(t *testing.T) {
 	}
 }
 
-func TestTaskKeyFromTitle(t *testing.T) {
+func TestBuildDescription(t *testing.T) {
 	tests := []struct {
-		title string
-		want  string
+		name    string
+		key     string
+		baseURL string
+		want    string
 	}{
-		{"[Fylla] PROJ-123: Fix login bug", "PROJ-123"},
-		{"[LATE] [Fylla] PROJ-456: Overdue task", "PROJ-456"},
-		{"[Fylla] T-1: Simple", "T-1"},
-		{"Team meeting", ""},
-		{"[Fylla] NOCOLON", "NOCOLON"},
+		{"jira", "PROJ-123", "https://company.atlassian.net", "fylla: PROJ-123\nhttps://company.atlassian.net/browse/PROJ-123"},
+		{"todoist", "T-1", "https://todoist.com", "fylla: T-1\nhttps://todoist.com/browse/T-1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := BuildDescription(tt.key, tt.baseURL)
+			if got != tt.want {
+				t.Errorf("BuildDescription() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTaskKeyFromDescription(t *testing.T) {
+	tests := []struct {
+		desc string
+		want string
+	}{
+		{"fylla: PROJ-123\nhttps://company.atlassian.net/browse/PROJ-123", "PROJ-123"},
+		{"fylla: T-1\nhttps://todoist.com/browse/T-1", "T-1"},
+		{"some random description", ""},
 		{"", ""},
 	}
 	for _, tt := range tests {
-		t.Run(fmt.Sprintf("title=%q", tt.title), func(t *testing.T) {
-			got := TaskKeyFromTitle(tt.title)
+		t.Run(fmt.Sprintf("desc=%q", tt.desc), func(t *testing.T) {
+			got := TaskKeyFromDescription(tt.desc)
 			if got != tt.want {
-				t.Errorf("TaskKeyFromTitle(%q) = %q, want %q", tt.title, got, tt.want)
+				t.Errorf("TaskKeyFromDescription(%q) = %q, want %q", tt.desc, got, tt.want)
 			}
 		})
 	}
 }
 
 func Test_GCAL010_FetchFyllaEvents(t *testing.T) {
-	t.Run("returns only Fylla-prefixed events", func(t *testing.T) {
+	t.Run("returns only Fylla-managed events", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			resp := googlecalendar.Events{
 				Items: []*googlecalendar.Event{
-					{Id: "f1", Summary: "[Fylla] T-1: Task one", Start: &googlecalendar.EventDateTime{DateTime: "2025-01-20T09:00:00Z"}, End: &googlecalendar.EventDateTime{DateTime: "2025-01-20T10:00:00Z"}},
+					{Id: "f1", Summary: "Task one", Description: "fylla: T-1\nhttps://co.atlassian.net/browse/T-1", Start: &googlecalendar.EventDateTime{DateTime: "2025-01-20T09:00:00Z"}, End: &googlecalendar.EventDateTime{DateTime: "2025-01-20T10:00:00Z"}},
 					{Id: "m1", Summary: "Meeting", Start: &googlecalendar.EventDateTime{DateTime: "2025-01-20T10:00:00Z"}, End: &googlecalendar.EventDateTime{DateTime: "2025-01-20T11:00:00Z"}},
-					{Id: "f2", Summary: "[LATE] [Fylla] T-2: Late task", Start: &googlecalendar.EventDateTime{DateTime: "2025-01-20T11:00:00Z"}, End: &googlecalendar.EventDateTime{DateTime: "2025-01-20T12:00:00Z"}},
+					{Id: "f2", Summary: "[LATE] Late task", Description: "fylla: T-2\nhttps://co.atlassian.net/browse/T-2", Start: &googlecalendar.EventDateTime{DateTime: "2025-01-20T11:00:00Z"}, End: &googlecalendar.EventDateTime{DateTime: "2025-01-20T12:00:00Z"}},
 				},
 			}
 			json.NewEncoder(w).Encode(resp)
@@ -733,8 +754,8 @@ func Test_GCAL011_UpdateEvent(t *testing.T) {
 		if eventIDInPath != "evt-123" {
 			t.Errorf("expected event ID evt-123 in path, got %s", eventIDInPath)
 		}
-		if updated.Summary != "[LATE] [Fylla] PROJ-1: Updated task" {
-			t.Errorf("title = %q, want [LATE] [Fylla] PROJ-1: Updated task", updated.Summary)
+		if updated.Summary != "[LATE] Updated task" {
+			t.Errorf("title = %q, want [LATE] Updated task", updated.Summary)
 		}
 	})
 }

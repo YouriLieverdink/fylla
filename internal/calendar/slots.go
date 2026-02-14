@@ -37,6 +37,7 @@ func FindFreeSlots(
 	hours config.BusinessHoursConfig,
 	bufferMinutes int,
 	minDurationMinutes int,
+	snapMinutes []int,
 ) ([]Slot, error) {
 	dayStart, err := parseTimeOfDay(hours.Start)
 	if err != nil {
@@ -97,7 +98,34 @@ func FindFreeSlots(
 		current = nextDay(current)
 	}
 
+	slots = snapSlotStarts(slots, snapMinutes, minDur)
+
 	return slots, nil
+}
+
+// snapSlotStarts snaps each slot's start time forward to the nearest allowed minute.
+func snapSlotStarts(slots []Slot, snapMinutes []int, minDur time.Duration) []Slot {
+	if len(snapMinutes) == 0 {
+		return slots
+	}
+	var result []Slot
+	for _, s := range slots {
+		snapped := snapForward(s.Start, snapMinutes)
+		if snapped.Before(s.End) && s.End.Sub(snapped) >= minDur {
+			result = append(result, Slot{Start: snapped, End: s.End})
+		}
+	}
+	return result
+}
+
+func snapForward(t time.Time, snapMinutes []int) time.Time {
+	min := t.Minute()
+	for _, sm := range snapMinutes {
+		if sm >= min {
+			return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), sm, 0, 0, t.Location())
+		}
+	}
+	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour()+1, snapMinutes[0], 0, 0, t.Location())
 }
 
 type timeOfDay struct {

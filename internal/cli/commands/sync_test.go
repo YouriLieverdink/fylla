@@ -1528,10 +1528,11 @@ func TestSYNC011_incremental_sync(t *testing.T) {
 		cal := &mockCalendar{
 			fyllaEvents: []calendar.Event{
 				{
-					ID:    "evt-1",
-					Title: "[Fylla] T-1: Task 1",
-					Start: time.Date(2025, 1, 20, 9, 15, 0, 0, time.UTC),
-					End:   time.Date(2025, 1, 20, 10, 15, 0, 0, time.UTC),
+					ID:          "evt-1",
+					Title:       "Task 1",
+					Description: "fylla: T-1\nhttps://test.atlassian.net/browse/T-1",
+					Start:       time.Date(2025, 1, 20, 9, 15, 0, 0, time.UTC),
+					End:         time.Date(2025, 1, 20, 10, 15, 0, 0, time.UTC),
 				},
 			},
 		}
@@ -1613,10 +1614,11 @@ func TestSYNC011_incremental_sync(t *testing.T) {
 		cal := &mockCalendar{
 			fyllaEvents: []calendar.Event{
 				{
-					ID:    "evt-old",
-					Title: "[Fylla] OLD-1: Old task",
-					Start: time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
-					End:   time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
+					ID:          "evt-old",
+					Title:       "Old task",
+					Description: "fylla: OLD-1\nhttps://test.atlassian.net/browse/OLD-1",
+					Start:       time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
+					End:         time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
 				},
 			},
 		}
@@ -1663,10 +1665,11 @@ func TestSYNC011_incremental_sync(t *testing.T) {
 			events: []calendar.Event{meeting},
 			fyllaEvents: []calendar.Event{
 				{
-					ID:    "evt-1",
-					Title: "[Fylla] T-1: Task 1",
-					Start: time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
-					End:   time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
+					ID:          "evt-1",
+					Title:       "Task 1",
+					Description: "fylla: T-1\nhttps://test.atlassian.net/browse/T-1",
+					Start:       time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
+					End:         time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
 				},
 			},
 		}
@@ -1705,16 +1708,18 @@ func TestSYNC011_incremental_sync(t *testing.T) {
 		cal := &mockCalendar{
 			fyllaEvents: []calendar.Event{
 				{
-					ID:    "evt-1a",
-					Title: "[Fylla] T-1: Task 1",
-					Start: time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
-					End:   time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
+					ID:          "evt-1a",
+					Title:       "Task 1",
+					Description: "fylla: T-1\nhttps://test.atlassian.net/browse/T-1",
+					Start:       time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
+					End:         time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
 				},
 				{
-					ID:    "evt-1b",
-					Title: "[Fylla] T-1: Task 1",
-					Start: time.Date(2025, 1, 20, 11, 0, 0, 0, time.UTC),
-					End:   time.Date(2025, 1, 20, 12, 0, 0, 0, time.UTC),
+					ID:          "evt-1b",
+					Title:       "Task 1",
+					Description: "fylla: T-1\nhttps://test.atlassian.net/browse/T-1",
+					Start:       time.Date(2025, 1, 20, 11, 0, 0, 0, time.UTC),
+					End:         time.Date(2025, 1, 20, 12, 0, 0, 0, time.UTC),
 				},
 			},
 		}
@@ -1756,10 +1761,11 @@ func TestSYNC011_incremental_sync(t *testing.T) {
 		cal := &mockCalendar{
 			fyllaEvents: []calendar.Event{
 				{
-					ID:    "evt-1",
-					Title: "[Fylla] T-1: Task 1",
-					Start: time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
-					End:   time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
+					ID:          "evt-1",
+					Title:       "Task 1",
+					Description: "fylla: T-1\nhttps://test.atlassian.net/browse/T-1",
+					Start:       time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
+					End:         time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
 				},
 			},
 		}

@@ -19,6 +19,7 @@ scheduling:
   windowDays: 5
   minTaskDurationMinutes: 25
   bufferMinutes: 15
+  snapMinutes: [0, 15, 30, 45]
 
 businessHours:
   start: "09:00"

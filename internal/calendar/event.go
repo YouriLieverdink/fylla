@@ -4,12 +4,13 @@ import "time"
 
 // Event represents a calendar event with fields relevant to scheduling.
 type Event struct {
-	ID        string
-	Title     string
-	Start     time.Time
-	End       time.Time
-	EventType string // e.g. "outOfOffice", "default"
-	AllDay    bool
+	ID          string
+	Title       string
+	Description string
+	Start       time.Time
+	End         time.Time
+	EventType   string // e.g. "outOfOffice", "default"
+	AllDay      bool
 }
 
 // IsOOO returns true if the event represents an out-of-office period.

@@ -38,9 +38,10 @@ type CalendarConfig struct {
 
 // SchedulingConfig holds scheduling parameters.
 type SchedulingConfig struct {
-	WindowDays             int `yaml:"windowDays"`
-	MinTaskDurationMinutes int `yaml:"minTaskDurationMinutes"`
-	BufferMinutes          int `yaml:"bufferMinutes"`
+	WindowDays             int   `yaml:"windowDays"`
+	MinTaskDurationMinutes int   `yaml:"minTaskDurationMinutes"`
+	BufferMinutes          int   `yaml:"bufferMinutes"`
+	SnapMinutes            []int `yaml:"snapMinutes"`
 }
 
 // BusinessHoursConfig holds default business hours.

@@ -215,6 +215,7 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 		p.Cfg.BusinessHours,
 		p.Cfg.Scheduling.BufferMinutes,
 		p.Cfg.Scheduling.MinTaskDurationMinutes,
+		p.Cfg.Scheduling.SnapMinutes,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("find default slots: %w", err)
@@ -228,6 +229,7 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 			hours,
 			p.Cfg.Scheduling.BufferMinutes,
 			p.Cfg.Scheduling.MinTaskDurationMinutes,
+			p.Cfg.Scheduling.SnapMinutes,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("find slots for project %s: %w", project, err)
@@ -239,6 +241,8 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 	progress(p.Progress, "Scheduling %d tasks into available slots...", len(sorted))
 	allocations := scheduler.Allocate(sorted, slotsByProject, scheduler.AllocateConfig{
 		MinTaskDurationMinutes: p.Cfg.Scheduling.MinTaskDurationMinutes,
+		BufferMinutes:          p.Cfg.Scheduling.BufferMinutes,
+		SnapMinutes:            p.Cfg.Scheduling.SnapMinutes,
 	})
 
 	// Step 5b: Identify unscheduled tasks
@@ -335,7 +339,7 @@ func reconcile(ctx context.Context, cal CalendarClient, existing []calendar.Even
 	// Group existing events by task key, preserving order.
 	existingByKey := make(map[string][]calendar.Event)
 	for _, ev := range existing {
-		key := calendar.TaskKeyFromTitle(ev.Title)
+		key := calendar.TaskKeyFromDescription(ev.Description)
 		if key == "" {
 			continue
 		}
@@ -398,7 +402,7 @@ func reconcile(ctx context.Context, cal CalendarClient, existing []calendar.Even
 		if matchedExisting[ev.ID] {
 			continue
 		}
-		key := calendar.TaskKeyFromTitle(ev.Title)
+		key := calendar.TaskKeyFromDescription(ev.Description)
 		if key == "" {
 			continue
 		}
@@ -417,7 +421,8 @@ func reconcile(ctx context.Context, cal CalendarClient, existing []calendar.Even
 // eventsMatch returns true if an existing calendar event matches the desired state.
 func eventsMatch(existing calendar.Event, desired desiredEvent) bool {
 	return existing.Start.Equal(desired.Start) && existing.End.Equal(desired.End) &&
-		calendar.BuildTitle(desired.TaskKey, desired.Summary, desired.AtRisk) == existing.Title
+		calendar.BuildTitle(desired.TaskKey, desired.Summary, desired.AtRisk) == existing.Title &&
+		calendar.TaskKeyFromDescription(existing.Description) == desired.TaskKey
 }
 
 func newSyncCmd() *cobra.Command {

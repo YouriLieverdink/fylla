@@ -21,6 +21,8 @@ type Allocation struct {
 // AllocateConfig holds parameters for the allocation algorithm.
 type AllocateConfig struct {
 	MinTaskDurationMinutes int
+	BufferMinutes          int
+	SnapMinutes            []int
 }
 
 // Allocate assigns sorted tasks to available free slots using a first-fit algorithm.
@@ -32,6 +34,7 @@ type AllocateConfig struct {
 // that time is consumed globally across all project slot lists.
 func Allocate(tasks []ScoredTask, slotsByProject map[string][]calendar.Slot, cfg AllocateConfig) []Allocation {
 	minDur := time.Duration(cfg.MinTaskDurationMinutes) * time.Minute
+	buffer := time.Duration(cfg.BufferMinutes) * time.Minute
 
 	var consumed []allocRange
 	var allocations []Allocation
@@ -44,6 +47,7 @@ func Allocate(tasks []ScoredTask, slotsByProject map[string][]calendar.Slot, cfg
 
 		slots := projectSlots(slotsByProject, st.Task.Project)
 		available := availableSlots(slots, consumed, minDur)
+		available = snapSlotStarts(available, cfg.SnapMinutes, minDur)
 
 		// Filter out slots that start before the task's not-before date
 		if st.Task.NotBefore != nil {
@@ -68,7 +72,7 @@ func Allocate(tasks []ScoredTask, slotsByProject map[string][]calendar.Slot, cfg
 					End:   slot.Start.Add(remaining),
 				}
 				taskAllocs = append(taskAllocs, alloc)
-				consumed = append(consumed, allocRange{start: alloc.Start, end: alloc.End})
+				consumed = append(consumed, allocRange{start: alloc.Start, end: alloc.End.Add(buffer)})
 				remaining = 0
 				break
 			}
@@ -91,7 +95,7 @@ func Allocate(tasks []ScoredTask, slotsByProject map[string][]calendar.Slot, cfg
 				End:   slot.End,
 			}
 			taskAllocs = append(taskAllocs, alloc)
-			consumed = append(consumed, allocRange{start: slot.Start, end: slot.End})
+			consumed = append(consumed, allocRange{start: slot.Start, end: slot.End.Add(buffer)})
 			remaining -= slotDur
 		}
 
@@ -172,4 +176,34 @@ func subtractConsumedRanges(slot calendar.Slot, ranges []allocRange) []calendar.
 		current = next
 	}
 	return current
+}
+
+// snapSlotStarts snaps each slot's start time forward to the nearest allowed minute.
+// If snapMinutes is empty, no snapping is applied.
+func snapSlotStarts(slots []calendar.Slot, snapMinutes []int, minDur time.Duration) []calendar.Slot {
+	if len(snapMinutes) == 0 {
+		return slots
+	}
+	var result []calendar.Slot
+	for _, s := range slots {
+		snapped := snapForward(s.Start, snapMinutes)
+		if snapped.Before(s.End) && s.End.Sub(snapped) >= minDur {
+			result = append(result, calendar.Slot{Start: snapped, End: s.End})
+		}
+	}
+	return result
+}
+
+// snapForward rounds a time forward to the nearest allowed minute within an hour.
+func snapForward(t time.Time, snapMinutes []int) time.Time {
+	min := t.Minute()
+	// Find the smallest snap minute >= current minute
+	for _, sm := range snapMinutes {
+		if sm >= min {
+			return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), sm, 0, 0, t.Location())
+		}
+	}
+	// No snap minute found in this hour — go to first snap minute of next hour
+	next := time.Date(t.Year(), t.Month(), t.Day(), t.Hour()+1, snapMinutes[0], 0, 0, t.Location())
+	return next
 }
