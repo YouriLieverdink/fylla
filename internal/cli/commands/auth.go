@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	"github.com/iruoy/fylla/internal/calendar"
 	"github.com/iruoy/fylla/internal/config"
@@ -39,10 +40,7 @@ func RunAuthJira(p AuthJiraParams) error {
 
 	credPath := cfg.Jira.Credentials
 	if credPath == "" {
-		credPath, err = config.DefaultProviderCredentialsPath("jira")
-		if err != nil {
-			return fmt.Errorf("default credentials path: %w", err)
-		}
+		credPath = filepath.Join(filepath.Dir(p.ConfigPath), "jira_credentials.json")
 	}
 
 	cfg.Jira.URL = p.URL
@@ -133,10 +131,7 @@ func RunAuthTodoist(p AuthTodoistParams) error {
 
 	credPath := cfg.Todoist.Credentials
 	if credPath == "" {
-		credPath, err = config.DefaultProviderCredentialsPath("todoist")
-		if err != nil {
-			return fmt.Errorf("default credentials path: %w", err)
-		}
+		credPath = filepath.Join(filepath.Dir(p.ConfigPath), "todoist_credentials.json")
 	}
 
 	cfg.Todoist.Credentials = credPath
