@@ -4,14 +4,14 @@ import "fmt"
 
 // Config represents the fylla configuration file.
 type Config struct {
-	Providers     []string               `yaml:"providers"`
-	Jira          JiraConfig             `yaml:"jira"`
-	Todoist       TodoistConfig          `yaml:"todoist"`
-	Calendar      CalendarConfig         `yaml:"calendar"`
-	Scheduling    SchedulingConfig       `yaml:"scheduling"`
-	BusinessHours BusinessHoursConfig    `yaml:"businessHours"`
-	ProjectRules  map[string]ProjectRule `yaml:"projectRules"`
-	Weights       WeightsConfig          `yaml:"weights"`
+	Providers     []string                         `yaml:"providers"`
+	Jira          JiraConfig                       `yaml:"jira"`
+	Todoist       TodoistConfig                    `yaml:"todoist"`
+	Calendar      CalendarConfig                   `yaml:"calendar"`
+	Scheduling    SchedulingConfig                 `yaml:"scheduling"`
+	BusinessHours []BusinessHoursConfig            `yaml:"businessHours"`
+	ProjectRules  map[string][]BusinessHoursConfig `yaml:"projectRules"`
+	Weights       WeightsConfig                    `yaml:"weights"`
 }
 
 // ActiveProviders returns the list of configured providers.
@@ -62,13 +62,6 @@ type BusinessHoursConfig struct {
 	WorkDays []int  `yaml:"workDays"`
 }
 
-// ProjectRule holds project-specific scheduling rules.
-type ProjectRule struct {
-	Start    string `yaml:"start"`
-	End      string `yaml:"end"`
-	WorkDays []int  `yaml:"workDays"`
-}
-
 // WeightsConfig holds sorting algorithm weights.
 type WeightsConfig struct {
 	Priority float64 `yaml:"priority"`
@@ -103,15 +96,21 @@ func (c *Config) Validate() error {
 	}
 
 	// Business hours
-	if err := validateBusinessHours(c.BusinessHours, "businessHours"); err != nil {
-		return err
+	if len(c.BusinessHours) == 0 {
+		return fmt.Errorf("businessHours: at least one entry is required")
+	}
+	for i, bh := range c.BusinessHours {
+		if err := validateBusinessHours(bh, fmt.Sprintf("businessHours[%d]", i)); err != nil {
+			return err
+		}
 	}
 
 	// Project rules
-	for name, rule := range c.ProjectRules {
-		bh := BusinessHoursConfig{Start: rule.Start, End: rule.End, WorkDays: rule.WorkDays}
-		if err := validateBusinessHours(bh, fmt.Sprintf("projectRules.%s", name)); err != nil {
-			return err
+	for name, windows := range c.ProjectRules {
+		for i, bh := range windows {
+			if err := validateBusinessHours(bh, fmt.Sprintf("projectRules.%s[%d]", name, i)); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -168,15 +167,11 @@ func parseHHMM(s string) (int, int, error) {
 }
 
 // BusinessHoursFor returns the business hours for a project key.
-// If a project-specific rule exists, it is returned as a BusinessHoursConfig.
+// If a project-specific rule exists, it is returned.
 // Otherwise, the default business hours are returned.
-func (c *Config) BusinessHoursFor(projectKey string) BusinessHoursConfig {
-	if rule, ok := c.ProjectRules[projectKey]; ok {
-		return BusinessHoursConfig{
-			Start:    rule.Start,
-			End:      rule.End,
-			WorkDays: rule.WorkDays,
-		}
+func (c *Config) BusinessHoursFor(projectKey string) []BusinessHoursConfig {
+	if windows, ok := c.ProjectRules[projectKey]; ok {
+		return windows
 	}
 	return c.BusinessHours
 }

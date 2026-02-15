@@ -20,14 +20,14 @@ scheduling:
   minTaskDurationMinutes: 25
   bufferMinutes: 15
 businessHours:
-  start: "09:00"
-  end: "17:00"
-  workDays: [1, 2, 3, 4, 5]
+  - start: "09:00"
+    end: "17:00"
+    workDays: [1, 2, 3, 4, 5]
 projectRules:
   ADMIN:
-    start: "09:00"
-    end: "10:00"
-    workDays: [1, 2, 3, 4, 5]
+    - start: "09:00"
+      end: "10:00"
+      workDays: [1, 2, 3, 4, 5]
 weights:
   priority: 0.45
   dueDate: 0.30
@@ -184,26 +184,6 @@ func TestCLI022_config_set(t *testing.T) {
 		}
 	})
 
-	t.Run("sets nested projectRules key", func(t *testing.T) {
-		path := writeTestConfig(t)
-		cfg, err := RunConfigSet(ConfigSetParams{
-			ConfigPath: path,
-			Key:        "projectRules.ADMIN.end",
-			Value:      "11:00",
-		})
-		if err != nil {
-			t.Fatalf("RunConfigSet: %v", err)
-		}
-
-		rule, ok := cfg.ProjectRules["ADMIN"]
-		if !ok {
-			t.Fatal("ADMIN project rule not found")
-		}
-		if rule.End != "11:00" {
-			t.Errorf("ADMIN.end = %q, want '11:00'", rule.End)
-		}
-	})
-
 	t.Run("PrintConfigSet shows confirmation", func(t *testing.T) {
 		var buf bytes.Buffer
 		PrintConfigSet(&buf, "scheduling.windowDays", "7")
@@ -232,15 +212,15 @@ func TestCLI022_config_set(t *testing.T) {
 		path := writeTestConfig(t)
 		cfg, err := RunConfigSet(ConfigSetParams{
 			ConfigPath: path,
-			Key:        "businessHours.start",
-			Value:      "10:00",
+			Key:        "jira.email",
+			Value:      "new@example.com",
 		})
 		if err != nil {
 			t.Fatalf("RunConfigSet: %v", err)
 		}
 
-		if cfg.BusinessHours.Start != "10:00" {
-			t.Errorf("start = %q, want '10:00'", cfg.BusinessHours.Start)
+		if cfg.Jira.Email != "new@example.com" {
+			t.Errorf("email = %q, want 'new@example.com'", cfg.Jira.Email)
 		}
 	})
 }

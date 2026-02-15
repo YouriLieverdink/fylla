@@ -37,9 +37,9 @@ scheduling:
   minTaskDurationMinutes: 25
   bufferMinutes: 15
 businessHours:
-  start: "09:00"
-  end: "17:00"
-  workDays: [1, 2, 3, 4, 5]
+  - start: "09:00"
+    end: "17:00"
+    workDays: [1, 2, 3, 4, 5]
 weights:
   priority: 0.45
   dueDate: 0.30

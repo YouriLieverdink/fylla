@@ -105,19 +105,22 @@ func TestCFG005_BusinessHours(t *testing.T) {
 		t.Fatalf("LoadFrom: %v", err)
 	}
 
-	if cfg.BusinessHours.Start != "09:00" {
-		t.Errorf("Start = %q", cfg.BusinessHours.Start)
+	if len(cfg.BusinessHours) != 1 {
+		t.Fatalf("BusinessHours len = %d, want 1", len(cfg.BusinessHours))
 	}
-	if cfg.BusinessHours.End != "17:00" {
-		t.Errorf("End = %q", cfg.BusinessHours.End)
+	if cfg.BusinessHours[0].Start != "09:00" {
+		t.Errorf("Start = %q", cfg.BusinessHours[0].Start)
+	}
+	if cfg.BusinessHours[0].End != "17:00" {
+		t.Errorf("End = %q", cfg.BusinessHours[0].End)
 	}
 	expectedDays := []int{1, 2, 3, 4, 5}
-	if len(cfg.BusinessHours.WorkDays) != len(expectedDays) {
-		t.Fatalf("WorkDays len = %d", len(cfg.BusinessHours.WorkDays))
+	if len(cfg.BusinessHours[0].WorkDays) != len(expectedDays) {
+		t.Fatalf("WorkDays len = %d", len(cfg.BusinessHours[0].WorkDays))
 	}
 	for i, d := range expectedDays {
-		if cfg.BusinessHours.WorkDays[i] != d {
-			t.Errorf("WorkDays[%d] = %d, want %d", i, cfg.BusinessHours.WorkDays[i], d)
+		if cfg.BusinessHours[0].WorkDays[i] != d {
+			t.Errorf("WorkDays[%d] = %d, want %d", i, cfg.BusinessHours[0].WorkDays[i], d)
 		}
 	}
 }
@@ -131,15 +134,21 @@ func TestCFG006_BusinessHoursFor(t *testing.T) {
 
 	t.Run("project rule exists", func(t *testing.T) {
 		bh := cfg.BusinessHoursFor("ADMIN")
-		if bh.Start != "09:00" || bh.End != "10:00" {
-			t.Errorf("ADMIN hours = %s-%s", bh.Start, bh.End)
+		if len(bh) != 1 {
+			t.Fatalf("ADMIN hours len = %d, want 1", len(bh))
+		}
+		if bh[0].Start != "09:00" || bh[0].End != "10:00" {
+			t.Errorf("ADMIN hours = %s-%s", bh[0].Start, bh[0].End)
 		}
 	})
 
 	t.Run("unknown project returns default", func(t *testing.T) {
 		bh := cfg.BusinessHoursFor("UNKNOWN")
-		if bh.Start != "09:00" || bh.End != "17:00" {
-			t.Errorf("default hours = %s-%s", bh.Start, bh.End)
+		if len(bh) != 1 {
+			t.Fatalf("default hours len = %d, want 1", len(bh))
+		}
+		if bh[0].Start != "09:00" || bh[0].End != "17:00" {
+			t.Errorf("default hours = %s-%s", bh[0].Start, bh[0].End)
 		}
 	})
 }
@@ -317,11 +326,11 @@ func TestValidate(t *testing.T) {
 				MinTaskDurationMinutes: 25,
 				BufferMinutes:          15,
 			},
-			BusinessHours: BusinessHoursConfig{
+			BusinessHours: []BusinessHoursConfig{{
 				Start:    "09:00",
 				End:      "17:00",
 				WorkDays: []int{1, 2, 3, 4, 5},
-			},
+			}},
 			Weights: WeightsConfig{
 				Priority: 0.45,
 				DueDate:  0.30,
@@ -357,7 +366,7 @@ func TestValidate(t *testing.T) {
 
 	t.Run("invalid business hours start format", func(t *testing.T) {
 		cfg := validConfig()
-		cfg.BusinessHours.Start = "9:00"
+		cfg.BusinessHours[0].Start = "9:00"
 		if err := cfg.Validate(); err == nil {
 			t.Error("expected error for invalid start time")
 		}
@@ -365,7 +374,7 @@ func TestValidate(t *testing.T) {
 
 	t.Run("invalid business hours end format", func(t *testing.T) {
 		cfg := validConfig()
-		cfg.BusinessHours.End = "25:00"
+		cfg.BusinessHours[0].End = "25:00"
 		if err := cfg.Validate(); err == nil {
 			t.Error("expected error for invalid end time")
 		}
@@ -373,8 +382,8 @@ func TestValidate(t *testing.T) {
 
 	t.Run("business hours start after end", func(t *testing.T) {
 		cfg := validConfig()
-		cfg.BusinessHours.Start = "17:00"
-		cfg.BusinessHours.End = "09:00"
+		cfg.BusinessHours[0].Start = "17:00"
+		cfg.BusinessHours[0].End = "09:00"
 		if err := cfg.Validate(); err == nil {
 			t.Error("expected error for start after end")
 		}
@@ -382,7 +391,7 @@ func TestValidate(t *testing.T) {
 
 	t.Run("invalid work day", func(t *testing.T) {
 		cfg := validConfig()
-		cfg.BusinessHours.WorkDays = []int{0, 1, 2}
+		cfg.BusinessHours[0].WorkDays = []int{0, 1, 2}
 		if err := cfg.Validate(); err == nil {
 			t.Error("expected error for invalid work day 0")
 		}
@@ -390,9 +399,17 @@ func TestValidate(t *testing.T) {
 
 	t.Run("work day 8 is invalid", func(t *testing.T) {
 		cfg := validConfig()
-		cfg.BusinessHours.WorkDays = []int{1, 8}
+		cfg.BusinessHours[0].WorkDays = []int{1, 8}
 		if err := cfg.Validate(); err == nil {
 			t.Error("expected error for work day 8")
+		}
+	})
+
+	t.Run("empty business hours fails", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.BusinessHours = []BusinessHoursConfig{}
+		if err := cfg.Validate(); err == nil {
+			t.Error("expected error for empty business hours")
 		}
 	})
 
@@ -414,8 +431,8 @@ func TestValidate(t *testing.T) {
 
 	t.Run("invalid project rule", func(t *testing.T) {
 		cfg := validConfig()
-		cfg.ProjectRules = map[string]ProjectRule{
-			"BAD": {Start: "abc", End: "17:00", WorkDays: []int{1}},
+		cfg.ProjectRules = map[string][]BusinessHoursConfig{
+			"BAD": {{Start: "abc", End: "17:00", WorkDays: []int{1}}},
 		}
 		if err := cfg.Validate(); err == nil {
 			t.Error("expected error for invalid project rule")
@@ -424,8 +441,8 @@ func TestValidate(t *testing.T) {
 
 	t.Run("project rule start after end", func(t *testing.T) {
 		cfg := validConfig()
-		cfg.ProjectRules = map[string]ProjectRule{
-			"BAD": {Start: "18:00", End: "09:00", WorkDays: []int{1}},
+		cfg.ProjectRules = map[string][]BusinessHoursConfig{
+			"BAD": {{Start: "18:00", End: "09:00", WorkDays: []int{1}}},
 		}
 		if err := cfg.Validate(); err == nil {
 			t.Error("expected error for project rule start after end")
@@ -451,9 +468,6 @@ func TestKeyPaths(t *testing.T) {
 		"scheduling.windowDays",
 		"scheduling.minTaskDurationMinutes",
 		"scheduling.bufferMinutes",
-		"businessHours.start",
-		"businessHours.end",
-		"businessHours.workDays",
 		"weights.priority",
 		"weights.dueDate",
 		"weights.estimate",
@@ -478,9 +492,10 @@ func TestKeyPaths(t *testing.T) {
 	}
 
 	// Verify no bare section names (mapping nodes should not appear as paths)
+	// Note: businessHours is now a sequence node, so it correctly appears as a leaf path
 	for _, p := range paths {
 		switch p {
-		case "jira", "todoist", "calendar", "scheduling", "businessHours", "weights":
+		case "jira", "todoist", "calendar", "scheduling", "weights":
 			t.Errorf("section name %q should not be a leaf path", p)
 		}
 	}
@@ -494,11 +509,11 @@ func TestValidateProviders(t *testing.T) {
 				MinTaskDurationMinutes: 25,
 				BufferMinutes:          15,
 			},
-			BusinessHours: BusinessHoursConfig{
+			BusinessHours: []BusinessHoursConfig{{
 				Start:    "09:00",
 				End:      "17:00",
 				WorkDays: []int{1, 2, 3, 4, 5},
-			},
+			}},
 			Weights: WeightsConfig{
 				Priority: 0.45,
 				DueDate:  0.30,

@@ -90,11 +90,11 @@ func testConfig() *config.Config {
 			MinTaskDurationMinutes: 25,
 			BufferMinutes:          15,
 		},
-		BusinessHours: config.BusinessHoursConfig{
+		BusinessHours: []config.BusinessHoursConfig{{
 			Start:    "09:00",
 			End:      "17:00",
 			WorkDays: []int{1, 2, 3, 4, 5},
-		},
+		}},
 		Weights: config.WeightsConfig{
 			Priority: 0.45,
 			DueDate:  0.30,
@@ -431,8 +431,8 @@ func TestSYNC005_find_free_slots_per_project(t *testing.T) {
 
 	t.Run("project-specific time windows", func(t *testing.T) {
 		cfg := testConfig()
-		cfg.ProjectRules = map[string]config.ProjectRule{
-			"ADMIN": {Start: "09:00", End: "10:00", WorkDays: []int{1, 2, 3, 4, 5}},
+		cfg.ProjectRules = map[string][]config.BusinessHoursConfig{
+			"ADMIN": {{Start: "09:00", End: "10:00", WorkDays: []int{1, 2, 3, 4, 5}}},
 		}
 
 		cal := &mockCalendar{}
@@ -469,8 +469,8 @@ func TestSYNC005_find_free_slots_per_project(t *testing.T) {
 
 	t.Run("non-project tasks use default business hours", func(t *testing.T) {
 		cfg := testConfig()
-		cfg.ProjectRules = map[string]config.ProjectRule{
-			"ADMIN": {Start: "09:00", End: "10:00", WorkDays: []int{1, 2, 3, 4, 5}},
+		cfg.ProjectRules = map[string][]config.BusinessHoursConfig{
+			"ADMIN": {{Start: "09:00", End: "10:00", WorkDays: []int{1, 2, 3, 4, 5}}},
 		}
 
 		cal := &mockCalendar{}

@@ -7,12 +7,12 @@ import (
 	"github.com/iruoy/fylla/internal/config"
 )
 
-func defaultHours() config.BusinessHoursConfig {
-	return config.BusinessHoursConfig{
+func defaultHours() []config.BusinessHoursConfig {
+	return []config.BusinessHoursConfig{{
 		Start:    "09:00",
 		End:      "17:00",
 		WorkDays: []int{1, 2, 3, 4, 5},
-	}
+	}}
 }
 
 func dt(year, month, day, hour, min int) time.Time {
@@ -26,11 +26,11 @@ func Test_SLOT001_filter_slots_to_business_hours(t *testing.T) {
 	rangeEnd := dt(2025, 1, 20, 23, 59)
 
 	t.Run("slots fall within configured business hours", func(t *testing.T) {
-		hours := config.BusinessHoursConfig{
+		hours := []config.BusinessHoursConfig{{
 			Start:    "09:00",
 			End:      "17:00",
 			WorkDays: []int{1, 2, 3, 4, 5},
-		}
+		}}
 		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, hours, 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -49,11 +49,11 @@ func Test_SLOT001_filter_slots_to_business_hours(t *testing.T) {
 	})
 
 	t.Run("custom business hours 10:00-16:00", func(t *testing.T) {
-		hours := config.BusinessHoursConfig{
+		hours := []config.BusinessHoursConfig{{
 			Start:    "10:00",
 			End:      "16:00",
 			WorkDays: []int{1, 2, 3, 4, 5},
-		}
+		}}
 		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, hours, 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -67,11 +67,11 @@ func Test_SLOT001_filter_slots_to_business_hours(t *testing.T) {
 	})
 
 	t.Run("no tasks scheduled outside business hours", func(t *testing.T) {
-		hours := config.BusinessHoursConfig{
+		hours := []config.BusinessHoursConfig{{
 			Start:    "09:00",
 			End:      "17:00",
 			WorkDays: []int{1, 2, 3, 4, 5},
-		}
+		}}
 		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, hours, 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -120,11 +120,11 @@ func Test_SLOT002_skip_weekends(t *testing.T) {
 	})
 
 	t.Run("configurable work days include weekend", func(t *testing.T) {
-		hours := config.BusinessHoursConfig{
+		hours := []config.BusinessHoursConfig{{
 			Start:    "09:00",
 			End:      "17:00",
 			WorkDays: []int{1, 2, 3, 4, 5, 6}, // include Saturday
-		}
+		}}
 		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, hours, 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -139,11 +139,11 @@ func Test_SLOT002_skip_weekends(t *testing.T) {
 	})
 
 	t.Run("custom work days Mon-Thu only", func(t *testing.T) {
-		hours := config.BusinessHoursConfig{
+		hours := []config.BusinessHoursConfig{{
 			Start:    "09:00",
 			End:      "17:00",
 			WorkDays: []int{1, 2, 3, 4}, // no Friday
-		}
+		}}
 		// Wed Jan 15 to Fri Jan 17
 		rangeStart := dt(2025, 1, 15, 0, 0)
 		rangeEnd := dt(2025, 1, 17, 23, 59)
@@ -222,11 +222,11 @@ func Test_SLOT004_project_aware_time_windows(t *testing.T) {
 	rangeEnd := dt(2025, 1, 20, 23, 59)
 
 	t.Run("ADMIN project only scheduled 09:00-10:00", func(t *testing.T) {
-		adminHours := config.BusinessHoursConfig{
+		adminHours := []config.BusinessHoursConfig{{
 			Start:    "09:00",
 			End:      "10:00",
 			WorkDays: []int{1, 2, 3, 4, 5},
-		}
+		}}
 		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, adminHours, 0, 1, nil, 0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -254,22 +254,22 @@ func Test_SLOT004_project_aware_time_windows(t *testing.T) {
 
 	t.Run("BusinessHoursFor returns project-specific or default", func(t *testing.T) {
 		cfg := &config.Config{
-			BusinessHours: config.BusinessHoursConfig{
+			BusinessHours: []config.BusinessHoursConfig{{
 				Start:    "09:00",
 				End:      "17:00",
 				WorkDays: []int{1, 2, 3, 4, 5},
-			},
-			ProjectRules: map[string]config.ProjectRule{
-				"ADMIN": {Start: "09:00", End: "10:00", WorkDays: []int{1, 2, 3, 4, 5}},
+			}},
+			ProjectRules: map[string][]config.BusinessHoursConfig{
+				"ADMIN": {{Start: "09:00", End: "10:00", WorkDays: []int{1, 2, 3, 4, 5}}},
 			},
 		}
 		adminHours := cfg.BusinessHoursFor("ADMIN")
-		if adminHours.End != "10:00" {
-			t.Errorf("expected ADMIN end 10:00, got %s", adminHours.End)
+		if adminHours[0].End != "10:00" {
+			t.Errorf("expected ADMIN end 10:00, got %s", adminHours[0].End)
 		}
 		defaultBH := cfg.BusinessHoursFor("OTHER")
-		if defaultBH.End != "17:00" {
-			t.Errorf("expected default end 17:00, got %s", defaultBH.End)
+		if defaultBH[0].End != "17:00" {
+			t.Errorf("expected default end 17:00, got %s", defaultBH[0].End)
 		}
 	})
 }
@@ -478,6 +478,61 @@ func Test_SLOT007_multi_day_OOO_handled(t *testing.T) {
 		}
 		if !days[21] || !days[22] || !days[24] {
 			t.Errorf("expected slots on non-OOO days, got: %v", days)
+		}
+	})
+}
+
+func Test_SLOT008_multiple_business_hour_windows(t *testing.T) {
+	// Monday 2025-01-20
+	now := dt(2025, 1, 20, 7, 0)
+	rangeStart := dt(2025, 1, 20, 0, 0)
+	rangeEnd := dt(2025, 1, 20, 23, 59)
+
+	t.Run("two windows produce two slots with no events", func(t *testing.T) {
+		hours := []config.BusinessHoursConfig{
+			{Start: "09:00", End: "12:00", WorkDays: []int{1, 2, 3, 4, 5}},
+			{Start: "13:00", End: "17:00", WorkDays: []int{1, 2, 3, 4, 5}},
+		}
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, nil, hours, 0, 1, nil, 0)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(slots) != 2 {
+			t.Fatalf("expected 2 slots, got %d", len(slots))
+		}
+		if slots[0].Start != dt(2025, 1, 20, 9, 0) || slots[0].End != dt(2025, 1, 20, 12, 0) {
+			t.Errorf("first slot = %v-%v, want 09:00-12:00", slots[0].Start, slots[0].End)
+		}
+		if slots[1].Start != dt(2025, 1, 20, 13, 0) || slots[1].End != dt(2025, 1, 20, 17, 0) {
+			t.Errorf("second slot = %v-%v, want 13:00-17:00", slots[1].Start, slots[1].End)
+		}
+	})
+
+	t.Run("event spanning gap only affects relevant window", func(t *testing.T) {
+		hours := []config.BusinessHoursConfig{
+			{Start: "09:00", End: "12:00", WorkDays: []int{1, 2, 3, 4, 5}},
+			{Start: "13:00", End: "17:00", WorkDays: []int{1, 2, 3, 4, 5}},
+		}
+		// Meeting from 11:00-14:00 spans the lunch gap
+		meeting := Event{
+			Title: "Long meeting",
+			Start: dt(2025, 1, 20, 11, 0),
+			End:   dt(2025, 1, 20, 14, 0),
+		}
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{meeting}, hours, 0, 1, nil, 0)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// First window: 09:00-11:00 (before meeting)
+		// Second window: 14:00-17:00 (after meeting)
+		if len(slots) != 2 {
+			t.Fatalf("expected 2 slots, got %d", len(slots))
+		}
+		if slots[0].Start != dt(2025, 1, 20, 9, 0) || slots[0].End != dt(2025, 1, 20, 11, 0) {
+			t.Errorf("first slot = %v-%v, want 09:00-11:00", slots[0].Start, slots[0].End)
+		}
+		if slots[1].Start != dt(2025, 1, 20, 14, 0) || slots[1].End != dt(2025, 1, 20, 17, 0) {
+			t.Errorf("second slot = %v-%v, want 14:00-17:00", slots[1].Start, slots[1].End)
 		}
 	})
 }

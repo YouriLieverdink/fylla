@@ -35,24 +35,33 @@ func FindFreeSlots(
 	now time.Time,
 	rangeStart, rangeEnd time.Time,
 	events []Event,
-	hours config.BusinessHoursConfig,
+	hours []config.BusinessHoursConfig,
 	bufferMinutes int,
 	minDurationMinutes int,
 	snapMinutes []int,
 	travelBufferMinutes int,
 ) ([]Slot, error) {
-	dayStart, err := parseTimeOfDay(hours.Start)
-	if err != nil {
-		return nil, fmt.Errorf("parse business hours start: %w", err)
-	}
-	dayEnd, err := parseTimeOfDay(hours.End)
-	if err != nil {
-		return nil, fmt.Errorf("parse business hours end: %w", err)
+	type parsedWindow struct {
+		start      timeOfDay
+		end        timeOfDay
+		workDaySet map[time.Weekday]bool
 	}
 
-	workDaySet := make(map[time.Weekday]bool, len(hours.WorkDays))
-	for _, d := range hours.WorkDays {
-		workDaySet[time.Weekday(d%7)] = true
+	var windows []parsedWindow
+	for i, h := range hours {
+		s, err := parseTimeOfDay(h.Start)
+		if err != nil {
+			return nil, fmt.Errorf("parse business hours[%d] start: %w", i, err)
+		}
+		e, err := parseTimeOfDay(h.End)
+		if err != nil {
+			return nil, fmt.Errorf("parse business hours[%d] end: %w", i, err)
+		}
+		wds := make(map[time.Weekday]bool, len(h.WorkDays))
+		for _, d := range h.WorkDays {
+			wds[time.Weekday(d%7)] = true
+		}
+		windows = append(windows, parsedWindow{start: s, end: e, workDaySet: wds})
 	}
 
 	oooRanges := collectOOORanges(events)
@@ -65,37 +74,37 @@ func FindFreeSlots(
 
 	current := rangeStart
 	for !current.After(rangeEnd) && !dateOf(current).After(dateOf(rangeEnd)) {
-		if !workDaySet[current.Weekday()] {
-			current = nextDay(current)
-			continue
-		}
-
 		loc := current.Location()
 		y, m, d := current.Date()
-		windowStart := time.Date(y, m, d, dayStart.hour, dayStart.minute, 0, 0, loc)
-		windowEnd := time.Date(y, m, d, dayEnd.hour, dayEnd.minute, 0, 0, loc)
 
-		// SLOT-006: today's slots start from now (plus buffer)
-		if sameDate(current, now) {
-			earliest := now.Add(buffer)
-			if earliest.After(windowStart) {
-				windowStart = earliest
+		for _, w := range windows {
+			if !w.workDaySet[current.Weekday()] {
+				continue
 			}
-		}
 
-		if windowStart.After(windowEnd) || windowStart.Equal(windowEnd) {
-			current = nextDay(current)
-			continue
-		}
+			windowStart := time.Date(y, m, d, w.start.hour, w.start.minute, 0, 0, loc)
+			windowEnd := time.Date(y, m, d, w.end.hour, w.end.minute, 0, 0, loc)
 
-		// SLOT-005/007: block OOO ranges
-		if isFullyBlocked(windowStart, windowEnd, oooRanges) {
-			current = nextDay(current)
-			continue
-		}
+			// SLOT-006: today's slots start from now (plus buffer)
+			if sameDate(current, now) {
+				earliest := now.Add(buffer)
+				if earliest.After(windowStart) {
+					windowStart = earliest
+				}
+			}
 
-		daySlots := subtractBusy(windowStart, windowEnd, busy, oooRanges, minDur)
-		slots = append(slots, daySlots...)
+			if windowStart.After(windowEnd) || windowStart.Equal(windowEnd) {
+				continue
+			}
+
+			// SLOT-005/007: block OOO ranges
+			if isFullyBlocked(windowStart, windowEnd, oooRanges) {
+				continue
+			}
+
+			daySlots := subtractBusy(windowStart, windowEnd, busy, oooRanges, minDur)
+			slots = append(slots, daySlots...)
+		}
 
 		current = nextDay(current)
 	}
