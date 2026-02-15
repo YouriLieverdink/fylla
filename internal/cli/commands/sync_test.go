@@ -1537,7 +1537,7 @@ func TestSYNC011_incremental_sync(t *testing.T) {
 			fyllaEvents: []calendar.Event{
 				{
 					ID:          "evt-1",
-					Title:       "Task 1",
+					Title:       "[TEST] Task 1",
 					Description: "fylla: T-1\nhttps://test.atlassian.net/browse/T-1",
 					Start:       time.Date(2025, 1, 20, 9, 15, 0, 0, time.UTC),
 					End:         time.Date(2025, 1, 20, 10, 15, 0, 0, time.UTC),

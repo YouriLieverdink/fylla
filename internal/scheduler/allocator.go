@@ -108,10 +108,13 @@ func Allocate(tasks []ScoredTask, slotsByProject map[string][]calendar.Slot, cfg
 			}
 		}
 
-		// At-risk detection: task's last block ends after its due date
+		// At-risk detection: task's last block ends after end-of-day on its due date.
+		// Due dates from providers are date-only (midnight), so compare against
+		// end-of-day to avoid false positives for tasks scheduled on their due date.
 		if st.Task.DueDate != nil && len(taskAllocs) > 0 {
 			lastEnd := taskAllocs[len(taskAllocs)-1].End
-			if lastEnd.After(*st.Task.DueDate) {
+			dueEnd := time.Date(st.Task.DueDate.Year(), st.Task.DueDate.Month(), st.Task.DueDate.Day()+1, 0, 0, 0, 0, st.Task.DueDate.Location())
+			if lastEnd.After(dueEnd) {
 				for i := range taskAllocs {
 					taskAllocs[i].AtRisk = true
 				}

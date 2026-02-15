@@ -607,17 +607,19 @@ func Test_GCAL009_DetectOOOByTitlePattern(t *testing.T) {
 func TestBuildTitle(t *testing.T) {
 	tests := []struct {
 		name    string
-		key     string
+		project string
 		summary string
 		atRisk  bool
 		want    string
 	}{
-		{"normal", "PROJ-1", "Fix bug", false, "Fix bug"},
-		{"at-risk", "PROJ-2", "Overdue", true, "⚠️ Overdue"},
+		{"normal without project", "", "Fix bug", false, "Fix bug"},
+		{"normal with project", "PROJ", "Fix bug", false, "[PROJ] Fix bug"},
+		{"at-risk without project", "", "Overdue", true, "⚠️ Overdue"},
+		{"at-risk with project", "PROJ", "Overdue", true, "⚠️ [PROJ] Overdue"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := BuildTitle(tt.key, tt.summary, tt.atRisk)
+			got := BuildTitle(tt.project, tt.summary, tt.atRisk)
 			if got != tt.want {
 				t.Errorf("BuildTitle() = %q, want %q", got, tt.want)
 			}

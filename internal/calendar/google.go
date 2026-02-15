@@ -147,11 +147,15 @@ func isFyllaEvent(description string) bool {
 }
 
 // BuildTitle constructs the calendar event title for a Fylla task.
-func BuildTitle(taskKey, summary string, atRisk bool) string {
-	if atRisk {
-		return latePrefix + summary
+func BuildTitle(project, summary string, atRisk bool) string {
+	title := summary
+	if project != "" {
+		title = "[" + project + "] " + title
 	}
-	return summary
+	if atRisk {
+		return latePrefix + title
+	}
+	return title
 }
 
 // BuildDescription constructs the calendar event description for a Fylla task.
@@ -238,7 +242,7 @@ func (c *GoogleClient) FetchFyllaEvents(ctx context.Context, start, end time.Tim
 
 // UpdateEvent updates an existing event on the fylla calendar.
 func (c *GoogleClient) UpdateEvent(ctx context.Context, eventID string, input CreateEventInput) error {
-	title := BuildTitle(input.TaskKey, input.Summary, input.AtRisk)
+	title := BuildTitle(input.Project, input.Summary, input.AtRisk)
 	description := BuildDescription(input.TaskKey, c.JiraBaseURL)
 
 	event := &googlecalendar.Event{
@@ -269,6 +273,7 @@ func (c *GoogleClient) DeleteEvent(ctx context.Context, eventID string) error {
 // CreateEventInput holds the fields needed to create a calendar event.
 type CreateEventInput struct {
 	TaskKey  string
+	Project  string
 	Summary  string
 	Start    time.Time
 	End      time.Time
@@ -277,7 +282,7 @@ type CreateEventInput struct {
 
 // CreateEvent creates a new event on the fylla calendar.
 func (c *GoogleClient) CreateEvent(ctx context.Context, input CreateEventInput) error {
-	title := BuildTitle(input.TaskKey, input.Summary, input.AtRisk)
+	title := BuildTitle(input.Project, input.Summary, input.AtRisk)
 	description := BuildDescription(input.TaskKey, c.JiraBaseURL)
 
 	event := &googlecalendar.Event{

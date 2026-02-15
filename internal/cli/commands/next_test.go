@@ -179,6 +179,32 @@ func TestPrintNextResult(t *testing.T) {
 		}
 	})
 
+	t.Run("prints project prefix for current and next", func(t *testing.T) {
+		var buf bytes.Buffer
+		PrintNextResult(&buf, &NextResult{
+			Current: &FyllaEvent{
+				TaskKey: "PROJ-1",
+				Project: "PROJ",
+				Summary: "Fix bug",
+				End:     time.Date(2025, 1, 20, 11, 0, 0, 0, time.UTC),
+			},
+			Next: &FyllaEvent{
+				TaskKey: "PROJ-2",
+				Project: "PROJ",
+				Summary: "Update docs",
+				Start:   time.Date(2025, 1, 20, 11, 0, 0, 0, time.UTC),
+				End:     time.Date(2025, 1, 20, 12, 0, 0, 0, time.UTC),
+			},
+		}, now)
+		out := buf.String()
+		if !strings.Contains(out, "[PROJ] PROJ-1: Fix bug") {
+			t.Errorf("missing project prefix for current, got %q", out)
+		}
+		if !strings.Contains(out, "[PROJ] PROJ-2: Update docs") {
+			t.Errorf("missing project prefix for next, got %q", out)
+		}
+	})
+
 	t.Run("prints calendar event as current", func(t *testing.T) {
 		var buf bytes.Buffer
 		PrintNextResult(&buf, &NextResult{

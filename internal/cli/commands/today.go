@@ -90,6 +90,7 @@ func allocateToday(ctx context.Context, cal CalendarClient, tasks TaskFetcher, c
 	for _, alloc := range allocations {
 		events = append(events, FyllaEvent{
 			TaskKey: alloc.Task.Key,
+			Project: alloc.Task.Project,
 			Summary: alloc.Task.Summary,
 			Start:   alloc.Start,
 			End:     alloc.End,
@@ -160,12 +161,17 @@ func PrintTodayResult(w io.Writer, result *TodayResult, now time.Time) {
 			prefix = "[LATE] "
 		}
 
+		taskLabel := fe.TaskKey
+		if fe.Project != "" {
+			taskLabel = "[" + fe.Project + "] " + taskLabel
+		}
+
 		fmt.Fprintf(w, "%s%s – %s  %s%s: %s%s\n",
 			marker,
 			fe.Start.Format("15:04"),
 			fe.End.Format("15:04"),
 			prefix,
-			fe.TaskKey,
+			taskLabel,
 			fe.Summary,
 			suffix,
 		)

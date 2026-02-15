@@ -337,6 +337,26 @@ func TestPrintTodayResult(t *testing.T) {
 		}
 	})
 
+	t.Run("prints project prefix when set", func(t *testing.T) {
+		var buf bytes.Buffer
+		PrintTodayResult(&buf, &TodayResult{
+			Events: []FyllaEvent{
+				{
+					TaskKey: "PROJ-1",
+					Project: "PROJ",
+					Summary: "Fix login bug",
+					Start:   time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
+					End:     time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
+				},
+			},
+		}, now)
+
+		out := buf.String()
+		if !strings.Contains(out, "[PROJ] PROJ-1: Fix login bug") {
+			t.Errorf("missing project prefix, got:\n%s", out)
+		}
+	})
+
 	t.Run("prints calendar events without task key", func(t *testing.T) {
 		var buf bytes.Buffer
 		PrintTodayResult(&buf, &TodayResult{

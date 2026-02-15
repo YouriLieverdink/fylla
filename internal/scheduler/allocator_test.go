@@ -428,6 +428,40 @@ func Test_ALLOC006_at_risk_detection(t *testing.T) {
 	}
 }
 
+func Test_ALLOC006_not_at_risk_when_scheduled_on_due_date(t *testing.T) {
+	// Due date at midnight (as providers return). Task scheduled same day should NOT be at-risk.
+	dueDate := date(2025, 1, 20, 0, 0) // midnight
+
+	tasks := []ScoredTask{
+		{
+			Task: task.Task{
+				Key:               "SAMEDAY-1",
+				Summary:           "Due today, scheduled today",
+				DueDate:           &dueDate,
+				RemainingEstimate: 1 * time.Hour,
+				Project:           "PROJ",
+			},
+			Score: 80,
+		},
+	}
+
+	slots := map[string][]calendar.Slot{
+		"": {
+			{Start: date(2025, 1, 20, 9, 0), End: date(2025, 1, 20, 17, 0)},
+		},
+	}
+
+	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 allocation, got %d", len(result))
+	}
+
+	if result[0].AtRisk {
+		t.Error("task scheduled on its due date should NOT be at-risk")
+	}
+}
+
 func Test_ALLOC006_not_at_risk_when_before_due(t *testing.T) {
 	dueDate := date(2025, 1, 25, 17, 0)
 
@@ -489,7 +523,8 @@ func Test_ALLOC006_no_due_date_not_at_risk(t *testing.T) {
 
 func Test_ALLOC007_at_risk_late_prefix(t *testing.T) {
 	// At-risk tasks should have AtRisk=true, which the calendar layer uses for [LATE] prefix.
-	dueDate := date(2025, 1, 20, 12, 0)
+	// Due date is yesterday — task can't possibly finish by end of its due date.
+	dueDate := date(2025, 1, 19, 0, 0)
 
 	tasks := []ScoredTask{
 		{
@@ -504,7 +539,7 @@ func Test_ALLOC007_at_risk_late_prefix(t *testing.T) {
 		{
 			Task: task.Task{
 				Key:               "ATRISK-1",
-				Summary:           "Due at noon but scheduled after",
+				Summary:           "Due yesterday but scheduled today",
 				DueDate:           &dueDate,
 				RemainingEstimate: 1 * time.Hour,
 				Project:           "PROJ",
@@ -546,7 +581,8 @@ func Test_ALLOC007_at_risk_late_prefix(t *testing.T) {
 
 func Test_ALLOC007_split_task_all_parts_at_risk(t *testing.T) {
 	// When a split task is at-risk, all parts should be marked.
-	dueDate := date(2025, 1, 20, 10, 0) // Due at 10:00
+	// Due date is yesterday — task can't finish by end of its due date.
+	dueDate := date(2025, 1, 19, 0, 0)
 
 	tasks := []ScoredTask{
 		{

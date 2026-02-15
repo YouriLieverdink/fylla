@@ -80,6 +80,9 @@ func PrintListResult(w io.Writer, result *ListResult, verbose bool) {
 
 func formatTaskDetails(st scheduler.ScoredTask) string {
 	var parts []string
+	if st.Task.Project != "" {
+		parts = append(parts, "Project: "+st.Task.Project)
+	}
 	if st.Task.IssueType != "" {
 		parts = append(parts, st.Task.IssueType)
 	}

@@ -121,7 +121,7 @@ func TestCLI009_list_shows_sorted_tasks(t *testing.T) {
 		PrintListResult(&buf, result, true)
 		out := buf.String()
 
-		for _, want := range []string{"Bug", "2h", "Due: Jan 25", "Priority: High", "Not Before: Jan 22", "Up Next"} {
+		for _, want := range []string{"Project: PROJ", "Bug", "2h", "Due: Jan 25", "Priority: High", "Not Before: Jan 22", "Up Next"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("verbose output missing %q, got:\n%s", want, out)
 			}

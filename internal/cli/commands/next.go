@@ -22,6 +22,7 @@ type NextParams struct {
 // FyllaEvent represents a scheduled Fylla task event or a calendar event.
 type FyllaEvent struct {
 	TaskKey         string
+	Project         string
 	Summary         string
 	Start           time.Time
 	End             time.Time
@@ -76,9 +77,13 @@ func PrintNextResult(w io.Writer, result *NextResult, now time.Time) {
 			if result.Current.AtRisk {
 				prefix = "[LATE] "
 			}
+			taskLabel := result.Current.TaskKey
+			if result.Current.Project != "" {
+				taskLabel = "[" + result.Current.Project + "] " + taskLabel
+			}
 			fmt.Fprintf(w, "Current: %s%s: %s (until %s)\n",
 				prefix,
-				result.Current.TaskKey,
+				taskLabel,
 				result.Current.Summary,
 				result.Current.End.Format("15:04"),
 			)
@@ -107,17 +112,21 @@ func PrintNextResult(w io.Writer, result *NextResult, now time.Time) {
 			if result.Next.AtRisk {
 				prefix = "[LATE] "
 			}
+			taskLabel := result.Next.TaskKey
+			if result.Next.Project != "" {
+				taskLabel = "[" + result.Next.Project + "] " + taskLabel
+			}
 			if minutes < 60 {
 				fmt.Fprintf(w, "Next:    %s%s: %s (starts in %dm)\n",
 					prefix,
-					result.Next.TaskKey,
+					taskLabel,
 					result.Next.Summary,
 					minutes,
 				)
 			} else {
 				fmt.Fprintf(w, "Next:    %s%s: %s (%s – %s)\n",
 					prefix,
-					result.Next.TaskKey,
+					taskLabel,
 					result.Next.Summary,
 					result.Next.Start.Format("15:04"),
 					result.Next.End.Format("15:04"),

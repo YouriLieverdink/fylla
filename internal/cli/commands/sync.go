@@ -174,6 +174,7 @@ func progress(w io.Writer, format string, args ...interface{}) {
 // desiredEvent represents a calendar event that the scheduler wants to exist.
 type desiredEvent struct {
 	TaskKey string
+	Project string
 	Summary string
 	Start   time.Time
 	End     time.Time
@@ -275,6 +276,7 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 			for _, alloc := range allocations {
 				if err := p.Cal.CreateEvent(ctx, calendar.CreateEventInput{
 					TaskKey: alloc.Task.Key,
+					Project: alloc.Task.Project,
 					Summary: alloc.Task.Summary,
 					Start:   alloc.Start,
 					End:     alloc.End,
@@ -296,6 +298,7 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 			for i, alloc := range allocations {
 				desired[i] = desiredEvent{
 					TaskKey: alloc.Task.Key,
+					Project: alloc.Task.Project,
 					Summary: alloc.Task.Summary,
 					Start:   alloc.Start,
 					End:     alloc.End,
@@ -373,6 +376,7 @@ func reconcile(ctx context.Context, cal CalendarClient, existing []calendar.Even
 				matchedExisting[ev.ID] = true
 				input := calendar.CreateEventInput{
 					TaskKey: d.event.TaskKey,
+					Project: d.event.Project,
 					Summary: d.event.Summary,
 					Start:   d.event.Start,
 					End:     d.event.End,
@@ -390,6 +394,7 @@ func reconcile(ctx context.Context, cal CalendarClient, existing []calendar.Even
 				// New event — no existing match.
 				if err := cal.CreateEvent(ctx, calendar.CreateEventInput{
 					TaskKey: d.event.TaskKey,
+					Project: d.event.Project,
 					Summary: d.event.Summary,
 					Start:   d.event.Start,
 					End:     d.event.End,
@@ -426,7 +431,7 @@ func reconcile(ctx context.Context, cal CalendarClient, existing []calendar.Even
 // eventsMatch returns true if an existing calendar event matches the desired state.
 func eventsMatch(existing calendar.Event, desired desiredEvent) bool {
 	return existing.Start.Equal(desired.Start) && existing.End.Equal(desired.End) &&
-		calendar.BuildTitle(desired.TaskKey, desired.Summary, desired.AtRisk) == existing.Title &&
+		calendar.BuildTitle(desired.Project, desired.Summary, desired.AtRisk) == existing.Title &&
 		calendar.TaskKeyFromDescription(existing.Description) == desired.TaskKey
 }
 
