@@ -155,6 +155,64 @@ func TestCLI009_list_shows_sorted_tasks(t *testing.T) {
 		}
 	})
 
+	t.Run("displayWidth handles emoji correctly", func(t *testing.T) {
+		tests := []struct {
+			s    string
+			want int
+		}{
+			{"hello", 5},
+			{"🎈", 2},                // single emoji
+			{"⛺️", 2},               // wide base + FE0F
+			{"❣️", 2},               // narrow base + FE0F promotion
+			{"🫰🏻", 2},              // emoji + skin tone (combined)
+			{"[⛺️ Thuis]", 10},      // mixed with FE0F
+			{"[🪷 P / ❣️ J]", 13},  // mixed with FE0F promotion
+			{"[🪷 P / 🫰🏻 F]", 13}, // mixed with skin tone
+		}
+		for _, tt := range tests {
+			got := displayWidth(tt.s)
+			if got != tt.want {
+				t.Errorf("displayWidth(%q) = %d, want %d", tt.s, got, tt.want)
+			}
+		}
+	})
+
+	t.Run("emoji alignment", func(t *testing.T) {
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
+				{Key: "a1", Summary: "Task A", Priority: 1, RemainingEstimate: time.Hour, Project: "⛺️ Thuis", Created: now.AddDate(0, 0, -1)},
+				{Key: "a2", Summary: "Task B", Priority: 2, RemainingEstimate: time.Hour, Project: "🪷 Persoonlijk", Section: "🫰🏻 Financiën", Created: now.AddDate(0, 0, -1)},
+				{Key: "a3", Summary: "Task C", Priority: 3, RemainingEstimate: time.Hour, Project: "🪷 Persoonlijk", Section: "❣️ Jasmijn", Created: now.AddDate(0, 0, -1)},
+			},
+		}
+
+		result, err := RunList(context.Background(), ListParams{
+			Tasks: jr,
+			Cfg:   testConfig(),
+			Now:   now,
+		})
+		if err != nil {
+			t.Fatalf("RunList: %v", err)
+		}
+
+		var buf bytes.Buffer
+		PrintListResult(&buf, result, false)
+		lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+
+		// All score values should end at the same column.
+		var scoreEnds []int
+		for _, line := range lines[1:] { // skip header
+			trimmed := strings.TrimRight(line, " \t")
+			scoreEnds = append(scoreEnds, displayWidth(trimmed))
+		}
+		for i := 1; i < len(scoreEnds); i++ {
+			if scoreEnds[i] != scoreEnds[0] {
+				t.Errorf("score column misaligned: line 1 ends at %d, line %d ends at %d\noutput:\n%s",
+					scoreEnds[0], i+1, scoreEnds[i], buf.String())
+			}
+		}
+	})
+
 	t.Run("empty task list handled", func(t *testing.T) {
 		jr := &mockTaskFetcher{}
 

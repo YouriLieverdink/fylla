@@ -13,6 +13,28 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// displayWidth returns the display width of a string. It uses
+// runewidth.StringWidth as the base (which handles grapheme cluster
+// combining for emoji modifier and ZWJ sequences) and corrects for
+// U+FE0F (emoji presentation selector) not promoting narrow characters
+// to wide. For example, ❣️ (U+2763 + U+FE0F) should be width 2 but
+// StringWidth returns 1 because U+2763 is narrow without FE0F.
+func displayWidth(s string) int {
+	w := runewidth.StringWidth(s)
+	prev := 0
+	for _, r := range s {
+		if r == 0xFE0F && prev == 1 {
+			w++
+		}
+		if r >= 0xFE00 && r <= 0xFE0F {
+			prev = 0
+		} else {
+			prev = runewidth.RuneWidth(r)
+		}
+	}
+	return w
+}
+
 // ListParams holds inputs for the list operation.
 type ListParams struct {
 	Tasks TaskFetcher
@@ -71,7 +93,7 @@ func PrintListResult(w io.Writer, result *ListResult, verbose bool) {
 			summary: st.Task.Summary,
 			score:   st.Score,
 		}
-		left := runewidth.StringWidth(prefix) + runewidth.StringWidth(keySep) + runewidth.StringWidth(st.Task.Summary)
+		left := displayWidth(prefix) + displayWidth(keySep) + displayWidth(st.Task.Summary)
 		if left > maxLeft {
 			maxLeft = left
 		}
@@ -82,10 +104,10 @@ func PrintListResult(w io.Writer, result *ListResult, verbose bool) {
 	fmt.Fprintf(w, "%d task(s):\n", len(result.Tasks))
 	for i, ft := range formatted {
 		left := ft.prefix + ft.keySep + ft.summary
-		displayWidth := runewidth.StringWidth(left)
+		dw := displayWidth(left)
 		padding := ""
-		if maxLeft > displayWidth {
-			padding = strings.Repeat(" ", maxLeft-displayWidth)
+		if maxLeft > dw {
+			padding = strings.Repeat(" ", maxLeft-dw)
 		}
 		fmt.Fprintf(w, "  %*d. %s%s  %5.1f\n",
 			indexWidth, i+1,
