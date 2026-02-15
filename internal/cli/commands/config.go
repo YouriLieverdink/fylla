@@ -106,11 +106,7 @@ func newConfigEditCmd() *cobra.Command {
 		Use:   "edit",
 		Short: "Edit configuration in $EDITOR",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if _, err := config.Load(); err != nil {
-				return fmt.Errorf("load config: %w", err)
-			}
-
-			path, err := config.DefaultPath()
+			path, err := config.EnsurePath()
 			if err != nil {
 				return err
 			}

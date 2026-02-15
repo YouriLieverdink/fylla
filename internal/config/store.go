@@ -48,20 +48,30 @@ func LoadFrom(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// Load reads the config from the default path, creating it from defaults if missing.
-func Load() (*Config, error) {
+// EnsurePath creates the default config file from defaults if it does not exist,
+// and returns its path. It does not parse or validate the file contents.
+func EnsurePath() (string, error) {
 	path, err := DefaultPath()
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		dir := filepath.Dir(path)
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			return nil, fmt.Errorf("create config dir: %w", err)
+			return "", fmt.Errorf("create config dir: %w", err)
 		}
 		if err := os.WriteFile(path, defaultConfigYAML, 0644); err != nil {
-			return nil, fmt.Errorf("write default config: %w", err)
+			return "", fmt.Errorf("write default config: %w", err)
 		}
+	}
+	return path, nil
+}
+
+// Load reads the config from the default path, creating it from defaults if missing.
+func Load() (*Config, error) {
+	path, err := EnsurePath()
+	if err != nil {
+		return nil, err
 	}
 	return LoadFrom(path)
 }
