@@ -285,7 +285,7 @@ func TestExtractConstraints(t *testing.T) {
 
 	t.Run("all constraints", func(t *testing.T) {
 		cleaned, notBefore, upNext, noSplit := ExtractConstraints(
-			"Write docs not before 2025-03-01 upnext nosplit", ref,
+			"Write docs not before 2025-03-01 upnext nosplit", ref, nil,
 		)
 		if cleaned != "Write docs" {
 			t.Errorf("cleaned = %q, want %q", cleaned, "Write docs")
@@ -307,7 +307,7 @@ func TestExtractConstraints(t *testing.T) {
 
 	t.Run("parenthesized not before", func(t *testing.T) {
 		cleaned, notBefore, upNext, noSplit := ExtractConstraints(
-			"Write docs (not before 2025-03-01)", ref,
+			"Write docs (not before 2025-03-01)", ref, nil,
 		)
 		if cleaned != "Write docs" {
 			t.Errorf("cleaned = %q, want %q", cleaned, "Write docs")
@@ -328,7 +328,7 @@ func TestExtractConstraints(t *testing.T) {
 	})
 
 	t.Run("no constraints", func(t *testing.T) {
-		cleaned, notBefore, upNext, noSplit := ExtractConstraints("Plain task", ref)
+		cleaned, notBefore, upNext, noSplit := ExtractConstraints("Plain task", ref, nil)
 		if cleaned != "Plain task" {
 			t.Errorf("cleaned = %q, want %q", cleaned, "Plain task")
 		}
@@ -377,6 +377,138 @@ func TestParseInput_due_in_parens(t *testing.T) {
 	if !got.DueDate.Equal(want) {
 		t.Errorf("DueDate = %v, want %v", *got.DueDate, want)
 	}
+}
+
+func TestResolveRelativeNotBefore(t *testing.T) {
+	due := time.Date(2025, 3, 15, 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name   string
+		offset string
+		due    *time.Time
+		want   *time.Time
+	}{
+		{"3 days", "-3d", &due, timePtr(time.Date(2025, 3, 12, 0, 0, 0, 0, time.UTC))},
+		{"1 week", "-1w", &due, timePtr(time.Date(2025, 3, 8, 0, 0, 0, 0, time.UTC))},
+		{"2 months", "-2m", &due, timePtr(time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC))},
+		{"no due date", "-3d", nil, nil},
+		{"invalid offset", "3d", &due, nil},
+		{"invalid unit", "-3x", &due, nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveRelativeNotBefore(tc.offset, tc.due)
+			if tc.want == nil && got != nil {
+				t.Errorf("got %v, want nil", *got)
+			}
+			if tc.want != nil {
+				if got == nil {
+					t.Fatalf("got nil, want %v", *tc.want)
+				}
+				if !got.Equal(*tc.want) {
+					t.Errorf("got %v, want %v", *got, *tc.want)
+				}
+			}
+		})
+	}
+}
+
+func TestParseInput_relative_not_before(t *testing.T) {
+	ref := time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC)
+
+	t.Run("with due date", func(t *testing.T) {
+		got := ParseInput("Task [30m] (due 2025-03-15 not before -3d priority:p3)", ref)
+
+		if got.Summary != "Task" {
+			t.Errorf("Summary = %q, want %q", got.Summary, "Task")
+		}
+		if got.Estimate != 30*time.Minute {
+			t.Errorf("Estimate = %v, want %v", got.Estimate, 30*time.Minute)
+		}
+		if got.DueDate == nil {
+			t.Fatal("DueDate = nil")
+		}
+		wantDue := time.Date(2025, 3, 15, 0, 0, 0, 0, time.UTC)
+		if !got.DueDate.Equal(wantDue) {
+			t.Errorf("DueDate = %v, want %v", *got.DueDate, wantDue)
+		}
+		if got.NotBefore == nil {
+			t.Fatal("NotBefore = nil")
+		}
+		wantNB := time.Date(2025, 3, 12, 0, 0, 0, 0, time.UTC)
+		if !got.NotBefore.Equal(wantNB) {
+			t.Errorf("NotBefore = %v, want %v", *got.NotBefore, wantNB)
+		}
+		if got.NotBeforeRaw != "-3d" {
+			t.Errorf("NotBeforeRaw = %q, want %q", got.NotBeforeRaw, "-3d")
+		}
+		if got.Priority != "Medium" {
+			t.Errorf("Priority = %q, want %q", got.Priority, "Medium")
+		}
+	})
+
+	t.Run("without due date", func(t *testing.T) {
+		got := ParseInput("Task (not before -3d)", ref)
+
+		if got.Summary != "Task" {
+			t.Errorf("Summary = %q, want %q", got.Summary, "Task")
+		}
+		if got.NotBefore != nil {
+			t.Errorf("NotBefore = %v, want nil (no due date to resolve against)", *got.NotBefore)
+		}
+		if got.NotBeforeRaw != "-3d" {
+			t.Errorf("NotBeforeRaw = %q, want %q", got.NotBeforeRaw, "-3d")
+		}
+	})
+
+	t.Run("week offset", func(t *testing.T) {
+		got := ParseInput("Task (due 2025-03-15 not before -1w)", ref)
+
+		if got.NotBefore == nil {
+			t.Fatal("NotBefore = nil")
+		}
+		wantNB := time.Date(2025, 3, 8, 0, 0, 0, 0, time.UTC)
+		if !got.NotBefore.Equal(wantNB) {
+			t.Errorf("NotBefore = %v, want %v", *got.NotBefore, wantNB)
+		}
+		if got.NotBeforeRaw != "-1w" {
+			t.Errorf("NotBeforeRaw = %q, want %q", got.NotBeforeRaw, "-1w")
+		}
+	})
+}
+
+func TestExtractConstraints_relative(t *testing.T) {
+	ref := time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC)
+	due := time.Date(2025, 3, 15, 0, 0, 0, 0, time.UTC)
+
+	t.Run("with due date", func(t *testing.T) {
+		cleaned, notBefore, _, _ := ExtractConstraints(
+			"Write docs not before -3d", ref, &due,
+		)
+		if cleaned != "Write docs" {
+			t.Errorf("cleaned = %q, want %q", cleaned, "Write docs")
+		}
+		if notBefore == nil {
+			t.Fatal("notBefore = nil")
+		}
+		want := time.Date(2025, 3, 12, 0, 0, 0, 0, time.UTC)
+		if !notBefore.Equal(want) {
+			t.Errorf("notBefore = %v, want %v", *notBefore, want)
+		}
+	})
+
+	t.Run("without due date", func(t *testing.T) {
+		cleaned, notBefore, _, _ := ExtractConstraints(
+			"Write docs not before -3d", ref, nil,
+		)
+		if cleaned != "Write docs" {
+			t.Errorf("cleaned = %q, want %q", cleaned, "Write docs")
+		}
+		if notBefore != nil {
+			t.Errorf("notBefore = %v, want nil", *notBefore)
+		}
+	})
 }
 
 func weekdayPtr(wd time.Weekday) *time.Weekday { return &wd }

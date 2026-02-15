@@ -11,14 +11,15 @@ import (
 )
 
 var (
-	estimateRe = regexp.MustCompile(`\[(\d+h)?(\d+m)?\]`)
-	dueDateRe  = regexp.MustCompile(`\{(\d{4}-\d{2}-\d{2})\}`)
-	spacesRe   = regexp.MustCompile(`\s{2,}`)
-	attrsRe    = regexp.MustCompile(`\(([^)]+)\)`)
-	priorityRe = regexp.MustCompile(`(?i)\bpriority:(\S+)`)
-	isoDateRe  = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
-	nosplitRe  = regexp.MustCompile(`(?i)\bnosplit\b`)
-	upnextRe   = regexp.MustCompile(`(?i)\bupnext\b`)
+	estimateRe          = regexp.MustCompile(`\[(\d+h)?(\d+m)?\]`)
+	dueDateRe           = regexp.MustCompile(`\{(\d{4}-\d{2}-\d{2})\}`)
+	spacesRe            = regexp.MustCompile(`\s{2,}`)
+	attrsRe             = regexp.MustCompile(`\(([^)]+)\)`)
+	priorityRe          = regexp.MustCompile(`(?i)\bpriority:(\S+)`)
+	isoDateRe           = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	nosplitRe           = regexp.MustCompile(`(?i)\bnosplit\b`)
+	upnextRe            = regexp.MustCompile(`(?i)\bupnext\b`)
+	relativeNotBeforeRe = regexp.MustCompile(`^-(\d+)([dwm])$`)
 )
 
 var priorityAliases = map[string]string{
@@ -31,13 +32,14 @@ var priorityAliases = map[string]string{
 
 // ParsedInput holds the result of parsing a free-form task input string.
 type ParsedInput struct {
-	Summary   string
-	Estimate  time.Duration
-	DueDate   *time.Time
-	Priority  string
-	NotBefore *time.Time
-	UpNext    bool
-	NoSplit   bool
+	Summary      string
+	Estimate     time.Duration
+	DueDate      *time.Time
+	Priority     string
+	NotBefore    *time.Time
+	NotBeforeRaw string // carries raw relative offset (e.g. "-3d") for round-trip serialization
+	UpNext       bool
+	NoSplit      bool
 }
 
 // ParseTitleEstimate extracts a duration like [2h], [30m], or [1h30m] from text.
@@ -160,35 +162,76 @@ func parseAttrs(result *ParsedInput, attrs string, ref time.Time) string {
 		attrs = strings.TrimSpace(upnextRe.ReplaceAllString(attrs, ""))
 	}
 
-	// Extract "not before <date>" before "due" to avoid misparsing
-	attrs, result.NotBefore = extractNotBeforeClause(attrs, ref)
-
-	// Extract "due <date>"
+	// Extract "due <date>" before "not before" so relative offsets can resolve
 	attrs, result.DueDate = extractDueClause(attrs, ref)
+
+	// Extract "not before <date>" (supports relative offsets like -3d when due date is set)
+	attrs, result.NotBefore, result.NotBeforeRaw = extractNotBeforeClause(attrs, ref, result.DueDate)
 
 	return strings.TrimSpace(attrs)
 }
 
+// resolveRelativeNotBefore resolves a relative offset like "-3d" against a due date.
+// Returns nil if the offset is invalid or dueDate is nil.
+func resolveRelativeNotBefore(offset string, dueDate *time.Time) *time.Time {
+	if dueDate == nil {
+		return nil
+	}
+	m := relativeNotBeforeRe.FindStringSubmatch(offset)
+	if m == nil {
+		return nil
+	}
+	n, _ := strconv.Atoi(m[1])
+	var t time.Time
+	switch m[2] {
+	case "d":
+		t = dueDate.AddDate(0, 0, -n)
+	case "w":
+		t = dueDate.AddDate(0, 0, -n*7)
+	case "m":
+		t = dueDate.AddDate(0, -n, 0)
+	default:
+		return nil
+	}
+	return &t
+}
+
 // extractNotBeforeClause extracts "not before <date>" from the attributes text.
-// It tries progressively longer word sequences to find the shortest valid date.
-func extractNotBeforeClause(text string, ref time.Time) (string, *time.Time) {
+// It supports relative offsets (e.g. "-3d") resolved against dueDate, as well as
+// absolute and natural language dates. The third return value is the raw relative
+// offset string if one was used, empty otherwise.
+func extractNotBeforeClause(text string, ref time.Time, dueDate *time.Time) (string, *time.Time, string) {
 	lower := strings.ToLower(text)
 	idx := strings.Index(lower, "not before ")
 	if idx == -1 {
-		return text, nil
+		return text, nil, ""
 	}
 	// Verify word boundary at start
 	if idx > 0 && text[idx-1] != ' ' && text[idx-1] != '(' {
-		return text, nil
+		return text, nil, ""
 	}
 
 	afterKeyword := idx + 11 // len("not before ")
 	rest := strings.TrimSpace(text[afterKeyword:])
 	if rest == "" {
-		return text, nil
+		return text, nil, ""
 	}
 
 	words := strings.Fields(rest)
+
+	// Check if the first word is a relative offset (e.g. "-3d")
+	firstWord := strings.ToLower(strings.TrimRight(words[0], ")"))
+	if relativeNotBeforeRe.MatchString(firstWord) {
+		resolved := resolveRelativeNotBefore(firstWord, dueDate)
+		prefix := text[:idx]
+		if idx > 0 && text[idx-1] == '(' {
+			prefix = strings.TrimRight(text[:idx-1], " ")
+		}
+		remaining := strings.Join(words[1:], " ")
+		remaining = strings.TrimRight(remaining, ")")
+		cleaned := prefix + " " + remaining
+		return strings.TrimSpace(spacesRe.ReplaceAllString(cleaned, " ")), resolved, firstWord
+	}
 
 	for n := 1; n <= len(words); n++ {
 		candidate := strings.Join(words[:n], " ")
@@ -210,16 +253,17 @@ func extractNotBeforeClause(text string, ref time.Time) (string, *time.Time) {
 		remaining := strings.Join(words[n:], " ")
 		remaining = strings.TrimRight(remaining, ")")
 		cleaned := prefix + " " + remaining
-		return strings.TrimSpace(spacesRe.ReplaceAllString(cleaned, " ")), &parsed
+		return strings.TrimSpace(spacesRe.ReplaceAllString(cleaned, " ")), &parsed, ""
 	}
 
-	return text, nil
+	return text, nil, ""
 }
 
 // ExtractConstraints extracts scheduling constraints (not before, upnext, nosplit)
 // from a task summary string. Returns the cleaned summary and extracted values.
+// The dueDate is used to resolve relative not-before offsets (e.g. "-3d").
 // This is used by Jira/Todoist clients when reading tasks back.
-func ExtractConstraints(summary string, ref time.Time) (cleaned string, notBefore *time.Time, upNext, noSplit bool) {
+func ExtractConstraints(summary string, ref time.Time, dueDate *time.Time) (cleaned string, notBefore *time.Time, upNext, noSplit bool) {
 	cleaned = summary
 
 	if nosplitRe.MatchString(cleaned) {
@@ -232,7 +276,7 @@ func ExtractConstraints(summary string, ref time.Time) (cleaned string, notBefor
 		cleaned = strings.TrimSpace(upnextRe.ReplaceAllString(cleaned, ""))
 	}
 
-	cleaned, notBefore = extractNotBeforeClause(cleaned, ref)
+	cleaned, notBefore, _ = extractNotBeforeClause(cleaned, ref, dueDate)
 	cleaned = strings.TrimSpace(spacesRe.ReplaceAllString(cleaned, " "))
 	return
 }

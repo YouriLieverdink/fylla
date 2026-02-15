@@ -147,8 +147,10 @@ func PrintAddResult(w io.Writer, result *AddResult) {
 func applyParsedInput(p *AddParams, parsed task.ParsedInput) {
 	summary := parsed.Summary
 
-	// Append constraints back to summary using ISO dates for reliable re-parsing
-	if parsed.NotBefore != nil {
+	// Append constraints back to summary; prefer raw relative offset for dynamic resolution
+	if parsed.NotBeforeRaw != "" {
+		summary += " not before " + parsed.NotBeforeRaw
+	} else if parsed.NotBefore != nil {
 		summary += " not before " + parsed.NotBefore.Format("2006-01-02")
 	}
 	if parsed.UpNext {
@@ -199,6 +201,7 @@ and used for scheduling.
 Extracted attributes inside ():
   due <date>          Due date (natural language or YYYY-MM-DD)
   not before <date>   Earliest scheduling date (natural language or YYYY-MM-DD)
+  not before -<N>d    Relative: N days before due date (also -<N>w for weeks, -<N>m for months)
   priority:<level>    Priority (p1=Highest, p2=High, p3=Medium, p4=Low, p5=Lowest)
   upnext              Schedule before other tasks
   nosplit             Prevent splitting across multiple slots`,

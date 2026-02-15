@@ -161,7 +161,7 @@ func parseIssue(issue issueJSON) task.Task {
 	}
 
 	// Extract scheduling constraints from summary
-	cleaned, notBefore, upNext, noSplit := task.ExtractConstraints(t.Summary, time.Now())
+	cleaned, notBefore, upNext, noSplit := task.ExtractConstraints(t.Summary, time.Now(), t.DueDate)
 	t.Summary = cleaned
 	t.NotBefore = notBefore
 	t.UpNext = upNext
