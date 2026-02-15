@@ -627,6 +627,50 @@ func TestBuildTitle(t *testing.T) {
 	}
 }
 
+func TestParseTitle(t *testing.T) {
+	tests := []struct {
+		name    string
+		title   string
+		want    ParsedTitle
+	}{
+		{"plain summary", "Fix bug", ParsedTitle{Summary: "Fix bug"}},
+		{"with project", "[PROJ] Fix bug", ParsedTitle{Project: "PROJ", Summary: "Fix bug"}},
+		{"at-risk without project", "⚠️ Overdue", ParsedTitle{Summary: "Overdue", AtRisk: true}},
+		{"at-risk with project", "⚠️ [PROJ] Overdue", ParsedTitle{Project: "PROJ", Summary: "Overdue", AtRisk: true}},
+		{"empty string", "", ParsedTitle{Summary: ""}},
+		{"bracket without close", "[PROJ Fix bug", ParsedTitle{Summary: "[PROJ Fix bug"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseTitle(tt.title)
+			if got != tt.want {
+				t.Errorf("ParseTitle(%q) = %+v, want %+v", tt.title, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("round-trip with BuildTitle", func(t *testing.T) {
+		cases := []struct {
+			project string
+			summary string
+			atRisk  bool
+		}{
+			{"", "Fix bug", false},
+			{"PROJ", "Fix bug", false},
+			{"", "Overdue", true},
+			{"PROJ", "Overdue", true},
+		}
+		for _, c := range cases {
+			title := BuildTitle(c.project, c.summary, c.atRisk)
+			got := ParseTitle(title)
+			if got.Project != c.project || got.Summary != c.summary || got.AtRisk != c.atRisk {
+				t.Errorf("round-trip failed: BuildTitle(%q, %q, %v) = %q → ParseTitle = %+v",
+					c.project, c.summary, c.atRisk, title, got)
+			}
+		}
+	})
+}
+
 func TestBuildDescription(t *testing.T) {
 	tests := []struct {
 		name        string

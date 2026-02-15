@@ -7,49 +7,59 @@ import (
 	"testing"
 	"time"
 
-	"github.com/iruoy/fylla/internal/task"
+	"github.com/iruoy/fylla/internal/calendar"
 )
 
 func TestRunNext(t *testing.T) {
 	// Monday 10:30 UTC — within business hours
 	now := time.Date(2025, 1, 20, 10, 30, 0, 0, time.UTC)
-	cfg := testConfig()
-	// Buffer is 15min, so first slot starts at 10:45 at the earliest
 
-	t.Run("shows current task when now is inside an allocation", func(t *testing.T) {
-		fetcher := &mockTaskFetcher{
-			tasks: []task.Task{
-				{Key: "PROJ-123", Summary: "Fix login bug", Priority: 1, RemainingEstimate: 2 * time.Hour, Project: "PROJ", Created: now.AddDate(0, 0, -1)},
-				{Key: "PROJ-456", Summary: "Update docs", Priority: 2, RemainingEstimate: time.Hour, Project: "PROJ", Created: now.AddDate(0, 0, -2)},
+	t.Run("shows current and next task from calendar", func(t *testing.T) {
+		cal := &mockCalendar{
+			fyllaEvents: []calendar.Event{
+				{
+					Title:       "[PROJ] Fix login bug",
+					Description: "fylla: PROJ-123\nhttps://test.atlassian.net/browse/PROJ-123",
+					Start:       time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
+					End:         time.Date(2025, 1, 20, 12, 0, 0, 0, time.UTC),
+				},
+				{
+					Title:       "[PROJ] Update docs",
+					Description: "fylla: PROJ-456\nhttps://test.atlassian.net/browse/PROJ-456",
+					Start:       time.Date(2025, 1, 20, 12, 0, 0, 0, time.UTC),
+					End:         time.Date(2025, 1, 20, 13, 0, 0, 0, time.UTC),
+				},
 			},
 		}
 
 		result, err := RunNext(context.Background(), NextParams{
-			Tasks: fetcher,
-			Cfg:   cfg,
-			Now:   now,
+			Cal: cal,
+			Now: now,
 		})
 		if err != nil {
 			t.Fatalf("RunNext: %v", err)
 		}
 
-		// With buffer=15min, first task starts at 10:45, so at 10:30 nothing is current yet
-		// But next should be set
+		if result.Current == nil {
+			t.Fatal("expected current task")
+		}
+		if result.Current.TaskKey != "PROJ-123" {
+			t.Errorf("current task key = %q, want PROJ-123", result.Current.TaskKey)
+		}
 		if result.Next == nil {
 			t.Fatal("expected next task")
 		}
-		if result.Next.TaskKey != "PROJ-123" {
-			t.Errorf("next task key = %q, want PROJ-123", result.Next.TaskKey)
+		if result.Next.TaskKey != "PROJ-456" {
+			t.Errorf("next task key = %q, want PROJ-456", result.Next.TaskKey)
 		}
 	})
 
-	t.Run("no tasks today", func(t *testing.T) {
-		fetcher := &mockTaskFetcher{tasks: []task.Task{}}
+	t.Run("no events today", func(t *testing.T) {
+		cal := &mockCalendar{}
 
 		result, err := RunNext(context.Background(), NextParams{
-			Tasks: fetcher,
-			Cfg:   cfg,
-			Now:   now,
+			Cal: cal,
+			Now: now,
 		})
 		if err != nil {
 			t.Fatalf("RunNext: %v", err)
@@ -63,30 +73,35 @@ func TestRunNext(t *testing.T) {
 		}
 	})
 
-	t.Run("identifies current task at start of allocation", func(t *testing.T) {
-		// With zero buffer, slots start exactly at now (business hours start)
-		atSlotStart := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
-		zeroBufCfg := testConfig()
-		zeroBufCfg.Scheduling.BufferMinutes = 0
-
-		fetcher := &mockTaskFetcher{
-			tasks: []task.Task{
-				{Key: "T-1", Summary: "First task", Priority: 1, RemainingEstimate: time.Hour, Project: "TEST", Created: atSlotStart.AddDate(0, 0, -1)},
-				{Key: "T-2", Summary: "Second task", Priority: 2, RemainingEstimate: time.Hour, Project: "TEST", Created: atSlotStart.AddDate(0, 0, -1)},
+	t.Run("identifies current task at start of event", func(t *testing.T) {
+		atStart := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
+		cal := &mockCalendar{
+			fyllaEvents: []calendar.Event{
+				{
+					Title:       "First task",
+					Description: "fylla: T-1\nhttps://test.atlassian.net/browse/T-1",
+					Start:       time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
+					End:         time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
+				},
+				{
+					Title:       "Second task",
+					Description: "fylla: T-2\nhttps://test.atlassian.net/browse/T-2",
+					Start:       time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
+					End:         time.Date(2025, 1, 20, 11, 0, 0, 0, time.UTC),
+				},
 			},
 		}
 
 		result, err := RunNext(context.Background(), NextParams{
-			Tasks: fetcher,
-			Cfg:   zeroBufCfg,
-			Now:   atSlotStart,
+			Cal: cal,
+			Now: atStart,
 		})
 		if err != nil {
 			t.Fatalf("RunNext: %v", err)
 		}
 
 		if result.Current == nil {
-			t.Fatal("expected current task at slot start")
+			t.Fatal("expected current task at event start")
 		}
 		if result.Current.TaskKey != "T-1" {
 			t.Errorf("current task = %q, want T-1", result.Current.TaskKey)

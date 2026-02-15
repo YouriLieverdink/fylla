@@ -3,6 +3,7 @@ package calendar
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -156,6 +157,37 @@ func BuildTitle(project, summary string, atRisk bool) string {
 		return latePrefix + title
 	}
 	return title
+}
+
+// ParsedTitle holds the components extracted from a Fylla event title.
+type ParsedTitle struct {
+	Project string
+	Summary string
+	AtRisk  bool
+}
+
+// ParseTitle extracts project, summary, and atRisk from a Fylla event title.
+// It reverses BuildTitle, handling formats: "⚠️ [PROJ] Summary", "[PROJ] Summary",
+// "⚠️ Summary", "Summary".
+func ParseTitle(title string) ParsedTitle {
+	var p ParsedTitle
+	s := title
+
+	if strings.HasPrefix(s, latePrefix) {
+		p.AtRisk = true
+		s = s[len(latePrefix):]
+	}
+
+	if strings.HasPrefix(s, "[") {
+		end := strings.Index(s, "] ")
+		if end != -1 {
+			p.Project = s[1:end]
+			s = s[end+2:]
+		}
+	}
+
+	p.Summary = s
+	return p
 }
 
 // BuildDescription constructs the calendar event description for a Fylla task.

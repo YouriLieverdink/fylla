@@ -8,26 +8,39 @@ import (
 	"time"
 
 	"github.com/iruoy/fylla/internal/calendar"
-	"github.com/iruoy/fylla/internal/task"
 )
 
 func TestRunToday(t *testing.T) {
 	// Monday 09:00 UTC — business hours start
 	now := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
 
-	t.Run("allocates tasks into today's business hours", func(t *testing.T) {
-		fetcher := &mockTaskFetcher{
-			tasks: []task.Task{
-				{Key: "PROJ-1", Summary: "Write the docs", Priority: 1, RemainingEstimate: 30 * time.Minute, Project: "PROJ", Created: now.AddDate(0, 0, -1)},
-				{Key: "PROJ-2", Summary: "Fix login bug", Priority: 2, RemainingEstimate: time.Hour, Project: "PROJ", Created: now.AddDate(0, 0, -2)},
-				{Key: "PROJ-3", Summary: "Review PR", Priority: 3, RemainingEstimate: 30 * time.Minute, Project: "PROJ", Created: now.AddDate(0, 0, -3)},
+	t.Run("reads fylla events from calendar", func(t *testing.T) {
+		cal := &mockCalendar{
+			fyllaEvents: []calendar.Event{
+				{
+					Title:       "[PROJ] Write the docs",
+					Description: "fylla: PROJ-1\nhttps://test.atlassian.net/browse/PROJ-1",
+					Start:       time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
+					End:         time.Date(2025, 1, 20, 9, 30, 0, 0, time.UTC),
+				},
+				{
+					Title:       "[PROJ] Fix login bug",
+					Description: "fylla: PROJ-2\nhttps://test.atlassian.net/browse/PROJ-2",
+					Start:       time.Date(2025, 1, 20, 9, 30, 0, 0, time.UTC),
+					End:         time.Date(2025, 1, 20, 10, 30, 0, 0, time.UTC),
+				},
+				{
+					Title:       "[PROJ] Review PR",
+					Description: "fylla: PROJ-3\nhttps://test.atlassian.net/browse/PROJ-3",
+					Start:       time.Date(2025, 1, 20, 10, 30, 0, 0, time.UTC),
+					End:         time.Date(2025, 1, 20, 11, 0, 0, 0, time.UTC),
+				},
 			},
 		}
 
 		result, err := RunToday(context.Background(), TodayParams{
-			Tasks: fetcher,
-			Cfg:   testConfig(),
-			Now:   now,
+			Cal: cal,
+			Now: now,
 		})
 		if err != nil {
 			t.Fatalf("RunToday: %v", err)
@@ -36,19 +49,23 @@ func TestRunToday(t *testing.T) {
 		if len(result.Events) != 3 {
 			t.Fatalf("got %d events, want 3", len(result.Events))
 		}
-		// Highest priority task should be first
 		if result.Events[0].TaskKey != "PROJ-1" {
 			t.Errorf("first event = %q, want PROJ-1", result.Events[0].TaskKey)
 		}
+		if result.Events[0].Project != "PROJ" {
+			t.Errorf("first event project = %q, want PROJ", result.Events[0].Project)
+		}
+		if result.Events[0].Summary != "Write the docs" {
+			t.Errorf("first event summary = %q, want Write the docs", result.Events[0].Summary)
+		}
 	})
 
-	t.Run("empty task list", func(t *testing.T) {
-		fetcher := &mockTaskFetcher{tasks: []task.Task{}}
+	t.Run("empty calendar", func(t *testing.T) {
+		cal := &mockCalendar{}
 
 		result, err := RunToday(context.Background(), TodayParams{
-			Tasks: fetcher,
-			Cfg:   testConfig(),
-			Now:   now,
+			Cal: cal,
+			Now: now,
 		})
 		if err != nil {
 			t.Fatalf("RunToday: %v", err)
@@ -59,18 +76,21 @@ func TestRunToday(t *testing.T) {
 		}
 	})
 
-	t.Run("marks at-risk tasks with overdue due dates", func(t *testing.T) {
-		dueYesterday := time.Date(2025, 1, 19, 17, 0, 0, 0, time.UTC)
-		fetcher := &mockTaskFetcher{
-			tasks: []task.Task{
-				{Key: "PROJ-4", Summary: "Overdue task", Priority: 1, DueDate: &dueYesterday, RemainingEstimate: 30 * time.Minute, Project: "PROJ", Created: now.AddDate(0, 0, -5)},
+	t.Run("parses at-risk events", func(t *testing.T) {
+		cal := &mockCalendar{
+			fyllaEvents: []calendar.Event{
+				{
+					Title:       "⚠️ [PROJ] Overdue task",
+					Description: "fylla: PROJ-4\nhttps://test.atlassian.net/browse/PROJ-4",
+					Start:       time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
+					End:         time.Date(2025, 1, 20, 9, 30, 0, 0, time.UTC),
+				},
 			},
 		}
 
 		result, err := RunToday(context.Background(), TodayParams{
-			Tasks: fetcher,
-			Cfg:   testConfig(),
-			Now:   now,
+			Cal: cal,
+			Now: now,
 		})
 		if err != nil {
 			t.Fatalf("RunToday: %v", err)
@@ -87,34 +107,16 @@ func TestRunToday(t *testing.T) {
 		}
 	})
 
-	t.Run("events fall within business hours", func(t *testing.T) {
-		fetcher := &mockTaskFetcher{
-			tasks: []task.Task{
-				{Key: "T-1", Summary: "Task", Priority: 1, RemainingEstimate: time.Hour, Project: "TEST", Created: now.AddDate(0, 0, -1)},
-			},
-		}
-
-		result, err := RunToday(context.Background(), TodayParams{
-			Tasks: fetcher,
-			Cfg:   testConfig(),
-			Now:   now,
-		})
-		if err != nil {
-			t.Fatalf("RunToday: %v", err)
-		}
-
-		for _, ev := range result.Events {
-			if ev.IsCalendarEvent {
-				continue
-			}
-			if ev.Start.Hour() < 9 || ev.End.Hour() > 17 {
-				t.Errorf("event %v-%v outside business hours 09:00-17:00", ev.Start, ev.End)
-			}
-		}
-	})
-
 	t.Run("merges calendar events into timeline", func(t *testing.T) {
 		cal := &mockCalendar{
+			fyllaEvents: []calendar.Event{
+				{
+					Title:       "Fix bug",
+					Description: "fylla: T-1\nhttps://test.atlassian.net/browse/T-1",
+					Start:       time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
+					End:         time.Date(2025, 1, 20, 9, 30, 0, 0, time.UTC),
+				},
+			},
 			events: []calendar.Event{
 				{
 					Title: "Team standup",
@@ -123,23 +125,15 @@ func TestRunToday(t *testing.T) {
 				},
 			},
 		}
-		fetcher := &mockTaskFetcher{
-			tasks: []task.Task{
-				{Key: "T-1", Summary: "Task", Priority: 1, RemainingEstimate: 30 * time.Minute, Project: "TEST", Created: now.AddDate(0, 0, -1)},
-			},
-		}
 
 		result, err := RunToday(context.Background(), TodayParams{
-			Cal:   cal,
-			Tasks: fetcher,
-			Cfg:   testConfig(),
-			Now:   now,
+			Cal: cal,
+			Now: now,
 		})
 		if err != nil {
 			t.Fatalf("RunToday: %v", err)
 		}
 
-		// Should have both the task and the calendar event
 		if len(result.Events) != 2 {
 			t.Fatalf("got %d events, want 2", len(result.Events))
 		}
@@ -158,7 +152,7 @@ func TestRunToday(t *testing.T) {
 		}
 	})
 
-	t.Run("excludes Fylla-created events from calendar merge", func(t *testing.T) {
+	t.Run("excludes Fylla-created events from source calendar", func(t *testing.T) {
 		cal := &mockCalendar{
 			events: []calendar.Event{
 				{
@@ -174,19 +168,15 @@ func TestRunToday(t *testing.T) {
 				},
 			},
 		}
-		fetcher := &mockTaskFetcher{tasks: []task.Task{}}
 
 		result, err := RunToday(context.Background(), TodayParams{
-			Cal:   cal,
-			Tasks: fetcher,
-			Cfg:   testConfig(),
-			Now:   now,
+			Cal: cal,
+			Now: now,
 		})
 		if err != nil {
 			t.Fatalf("RunToday: %v", err)
 		}
 
-		// Only the real meeting should appear, not the Fylla event
 		if len(result.Events) != 1 {
 			t.Fatalf("got %d events, want 1", len(result.Events))
 		}
@@ -206,13 +196,10 @@ func TestRunToday(t *testing.T) {
 				},
 			},
 		}
-		fetcher := &mockTaskFetcher{tasks: []task.Task{}}
 
 		result, err := RunToday(context.Background(), TodayParams{
-			Cal:   cal,
-			Tasks: fetcher,
-			Cfg:   testConfig(),
-			Now:   now,
+			Cal: cal,
+			Now: now,
 		})
 		if err != nil {
 			t.Fatalf("RunToday: %v", err)
@@ -225,6 +212,14 @@ func TestRunToday(t *testing.T) {
 
 	t.Run("timeline is sorted by start time", func(t *testing.T) {
 		cal := &mockCalendar{
+			fyllaEvents: []calendar.Event{
+				{
+					Title:       "Morning task",
+					Description: "fylla: T-1\nhttps://test.atlassian.net/browse/T-1",
+					Start:       time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
+					End:         time.Date(2025, 1, 20, 9, 30, 0, 0, time.UTC),
+				},
+			},
 			events: []calendar.Event{
 				{
 					Title: "Afternoon meeting",
@@ -233,17 +228,10 @@ func TestRunToday(t *testing.T) {
 				},
 			},
 		}
-		fetcher := &mockTaskFetcher{
-			tasks: []task.Task{
-				{Key: "T-1", Summary: "Morning task", Priority: 1, RemainingEstimate: 30 * time.Minute, Project: "TEST", Created: now.AddDate(0, 0, -1)},
-			},
-		}
 
 		result, err := RunToday(context.Background(), TodayParams{
-			Cal:   cal,
-			Tasks: fetcher,
-			Cfg:   testConfig(),
-			Now:   now,
+			Cal: cal,
+			Now: now,
 		})
 		if err != nil {
 			t.Fatalf("RunToday: %v", err)

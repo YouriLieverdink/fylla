@@ -12,11 +12,8 @@ import (
 
 // NextParams holds all inputs for the next command.
 type NextParams struct {
-	Cal   CalendarClient
-	Tasks TaskFetcher
-	Cfg   *config.Config
-	Query string
-	Now   time.Time
+	Cal CalendarClient
+	Now time.Time
 }
 
 // FyllaEvent represents a scheduled Fylla task event or a calendar event.
@@ -38,7 +35,7 @@ type NextResult struct {
 
 // RunNext finds the current or next upcoming Fylla task for today.
 func RunNext(ctx context.Context, p NextParams) (*NextResult, error) {
-	events, err := allocateToday(ctx, p.Cal, p.Tasks, p.Cfg, p.Query, p.Now)
+	events, err := readTodayEvents(ctx, p.Cal, p.Now)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +138,7 @@ func newNextCmd() *cobra.Command {
 		Use:   "next",
 		Short: "Show the current or next scheduled task",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			source, cfg, err := loadTaskSource()
+			cfg, err := config.Load()
 			if err != nil {
 				return err
 			}
@@ -151,40 +148,10 @@ func newNextCmd() *cobra.Command {
 				return err
 			}
 
-			jql, _ := cmd.Flags().GetString("jql")
-			filter, _ := cmd.Flags().GetString("filter")
-
-			var fetcher TaskFetcher
-			var query string
-			if ms, ok := source.(*MultiTaskSource); ok {
-				fetcher = &multiFetcher{
-					queries: buildProviderQueries(cfg, jql, filter),
-					sources: ms.sources,
-				}
-			} else {
-				fetcher = source
-				providers := cfg.ActiveProviders()
-				switch providers[0] {
-				case "todoist":
-					query = filter
-					if query == "" {
-						query = cfg.Todoist.DefaultFilter
-					}
-				default:
-					query = jql
-					if query == "" {
-						query = cfg.Jira.DefaultJQL
-					}
-				}
-			}
-
 			now := time.Now()
 			result, err := RunNext(cmd.Context(), NextParams{
-				Cal:   cal,
-				Tasks: fetcher,
-				Cfg:   cfg,
-				Query: query,
-				Now:   now,
+				Cal: cal,
+				Now: now,
 			})
 			if err != nil {
 				return err
@@ -194,9 +161,6 @@ func newNextCmd() *cobra.Command {
 			return nil
 		},
 	}
-
-	cmd.Flags().String("jql", "", "Custom JQL query override (Jira source)")
-	cmd.Flags().String("filter", "", "Custom filter override (Todoist source)")
 
 	return cmd
 }

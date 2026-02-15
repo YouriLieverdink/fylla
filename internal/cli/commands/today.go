@@ -9,17 +9,13 @@ import (
 
 	"github.com/iruoy/fylla/internal/calendar"
 	"github.com/iruoy/fylla/internal/config"
-	"github.com/iruoy/fylla/internal/scheduler"
 	"github.com/spf13/cobra"
 )
 
 // TodayParams holds all inputs for the today command.
 type TodayParams struct {
-	Cal   CalendarClient
-	Tasks TaskFetcher
-	Cfg   *config.Config
-	Query string
-	Now   time.Time
+	Cal CalendarClient
+	Now time.Time
 }
 
 // TodayResult holds the output of a today operation.
@@ -27,78 +23,35 @@ type TodayResult struct {
 	Events []FyllaEvent
 }
 
-// allocateToday runs the fetch→sort→slots→allocate pipeline for today only.
-// It fetches real calendar events to avoid scheduling over existing commitments.
-func allocateToday(ctx context.Context, cal CalendarClient, tasks TaskFetcher, cfg *config.Config, query string, now time.Time) ([]FyllaEvent, error) {
-	fetched, err := tasks.FetchTasks(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("fetch tasks: %w", err)
-	}
-
-	sorted := scheduler.SortTasks(fetched, cfg.Weights, now)
-
+// readTodayEvents reads Fylla events and source calendar events for today,
+// merges them into a sorted timeline.
+func readTodayEvents(ctx context.Context, cal CalendarClient, now time.Time) ([]FyllaEvent, error) {
 	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	endOfDay := startOfDay.Add(24*time.Hour - time.Nanosecond)
 
-	// Fetch real calendar events to respect existing commitments
-	var calEvents []calendar.Event
-	if cal != nil {
-		calEvents, err = cal.FetchEvents(ctx, startOfDay, endOfDay)
-		if err != nil {
-			return nil, fmt.Errorf("fetch calendar events: %w", err)
-		}
-	}
-
-	slotsByProject := make(map[string][]calendar.Slot)
-
-	defaultSlots, err := calendar.FindFreeSlots(
-		now, startOfDay, endOfDay, calEvents,
-		cfg.BusinessHours,
-		cfg.Scheduling.BufferMinutes,
-		cfg.Scheduling.MinTaskDurationMinutes,
-		cfg.Scheduling.SnapMinutes,
-		cfg.Scheduling.TravelBufferMinutes,
-	)
+	fyllaEvents, err := cal.FetchFyllaEvents(ctx, startOfDay, endOfDay)
 	if err != nil {
-		return nil, fmt.Errorf("find default slots: %w", err)
+		return nil, fmt.Errorf("fetch fylla events: %w", err)
 	}
-	slotsByProject[""] = defaultSlots
-
-	for project := range cfg.ProjectRules {
-		hours := cfg.BusinessHoursFor(project)
-		slots, err := calendar.FindFreeSlots(
-			now, startOfDay, endOfDay, calEvents,
-			hours,
-			cfg.Scheduling.BufferMinutes,
-			cfg.Scheduling.MinTaskDurationMinutes,
-			cfg.Scheduling.SnapMinutes,
-			cfg.Scheduling.TravelBufferMinutes,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("find slots for project %s: %w", project, err)
-		}
-		slotsByProject[project] = slots
-	}
-
-	allocations := scheduler.Allocate(sorted, slotsByProject, scheduler.AllocateConfig{
-		MinTaskDurationMinutes: cfg.Scheduling.MinTaskDurationMinutes,
-		BufferMinutes:          cfg.Scheduling.BufferMinutes,
-		SnapMinutes:            cfg.Scheduling.SnapMinutes,
-	})
 
 	var events []FyllaEvent
-	for _, alloc := range allocations {
+	for _, e := range fyllaEvents {
+		parsed := calendar.ParseTitle(e.Title)
 		events = append(events, FyllaEvent{
-			TaskKey: alloc.Task.Key,
-			Project: alloc.Task.Project,
-			Summary: alloc.Task.Summary,
-			Start:   alloc.Start,
-			End:     alloc.End,
-			AtRisk:  alloc.AtRisk,
+			TaskKey: calendar.TaskKeyFromDescription(e.Description),
+			Project: parsed.Project,
+			Summary: parsed.Summary,
+			Start:   e.Start,
+			End:     e.End,
+			AtRisk:  parsed.AtRisk,
 		})
 	}
 
-	// Merge real calendar events (exclude Fylla-created and all-day events)
+	calEvents, err := cal.FetchEvents(ctx, startOfDay, endOfDay)
+	if err != nil {
+		return nil, fmt.Errorf("fetch calendar events: %w", err)
+	}
+
 	for _, e := range calEvents {
 		if e.AllDay || calendar.TaskKeyFromDescription(e.Description) != "" {
 			continue
@@ -118,9 +71,9 @@ func allocateToday(ctx context.Context, cal CalendarClient, tasks TaskFetcher, c
 	return events, nil
 }
 
-// RunToday allocates tasks into today's business-hours slots.
+// RunToday reads today's schedule from the calendar.
 func RunToday(ctx context.Context, p TodayParams) (*TodayResult, error) {
-	events, err := allocateToday(ctx, p.Cal, p.Tasks, p.Cfg, p.Query, p.Now)
+	events, err := readTodayEvents(ctx, p.Cal, p.Now)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +136,7 @@ func newTodayCmd() *cobra.Command {
 		Use:   "today",
 		Short: "Show all Fylla tasks scheduled for today",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			source, cfg, err := loadTaskSource()
+			cfg, err := config.Load()
 			if err != nil {
 				return err
 			}
@@ -193,40 +146,10 @@ func newTodayCmd() *cobra.Command {
 				return err
 			}
 
-			jql, _ := cmd.Flags().GetString("jql")
-			filter, _ := cmd.Flags().GetString("filter")
-
-			var fetcher TaskFetcher
-			var query string
-			if ms, ok := source.(*MultiTaskSource); ok {
-				fetcher = &multiFetcher{
-					queries: buildProviderQueries(cfg, jql, filter),
-					sources: ms.sources,
-				}
-			} else {
-				fetcher = source
-				providers := cfg.ActiveProviders()
-				switch providers[0] {
-				case "todoist":
-					query = filter
-					if query == "" {
-						query = cfg.Todoist.DefaultFilter
-					}
-				default:
-					query = jql
-					if query == "" {
-						query = cfg.Jira.DefaultJQL
-					}
-				}
-			}
-
 			now := time.Now()
 			result, err := RunToday(cmd.Context(), TodayParams{
-				Cal:   cal,
-				Tasks: fetcher,
-				Cfg:   cfg,
-				Query: query,
-				Now:   now,
+				Cal: cal,
+				Now: now,
 			})
 			if err != nil {
 				return err
@@ -236,9 +159,6 @@ func newTodayCmd() *cobra.Command {
 			return nil
 		},
 	}
-
-	cmd.Flags().String("jql", "", "Custom JQL query override (Jira source)")
-	cmd.Flags().String("filter", "", "Custom filter override (Todoist source)")
 
 	return cmd
 }
