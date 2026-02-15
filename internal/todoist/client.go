@@ -506,7 +506,7 @@ func (c *Client) GetPriority(ctx context.Context, taskID string) (int, error) {
 // RemoveDueDate clears the due date on a Todoist task.
 func (c *Client) RemoveDueDate(ctx context.Context, taskID string) error {
 	payload := map[string]interface{}{
-		"due_date": nil,
+		"due_string": "no date",
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
