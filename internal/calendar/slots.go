@@ -175,12 +175,14 @@ func collectBusyRanges(events []Event, bufferMinutes, travelBufferMinutes int) [
 			continue // OOO handled separately
 		}
 		start := e.Start
+		end := e.End.Add(buffer)
 		if e.Location != "" {
 			start = start.Add(-travelBuffer)
+			end = e.End.Add(travelBuffer)
 		}
 		ranges = append(ranges, timeRange{
 			start: start,
-			end:   e.End.Add(buffer),
+			end:   end,
 		})
 	}
 	return ranges
