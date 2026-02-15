@@ -124,9 +124,17 @@ func PrintSyncResult(w io.Writer, result *SyncResult, dryRun bool) {
 		if alloc.AtRisk {
 			prefix = "⚠️ "
 		}
+		taskLabel := alloc.Task.Key
+		if alloc.Task.Project != "" {
+			projectPrefix := alloc.Task.Project
+			if alloc.Task.Section != "" {
+				projectPrefix = projectPrefix + " / " + alloc.Task.Section
+			}
+			taskLabel = "[" + projectPrefix + "] " + taskLabel
+		}
 		fmt.Fprintf(w, "  %s%s: %s  %s – %s\n",
 			prefix,
-			alloc.Task.Key,
+			taskLabel,
 			alloc.Task.Summary,
 			alloc.Start.Format("Mon 15:04"),
 			alloc.End.Format("15:04"),
@@ -148,7 +156,15 @@ func PrintSyncResult(w io.Writer, result *SyncResult, dryRun bool) {
 			if ar.Task.DueDate != nil {
 				dueStr = "due " + ar.Task.DueDate.Format("Jan 2")
 			}
-			fmt.Fprintf(w, "  %s: %s (%s)\n", ar.Task.Key, ar.Task.Summary, dueStr)
+			taskLabel := ar.Task.Key
+			if ar.Task.Project != "" {
+				projectPrefix := ar.Task.Project
+				if ar.Task.Section != "" {
+					projectPrefix = projectPrefix + " / " + ar.Task.Section
+				}
+				taskLabel = "[" + projectPrefix + "] " + taskLabel
+			}
+			fmt.Fprintf(w, "  %s: %s (%s)\n", taskLabel, ar.Task.Summary, dueStr)
 		}
 	}
 
@@ -160,7 +176,15 @@ func PrintSyncResult(w io.Writer, result *SyncResult, dryRun bool) {
 			if t.RemainingEstimate > 0 {
 				est = t.RemainingEstimate.String()
 			}
-			fmt.Fprintf(w, "  %s: %s (%s)\n", t.Key, t.Summary, est)
+			taskLabel := t.Key
+			if t.Project != "" {
+				projectPrefix := t.Project
+				if t.Section != "" {
+					projectPrefix = projectPrefix + " / " + t.Section
+				}
+				taskLabel = "[" + projectPrefix + "] " + taskLabel
+			}
+			fmt.Fprintf(w, "  %s: %s (%s)\n", taskLabel, t.Summary, est)
 		}
 	}
 }
@@ -175,6 +199,7 @@ func progress(w io.Writer, format string, args ...interface{}) {
 type desiredEvent struct {
 	TaskKey string
 	Project string
+	Section string
 	Summary string
 	Start   time.Time
 	End     time.Time
@@ -277,6 +302,7 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 				if err := p.Cal.CreateEvent(ctx, calendar.CreateEventInput{
 					TaskKey: alloc.Task.Key,
 					Project: alloc.Task.Project,
+					Section: alloc.Task.Section,
 					Summary: alloc.Task.Summary,
 					Start:   alloc.Start,
 					End:     alloc.End,
@@ -299,6 +325,7 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 				desired[i] = desiredEvent{
 					TaskKey: alloc.Task.Key,
 					Project: alloc.Task.Project,
+					Section: alloc.Task.Section,
 					Summary: alloc.Task.Summary,
 					Start:   alloc.Start,
 					End:     alloc.End,
@@ -377,6 +404,7 @@ func reconcile(ctx context.Context, cal CalendarClient, existing []calendar.Even
 				input := calendar.CreateEventInput{
 					TaskKey: d.event.TaskKey,
 					Project: d.event.Project,
+					Section: d.event.Section,
 					Summary: d.event.Summary,
 					Start:   d.event.Start,
 					End:     d.event.End,
@@ -395,6 +423,7 @@ func reconcile(ctx context.Context, cal CalendarClient, existing []calendar.Even
 				if err := cal.CreateEvent(ctx, calendar.CreateEventInput{
 					TaskKey: d.event.TaskKey,
 					Project: d.event.Project,
+					Section: d.event.Section,
 					Summary: d.event.Summary,
 					Start:   d.event.Start,
 					End:     d.event.End,
@@ -431,7 +460,7 @@ func reconcile(ctx context.Context, cal CalendarClient, existing []calendar.Even
 // eventsMatch returns true if an existing calendar event matches the desired state.
 func eventsMatch(existing calendar.Event, desired desiredEvent) bool {
 	return existing.Start.Equal(desired.Start) && existing.End.Equal(desired.End) &&
-		calendar.BuildTitle(desired.Project, desired.Summary, desired.AtRisk) == existing.Title &&
+		calendar.BuildTitleWithSection(desired.Project, desired.Section, desired.Summary, desired.AtRisk) == existing.Title &&
 		calendar.TaskKeyFromDescription(existing.Description) == desired.TaskKey
 }
 

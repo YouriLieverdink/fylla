@@ -40,6 +40,7 @@ func readTodayEvents(ctx context.Context, cal CalendarClient, now time.Time) ([]
 		events = append(events, FyllaEvent{
 			TaskKey: calendar.TaskKeyFromDescription(e.Description),
 			Project: parsed.Project,
+			Section: parsed.Section,
 			Summary: parsed.Summary,
 			Start:   e.Start,
 			End:     e.End,
@@ -116,7 +117,11 @@ func PrintTodayResult(w io.Writer, result *TodayResult, now time.Time) {
 
 		taskLabel := fe.TaskKey
 		if fe.Project != "" {
-			taskLabel = "[" + fe.Project + "] " + taskLabel
+			projectPrefix := fe.Project
+			if fe.Section != "" {
+				projectPrefix = projectPrefix + " / " + fe.Section
+			}
+			taskLabel = "[" + projectPrefix + "] " + taskLabel
 		}
 
 		fmt.Fprintf(w, "%s%s – %s  %s%s: %s%s\n",

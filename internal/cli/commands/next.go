@@ -20,6 +20,7 @@ type NextParams struct {
 type FyllaEvent struct {
 	TaskKey         string
 	Project         string
+	Section         string
 	Summary         string
 	Start           time.Time
 	End             time.Time
@@ -76,7 +77,11 @@ func PrintNextResult(w io.Writer, result *NextResult, now time.Time) {
 			}
 			taskLabel := result.Current.TaskKey
 			if result.Current.Project != "" {
-				taskLabel = "[" + result.Current.Project + "] " + taskLabel
+				projectPrefix := result.Current.Project
+				if result.Current.Section != "" {
+					projectPrefix = projectPrefix + " / " + result.Current.Section
+				}
+				taskLabel = "[" + projectPrefix + "] " + taskLabel
 			}
 			fmt.Fprintf(w, "Current: %s%s: %s (until %s)\n",
 				prefix,
@@ -111,7 +116,11 @@ func PrintNextResult(w io.Writer, result *NextResult, now time.Time) {
 			}
 			taskLabel := result.Next.TaskKey
 			if result.Next.Project != "" {
-				taskLabel = "[" + result.Next.Project + "] " + taskLabel
+				projectPrefix := result.Next.Project
+				if result.Next.Section != "" {
+					projectPrefix = projectPrefix + " / " + result.Next.Section
+				}
+				taskLabel = "[" + projectPrefix + "] " + taskLabel
 			}
 			if minutes < 60 {
 				fmt.Fprintf(w, "Next:    %s%s: %s (starts in %dm)\n",

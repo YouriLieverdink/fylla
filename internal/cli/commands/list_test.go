@@ -86,11 +86,8 @@ func TestCLI009_list_shows_sorted_tasks(t *testing.T) {
 		PrintListResult(&buf, result, false)
 		out := buf.String()
 
-		if !strings.Contains(out, "PROJ-42") {
-			t.Errorf("output missing task key, got:\n%s", out)
-		}
-		if !strings.Contains(out, "Fix login bug") {
-			t.Errorf("output missing summary, got:\n%s", out)
+		if !strings.Contains(out, "[PROJ] PROJ-42: Fix login bug") {
+			t.Errorf("output missing formatted task line, got:\n%s", out)
 		}
 		// Default mode should not include detail tags like issue type
 		if strings.Contains(out, "Bug") {
@@ -121,10 +118,40 @@ func TestCLI009_list_shows_sorted_tasks(t *testing.T) {
 		PrintListResult(&buf, result, true)
 		out := buf.String()
 
-		for _, want := range []string{"Project: PROJ", "Bug", "2h", "Due: Jan 25", "Priority: High", "Not Before: Jan 22", "Up Next"} {
+		// Project is now in the prefix line, not in verbose details
+		if !strings.Contains(out, "[PROJ] PROJ-42: Fix login bug") {
+			t.Errorf("verbose output missing formatted prefix, got:\n%s", out)
+		}
+		for _, want := range []string{"Bug", "2h", "Due: Jan 25", "Priority: High", "Not Before: Jan 22", "Up Next"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("verbose output missing %q, got:\n%s", want, out)
 			}
+		}
+	})
+
+	t.Run("section displayed in prefix", func(t *testing.T) {
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
+				{Key: "12345678", Summary: "Buy groceries", Priority: 3, RemainingEstimate: 30 * time.Minute, Project: "Personal", Section: "Shopping", Created: now.AddDate(0, 0, -1)},
+			},
+		}
+
+		result, err := RunList(context.Background(), ListParams{
+			Tasks: jr,
+			Cfg:   testConfig(),
+			Query: "",
+			Now:   now,
+		})
+		if err != nil {
+			t.Fatalf("RunList: %v", err)
+		}
+
+		var buf bytes.Buffer
+		PrintListResult(&buf, result, false)
+		out := buf.String()
+
+		if !strings.Contains(out, "[Personal / Shopping] 12345678: Buy groceries") {
+			t.Errorf("output missing section prefix, got:\n%s", out)
 		}
 	})
 

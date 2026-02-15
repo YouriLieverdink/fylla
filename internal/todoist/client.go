@@ -21,6 +21,7 @@ type Client struct {
 	Token      string
 	HTTPClient *http.Client
 	projects   map[string]string // id → name cache
+	sections   map[string]string // id → name cache
 }
 
 // NewClient creates a Todoist client with the given API token.
@@ -61,6 +62,7 @@ type todoistTask struct {
 	Due         *todoistDue      `json:"due"`
 	Duration    *todoistDuration `json:"duration"`
 	ProjectID   string           `json:"project_id"`
+	SectionID   string           `json:"section_id"`
 	Labels      []string         `json:"labels"`
 	AddedAt     string           `json:"added_at"`
 }
@@ -83,6 +85,12 @@ type todoistDuration struct {
 type todoistProject struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+}
+
+type todoistSection struct {
+	ID        string `json:"id"`
+	ProjectID string `json:"project_id"`
+	Name      string `json:"name"`
 }
 
 // apiPriorityToLevel maps Todoist API priority (1-4) to fylla priority (1-5).
@@ -166,6 +174,44 @@ func (c *Client) ListProjects(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
+func (c *Client) loadSections(ctx context.Context) error {
+	if c.sections != nil {
+		return nil
+	}
+
+	resp, err := c.do(ctx, http.MethodGet, "/sections", nil)
+	if err != nil {
+		return fmt.Errorf("fetch sections: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("todoist sections: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var page paginatedResults[todoistSection]
+	if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+		return fmt.Errorf("decode sections: %w", err)
+	}
+
+	c.sections = make(map[string]string, len(page.Results))
+	for _, s := range page.Results {
+		c.sections[s.ID] = s.Name
+	}
+	return nil
+}
+
+func (c *Client) sectionName(id string) string {
+	if id == "" || c.sections == nil {
+		return ""
+	}
+	if name, ok := c.sections[id]; ok {
+		return name
+	}
+	return ""
+}
+
 func (c *Client) projectName(id string) string {
 	if c.projects == nil {
 		return id
@@ -183,8 +229,9 @@ func (c *Client) parseTask(t todoistTask) task.Task {
 		Priority: apiPriorityToLevel(t.Priority),
 	}
 
-	// Project
+	// Project & Section
 	result.Project = c.projectName(t.ProjectID)
+	result.Section = c.sectionName(t.SectionID)
 
 	// Created
 	if t.AddedAt != "" {
@@ -232,6 +279,9 @@ func (c *Client) parseTask(t todoistTask) task.Task {
 // FetchTasks retrieves active tasks from Todoist, optionally filtered.
 func (c *Client) FetchTasks(ctx context.Context, filter string) ([]task.Task, error) {
 	if err := c.loadProjects(ctx); err != nil {
+		return nil, err
+	}
+	if err := c.loadSections(ctx); err != nil {
 		return nil, err
 	}
 

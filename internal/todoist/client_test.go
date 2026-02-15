@@ -17,14 +17,19 @@ func TestFetchTasks(t *testing.T) {
 		{ID: "222", Name: "Personal"},
 	}
 
+	sections := []todoistSection{
+		{ID: "s1", ProjectID: "111", Name: "Sprint 1"},
+	}
+
 	tasks := []todoistTask{
 		{
 			ID:        "1001",
 			Content:   "Fix bug",
 			Priority:  4,
 			ProjectID: "111",
+			SectionID: "s1",
 			Labels:    []string{"Bug"},
-			AddedAt: "2025-01-15T10:00:00Z",
+			AddedAt:   "2025-01-15T10:00:00Z",
 			Due:       &todoistDue{Date: "2025-02-01"},
 			Duration:  &todoistDuration{Amount: 120, Unit: "minute"},
 		},
@@ -34,7 +39,7 @@ func TestFetchTasks(t *testing.T) {
 			Priority:  1,
 			ProjectID: "222",
 			Labels:    []string{"Task"},
-			AddedAt: "2025-01-18T14:00:00Z",
+			AddedAt:   "2025-01-18T14:00:00Z",
 		},
 	}
 
@@ -46,6 +51,8 @@ func TestFetchTasks(t *testing.T) {
 		switch r.URL.Path {
 		case "/projects":
 			json.NewEncoder(w).Encode(paginatedResults[todoistProject]{Results: projects})
+		case "/sections":
+			json.NewEncoder(w).Encode(paginatedResults[todoistSection]{Results: sections})
 		case "/tasks":
 			json.NewEncoder(w).Encode(paginatedResults[todoistTask]{Results: tasks})
 		default:
@@ -79,6 +86,9 @@ func TestFetchTasks(t *testing.T) {
 	if result[0].Project != "Work" {
 		t.Errorf("task[0].Project = %q, want Work", result[0].Project)
 	}
+	if result[0].Section != "Sprint 1" {
+		t.Errorf("task[0].Section = %q, want Sprint 1", result[0].Section)
+	}
 	if result[0].DueDate == nil {
 		t.Fatal("task[0].DueDate is nil")
 	}
@@ -90,12 +100,15 @@ func TestFetchTasks(t *testing.T) {
 		t.Errorf("task[0].OriginalEstimate = %v, want 2h", result[0].OriginalEstimate)
 	}
 
-	// Task 2: normal priority (API 1 → fylla 4), no due date/duration
+	// Task 2: normal priority (API 1 → fylla 4), no due date/duration, no section
 	if result[1].Priority != 4 {
 		t.Errorf("task[1].Priority = %d, want 4 (API 1 → fylla 4)", result[1].Priority)
 	}
 	if result[1].Project != "Personal" {
 		t.Errorf("task[1].Project = %q, want Personal", result[1].Project)
+	}
+	if result[1].Section != "" {
+		t.Errorf("task[1].Section = %q, want empty", result[1].Section)
 	}
 }
 
@@ -115,6 +128,8 @@ func TestFetchTasks_BracketAndNativeDue(t *testing.T) {
 		switch r.URL.Path {
 		case "/projects":
 			json.NewEncoder(w).Encode(paginatedResults[todoistProject]{Results: []todoistProject{{ID: "111", Name: "Ops"}}})
+		case "/sections":
+			json.NewEncoder(w).Encode(paginatedResults[todoistSection]{Results: nil})
 		case "/tasks":
 			json.NewEncoder(w).Encode(paginatedResults[todoistTask]{Results: tasks})
 		default:
@@ -311,6 +326,8 @@ func TestFetchTasks_Filter(t *testing.T) {
 		switch r.URL.Path {
 		case "/projects":
 			json.NewEncoder(w).Encode(paginatedResults[todoistProject]{Results: projects})
+		case "/sections":
+			json.NewEncoder(w).Encode(paginatedResults[todoistSection]{Results: nil})
 		case "/tasks/filter":
 			if r.URL.Query().Get("query") != "today" {
 				t.Errorf("filter query = %q, want 'today'", r.URL.Query().Get("query"))

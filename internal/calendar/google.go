@@ -159,9 +159,19 @@ func BuildTitle(project, summary string, atRisk bool) string {
 	return title
 }
 
+// BuildTitleWithSection constructs the calendar event title including section.
+func BuildTitleWithSection(project, section, summary string, atRisk bool) string {
+	prefix := project
+	if prefix != "" && section != "" {
+		prefix = prefix + " / " + section
+	}
+	return BuildTitle(prefix, summary, atRisk)
+}
+
 // ParsedTitle holds the components extracted from a Fylla event title.
 type ParsedTitle struct {
 	Project string
+	Section string
 	Summary string
 	AtRisk  bool
 }
@@ -181,7 +191,13 @@ func ParseTitle(title string) ParsedTitle {
 	if strings.HasPrefix(s, "[") {
 		end := strings.Index(s, "] ")
 		if end != -1 {
-			p.Project = s[1:end]
+			bracket := s[1:end]
+			if parts := strings.SplitN(bracket, " / ", 2); len(parts) == 2 {
+				p.Project = parts[0]
+				p.Section = parts[1]
+			} else {
+				p.Project = bracket
+			}
 			s = s[end+2:]
 		}
 	}
@@ -274,7 +290,7 @@ func (c *GoogleClient) FetchFyllaEvents(ctx context.Context, start, end time.Tim
 
 // UpdateEvent updates an existing event on the fylla calendar.
 func (c *GoogleClient) UpdateEvent(ctx context.Context, eventID string, input CreateEventInput) error {
-	title := BuildTitle(input.Project, input.Summary, input.AtRisk)
+	title := BuildTitleWithSection(input.Project, input.Section, input.Summary, input.AtRisk)
 	description := BuildDescription(input.TaskKey, c.JiraBaseURL)
 
 	event := &googlecalendar.Event{
@@ -306,6 +322,7 @@ func (c *GoogleClient) DeleteEvent(ctx context.Context, eventID string) error {
 type CreateEventInput struct {
 	TaskKey  string
 	Project  string
+	Section  string
 	Summary  string
 	Start    time.Time
 	End      time.Time
@@ -314,7 +331,7 @@ type CreateEventInput struct {
 
 // CreateEvent creates a new event on the fylla calendar.
 func (c *GoogleClient) CreateEvent(ctx context.Context, input CreateEventInput) error {
-	title := BuildTitle(input.Project, input.Summary, input.AtRisk)
+	title := BuildTitleWithSection(input.Project, input.Section, input.Summary, input.AtRisk)
 	description := BuildDescription(input.TaskKey, c.JiraBaseURL)
 
 	event := &googlecalendar.Event{

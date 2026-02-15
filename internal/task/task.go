@@ -13,6 +13,7 @@ type Task struct {
 	IssueType         string // Bug, Task, Story (Jira) or label (Todoist)
 	Created           time.Time
 	Project           string
+	Section           string
 	NotBefore         *time.Time
 	UpNext            bool
 	NoSplit           bool

@@ -635,8 +635,10 @@ func TestParseTitle(t *testing.T) {
 	}{
 		{"plain summary", "Fix bug", ParsedTitle{Summary: "Fix bug"}},
 		{"with project", "[PROJ] Fix bug", ParsedTitle{Project: "PROJ", Summary: "Fix bug"}},
+		{"with project and section", "[PROJ / Backlog] Fix bug", ParsedTitle{Project: "PROJ", Section: "Backlog", Summary: "Fix bug"}},
 		{"at-risk without project", "⚠️ Overdue", ParsedTitle{Summary: "Overdue", AtRisk: true}},
 		{"at-risk with project", "⚠️ [PROJ] Overdue", ParsedTitle{Project: "PROJ", Summary: "Overdue", AtRisk: true}},
+		{"at-risk with section", "⚠️ [PROJ / Sprint 1] Overdue", ParsedTitle{Project: "PROJ", Section: "Sprint 1", Summary: "Overdue", AtRisk: true}},
 		{"empty string", "", ParsedTitle{Summary: ""}},
 		{"bracket without close", "[PROJ Fix bug", ParsedTitle{Summary: "[PROJ Fix bug"}},
 	}
@@ -649,23 +651,26 @@ func TestParseTitle(t *testing.T) {
 		})
 	}
 
-	t.Run("round-trip with BuildTitle", func(t *testing.T) {
+	t.Run("round-trip with BuildTitleWithSection", func(t *testing.T) {
 		cases := []struct {
 			project string
+			section string
 			summary string
 			atRisk  bool
 		}{
-			{"", "Fix bug", false},
-			{"PROJ", "Fix bug", false},
-			{"", "Overdue", true},
-			{"PROJ", "Overdue", true},
+			{"", "", "Fix bug", false},
+			{"PROJ", "", "Fix bug", false},
+			{"PROJ", "Backlog", "Fix bug", false},
+			{"", "", "Overdue", true},
+			{"PROJ", "", "Overdue", true},
+			{"PROJ", "Sprint 1", "Overdue", true},
 		}
 		for _, c := range cases {
-			title := BuildTitle(c.project, c.summary, c.atRisk)
+			title := BuildTitleWithSection(c.project, c.section, c.summary, c.atRisk)
 			got := ParseTitle(title)
-			if got.Project != c.project || got.Summary != c.summary || got.AtRisk != c.atRisk {
-				t.Errorf("round-trip failed: BuildTitle(%q, %q, %v) = %q → ParseTitle = %+v",
-					c.project, c.summary, c.atRisk, title, got)
+			if got.Project != c.project || got.Section != c.section || got.Summary != c.summary || got.AtRisk != c.atRisk {
+				t.Errorf("round-trip failed: BuildTitleWithSection(%q, %q, %q, %v) = %q → ParseTitle = %+v",
+					c.project, c.section, c.summary, c.atRisk, title, got)
 			}
 		}
 	})

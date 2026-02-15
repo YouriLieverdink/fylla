@@ -9,6 +9,7 @@ import (
 
 	"github.com/iruoy/fylla/internal/config"
 	"github.com/iruoy/fylla/internal/scheduler"
+	"github.com/mattn/go-runewidth"
 	"github.com/spf13/cobra"
 )
 
@@ -44,34 +45,58 @@ func PrintListResult(w io.Writer, result *ListResult, verbose bool) {
 		return
 	}
 
-	// Compute column widths for alignment.
-	maxKey := 0
-	maxSummary := 0
-	for _, st := range result.Tasks {
-		if len(st.Task.Key) > maxKey {
-			maxKey = len(st.Task.Key)
+	// Build formatted lines for alignment.
+	type formattedTask struct {
+		prefix  string // e.g. "[PROJ / Backlog] " or "[PROJ] " or ""
+		keySep  string // e.g. "PROJ-42: " or "12345: "
+		summary string
+		score   float64
+	}
+
+	formatted := make([]formattedTask, len(result.Tasks))
+	maxLeft := 0
+	for i, st := range result.Tasks {
+		var prefix string
+		if st.Task.Project != "" {
+			if st.Task.Section != "" {
+				prefix = fmt.Sprintf("[%s / %s] ", st.Task.Project, st.Task.Section)
+			} else {
+				prefix = fmt.Sprintf("[%s] ", st.Task.Project)
+			}
 		}
-		if len(st.Task.Summary) > maxSummary {
-			maxSummary = len(st.Task.Summary)
+		keySep := st.Task.Key + ": "
+		formatted[i] = formattedTask{
+			prefix:  prefix,
+			keySep:  keySep,
+			summary: st.Task.Summary,
+			score:   st.Score,
+		}
+		left := runewidth.StringWidth(prefix) + runewidth.StringWidth(keySep) + runewidth.StringWidth(st.Task.Summary)
+		if left > maxLeft {
+			maxLeft = left
 		}
 	}
 
 	indexWidth := len(fmt.Sprintf("%d", len(result.Tasks)))
 
 	fmt.Fprintf(w, "%d task(s):\n", len(result.Tasks))
-	for i, st := range result.Tasks {
-		fmt.Fprintf(w, "  %*d. %-*s  %-*s  %5.1f\n",
+	for i, ft := range formatted {
+		left := ft.prefix + ft.keySep + ft.summary
+		displayWidth := runewidth.StringWidth(left)
+		padding := ""
+		if maxLeft > displayWidth {
+			padding = strings.Repeat(" ", maxLeft-displayWidth)
+		}
+		fmt.Fprintf(w, "  %*d. %s%s  %5.1f\n",
 			indexWidth, i+1,
-			maxKey, st.Task.Key,
-			maxSummary, st.Task.Summary,
-			st.Score)
+			left, padding,
+			ft.score)
 
 		if verbose {
-			details := formatTaskDetails(st)
+			details := formatTaskDetails(result.Tasks[i])
 			if details != "" {
-				fmt.Fprintf(w, "  %*s  %-*s  %s\n",
+				fmt.Fprintf(w, "  %*s  %s\n",
 					indexWidth, "",
-					maxKey, "",
 					details)
 			}
 		}
@@ -80,9 +105,6 @@ func PrintListResult(w io.Writer, result *ListResult, verbose bool) {
 
 func formatTaskDetails(st scheduler.ScoredTask) string {
 	var parts []string
-	if st.Task.Project != "" {
-		parts = append(parts, "Project: "+st.Task.Project)
-	}
 	if st.Task.IssueType != "" {
 		parts = append(parts, st.Task.IssueType)
 	}
