@@ -7,11 +7,20 @@ import (
 	"sort"
 	"time"
 
+	"strings"
+
+	"github.com/mattn/go-runewidth"
+
 	"github.com/iruoy/fylla/internal/calendar"
 	"github.com/iruoy/fylla/internal/config"
 	"github.com/iruoy/fylla/internal/scheduler"
 	"github.com/iruoy/fylla/internal/task"
 	"github.com/spf13/cobra"
+)
+
+const (
+	maxLabelWidth   = 40
+	maxSummaryWidth = 40
 )
 
 // CalendarClient abstracts calendar operations for testing.
@@ -120,6 +129,73 @@ type timelineEntry struct {
 	section string
 }
 
+func truncateString(s string, maxWidth int) string {
+	if displayWidth(s) <= maxWidth {
+		return s
+	}
+	// Walk runes, tracking display width, and cut before exceeding maxWidth.
+	// Reserve 1 column for the ellipsis.
+	runes := []rune(s)
+	w := 0
+	prev := 0
+	cutAt := 0
+	for i, r := range runes {
+		rw := runewidth.RuneWidth(r)
+		if r == 0xFE0F && prev == 1 {
+			rw = 1
+		}
+		if r >= 0xFE00 && r <= 0xFE0F {
+			prev = 0
+		} else {
+			prev = runewidth.RuneWidth(r)
+		}
+		if w+rw > maxWidth-1 {
+			cutAt = i
+			break
+		}
+		w += rw
+		cutAt = i + 1
+	}
+	return string(runes[:cutAt]) + "…"
+}
+
+func padRight(s string, width int) string {
+	w := displayWidth(s)
+	if w >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-w)
+}
+
+func capWidth(n, max int) int {
+	if n > max {
+		return max
+	}
+	return n
+}
+
+func buildTaskLabel(key, project, section string, maxTotal int) string {
+	if project == "" {
+		return key
+	}
+	prefix := project
+	if section != "" {
+		prefix = prefix + " / " + section
+	}
+	full := "[" + prefix + "] " + key
+	keyWidth := displayWidth(key)
+	if displayWidth(full) <= maxTotal || maxTotal <= keyWidth {
+		return full
+	}
+	// Truncate prefix to fit: "[prefix…] " + key
+	// overhead: [ ] + space = 3 display cols, plus … = 4
+	available := maxTotal - keyWidth - 4
+	if available <= 0 {
+		return key
+	}
+	return "[" + truncateString(prefix, available) + "] " + key
+}
+
 // PrintSyncResult writes the sync result to the given writer.
 func PrintSyncResult(w io.Writer, result *SyncResult, dryRun bool) {
 	if dryRun {
@@ -138,14 +214,7 @@ func PrintSyncResult(w io.Writer, result *SyncResult, dryRun bool) {
 			if ar.Task.DueDate != nil {
 				dueStr = "due " + ar.Task.DueDate.Format("Jan 2")
 			}
-			taskLabel := ar.Task.Key
-			if ar.Task.Project != "" {
-				projectPrefix := ar.Task.Project
-				if ar.Task.Section != "" {
-					projectPrefix = projectPrefix + " / " + ar.Task.Section
-				}
-				taskLabel = "[" + projectPrefix + "] " + taskLabel
-			}
+			taskLabel := buildTaskLabel(ar.Task.Key, ar.Task.Project, ar.Task.Section, maxLabelWidth)
 			fmt.Fprintf(w, "  %s: %s (%s)\n", taskLabel, ar.Task.Summary, dueStr)
 		}
 	}
@@ -157,34 +226,21 @@ func PrintSyncResult(w io.Writer, result *SyncResult, dryRun bool) {
 		maxKey := 0
 		maxSummary := 0
 		for _, u := range result.Unscheduled {
-			taskLabel := u.Task.Key
-			if u.Task.Project != "" {
-				projectPrefix := u.Task.Project
-				if u.Task.Section != "" {
-					projectPrefix = projectPrefix + " / " + u.Task.Section
-				}
-				taskLabel = "[" + projectPrefix + "] " + taskLabel
+			taskLabel := buildTaskLabel(u.Task.Key, u.Task.Project, u.Task.Section, maxLabelWidth)
+			if w := displayWidth(taskLabel); w > maxKey {
+				maxKey = w
 			}
-			if len(taskLabel) > maxKey {
-				maxKey = len(taskLabel)
-			}
-			if len(u.Task.Summary) > maxSummary {
-				maxSummary = len(u.Task.Summary)
+			if w := displayWidth(u.Task.Summary); w > maxSummary {
+				maxSummary = w
 			}
 		}
+		maxSummary = capWidth(maxSummary, maxSummaryWidth)
 		for _, u := range result.Unscheduled {
 			est := formatDuration(u.Task.RemainingEstimate)
-			taskLabel := u.Task.Key
-			if u.Task.Project != "" {
-				projectPrefix := u.Task.Project
-				if u.Task.Section != "" {
-					projectPrefix = projectPrefix + " / " + u.Task.Section
-				}
-				taskLabel = "[" + projectPrefix + "] " + taskLabel
-			}
-			fmt.Fprintf(w, "  %-*s  %-*s  %5s  — %s\n",
-				maxKey, taskLabel,
-				maxSummary, u.Task.Summary,
+			taskLabel := buildTaskLabel(u.Task.Key, u.Task.Project, u.Task.Section, maxLabelWidth)
+			fmt.Fprintf(w, "  %s  %s  %5s  — %s\n",
+				padRight(taskLabel, maxKey),
+				padRight(truncateString(u.Task.Summary, maxSummary), maxSummary),
 				est,
 				u.Reason,
 			)
@@ -234,23 +290,18 @@ func printDryRunTimeline(w io.Writer, result *SyncResult) {
 	maxKey := 0
 	maxSummary := 0
 	for _, e := range entries {
-		label := e.key
-		if e.isEvent {
-			label = "•"
-		} else if e.project != "" {
-			projectPrefix := e.project
-			if e.section != "" {
-				projectPrefix += " / " + e.section
-			}
-			label = "[" + projectPrefix + "] " + label
+		label := "•"
+		if !e.isEvent {
+			label = buildTaskLabel(e.key, e.project, e.section, maxLabelWidth)
 		}
-		if len(label) > maxKey {
-			maxKey = len(label)
+		if w := displayWidth(label); w > maxKey {
+			maxKey = w
 		}
-		if len(e.summary) > maxSummary {
-			maxSummary = len(e.summary)
+		if w := displayWidth(e.summary); w > maxSummary {
+			maxSummary = w
 		}
 	}
+	maxSummary = capWidth(maxSummary, maxSummaryWidth)
 
 	fmt.Fprintf(w, "Scheduled %d event(s):\n", len(result.Allocations))
 
@@ -263,15 +314,9 @@ func printDryRunTimeline(w io.Writer, result *SyncResult) {
 			currentDay = day
 		}
 
-		label := e.key
-		if e.isEvent {
-			label = "•"
-		} else if e.project != "" {
-			projectPrefix := e.project
-			if e.section != "" {
-				projectPrefix += " / " + e.section
-			}
-			label = "[" + projectPrefix + "] " + label
+		label := "•"
+		if !e.isEvent {
+			label = buildTaskLabel(e.key, e.project, e.section, maxLabelWidth)
 		}
 
 		dur := formatDuration(e.end.Sub(e.start))
@@ -280,9 +325,9 @@ func printDryRunTimeline(w io.Writer, result *SyncResult) {
 			prefix = "⚠️ "
 		}
 
-		fmt.Fprintf(w, "    %-*s  %-*s  %5s  %s%s – %s\n",
-			maxKey, label,
-			maxSummary, e.summary,
+		fmt.Fprintf(w, "    %s  %s  %5s  %s%s – %s\n",
+			padRight(label, maxKey),
+			padRight(truncateString(e.summary, maxSummary), maxSummary),
 			dur,
 			prefix,
 			e.start.Format("15:04"),
@@ -300,21 +345,15 @@ func printAppliedResult(w io.Writer, result *SyncResult) {
 	maxKey := 0
 	maxSummary := 0
 	for _, alloc := range result.Allocations {
-		taskLabel := alloc.Task.Key
-		if alloc.Task.Project != "" {
-			projectPrefix := alloc.Task.Project
-			if alloc.Task.Section != "" {
-				projectPrefix += " / " + alloc.Task.Section
-			}
-			taskLabel = "[" + projectPrefix + "] " + taskLabel
+		taskLabel := buildTaskLabel(alloc.Task.Key, alloc.Task.Project, alloc.Task.Section, maxLabelWidth)
+		if w := displayWidth(taskLabel); w > maxKey {
+			maxKey = w
 		}
-		if len(taskLabel) > maxKey {
-			maxKey = len(taskLabel)
-		}
-		if len(alloc.Task.Summary) > maxSummary {
-			maxSummary = len(alloc.Task.Summary)
+		if w := displayWidth(alloc.Task.Summary); w > maxSummary {
+			maxSummary = w
 		}
 	}
+	maxSummary = capWidth(maxSummary, maxSummaryWidth)
 
 	indexWidth := len(fmt.Sprintf("%d", len(result.Allocations)))
 
@@ -324,19 +363,12 @@ func printAppliedResult(w io.Writer, result *SyncResult) {
 		if alloc.AtRisk {
 			prefix = "⚠️ "
 		}
-		taskLabel := alloc.Task.Key
-		if alloc.Task.Project != "" {
-			projectPrefix := alloc.Task.Project
-			if alloc.Task.Section != "" {
-				projectPrefix += " / " + alloc.Task.Section
-			}
-			taskLabel = "[" + projectPrefix + "] " + taskLabel
-		}
+		taskLabel := buildTaskLabel(alloc.Task.Key, alloc.Task.Project, alloc.Task.Section, maxLabelWidth)
 		est := formatDuration(alloc.End.Sub(alloc.Start))
-		fmt.Fprintf(w, "  %*d. %-*s  %-*s  %5s  %s%s – %s\n",
+		fmt.Fprintf(w, "  %*d. %s  %s  %5s  %s%s – %s\n",
 			indexWidth, i+1,
-			maxKey, taskLabel,
-			maxSummary, alloc.Task.Summary,
+			padRight(taskLabel, maxKey),
+			padRight(truncateString(alloc.Task.Summary, maxSummary), maxSummary),
 			est,
 			prefix,
 			alloc.Start.Format("Mon Jan 2 15:04"),
