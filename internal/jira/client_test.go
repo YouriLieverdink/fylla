@@ -584,6 +584,76 @@ func TestCompleteTask(t *testing.T) {
 		}
 	})
 
+	t.Run("uses configured transition name per project", func(t *testing.T) {
+		var postedTransitionID string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				json.NewEncoder(w).Encode(transitionsResponse{
+					Transitions: []transition{
+						{ID: "11", Name: "In Progress"},
+						{ID: "51", Name: "Gereed"},
+					},
+				})
+				return
+			}
+			if r.Method == http.MethodPost {
+				body, _ := io.ReadAll(r.Body)
+				var payload map[string]interface{}
+				json.Unmarshal(body, &payload)
+				tr := payload["transition"].(map[string]interface{})
+				postedTransitionID = tr["id"].(string)
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}))
+		defer srv.Close()
+
+		client := NewClient(srv.URL, "user@test.com", "token123")
+		client.DoneTransitions = map[string]string{"GIC": "Gereed"}
+		err := client.CompleteTask(context.Background(), "GIC-564")
+		if err != nil {
+			t.Fatalf("CompleteTask: %v", err)
+		}
+		if postedTransitionID != "51" {
+			t.Errorf("posted transition ID = %q, want 51", postedTransitionID)
+		}
+	})
+
+	t.Run("falls back to Done for unmapped project", func(t *testing.T) {
+		var postedTransitionID string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				json.NewEncoder(w).Encode(transitionsResponse{
+					Transitions: []transition{
+						{ID: "31", Name: "Done"},
+						{ID: "51", Name: "Gereed"},
+					},
+				})
+				return
+			}
+			if r.Method == http.MethodPost {
+				body, _ := io.ReadAll(r.Body)
+				var payload map[string]interface{}
+				json.Unmarshal(body, &payload)
+				tr := payload["transition"].(map[string]interface{})
+				postedTransitionID = tr["id"].(string)
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}))
+		defer srv.Close()
+
+		client := NewClient(srv.URL, "user@test.com", "token123")
+		client.DoneTransitions = map[string]string{"GIC": "Gereed"}
+		err := client.CompleteTask(context.Background(), "PROJ-123")
+		if err != nil {
+			t.Fatalf("CompleteTask: %v", err)
+		}
+		if postedTransitionID != "31" {
+			t.Errorf("posted transition ID = %q, want 31", postedTransitionID)
+		}
+	})
+
 	t.Run("case-insensitive match on Done", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodGet {

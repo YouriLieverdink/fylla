@@ -260,7 +260,9 @@ func loadTaskSource() (TaskSource, *config.Config, error) {
 			if err != nil {
 				return nil, nil, fmt.Errorf("load jira credentials: %w", err)
 			}
-			sources["jira"] = jira.NewClient(cfg.Jira.URL, cfg.Jira.Email, creds.Token)
+			client := jira.NewClient(cfg.Jira.URL, cfg.Jira.Email, creds.Token)
+			client.DoneTransitions = cfg.Jira.DoneTransitions
+			sources["jira"] = client
 		}
 	}
 

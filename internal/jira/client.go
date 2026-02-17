@@ -15,11 +15,12 @@ import (
 
 // Client handles communication with the Jira REST API.
 type Client struct {
-	BaseURL    string
-	Email      string
-	Token      string
-	HTTPClient *http.Client
-	AccountID  string
+	BaseURL         string
+	Email           string
+	Token           string
+	HTTPClient      *http.Client
+	AccountID       string
+	DoneTransitions map[string]string
 }
 
 // NewClient creates a Jira client with the given credentials.
@@ -611,10 +612,29 @@ type transition struct {
 	Name string `json:"name"`
 }
 
+// projectKey extracts the project prefix from an issue key (e.g. "GIC-564" → "GIC").
+func projectKey(issueKey string) string {
+	if i := strings.IndexByte(issueKey, '-'); i > 0 {
+		return issueKey[:i]
+	}
+	return issueKey
+}
+
+// doneTransitionName returns the configured "done" transition name for the
+// given issue key's project, falling back to "Done".
+func (c *Client) doneTransitionName(issueKey string) string {
+	if c.DoneTransitions != nil {
+		if name, ok := c.DoneTransitions[projectKey(issueKey)]; ok {
+			return name
+		}
+	}
+	return "Done"
+}
+
 // CompleteTask transitions a Jira issue to "Done" status.
-// It fetches available transitions, finds one matching "Done" (case-insensitive),
-// and posts the transition. If no matching transition is found, it returns an
-// error listing the available transition names.
+// It fetches available transitions, finds one matching the configured done
+// transition name (case-insensitive), and posts the transition. If no matching
+// transition is found, it returns an error listing the available transition names.
 func (c *Client) CompleteTask(ctx context.Context, issueKey string) error {
 	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/rest/api/3/issue/%s/transitions", issueKey), nil)
 	if err != nil {
@@ -632,18 +652,19 @@ func (c *Client) CompleteTask(ctx context.Context, issueKey string) error {
 		return fmt.Errorf("decode transitions: %w", err)
 	}
 
+	targetName := c.doneTransitionName(issueKey)
 	var transitionID string
 	var names []string
 	for _, t := range result.Transitions {
 		names = append(names, t.Name)
-		if strings.EqualFold(t.Name, "Done") {
+		if strings.EqualFold(t.Name, targetName) {
 			transitionID = t.ID
 			break
 		}
 	}
 
 	if transitionID == "" {
-		return fmt.Errorf("no 'Done' transition available for %s (available: %s)", issueKey, strings.Join(names, ", "))
+		return fmt.Errorf("no %q transition available for %s (available: %s)", targetName, issueKey, strings.Join(names, ", "))
 	}
 
 	payload := map[string]interface{}{
