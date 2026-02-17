@@ -133,6 +133,8 @@ func TestJIRA002_CustomJQL(t *testing.T) {
 }
 
 func TestJIRA003_PostWorklog(t *testing.T) {
+	started := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
+
 	t.Run("posts worklog to correct endpoint", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path != "/rest/api/3/issue/PROJ-123/worklog" {
@@ -152,7 +154,7 @@ func TestJIRA003_PostWorklog(t *testing.T) {
 		defer srv.Close()
 
 		client := NewClient(srv.URL, "user@test.com", "token123")
-		err := client.PostWorklog(context.Background(), "PROJ-123", 2*time.Hour, "Worked on feature")
+		err := client.PostWorklog(context.Background(), "PROJ-123", 2*time.Hour, "Worked on feature", started)
 		if err != nil {
 			t.Fatalf("PostWorklog: %v", err)
 		}
@@ -169,7 +171,26 @@ func TestJIRA003_PostWorklog(t *testing.T) {
 		defer srv.Close()
 
 		client := NewClient(srv.URL, "user@test.com", "token123")
-		err := client.PostWorklog(context.Background(), "PROJ-123", 2*time.Hour, "Worked on feature")
+		err := client.PostWorklog(context.Background(), "PROJ-123", 2*time.Hour, "Worked on feature", started)
+		if err != nil {
+			t.Fatalf("PostWorklog: %v", err)
+		}
+	})
+
+	t.Run("sends started timestamp", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			var payload map[string]interface{}
+			json.Unmarshal(body, &payload)
+			if payload["started"] != "2025-01-20T09:00:00.000+0000" {
+				t.Errorf("expected started 2025-01-20T09:00:00.000+0000, got %v", payload["started"])
+			}
+			w.WriteHeader(http.StatusCreated)
+		}))
+		defer srv.Close()
+
+		client := NewClient(srv.URL, "user@test.com", "token123")
+		err := client.PostWorklog(context.Background(), "PROJ-123", 2*time.Hour, "desc", started)
 		if err != nil {
 			t.Fatalf("PostWorklog: %v", err)
 		}
@@ -189,7 +210,7 @@ func TestJIRA003_PostWorklog(t *testing.T) {
 		defer srv.Close()
 
 		client := NewClient(srv.URL, "user@test.com", "token123")
-		err := client.PostWorklog(context.Background(), "PROJ-123", 2*time.Hour, "desc")
+		err := client.PostWorklog(context.Background(), "PROJ-123", 2*time.Hour, "desc", started)
 		if err != nil {
 			t.Fatalf("PostWorklog: %v", err)
 		}
@@ -212,6 +233,9 @@ func TestJIRA004_UpdateEstimate(t *testing.T) {
 			tt := fields["timetracking"].(map[string]interface{})
 			if tt["remainingEstimate"] != "4h" {
 				t.Errorf("expected remainingEstimate 4h, got %v", tt["remainingEstimate"])
+			}
+			if tt["originalEstimate"] != "4h" {
+				t.Errorf("expected originalEstimate 4h, got %v", tt["originalEstimate"])
 			}
 			w.WriteHeader(http.StatusNoContent)
 		}))
@@ -249,6 +273,10 @@ func TestJIRA004_UpdateEstimate(t *testing.T) {
 func TestJIRA005_CreateTask(t *testing.T) {
 	t.Run("creates issue with all fields", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/rest/api/3/myself" {
+				json.NewEncoder(w).Encode(map[string]string{"accountId": "abc123"})
+				return
+			}
 			if r.URL.Path != "/rest/api/3/issue" {
 				t.Errorf("unexpected path: %s", r.URL.Path)
 			}
@@ -259,6 +287,11 @@ func TestJIRA005_CreateTask(t *testing.T) {
 			var payload map[string]interface{}
 			json.Unmarshal(body, &payload)
 			fields := payload["fields"].(map[string]interface{})
+
+			assignee := fields["assignee"].(map[string]interface{})
+			if assignee["accountId"] != "abc123" {
+				t.Errorf("expected assignee abc123, got %v", assignee["accountId"])
+			}
 
 			proj := fields["project"].(map[string]interface{})
 			if proj["key"] != "PROJ" {
@@ -308,6 +341,10 @@ func TestJIRA005_CreateTask(t *testing.T) {
 
 	t.Run("creates issue with minimal fields", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/rest/api/3/myself" {
+				json.NewEncoder(w).Encode(map[string]string{"accountId": "abc123"})
+				return
+			}
 			body, _ := io.ReadAll(r.Body)
 			var payload map[string]interface{}
 			json.Unmarshal(body, &payload)
@@ -547,6 +584,76 @@ func TestCompleteTask(t *testing.T) {
 		}
 	})
 
+	t.Run("uses configured transition name per project", func(t *testing.T) {
+		var postedTransitionID string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				json.NewEncoder(w).Encode(transitionsResponse{
+					Transitions: []transition{
+						{ID: "11", Name: "In Progress"},
+						{ID: "51", Name: "Gereed"},
+					},
+				})
+				return
+			}
+			if r.Method == http.MethodPost {
+				body, _ := io.ReadAll(r.Body)
+				var payload map[string]interface{}
+				json.Unmarshal(body, &payload)
+				tr := payload["transition"].(map[string]interface{})
+				postedTransitionID = tr["id"].(string)
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}))
+		defer srv.Close()
+
+		client := NewClient(srv.URL, "user@test.com", "token123")
+		client.DoneTransitions = map[string]string{"GIC": "Gereed"}
+		err := client.CompleteTask(context.Background(), "GIC-564")
+		if err != nil {
+			t.Fatalf("CompleteTask: %v", err)
+		}
+		if postedTransitionID != "51" {
+			t.Errorf("posted transition ID = %q, want 51", postedTransitionID)
+		}
+	})
+
+	t.Run("falls back to Done for unmapped project", func(t *testing.T) {
+		var postedTransitionID string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				json.NewEncoder(w).Encode(transitionsResponse{
+					Transitions: []transition{
+						{ID: "31", Name: "Done"},
+						{ID: "51", Name: "Gereed"},
+					},
+				})
+				return
+			}
+			if r.Method == http.MethodPost {
+				body, _ := io.ReadAll(r.Body)
+				var payload map[string]interface{}
+				json.Unmarshal(body, &payload)
+				tr := payload["transition"].(map[string]interface{})
+				postedTransitionID = tr["id"].(string)
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}))
+		defer srv.Close()
+
+		client := NewClient(srv.URL, "user@test.com", "token123")
+		client.DoneTransitions = map[string]string{"GIC": "Gereed"}
+		err := client.CompleteTask(context.Background(), "PROJ-123")
+		if err != nil {
+			t.Fatalf("CompleteTask: %v", err)
+		}
+		if postedTransitionID != "31" {
+			t.Errorf("posted transition ID = %q, want 31", postedTransitionID)
+		}
+	})
+
 	t.Run("case-insensitive match on Done", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodGet {
@@ -565,6 +672,50 @@ func TestCompleteTask(t *testing.T) {
 		err := client.CompleteTask(context.Background(), "PROJ-123")
 		if err != nil {
 			t.Fatalf("CompleteTask: %v", err)
+		}
+	})
+}
+
+func TestListProjects(t *testing.T) {
+	t.Run("returns project keys", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/rest/api/3/project" {
+				t.Errorf("unexpected path: %s", r.URL.Path)
+			}
+			if r.Method != http.MethodGet {
+				t.Errorf("expected GET, got %s", r.Method)
+			}
+			json.NewEncoder(w).Encode([]projectJSON{
+				{Key: "SOHY"},
+				{Key: "DEV"},
+			})
+		}))
+		defer srv.Close()
+
+		client := NewClient(srv.URL, "user@test.com", "token123")
+		keys, err := client.ListProjects(context.Background())
+		if err != nil {
+			t.Fatalf("ListProjects: %v", err)
+		}
+		if len(keys) != 2 {
+			t.Fatalf("expected 2 projects, got %d", len(keys))
+		}
+		if keys[0] != "SOHY" || keys[1] != "DEV" {
+			t.Errorf("expected [SOHY DEV], got %v", keys)
+		}
+	})
+
+	t.Run("handles error response", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"message":"Unauthorized"}`))
+		}))
+		defer srv.Close()
+
+		client := NewClient(srv.URL, "user@test.com", "bad-token")
+		_, err := client.ListProjects(context.Background())
+		if err == nil {
+			t.Fatal("expected error for 401 response")
 		}
 	})
 }

@@ -119,8 +119,8 @@ func (m *MultiTaskSource) DeleteTask(ctx context.Context, taskKey string) error 
 	return m.routeTo(taskKey).DeleteTask(ctx, taskKey)
 }
 
-func (m *MultiTaskSource) PostWorklog(ctx context.Context, issueKey string, timeSpent time.Duration, description string) error {
-	return m.routeTo(issueKey).PostWorklog(ctx, issueKey, timeSpent, description)
+func (m *MultiTaskSource) PostWorklog(ctx context.Context, issueKey string, timeSpent time.Duration, description string, started time.Time) error {
+	return m.routeTo(issueKey).PostWorklog(ctx, issueKey, timeSpent, description, started)
 }
 
 func (m *MultiTaskSource) GetEstimate(ctx context.Context, issueKey string) (time.Duration, error) {
@@ -260,7 +260,9 @@ func loadTaskSource() (TaskSource, *config.Config, error) {
 			if err != nil {
 				return nil, nil, fmt.Errorf("load jira credentials: %w", err)
 			}
-			sources["jira"] = jira.NewClient(cfg.Jira.URL, cfg.Jira.Email, creds.Token)
+			client := jira.NewClient(cfg.Jira.URL, cfg.Jira.Email, creds.Token)
+			client.DoneTransitions = cfg.Jira.DoneTransitions
+			sources["jira"] = client
 		}
 	}
 

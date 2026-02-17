@@ -25,11 +25,12 @@ func (c *Config) ActiveProviders() []string {
 
 // JiraConfig holds Jira connection settings.
 type JiraConfig struct {
-	Credentials    string `yaml:"credentials"`
-	URL            string `yaml:"url"`
-	Email          string `yaml:"email"`
-	DefaultJQL     string `yaml:"defaultJql"`
-	DefaultProject string `yaml:"defaultProject"`
+	Credentials     string            `yaml:"credentials"`
+	URL             string            `yaml:"url"`
+	Email           string            `yaml:"email"`
+	DefaultJQL      string            `yaml:"defaultJql"`
+	DefaultProject  string            `yaml:"defaultProject"`
+	DoneTransitions map[string]string `yaml:"doneTransitions"`
 }
 
 // TodoistConfig holds Todoist connection settings.

@@ -84,7 +84,7 @@ func (m *mockSource) DeleteTask(_ context.Context, taskKey string) error {
 	return nil
 }
 
-func (m *mockSource) PostWorklog(_ context.Context, _ string, _ time.Duration, _ string) error {
+func (m *mockSource) PostWorklog(_ context.Context, _ string, _ time.Duration, _ string, _ time.Time) error {
 	return nil
 }
 

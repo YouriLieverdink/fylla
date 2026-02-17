@@ -21,7 +21,8 @@ type LogParams struct {
 
 // RunLog creates a manual worklog in Jira.
 func RunLog(ctx context.Context, p LogParams) error {
-	return p.Jira.PostWorklog(ctx, p.TaskKey, p.Duration, p.Description)
+	started := time.Now().Add(-p.Duration)
+	return p.Jira.PostWorklog(ctx, p.TaskKey, p.Duration, p.Description, started)
 }
 
 // PrintLogResult writes the log confirmation to the given writer.

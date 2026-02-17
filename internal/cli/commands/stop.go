@@ -13,7 +13,7 @@ import (
 
 // WorklogPoster abstracts Jira worklog posting for testing.
 type WorklogPoster interface {
-	PostWorklog(ctx context.Context, issueKey string, timeSpent time.Duration, description string) error
+	PostWorklog(ctx context.Context, issueKey string, timeSpent time.Duration, description string, started time.Time) error
 }
 
 // StopParams holds inputs for the stop command.
@@ -40,7 +40,7 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 		return nil, err
 	}
 
-	if err := p.Jira.PostWorklog(ctx, sr.TaskKey, sr.Rounded, p.Description); err != nil {
+	if err := p.Jira.PostWorklog(ctx, sr.TaskKey, sr.Rounded, p.Description, sr.StartTime); err != nil {
 		return nil, fmt.Errorf("post worklog: %w", err)
 	}
 

@@ -15,10 +15,12 @@ import (
 
 // Client handles communication with the Jira REST API.
 type Client struct {
-	BaseURL    string
-	Email      string
-	Token      string
-	HTTPClient *http.Client
+	BaseURL         string
+	Email           string
+	Token           string
+	HTTPClient      *http.Client
+	AccountID       string
+	DoneTransitions map[string]string
 }
 
 // NewClient creates a Jira client with the given credentials.
@@ -216,9 +218,10 @@ func (c *Client) FetchTasks(ctx context.Context, jql string) ([]task.Task, error
 }
 
 // PostWorklog adds a worklog entry to the specified Jira issue.
-func (c *Client) PostWorklog(ctx context.Context, issueKey string, timeSpent time.Duration, description string) error {
+func (c *Client) PostWorklog(ctx context.Context, issueKey string, timeSpent time.Duration, description string, started time.Time) error {
 	payload := map[string]interface{}{
 		"timeSpentSeconds": int(timeSpent.Seconds()),
+		"started":          started.Format("2006-01-02T15:04:05.000-0700"),
 		"comment": map[string]interface{}{
 			"type":    "doc",
 			"version": 1,
@@ -254,6 +257,7 @@ func (c *Client) UpdateEstimate(ctx context.Context, issueKey string, remaining 
 	payload := map[string]interface{}{
 		"fields": map[string]interface{}{
 			"timetracking": map[string]string{
+				"originalEstimate":  formatDuration(remaining),
 				"remainingEstimate": formatDuration(remaining),
 			},
 		},
@@ -277,12 +281,42 @@ type createIssueResponse struct {
 	Key string `json:"key"`
 }
 
+func (c *Client) fetchAccountID(ctx context.Context) error {
+	if c.AccountID != "" {
+		return nil
+	}
+
+	resp, err := c.do(ctx, http.MethodGet, "/rest/api/3/myself", nil)
+	if err != nil {
+		return fmt.Errorf("fetch account ID: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("jira myself: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		AccountID string `json:"accountId"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decode myself response: %w", err)
+	}
+	c.AccountID = result.AccountID
+	return nil
+}
+
 // CreateTask creates a new issue in Jira and returns the issue key.
 func (c *Client) CreateTask(ctx context.Context, input task.CreateInput) (string, error) {
 	fields := map[string]interface{}{
 		"project":   map[string]string{"key": input.Project},
 		"issuetype": map[string]string{"name": input.IssueType},
 		"summary":   input.Summary,
+	}
+
+	if err := c.fetchAccountID(ctx); err == nil && c.AccountID != "" {
+		fields["assignee"] = map[string]string{"accountId": c.AccountID}
 	}
 
 	if input.Description != "" {
@@ -578,10 +612,29 @@ type transition struct {
 	Name string `json:"name"`
 }
 
+// projectKey extracts the project prefix from an issue key (e.g. "GIC-564" → "GIC").
+func projectKey(issueKey string) string {
+	if i := strings.IndexByte(issueKey, '-'); i > 0 {
+		return issueKey[:i]
+	}
+	return issueKey
+}
+
+// doneTransitionName returns the configured "done" transition name for the
+// given issue key's project, falling back to "Done".
+func (c *Client) doneTransitionName(issueKey string) string {
+	if c.DoneTransitions != nil {
+		if name, ok := c.DoneTransitions[projectKey(issueKey)]; ok {
+			return name
+		}
+	}
+	return "Done"
+}
+
 // CompleteTask transitions a Jira issue to "Done" status.
-// It fetches available transitions, finds one matching "Done" (case-insensitive),
-// and posts the transition. If no matching transition is found, it returns an
-// error listing the available transition names.
+// It fetches available transitions, finds one matching the configured done
+// transition name (case-insensitive), and posts the transition. If no matching
+// transition is found, it returns an error listing the available transition names.
 func (c *Client) CompleteTask(ctx context.Context, issueKey string) error {
 	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/rest/api/3/issue/%s/transitions", issueKey), nil)
 	if err != nil {
@@ -599,18 +652,19 @@ func (c *Client) CompleteTask(ctx context.Context, issueKey string) error {
 		return fmt.Errorf("decode transitions: %w", err)
 	}
 
+	targetName := c.doneTransitionName(issueKey)
 	var transitionID string
 	var names []string
 	for _, t := range result.Transitions {
 		names = append(names, t.Name)
-		if strings.EqualFold(t.Name, "Done") {
+		if strings.EqualFold(t.Name, targetName) {
 			transitionID = t.ID
 			break
 		}
 	}
 
 	if transitionID == "" {
-		return fmt.Errorf("no 'Done' transition available for %s (available: %s)", issueKey, strings.Join(names, ", "))
+		return fmt.Errorf("no %q transition available for %s (available: %s)", targetName, issueKey, strings.Join(names, ", "))
 	}
 
 	payload := map[string]interface{}{
@@ -629,6 +683,31 @@ func (c *Client) CompleteTask(ctx context.Context, issueKey string) error {
 	}
 
 	return nil
+}
+
+// ListProjects returns the keys of all accessible Jira projects.
+func (c *Client) ListProjects(ctx context.Context) ([]string, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/rest/api/3/project", nil)
+	if err != nil {
+		return nil, fmt.Errorf("list projects: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("jira list projects: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var projects []projectJSON
+	if err := json.NewDecoder(resp.Body).Decode(&projects); err != nil {
+		return nil, fmt.Errorf("decode projects response: %w", err)
+	}
+
+	keys := make([]string, len(projects))
+	for i, p := range projects {
+		keys[i] = p.Key
+	}
+	return keys, nil
 }
 
 // formatDuration converts a time.Duration to Jira duration string (e.g. "4h", "2h 30m").

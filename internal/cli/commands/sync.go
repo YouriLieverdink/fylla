@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"time"
 
 	"github.com/iruoy/fylla/internal/calendar"
@@ -46,7 +47,8 @@ type SyncParams struct {
 type SyncResult struct {
 	Allocations []scheduler.Allocation
 	AtRisk      []scheduler.Allocation
-	Unscheduled []task.Task
+	Unscheduled []scheduler.UnscheduledTask
+	Events      []calendar.Event
 	Created     int
 	Updated     int
 	Deleted     int
@@ -106,46 +108,26 @@ func BuildSyncParams(flags SyncFlags, cfg *config.Config, now time.Time) (query 
 	return query, start, end, dryRun, nil
 }
 
+// timelineEntry represents a single row in the dry-run timeline output.
+type timelineEntry struct {
+	start   time.Time
+	end     time.Time
+	isEvent bool   // true = calendar event, false = scheduled task
+	key     string // task key (empty for events)
+	summary string
+	atRisk  bool
+	project string
+	section string
+}
+
 // PrintSyncResult writes the sync result to the given writer.
 func PrintSyncResult(w io.Writer, result *SyncResult, dryRun bool) {
 	if dryRun {
 		fmt.Fprintln(w, "Dry run — no events created.")
 		fmt.Fprintln(w)
-	}
-
-	if len(result.Allocations) == 0 {
-		fmt.Fprintln(w, "No tasks to schedule.")
-		return
-	}
-
-	fmt.Fprintf(w, "Scheduled %d event(s):\n", len(result.Allocations))
-	for _, alloc := range result.Allocations {
-		prefix := ""
-		if alloc.AtRisk {
-			prefix = "⚠️ "
-		}
-		taskLabel := alloc.Task.Key
-		if alloc.Task.Project != "" {
-			projectPrefix := alloc.Task.Project
-			if alloc.Task.Section != "" {
-				projectPrefix = projectPrefix + " / " + alloc.Task.Section
-			}
-			taskLabel = "[" + projectPrefix + "] " + taskLabel
-		}
-		fmt.Fprintf(w, "  %s%s: %s  %s – %s\n",
-			prefix,
-			taskLabel,
-			alloc.Task.Summary,
-			alloc.Start.Format("Mon 15:04"),
-			alloc.End.Format("15:04"),
-		)
-	}
-
-	// Show diff summary when incremental sync produced changes
-	if !dryRun && (result.Created > 0 || result.Updated > 0 || result.Deleted > 0 || result.Unchanged > 0) {
-		fmt.Fprintln(w)
-		fmt.Fprintf(w, "Changes: %d created, %d updated, %d deleted, %d unchanged.\n",
-			result.Created, result.Updated, result.Deleted, result.Unchanged)
+		printDryRunTimeline(w, result)
+	} else {
+		printAppliedResult(w, result)
 	}
 
 	if len(result.AtRisk) > 0 {
@@ -171,28 +153,218 @@ func PrintSyncResult(w io.Writer, result *SyncResult, dryRun bool) {
 	if len(result.Unscheduled) > 0 {
 		fmt.Fprintln(w)
 		fmt.Fprintf(w, "Could not schedule %d task(s):\n", len(result.Unscheduled))
-		for _, t := range result.Unscheduled {
-			est := "no estimate"
-			if t.RemainingEstimate > 0 {
-				est = t.RemainingEstimate.String()
-			}
-			taskLabel := t.Key
-			if t.Project != "" {
-				projectPrefix := t.Project
-				if t.Section != "" {
-					projectPrefix = projectPrefix + " / " + t.Section
+
+		maxKey := 0
+		maxSummary := 0
+		for _, u := range result.Unscheduled {
+			taskLabel := u.Task.Key
+			if u.Task.Project != "" {
+				projectPrefix := u.Task.Project
+				if u.Task.Section != "" {
+					projectPrefix = projectPrefix + " / " + u.Task.Section
 				}
 				taskLabel = "[" + projectPrefix + "] " + taskLabel
 			}
-			fmt.Fprintf(w, "  %s: %s (%s)\n", taskLabel, t.Summary, est)
+			if len(taskLabel) > maxKey {
+				maxKey = len(taskLabel)
+			}
+			if len(u.Task.Summary) > maxSummary {
+				maxSummary = len(u.Task.Summary)
+			}
+		}
+		for _, u := range result.Unscheduled {
+			est := formatDuration(u.Task.RemainingEstimate)
+			taskLabel := u.Task.Key
+			if u.Task.Project != "" {
+				projectPrefix := u.Task.Project
+				if u.Task.Section != "" {
+					projectPrefix = projectPrefix + " / " + u.Task.Section
+				}
+				taskLabel = "[" + projectPrefix + "] " + taskLabel
+			}
+			fmt.Fprintf(w, "  %-*s  %-*s  %5s  — %s\n",
+				maxKey, taskLabel,
+				maxSummary, u.Task.Summary,
+				est,
+				u.Reason,
+			)
 		}
 	}
 }
 
-func progress(w io.Writer, format string, args ...interface{}) {
-	if w != nil {
-		fmt.Fprintf(w, format+"\n", args...)
+func printDryRunTimeline(w io.Writer, result *SyncResult) {
+	if len(result.Allocations) == 0 && len(result.Unscheduled) == 0 {
+		fmt.Fprintln(w, "No tasks to schedule.")
+		return
 	}
+
+	// Build timeline entries from allocations and busy calendar events.
+	var entries []timelineEntry
+	for _, alloc := range result.Allocations {
+		entries = append(entries, timelineEntry{
+			start:   alloc.Start,
+			end:     alloc.End,
+			key:     alloc.Task.Key,
+			summary: alloc.Task.Summary,
+			atRisk:  alloc.AtRisk,
+			project: alloc.Task.Project,
+			section: alloc.Task.Section,
+		})
+	}
+	for _, ev := range result.Events {
+		if ev.Transparency == "transparent" || ev.IsOOO() || ev.AllDay {
+			continue
+		}
+		if calendar.TaskKeyFromDescription(ev.Description) != "" {
+			continue
+		}
+		entries = append(entries, timelineEntry{
+			start:   ev.Start,
+			end:     ev.End,
+			isEvent: true,
+			summary: ev.Title,
+		})
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].start.Before(entries[j].start)
+	})
+
+	// Compute column widths.
+	maxKey := 0
+	maxSummary := 0
+	for _, e := range entries {
+		label := e.key
+		if e.isEvent {
+			label = "•"
+		} else if e.project != "" {
+			projectPrefix := e.project
+			if e.section != "" {
+				projectPrefix += " / " + e.section
+			}
+			label = "[" + projectPrefix + "] " + label
+		}
+		if len(label) > maxKey {
+			maxKey = len(label)
+		}
+		if len(e.summary) > maxSummary {
+			maxSummary = len(e.summary)
+		}
+	}
+
+	fmt.Fprintf(w, "Scheduled %d event(s):\n", len(result.Allocations))
+
+	// Group by day and print.
+	var currentDay string
+	for _, e := range entries {
+		day := e.start.Format("Mon Jan 2")
+		if day != currentDay {
+			fmt.Fprintf(w, "\n  %s\n", day)
+			currentDay = day
+		}
+
+		label := e.key
+		if e.isEvent {
+			label = "•"
+		} else if e.project != "" {
+			projectPrefix := e.project
+			if e.section != "" {
+				projectPrefix += " / " + e.section
+			}
+			label = "[" + projectPrefix + "] " + label
+		}
+
+		dur := formatDuration(e.end.Sub(e.start))
+		prefix := ""
+		if e.atRisk {
+			prefix = "⚠️ "
+		}
+
+		fmt.Fprintf(w, "    %-*s  %-*s  %5s  %s%s – %s\n",
+			maxKey, label,
+			maxSummary, e.summary,
+			dur,
+			prefix,
+			e.start.Format("15:04"),
+			e.end.Format("15:04"),
+		)
+	}
+}
+
+func printAppliedResult(w io.Writer, result *SyncResult) {
+	if len(result.Allocations) == 0 {
+		fmt.Fprintln(w, "No tasks to schedule.")
+		return
+	}
+
+	maxKey := 0
+	maxSummary := 0
+	for _, alloc := range result.Allocations {
+		taskLabel := alloc.Task.Key
+		if alloc.Task.Project != "" {
+			projectPrefix := alloc.Task.Project
+			if alloc.Task.Section != "" {
+				projectPrefix += " / " + alloc.Task.Section
+			}
+			taskLabel = "[" + projectPrefix + "] " + taskLabel
+		}
+		if len(taskLabel) > maxKey {
+			maxKey = len(taskLabel)
+		}
+		if len(alloc.Task.Summary) > maxSummary {
+			maxSummary = len(alloc.Task.Summary)
+		}
+	}
+
+	indexWidth := len(fmt.Sprintf("%d", len(result.Allocations)))
+
+	fmt.Fprintf(w, "Scheduled %d event(s):\n", len(result.Allocations))
+	for i, alloc := range result.Allocations {
+		prefix := ""
+		if alloc.AtRisk {
+			prefix = "⚠️ "
+		}
+		taskLabel := alloc.Task.Key
+		if alloc.Task.Project != "" {
+			projectPrefix := alloc.Task.Project
+			if alloc.Task.Section != "" {
+				projectPrefix += " / " + alloc.Task.Section
+			}
+			taskLabel = "[" + projectPrefix + "] " + taskLabel
+		}
+		est := formatDuration(alloc.End.Sub(alloc.Start))
+		fmt.Fprintf(w, "  %*d. %-*s  %-*s  %5s  %s%s – %s\n",
+			indexWidth, i+1,
+			maxKey, taskLabel,
+			maxSummary, alloc.Task.Summary,
+			est,
+			prefix,
+			alloc.Start.Format("Mon Jan 2 15:04"),
+			alloc.End.Format("15:04"),
+		)
+	}
+
+	if result.Created > 0 || result.Updated > 0 || result.Deleted > 0 || result.Unchanged > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintf(w, "Changes: %d created, %d updated, %d deleted, %d unchanged.\n",
+			result.Created, result.Updated, result.Deleted, result.Unchanged)
+	}
+}
+
+func progress(w io.Writer, format string, args ...interface{}) {
+	if w == nil {
+		return
+	}
+	msg := fmt.Sprintf(format, args...)
+	// Overwrite the current line with the new message.
+	fmt.Fprintf(w, "\r\033[K%s", msg)
+}
+
+func progressClear(w io.Writer) {
+	if w == nil {
+		return
+	}
+	fmt.Fprintf(w, "\r\033[K")
 }
 
 // desiredEvent represents a calendar event that the scheduler wants to exist.
@@ -268,23 +440,11 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 
 	// Step 5: Allocate tasks to slots
 	progress(p.Progress, "Scheduling %d tasks into available slots...", len(sorted))
-	allocations := scheduler.Allocate(sorted, slotsByProject, scheduler.AllocateConfig{
+	allocations, unscheduled := scheduler.Allocate(sorted, slotsByProject, scheduler.AllocateConfig{
 		MinTaskDurationMinutes: p.Cfg.Scheduling.MinTaskDurationMinutes,
 		BufferMinutes:          p.Cfg.Scheduling.BufferMinutes,
 		SnapMinutes:            p.Cfg.Scheduling.SnapMinutes,
 	})
-
-	// Step 5b: Identify unscheduled tasks
-	scheduledKeys := make(map[string]bool)
-	for _, alloc := range allocations {
-		scheduledKeys[alloc.Task.Key] = true
-	}
-	var unscheduled []task.Task
-	for _, st := range sorted {
-		if !scheduledKeys[st.Task.Key] {
-			unscheduled = append(unscheduled, st.Task)
-		}
-	}
 
 	// Step 6: Apply schedule to calendar
 	// Cleanup covers all past Fylla events, not just the scheduling window.
@@ -350,16 +510,13 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 		}
 	}
 
-	if p.DryRun {
-		progress(p.Progress, "Done (dry run).")
-	} else {
-		progress(p.Progress, "Done.")
-	}
+	progressClear(p.Progress)
 
 	return &SyncResult{
 		Allocations: allocations,
 		AtRisk:      atRisk,
 		Unscheduled: unscheduled,
+		Events:      events,
 		Created:     created,
 		Updated:     updated,
 		Deleted:     deleted,

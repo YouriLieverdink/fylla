@@ -21,10 +21,11 @@ type worklogCall struct {
 	issueKey    string
 	timeSpent   time.Duration
 	description string
+	started     time.Time
 }
 
-func (m *mockWorklogPoster) PostWorklog(_ context.Context, issueKey string, timeSpent time.Duration, description string) error {
-	m.calls = append(m.calls, worklogCall{issueKey, timeSpent, description})
+func (m *mockWorklogPoster) PostWorklog(_ context.Context, issueKey string, timeSpent time.Duration, description string, started time.Time) error {
+	m.calls = append(m.calls, worklogCall{issueKey, timeSpent, description, started})
 	return m.err
 }
 

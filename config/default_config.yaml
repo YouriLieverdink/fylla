@@ -6,6 +6,7 @@ jira:
   email: you@example.com
   defaultJql: "assignee = currentUser() AND status = 'To Do'"
   defaultProject: ""
+  doneTransitions: {}
 
 todoist:
   credentials: ""
