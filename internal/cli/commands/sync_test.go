@@ -1004,7 +1004,7 @@ func TestCLI005_sync_dry_run(t *testing.T) {
 		}
 		result := &SyncResult{Allocations: allocs}
 		var buf bytes.Buffer
-		PrintSyncResult(&buf, result, true)
+		PrintSyncResult(&buf, result, true, false)
 
 		out := buf.String()
 		if !strings.Contains(out, "Dry run") {
@@ -1339,7 +1339,7 @@ func TestSYNC009_report_unscheduled_tasks(t *testing.T) {
 		}
 		result := &SyncResult{Allocations: allocs, Unscheduled: unscheduled}
 		var buf bytes.Buffer
-		PrintSyncResult(&buf, result, false)
+		PrintSyncResult(&buf, result, false, false)
 
 		out := buf.String()
 		if !strings.Contains(out, "Could not schedule 2 task(s)") {
@@ -1368,7 +1368,7 @@ func TestSYNC009_report_unscheduled_tasks(t *testing.T) {
 		}
 		result := &SyncResult{Allocations: allocs, Unscheduled: unscheduled}
 		var buf bytes.Buffer
-		PrintSyncResult(&buf, result, true)
+		PrintSyncResult(&buf, result, true, false)
 
 		out := buf.String()
 		if !strings.Contains(out, "Dry run") {
@@ -1821,7 +1821,7 @@ func TestSYNC011_incremental_sync(t *testing.T) {
 			Unchanged:   4,
 		}
 		var buf bytes.Buffer
-		PrintSyncResult(&buf, result, false)
+		PrintSyncResult(&buf, result, false, false)
 		out := buf.String()
 		if !strings.Contains(out, "1 created") {
 			t.Errorf("output missing created count, got:\n%s", out)
@@ -1843,7 +1843,7 @@ func TestSYNC011_incremental_sync(t *testing.T) {
 		}
 		result := &SyncResult{Allocations: allocs}
 		var buf bytes.Buffer
-		PrintSyncResult(&buf, result, true)
+		PrintSyncResult(&buf, result, true, false)
 		out := buf.String()
 		if strings.Contains(out, "Changes:") {
 			t.Errorf("dry-run should not show changes summary, got:\n%s", out)

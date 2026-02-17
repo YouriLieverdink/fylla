@@ -174,6 +174,13 @@ func capWidth(n, max int) int {
 	return n
 }
 
+func syncTaskLabel(key, project, section string, verbose bool) string {
+	if !verbose {
+		return key
+	}
+	return buildTaskLabel(key, project, section, maxLabelWidth)
+}
+
 func buildTaskLabel(key, project, section string, maxTotal int) string {
 	if project == "" {
 		return key
@@ -197,13 +204,14 @@ func buildTaskLabel(key, project, section string, maxTotal int) string {
 }
 
 // PrintSyncResult writes the sync result to the given writer.
-func PrintSyncResult(w io.Writer, result *SyncResult, dryRun bool) {
+// When verbose is true, task labels include the [Project / Section] prefix.
+func PrintSyncResult(w io.Writer, result *SyncResult, dryRun, verbose bool) {
 	if dryRun {
 		fmt.Fprintln(w, "Dry run — no events created.")
 		fmt.Fprintln(w)
-		printDryRunTimeline(w, result)
+		printDryRunTimeline(w, result, verbose)
 	} else {
-		printAppliedResult(w, result)
+		printAppliedResult(w, result, verbose)
 	}
 
 	if len(result.AtRisk) > 0 {
@@ -214,7 +222,7 @@ func PrintSyncResult(w io.Writer, result *SyncResult, dryRun bool) {
 			if ar.Task.DueDate != nil {
 				dueStr = "due " + ar.Task.DueDate.Format("Jan 2")
 			}
-			taskLabel := buildTaskLabel(ar.Task.Key, ar.Task.Project, ar.Task.Section, maxLabelWidth)
+			taskLabel := syncTaskLabel(ar.Task.Key, ar.Task.Project, ar.Task.Section, verbose)
 			fmt.Fprintf(w, "  %s: %s (%s)\n", taskLabel, ar.Task.Summary, dueStr)
 		}
 	}
@@ -226,7 +234,7 @@ func PrintSyncResult(w io.Writer, result *SyncResult, dryRun bool) {
 		maxKey := 0
 		maxSummary := 0
 		for _, u := range result.Unscheduled {
-			taskLabel := buildTaskLabel(u.Task.Key, u.Task.Project, u.Task.Section, maxLabelWidth)
+			taskLabel := syncTaskLabel(u.Task.Key, u.Task.Project, u.Task.Section, verbose)
 			if w := displayWidth(taskLabel); w > maxKey {
 				maxKey = w
 			}
@@ -237,7 +245,7 @@ func PrintSyncResult(w io.Writer, result *SyncResult, dryRun bool) {
 		maxSummary = capWidth(maxSummary, maxSummaryWidth)
 		for _, u := range result.Unscheduled {
 			est := formatDuration(u.Task.RemainingEstimate)
-			taskLabel := buildTaskLabel(u.Task.Key, u.Task.Project, u.Task.Section, maxLabelWidth)
+			taskLabel := syncTaskLabel(u.Task.Key, u.Task.Project, u.Task.Section, verbose)
 			fmt.Fprintf(w, "  %s  %s  %5s  — %s\n",
 				padRight(taskLabel, maxKey),
 				padRight(truncateString(u.Task.Summary, maxSummary), maxSummary),
@@ -248,7 +256,7 @@ func PrintSyncResult(w io.Writer, result *SyncResult, dryRun bool) {
 	}
 }
 
-func printDryRunTimeline(w io.Writer, result *SyncResult) {
+func printDryRunTimeline(w io.Writer, result *SyncResult, verbose bool) {
 	if len(result.Allocations) == 0 && len(result.Unscheduled) == 0 {
 		fmt.Fprintln(w, "No tasks to schedule.")
 		return
@@ -292,7 +300,7 @@ func printDryRunTimeline(w io.Writer, result *SyncResult) {
 	for _, e := range entries {
 		label := "•"
 		if !e.isEvent {
-			label = buildTaskLabel(e.key, e.project, e.section, maxLabelWidth)
+			label = syncTaskLabel(e.key, e.project, e.section, verbose)
 		}
 		if w := displayWidth(label); w > maxKey {
 			maxKey = w
@@ -316,7 +324,7 @@ func printDryRunTimeline(w io.Writer, result *SyncResult) {
 
 		label := "•"
 		if !e.isEvent {
-			label = buildTaskLabel(e.key, e.project, e.section, maxLabelWidth)
+			label = syncTaskLabel(e.key, e.project, e.section, verbose)
 		}
 
 		dur := formatDuration(e.end.Sub(e.start))
@@ -336,7 +344,7 @@ func printDryRunTimeline(w io.Writer, result *SyncResult) {
 	}
 }
 
-func printAppliedResult(w io.Writer, result *SyncResult) {
+func printAppliedResult(w io.Writer, result *SyncResult, verbose bool) {
 	if len(result.Allocations) == 0 {
 		fmt.Fprintln(w, "No tasks to schedule.")
 		return
@@ -345,7 +353,7 @@ func printAppliedResult(w io.Writer, result *SyncResult) {
 	maxKey := 0
 	maxSummary := 0
 	for _, alloc := range result.Allocations {
-		taskLabel := buildTaskLabel(alloc.Task.Key, alloc.Task.Project, alloc.Task.Section, maxLabelWidth)
+		taskLabel := syncTaskLabel(alloc.Task.Key, alloc.Task.Project, alloc.Task.Section, verbose)
 		if w := displayWidth(taskLabel); w > maxKey {
 			maxKey = w
 		}
@@ -363,7 +371,7 @@ func printAppliedResult(w io.Writer, result *SyncResult) {
 		if alloc.AtRisk {
 			suffix = "  ⚠️"
 		}
-		taskLabel := buildTaskLabel(alloc.Task.Key, alloc.Task.Project, alloc.Task.Section, maxLabelWidth)
+		taskLabel := syncTaskLabel(alloc.Task.Key, alloc.Task.Project, alloc.Task.Section, verbose)
 		est := formatDuration(alloc.End.Sub(alloc.Start))
 		fmt.Fprintf(w, "  %*d. %s  %s  %5s  %s – %s%s\n",
 			indexWidth, i+1,
@@ -716,13 +724,15 @@ func newSyncCmd() *cobra.Command {
 				return err
 			}
 
-			PrintSyncResult(cmd.OutOrStdout(), result, dryRun)
+			verbose, _ := cmd.Flags().GetBool("verbose")
+			PrintSyncResult(cmd.OutOrStdout(), result, dryRun, verbose)
 			return nil
 		},
 	}
 
 	cmd.Flags().Bool("dry-run", false, "Preview schedule without creating events")
 	cmd.Flags().Bool("force", false, "Delete all events and recreate (skip incremental sync)")
+	cmd.Flags().BoolP("verbose", "v", false, "Show project and section in task labels")
 	cmd.Flags().String("jql", "", "Custom JQL query override (Jira source)")
 	cmd.Flags().String("filter", "", "Custom filter override (Todoist source)")
 	cmd.Flags().Int("days", 0, "Override scheduling window (days)")
