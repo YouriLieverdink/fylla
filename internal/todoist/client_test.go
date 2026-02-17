@@ -211,7 +211,7 @@ func TestPostWorklog(t *testing.T) {
 	client := NewClient("test-token")
 	client.BaseURL = srv.URL
 
-	err := client.PostWorklog(context.Background(), "1001", 1*time.Hour+30*time.Minute, "Fixed the bug")
+	err := client.PostWorklog(context.Background(), "1001", 1*time.Hour+30*time.Minute, "Fixed the bug", time.Now())
 	if err != nil {
 		t.Fatalf("PostWorklog: %v", err)
 	}

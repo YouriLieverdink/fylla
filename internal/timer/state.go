@@ -17,9 +17,10 @@ type State struct {
 
 // StopResult holds the computed values when a timer is stopped.
 type StopResult struct {
-	TaskKey string
-	Elapsed time.Duration
-	Rounded time.Duration
+	TaskKey   string
+	StartTime time.Time
+	Elapsed   time.Duration
+	Rounded   time.Duration
 }
 
 // DefaultPath returns the default timer state file path (~/.config/fylla/timer.json).
@@ -81,9 +82,10 @@ func Stop(now time.Time, roundMinutes int, path string) (*StopResult, error) {
 	}
 
 	return &StopResult{
-		TaskKey: s.TaskKey,
-		Elapsed: elapsed,
-		Rounded: rounded,
+		TaskKey:   s.TaskKey,
+		StartTime: s.StartTime,
+		Elapsed:   elapsed,
+		Rounded:   rounded,
 	}, nil
 }
 

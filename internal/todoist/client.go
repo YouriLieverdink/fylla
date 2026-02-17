@@ -325,7 +325,7 @@ func (c *Client) CreateTask(ctx context.Context, input task.CreateInput) (string
 }
 
 // PostWorklog adds a comment to a Todoist task to track time.
-func (c *Client) PostWorklog(ctx context.Context, taskID string, timeSpent time.Duration, description string) error {
+func (c *Client) PostWorklog(ctx context.Context, taskID string, timeSpent time.Duration, description string, started time.Time) error {
 	h := int(timeSpent.Hours())
 	m := int(timeSpent.Minutes()) % 60
 	var timeStr string

@@ -216,9 +216,10 @@ func (c *Client) FetchTasks(ctx context.Context, jql string) ([]task.Task, error
 }
 
 // PostWorklog adds a worklog entry to the specified Jira issue.
-func (c *Client) PostWorklog(ctx context.Context, issueKey string, timeSpent time.Duration, description string) error {
+func (c *Client) PostWorklog(ctx context.Context, issueKey string, timeSpent time.Duration, description string, started time.Time) error {
 	payload := map[string]interface{}{
 		"timeSpentSeconds": int(timeSpent.Seconds()),
+		"started":          started.Format("2006-01-02T15:04:05.000+0000"),
 		"comment": map[string]interface{}{
 			"type":    "doc",
 			"version": 1,
@@ -254,6 +255,7 @@ func (c *Client) UpdateEstimate(ctx context.Context, issueKey string, remaining 
 	payload := map[string]interface{}{
 		"fields": map[string]interface{}{
 			"timetracking": map[string]string{
+				"originalEstimate":  formatDuration(remaining),
 				"remainingEstimate": formatDuration(remaining),
 			},
 		},
@@ -629,6 +631,31 @@ func (c *Client) CompleteTask(ctx context.Context, issueKey string) error {
 	}
 
 	return nil
+}
+
+// ListProjects returns the keys of all accessible Jira projects.
+func (c *Client) ListProjects(ctx context.Context) ([]string, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/rest/api/3/project", nil)
+	if err != nil {
+		return nil, fmt.Errorf("list projects: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("jira list projects: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var projects []projectJSON
+	if err := json.NewDecoder(resp.Body).Decode(&projects); err != nil {
+		return nil, fmt.Errorf("decode projects response: %w", err)
+	}
+
+	keys := make([]string, len(projects))
+	for i, p := range projects {
+		keys[i] = p.Key
+	}
+	return keys, nil
 }
 
 // formatDuration converts a time.Duration to Jira duration string (e.g. "4h", "2h 30m").

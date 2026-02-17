@@ -119,8 +119,8 @@ func (m *MultiTaskSource) DeleteTask(ctx context.Context, taskKey string) error 
 	return m.routeTo(taskKey).DeleteTask(ctx, taskKey)
 }
 
-func (m *MultiTaskSource) PostWorklog(ctx context.Context, issueKey string, timeSpent time.Duration, description string) error {
-	return m.routeTo(issueKey).PostWorklog(ctx, issueKey, timeSpent, description)
+func (m *MultiTaskSource) PostWorklog(ctx context.Context, issueKey string, timeSpent time.Duration, description string, started time.Time) error {
+	return m.routeTo(issueKey).PostWorklog(ctx, issueKey, timeSpent, description, started)
 }
 
 func (m *MultiTaskSource) GetEstimate(ctx context.Context, issueKey string) (time.Duration, error) {

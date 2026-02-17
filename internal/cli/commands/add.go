@@ -230,9 +230,12 @@ Extracted attributes inside ():
 				creator = source
 			}
 
+			issueType, _ := cmd.Flags().GetString("type")
+
 			p := AddParams{
-				Project: project,
-				Creator: creator,
+				Project:   project,
+				IssueType: issueType,
+				Creator:   creator,
 			}
 			if pl, ok := creator.(ProjectLister); ok {
 				p.Projects = pl
@@ -325,6 +328,7 @@ Extracted attributes inside ():
 
 	cmd.Flags().String("project", "", "Pre-select project")
 	cmd.Flags().String("provider", "", "Provider to create the task on (defaults to first configured)")
+	cmd.Flags().StringP("type", "t", "", "Issue type (Task, Bug, Story, Epic) — Jira only")
 
 	return cmd
 }
