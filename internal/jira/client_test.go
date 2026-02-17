@@ -273,6 +273,10 @@ func TestJIRA004_UpdateEstimate(t *testing.T) {
 func TestJIRA005_CreateTask(t *testing.T) {
 	t.Run("creates issue with all fields", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/rest/api/3/myself" {
+				json.NewEncoder(w).Encode(map[string]string{"accountId": "abc123"})
+				return
+			}
 			if r.URL.Path != "/rest/api/3/issue" {
 				t.Errorf("unexpected path: %s", r.URL.Path)
 			}
@@ -283,6 +287,11 @@ func TestJIRA005_CreateTask(t *testing.T) {
 			var payload map[string]interface{}
 			json.Unmarshal(body, &payload)
 			fields := payload["fields"].(map[string]interface{})
+
+			assignee := fields["assignee"].(map[string]interface{})
+			if assignee["accountId"] != "abc123" {
+				t.Errorf("expected assignee abc123, got %v", assignee["accountId"])
+			}
 
 			proj := fields["project"].(map[string]interface{})
 			if proj["key"] != "PROJ" {
@@ -332,6 +341,10 @@ func TestJIRA005_CreateTask(t *testing.T) {
 
 	t.Run("creates issue with minimal fields", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/rest/api/3/myself" {
+				json.NewEncoder(w).Encode(map[string]string{"accountId": "abc123"})
+				return
+			}
 			body, _ := io.ReadAll(r.Body)
 			var payload map[string]interface{}
 			json.Unmarshal(body, &payload)

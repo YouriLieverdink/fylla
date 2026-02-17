@@ -19,6 +19,7 @@ type Client struct {
 	Email      string
 	Token      string
 	HTTPClient *http.Client
+	AccountID  string
 }
 
 // NewClient creates a Jira client with the given credentials.
@@ -219,7 +220,7 @@ func (c *Client) FetchTasks(ctx context.Context, jql string) ([]task.Task, error
 func (c *Client) PostWorklog(ctx context.Context, issueKey string, timeSpent time.Duration, description string, started time.Time) error {
 	payload := map[string]interface{}{
 		"timeSpentSeconds": int(timeSpent.Seconds()),
-		"started":          started.Format("2006-01-02T15:04:05.000+0000"),
+		"started":          started.Format("2006-01-02T15:04:05.000-0700"),
 		"comment": map[string]interface{}{
 			"type":    "doc",
 			"version": 1,
@@ -279,12 +280,42 @@ type createIssueResponse struct {
 	Key string `json:"key"`
 }
 
+func (c *Client) fetchAccountID(ctx context.Context) error {
+	if c.AccountID != "" {
+		return nil
+	}
+
+	resp, err := c.do(ctx, http.MethodGet, "/rest/api/3/myself", nil)
+	if err != nil {
+		return fmt.Errorf("fetch account ID: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("jira myself: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		AccountID string `json:"accountId"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decode myself response: %w", err)
+	}
+	c.AccountID = result.AccountID
+	return nil
+}
+
 // CreateTask creates a new issue in Jira and returns the issue key.
 func (c *Client) CreateTask(ctx context.Context, input task.CreateInput) (string, error) {
 	fields := map[string]interface{}{
 		"project":   map[string]string{"key": input.Project},
 		"issuetype": map[string]string{"name": input.IssueType},
 		"summary":   input.Summary,
+	}
+
+	if err := c.fetchAccountID(ctx); err == nil && c.AccountID != "" {
+		fields["assignee"] = map[string]string{"accountId": c.AccountID}
 	}
 
 	if input.Description != "" {
