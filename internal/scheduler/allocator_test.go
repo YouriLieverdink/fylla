@@ -48,7 +48,7 @@ func Test_ALLOC001_first_fit_highest_priority_first(t *testing.T) {
 		},
 	}
 
-	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+	result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 	if len(result) != 2 {
 		t.Fatalf("expected 2 allocations, got %d", len(result))
@@ -84,7 +84,7 @@ func Test_ALLOC001_three_tasks_ordered(t *testing.T) {
 		},
 	}
 
-	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+	result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 	if len(result) != 3 {
 		t.Fatalf("expected 3 allocations, got %d", len(result))
@@ -134,7 +134,7 @@ func Test_ALLOC002_project_filtering(t *testing.T) {
 		},
 	}
 
-	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+	result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 	if len(result) != 2 {
 		t.Fatalf("expected 2 allocations, got %d", len(result))
@@ -174,7 +174,7 @@ func Test_ALLOC002_project_falls_back_to_default(t *testing.T) {
 		},
 	}
 
-	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+	result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 allocation, got %d", len(result))
@@ -204,7 +204,7 @@ func Test_ALLOC003_default_estimate_one_hour(t *testing.T) {
 		},
 	}
 
-	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+	result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 allocation, got %d", len(result))
@@ -228,7 +228,7 @@ func Test_ALLOC003_negative_estimate_defaults(t *testing.T) {
 		"": {{Start: date(2025, 1, 20, 9, 0), End: date(2025, 1, 20, 17, 0)}},
 	}
 
-	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+	result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 allocation, got %d", len(result))
@@ -259,7 +259,7 @@ func Test_ALLOC004_minimum_duration_skips_tiny_slots(t *testing.T) {
 		},
 	}
 
-	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+	result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 	if len(result) != 0 {
 		t.Fatalf("expected 0 allocations (slot too small), got %d", len(result))
@@ -280,7 +280,7 @@ func Test_ALLOC004_slot_at_exactly_minimum(t *testing.T) {
 		},
 	}
 
-	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+	result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 allocation (slot equals minimum), got %d", len(result))
@@ -309,7 +309,7 @@ func Test_ALLOC005_splitting_remainder_below_minimum(t *testing.T) {
 		},
 	}
 
-	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+	result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 allocation, got %d", len(result))
@@ -346,7 +346,7 @@ func Test_ALLOC005_splitting_remainder_above_minimum(t *testing.T) {
 		},
 	}
 
-	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+	result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 	if len(result) != 2 {
 		t.Fatalf("expected 2 allocations (split), got %d", len(result))
@@ -403,7 +403,7 @@ func Test_ALLOC006_at_risk_detection(t *testing.T) {
 		},
 	}
 
-	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+	result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 	// Find the LATE-1 allocation
 	var lateAlloc *Allocation
@@ -451,7 +451,7 @@ func Test_ALLOC006_not_at_risk_when_scheduled_on_due_date(t *testing.T) {
 		},
 	}
 
-	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+	result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 allocation, got %d", len(result))
@@ -484,7 +484,7 @@ func Test_ALLOC006_not_at_risk_when_before_due(t *testing.T) {
 		},
 	}
 
-	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+	result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 allocation, got %d", len(result))
@@ -511,7 +511,7 @@ func Test_ALLOC006_no_due_date_not_at_risk(t *testing.T) {
 		"": {{Start: date(2025, 1, 20, 9, 0), End: date(2025, 1, 20, 17, 0)}},
 	}
 
-	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+	result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 allocation, got %d", len(result))
@@ -554,7 +554,7 @@ func Test_ALLOC007_at_risk_late_prefix(t *testing.T) {
 		},
 	}
 
-	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+	result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 	var atRiskAlloc *Allocation
 	for i := range result {
@@ -604,7 +604,7 @@ func Test_ALLOC007_split_task_all_parts_at_risk(t *testing.T) {
 		},
 	}
 
-	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+	result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 	if len(result) != 2 {
 		t.Fatalf("expected 2 allocations (split), got %d", len(result))
@@ -641,7 +641,7 @@ func Test_ALLOC_consumed_time_shared_across_projects(t *testing.T) {
 		},
 	}
 
-	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+	result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 	if len(result) != 1 {
 		// DEF-1 takes 09:00-10:00, so ADMIN-1 has no room in its 09:00-10:00 window
@@ -662,7 +662,7 @@ func Test_ALLOC_no_slots_no_allocations(t *testing.T) {
 		"": {},
 	}
 
-	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+	result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 	if len(result) != 0 {
 		t.Errorf("expected 0 allocations with no slots, got %d", len(result))
@@ -674,7 +674,7 @@ func Test_ALLOC_empty_tasks(t *testing.T) {
 		"": {{Start: date(2025, 1, 20, 9, 0), End: date(2025, 1, 20, 17, 0)}},
 	}
 
-	result := Allocate(nil, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+	result, _ := Allocate(nil, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 	if len(result) != 0 {
 		t.Errorf("expected 0 allocations with no tasks, got %d", len(result))
@@ -704,7 +704,7 @@ func Test_ALLOC008_not_before_constraint(t *testing.T) {
 			},
 		}
 
-		result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+		result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 		if len(result) != 1 {
 			t.Fatalf("expected 1 allocation, got %d", len(result))
@@ -733,7 +733,7 @@ func Test_ALLOC008_not_before_constraint(t *testing.T) {
 			},
 		}
 
-		result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+		result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 		if len(result) != 0 {
 			t.Errorf("expected 0 allocations when all slots before not-before, got %d", len(result))
@@ -760,7 +760,7 @@ func Test_ALLOC008_not_before_constraint(t *testing.T) {
 			},
 		}
 
-		result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+		result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 		if len(result) != 1 {
 			t.Fatalf("expected 1 allocation, got %d", len(result))
@@ -792,7 +792,7 @@ func Test_ALLOC009_nosplit_constraint(t *testing.T) {
 			},
 		}
 
-		result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+		result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 		if len(result) != 1 {
 			t.Fatalf("expected 1 allocation, got %d", len(result))
@@ -822,7 +822,7 @@ func Test_ALLOC009_nosplit_constraint(t *testing.T) {
 			},
 		}
 
-		result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+		result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 		if len(result) != 0 {
 			t.Errorf("expected 0 allocations for nosplit task that doesn't fit, got %d", len(result))
@@ -850,7 +850,7 @@ func Test_ALLOC009_nosplit_constraint(t *testing.T) {
 			},
 		}
 
-		result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+		result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 		if len(result) != 0 {
 			t.Errorf("expected 0 allocations (nosplit prevents split), got %d", len(result))
@@ -883,7 +883,7 @@ func Test_ALLOC010_combined_constraints(t *testing.T) {
 		},
 	}
 
-	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+	result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 allocation, got %d", len(result))
@@ -915,7 +915,7 @@ func Test_ALLOC_split_label_not_added_for_single_allocation(t *testing.T) {
 		},
 	}
 
-	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+	result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 allocation, got %d", len(result))
@@ -946,7 +946,7 @@ func Test_ALLOC_split_label_three_parts(t *testing.T) {
 		},
 	}
 
-	result := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+	result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
 	if len(result) != 3 {
 		t.Fatalf("expected 3 allocations, got %d", len(result))

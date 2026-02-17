@@ -19,6 +19,12 @@ type Allocation struct {
 	AtRisk bool
 }
 
+// UnscheduledTask wraps a task that could not be scheduled with a reason.
+type UnscheduledTask struct {
+	Task   task.Task
+	Reason string
+}
+
 // AllocateConfig holds parameters for the allocation algorithm.
 type AllocateConfig struct {
 	MinTaskDurationMinutes int
@@ -33,12 +39,13 @@ type AllocateConfig struct {
 // slotsByProject maps project keys to their available slots. The empty string key ""
 // holds default slots for projects without specific rules. When a task is allocated,
 // that time is consumed globally across all project slot lists.
-func Allocate(tasks []ScoredTask, slotsByProject map[string][]calendar.Slot, cfg AllocateConfig) []Allocation {
+func Allocate(tasks []ScoredTask, slotsByProject map[string][]calendar.Slot, cfg AllocateConfig) ([]Allocation, []UnscheduledTask) {
 	minDur := time.Duration(cfg.MinTaskDurationMinutes) * time.Minute
 	buffer := time.Duration(cfg.BufferMinutes) * time.Minute
 
 	var consumed []allocRange
 	var allocations []Allocation
+	var unscheduled []UnscheduledTask
 
 	for _, st := range tasks {
 		estimate := st.Task.RemainingEstimate
@@ -53,6 +60,14 @@ func Allocate(tasks []ScoredTask, slotsByProject map[string][]calendar.Slot, cfg
 		// Filter out slots that start before the task's not-before date
 		if st.Task.NotBefore != nil {
 			available = filterSlotsNotBefore(available, *st.Task.NotBefore)
+		}
+
+		if len(available) == 0 {
+			unscheduled = append(unscheduled, UnscheduledTask{
+				Task:   st.Task,
+				Reason: "no available slots",
+			})
+			continue
 		}
 
 		remaining := estimate
@@ -100,6 +115,18 @@ func Allocate(tasks []ScoredTask, slotsByProject map[string][]calendar.Slot, cfg
 			remaining -= slotDur
 		}
 
+		if remaining > 0 {
+			reason := "not enough time"
+			if st.Task.NoSplit {
+				reason = "no slot large enough (no-split)"
+			}
+			unscheduled = append(unscheduled, UnscheduledTask{
+				Task:   st.Task,
+				Reason: reason,
+			})
+			continue
+		}
+
 		// Split label: annotate each part when a task is split across slots.
 		if len(taskAllocs) > 1 {
 			total := len(taskAllocs)
@@ -124,7 +151,7 @@ func Allocate(tasks []ScoredTask, slotsByProject map[string][]calendar.Slot, cfg
 		allocations = append(allocations, taskAllocs...)
 	}
 
-	return allocations
+	return allocations, unscheduled
 }
 
 func projectSlots(slotsByProject map[string][]calendar.Slot, project string) []calendar.Slot {

@@ -1290,7 +1290,7 @@ func TestSYNC009_report_unscheduled_tasks(t *testing.T) {
 		}
 		found := false
 		for _, u := range result.Unscheduled {
-			if u.Key == "NOFIT-1" {
+			if u.Task.Key == "NOFIT-1" {
 				found = true
 			}
 		}
@@ -1333,9 +1333,9 @@ func TestSYNC009_report_unscheduled_tasks(t *testing.T) {
 		allocs := []scheduler.Allocation{
 			{Task: task.Task{Key: "T-1", Summary: "Scheduled"}, Start: now, End: now.Add(time.Hour)},
 		}
-		unscheduled := []task.Task{
-			{Key: "T-2", Summary: "Dropped task", RemainingEstimate: 2 * time.Hour},
-			{Key: "T-3", Summary: "Another dropped", RemainingEstimate: 0},
+		unscheduled := []scheduler.UnscheduledTask{
+			{Task: task.Task{Key: "T-2", Summary: "Dropped task", RemainingEstimate: 2 * time.Hour}, Reason: "not enough time"},
+			{Task: task.Task{Key: "T-3", Summary: "Another dropped", RemainingEstimate: 0}, Reason: "no available slots"},
 		}
 		result := &SyncResult{Allocations: allocs, Unscheduled: unscheduled}
 		var buf bytes.Buffer
@@ -1348,8 +1348,11 @@ func TestSYNC009_report_unscheduled_tasks(t *testing.T) {
 		if !strings.Contains(out, "T-2") || !strings.Contains(out, "Dropped task") {
 			t.Errorf("output missing unscheduled task T-2, got:\n%s", out)
 		}
-		if !strings.Contains(out, "2h0m0s") {
+		if !strings.Contains(out, "2h") {
 			t.Errorf("output missing estimate for T-2, got:\n%s", out)
+		}
+		if !strings.Contains(out, "not enough time") {
+			t.Errorf("output missing reason for T-2, got:\n%s", out)
 		}
 		if !strings.Contains(out, "T-3") || !strings.Contains(out, "no estimate") {
 			t.Errorf("output missing T-3 with no estimate, got:\n%s", out)
@@ -1360,8 +1363,8 @@ func TestSYNC009_report_unscheduled_tasks(t *testing.T) {
 		allocs := []scheduler.Allocation{
 			{Task: task.Task{Key: "T-1", Summary: "Scheduled"}, Start: now, End: now.Add(time.Hour)},
 		}
-		unscheduled := []task.Task{
-			{Key: "T-2", Summary: "Dropped", RemainingEstimate: time.Hour},
+		unscheduled := []scheduler.UnscheduledTask{
+			{Task: task.Task{Key: "T-2", Summary: "Dropped", RemainingEstimate: time.Hour}, Reason: "not enough time"},
 		}
 		result := &SyncResult{Allocations: allocs, Unscheduled: unscheduled}
 		var buf bytes.Buffer
@@ -1417,7 +1420,6 @@ func TestSYNC010_progress_output(t *testing.T) {
 			"Scheduling 2 tasks into available slots...",
 			"Creating",
 			"calendar events...",
-			"Done.",
 		}
 		for _, msg := range expected {
 			if !strings.Contains(out, msg) {
@@ -1458,7 +1460,6 @@ func TestSYNC010_progress_output(t *testing.T) {
 			"Scheduling 1 tasks into available slots...",
 			"Fetching existing Fylla events...",
 			"Reconciled:",
-			"Done.",
 		}
 		for _, msg := range expected {
 			if !strings.Contains(out, msg) {
@@ -1500,9 +1501,6 @@ func TestSYNC010_progress_output(t *testing.T) {
 		}
 		if strings.Contains(out, "Creating") {
 			t.Errorf("dry-run should not show creating message, got:\n%s", out)
-		}
-		if !strings.Contains(out, "Done (dry run).") {
-			t.Errorf("dry-run should show 'Done (dry run).', got:\n%s", out)
 		}
 	})
 

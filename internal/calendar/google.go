@@ -68,11 +68,12 @@ func (c *GoogleClient) FetchEvents(ctx context.Context, start, end time.Time) ([
 // parseGoogleEvent converts a Google Calendar event to our Event type.
 func parseGoogleEvent(item *googlecalendar.Event) Event {
 	e := Event{
-		ID:          item.Id,
-		Title:       item.Summary,
-		Description: item.Description,
-		Location:    item.Location,
-		EventType:   item.EventType,
+		ID:           item.Id,
+		Title:        item.Summary,
+		Description:  item.Description,
+		Location:     item.Location,
+		EventType:    item.EventType,
+		Transparency: item.Transparency,
 	}
 
 	if item.Start != nil {

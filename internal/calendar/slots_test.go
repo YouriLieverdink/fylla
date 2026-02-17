@@ -482,6 +482,81 @@ func Test_SLOT007_multi_day_OOO_handled(t *testing.T) {
 	})
 }
 
+func Test_SLOT_transparent_events_dont_block(t *testing.T) {
+	// Monday 2025-01-20
+	now := dt(2025, 1, 20, 7, 0)
+	rangeStart := dt(2025, 1, 20, 0, 0)
+	rangeEnd := dt(2025, 1, 20, 23, 59)
+
+	t.Run("transparent event does not block slot", func(t *testing.T) {
+		freeEvent := Event{
+			Title:        "Focus time",
+			Start:        dt(2025, 1, 20, 10, 0),
+			End:          dt(2025, 1, 20, 12, 0),
+			Transparency: "transparent",
+		}
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{freeEvent}, defaultHours(), 0, 1, nil, 0)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// Should have one continuous slot 09:00-17:00
+		if len(slots) != 1 {
+			t.Fatalf("expected 1 slot, got %d", len(slots))
+		}
+		if slots[0].Start != dt(2025, 1, 20, 9, 0) || slots[0].End != dt(2025, 1, 20, 17, 0) {
+			t.Errorf("expected 09:00-17:00, got %v-%v", slots[0].Start, slots[0].End)
+		}
+	})
+
+	t.Run("opaque event still blocks slot", func(t *testing.T) {
+		busyEvent := Event{
+			Title:        "Meeting",
+			Start:        dt(2025, 1, 20, 10, 0),
+			End:          dt(2025, 1, 20, 12, 0),
+			Transparency: "opaque",
+		}
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{busyEvent}, defaultHours(), 0, 1, nil, 0)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(slots) != 2 {
+			t.Fatalf("expected 2 slots, got %d", len(slots))
+		}
+	})
+
+	t.Run("mix of transparent and opaque events", func(t *testing.T) {
+		events := []Event{
+			{
+				Title:        "Free block",
+				Start:        dt(2025, 1, 20, 9, 0),
+				End:          dt(2025, 1, 20, 11, 0),
+				Transparency: "transparent",
+			},
+			{
+				Title:        "Real meeting",
+				Start:        dt(2025, 1, 20, 13, 0),
+				End:          dt(2025, 1, 20, 14, 0),
+				Transparency: "opaque",
+			},
+		}
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, events, defaultHours(), 0, 1, nil, 0)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// Transparent event ignored, opaque blocks 13:00-14:00
+		// Should have: 09:00-13:00 and 14:00-17:00
+		if len(slots) != 2 {
+			t.Fatalf("expected 2 slots, got %d", len(slots))
+		}
+		if slots[0].Start != dt(2025, 1, 20, 9, 0) || slots[0].End != dt(2025, 1, 20, 13, 0) {
+			t.Errorf("first slot: expected 09:00-13:00, got %v-%v", slots[0].Start, slots[0].End)
+		}
+		if slots[1].Start != dt(2025, 1, 20, 14, 0) || slots[1].End != dt(2025, 1, 20, 17, 0) {
+			t.Errorf("second slot: expected 14:00-17:00, got %v-%v", slots[1].Start, slots[1].End)
+		}
+	})
+}
+
 func Test_SLOT008_multiple_business_hour_windows(t *testing.T) {
 	// Monday 2025-01-20
 	now := dt(2025, 1, 20, 7, 0)
