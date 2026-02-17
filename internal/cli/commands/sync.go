@@ -320,18 +320,18 @@ func printDryRunTimeline(w io.Writer, result *SyncResult) {
 		}
 
 		dur := formatDuration(e.end.Sub(e.start))
-		prefix := ""
+		suffix := ""
 		if e.atRisk {
-			prefix = "⚠️ "
+			suffix = "  ⚠️"
 		}
 
-		fmt.Fprintf(w, "    %s  %s  %5s  %s%s – %s\n",
+		fmt.Fprintf(w, "    %s  %s  %5s  %s – %s%s\n",
 			padRight(label, maxKey),
 			padRight(truncateString(e.summary, maxSummary), maxSummary),
 			dur,
-			prefix,
 			e.start.Format("15:04"),
 			e.end.Format("15:04"),
+			suffix,
 		)
 	}
 }
@@ -359,20 +359,20 @@ func printAppliedResult(w io.Writer, result *SyncResult) {
 
 	fmt.Fprintf(w, "Scheduled %d event(s):\n", len(result.Allocations))
 	for i, alloc := range result.Allocations {
-		prefix := ""
+		suffix := ""
 		if alloc.AtRisk {
-			prefix = "⚠️ "
+			suffix = "  ⚠️"
 		}
 		taskLabel := buildTaskLabel(alloc.Task.Key, alloc.Task.Project, alloc.Task.Section, maxLabelWidth)
 		est := formatDuration(alloc.End.Sub(alloc.Start))
-		fmt.Fprintf(w, "  %*d. %s  %s  %5s  %s%s – %s\n",
+		fmt.Fprintf(w, "  %*d. %s  %s  %5s  %s – %s%s\n",
 			indexWidth, i+1,
 			padRight(taskLabel, maxKey),
 			padRight(truncateString(alloc.Task.Summary, maxSummary), maxSummary),
 			est,
-			prefix,
 			alloc.Start.Format("Mon Jan 2 15:04"),
 			alloc.End.Format("15:04"),
+			suffix,
 		)
 	}
 
