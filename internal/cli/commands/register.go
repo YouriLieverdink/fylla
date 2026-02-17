@@ -13,4 +13,5 @@ func Register(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(newAuthCmd())
 	rootCmd.AddCommand(newConfigCmd())
 	rootCmd.AddCommand(newInitCmd())
+	rootCmd.AddCommand(newServeCmd())
 }
