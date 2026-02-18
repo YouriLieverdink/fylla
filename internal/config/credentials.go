@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 )
 
-// ProviderCredentials holds a single provider's authentication token.
+// ProviderCredentials holds a provider's authentication credentials.
 type ProviderCredentials struct {
 	Token string `json:"token"`
 }

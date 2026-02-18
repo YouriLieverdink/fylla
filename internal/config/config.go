@@ -7,6 +7,7 @@ type Config struct {
 	Providers     []string                         `yaml:"providers"`
 	Jira          JiraConfig                       `yaml:"jira"`
 	Todoist       TodoistConfig                    `yaml:"todoist"`
+	GitHub        GitHubConfig                     `yaml:"github"`
 	Calendar      CalendarConfig                   `yaml:"calendar"`
 	Scheduling    SchedulingConfig                 `yaml:"scheduling"`
 	BusinessHours []BusinessHoursConfig            `yaml:"businessHours"`
@@ -38,6 +39,13 @@ type TodoistConfig struct {
 	Credentials    string `yaml:"credentials"`
 	DefaultFilter  string `yaml:"defaultFilter"`
 	DefaultProject string `yaml:"defaultProject"`
+}
+
+// GitHubConfig holds GitHub PR review settings.
+type GitHubConfig struct {
+	Credentials  string   `yaml:"credentials"`
+	DefaultQuery string   `yaml:"defaultQuery"`
+	Repos        []string `yaml:"repos"`
 }
 
 // CalendarConfig holds Google Calendar settings.
@@ -79,9 +87,9 @@ func (c *Config) Validate() error {
 		seen := make(map[string]bool)
 		for _, p := range c.Providers {
 			switch p {
-			case "jira", "todoist":
+			case "jira", "todoist", "github":
 			default:
-				return fmt.Errorf("unknown provider %q (must be 'jira' or 'todoist')", p)
+				return fmt.Errorf("unknown provider %q (must be 'jira', 'todoist', or 'github')", p)
 			}
 			if seen[p] {
 				return fmt.Errorf("duplicate provider %q", p)

@@ -680,15 +680,17 @@ func TestBuildDescription(t *testing.T) {
 	tests := []struct {
 		name        string
 		key         string
+		project     string
 		jiraBaseURL string
 		want        string
 	}{
-		{"jira key", "PROJ-123", "https://company.atlassian.net", "fylla: PROJ-123\nhttps://company.atlassian.net/browse/PROJ-123"},
-		{"todoist numeric key", "123456", "https://company.atlassian.net", "fylla: 123456\nhttps://todoist.com/app/task/123456"},
+		{"jira key", "PROJ-123", "PROJ", "https://company.atlassian.net", "fylla: PROJ-123\nhttps://company.atlassian.net/browse/PROJ-123"},
+		{"todoist numeric key", "123456", "", "https://company.atlassian.net", "fylla: 123456\nhttps://todoist.com/app/task/123456"},
+		{"github PR key", "fylla#42", "iruoy/fylla", "https://company.atlassian.net", "fylla: fylla#42\nhttps://github.com/iruoy/fylla/pull/42"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := BuildDescription(tt.key, tt.jiraBaseURL)
+			got := BuildDescription(tt.key, tt.project, tt.jiraBaseURL)
 			if got != tt.want {
 				t.Errorf("BuildDescription() = %q, want %q", got, tt.want)
 			}

@@ -13,6 +13,11 @@ todoist:
   defaultFilter: "today | overdue"
   defaultProject: ""
 
+github:
+  credentials: ""
+  defaultQuery: "is:pr state:open review-requested:@me"
+  repos: []
+
 calendar:
   credentials: ""
   sourceCalendars: [primary]

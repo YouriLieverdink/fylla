@@ -208,14 +208,34 @@ func ParseTitle(title string) ParsedTitle {
 }
 
 // BuildDescription constructs the calendar event description for a Fylla task.
-// It infers the source from the task key: numeric keys are Todoist tasks,
-// otherwise the key is treated as a Jira issue key.
-func BuildDescription(taskKey, jiraBaseURL string) string {
+// It infers the source from the task key prefix: GH# for GitHub,
+// numeric for Todoist, otherwise Jira. The project field is used for
+// GitHub URLs since the key only contains the repo name (not the owner).
+func BuildDescription(taskKey, project, jiraBaseURL string) string {
+	if strings.Contains(taskKey, "#") {
+		number := parseGitHubNumber(taskKey)
+		if project != "" && number != "" {
+			return fmt.Sprintf("%s %s\nhttps://github.com/%s/pull/%s", fyllaMarker, taskKey, project, number)
+		}
+	}
 	if isNumericKey(taskKey) {
 		return fmt.Sprintf("%s %s\nhttps://todoist.com/app/task/%s", fyllaMarker, taskKey, taskKey)
 	}
 	return fmt.Sprintf("%s %s\n%s/browse/%s", fyllaMarker, taskKey, jiraBaseURL, taskKey)
 }
+
+// parseGitHubNumber extracts the PR number from a GH#repo#123 key.
+func parseGitHubNumber(key string) string {
+	// Strip "GH#" prefix
+	rest := key[3:]
+	for i := len(rest) - 1; i >= 0; i-- {
+		if rest[i] == '#' {
+			return rest[i+1:]
+		}
+	}
+	return ""
+}
+
 
 // isNumericKey returns true if key consists entirely of digits (Todoist task ID).
 func isNumericKey(key string) bool {
@@ -292,7 +312,7 @@ func (c *GoogleClient) FetchFyllaEvents(ctx context.Context, start, end time.Tim
 // UpdateEvent updates an existing event on the fylla calendar.
 func (c *GoogleClient) UpdateEvent(ctx context.Context, eventID string, input CreateEventInput) error {
 	title := BuildTitleWithSection(input.Project, input.Section, input.Summary, input.AtRisk)
-	description := BuildDescription(input.TaskKey, c.JiraBaseURL)
+	description := BuildDescription(input.TaskKey, input.Project, c.JiraBaseURL)
 
 	event := &googlecalendar.Event{
 		Summary:     title,
@@ -333,7 +353,7 @@ type CreateEventInput struct {
 // CreateEvent creates a new event on the fylla calendar.
 func (c *GoogleClient) CreateEvent(ctx context.Context, input CreateEventInput) error {
 	title := BuildTitleWithSection(input.Project, input.Section, input.Summary, input.AtRisk)
-	description := BuildDescription(input.TaskKey, c.JiraBaseURL)
+	description := BuildDescription(input.TaskKey, input.Project, c.JiraBaseURL)
 
 	event := &googlecalendar.Event{
 		Summary:     title,

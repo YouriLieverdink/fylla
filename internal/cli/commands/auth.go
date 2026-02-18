@@ -146,6 +146,36 @@ func RunAuthTodoist(p AuthTodoistParams) error {
 	return nil
 }
 
+// AuthGitHubParams holds inputs for the GitHub auth operation.
+type AuthGitHubParams struct {
+	Token      string
+	ConfigPath string
+}
+
+// RunAuthGitHub stores the GitHub PAT in a per-provider credential file.
+func RunAuthGitHub(p AuthGitHubParams) error {
+	cfg, err := config.LoadFrom(p.ConfigPath)
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	credPath := cfg.GitHub.Credentials
+	if credPath == "" {
+		credPath = filepath.Join(filepath.Dir(p.ConfigPath), "github_credentials.json")
+	}
+
+	cfg.GitHub.Credentials = credPath
+	if err := config.SaveTo(cfg, p.ConfigPath); err != nil {
+		return fmt.Errorf("save config: %w", err)
+	}
+
+	if err := config.SaveProviderCredentials(&config.ProviderCredentials{Token: p.Token}, credPath); err != nil {
+		return fmt.Errorf("save credentials: %w", err)
+	}
+
+	return nil
+}
+
 func newAuthCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
@@ -155,6 +185,7 @@ func newAuthCmd() *cobra.Command {
 	cmd.AddCommand(newAuthJiraCmd())
 	cmd.AddCommand(newAuthGoogleCmd())
 	cmd.AddCommand(newAuthTodoistCmd())
+	cmd.AddCommand(newAuthGitHubCmd())
 
 	return cmd
 }
@@ -293,3 +324,36 @@ func newAuthGoogleCmd() *cobra.Command {
 
 	return cmd
 }
+
+func newAuthGitHubCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "github",
+		Short: "Configure GitHub authentication",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			token, _ := cmd.Flags().GetString("token")
+			if token == "" {
+				return fmt.Errorf("--token is required")
+			}
+
+			cfgPath, err := config.DefaultPath()
+			if err != nil {
+				return err
+			}
+
+			if err := RunAuthGitHub(AuthGitHubParams{
+				Token:      token,
+				ConfigPath: cfgPath,
+			}); err != nil {
+				return err
+			}
+
+			fmt.Fprintln(cmd.OutOrStdout(), "GitHub credentials stored successfully.")
+			return nil
+		},
+	}
+
+	cmd.Flags().String("token", "", "GitHub personal access token")
+
+	return cmd
+}
+

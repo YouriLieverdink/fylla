@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/iruoy/fylla/internal/config"
+	"github.com/iruoy/fylla/internal/github"
 	"github.com/iruoy/fylla/internal/jira"
 	"github.com/iruoy/fylla/internal/task"
 	"github.com/iruoy/fylla/internal/todoist"
@@ -47,10 +48,11 @@ type TaskSource interface {
 	SummaryUpdater
 }
 
-// Compile-time checks that both clients satisfy TaskSource.
+// Compile-time checks that all clients satisfy TaskSource.
 var (
 	_ TaskSource = (*jira.Client)(nil)
 	_ TaskSource = (*todoist.Client)(nil)
+	_ TaskSource = (*github.Client)(nil)
 )
 
 var jiraKeyRe = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d+$`)
@@ -60,9 +62,16 @@ func isJiraKey(key string) bool {
 	return jiraKeyRe.MatchString(key)
 }
 
+// isGitHubKey returns true if key matches the GitHub PR key format (e.g. repo#123).
+func isGitHubKey(key string) bool {
+	return strings.Contains(key, "#")
+}
+
 // providerForKey infers the provider name from a task key.
-// Jira keys match PROJ-123; everything else is assumed to be Todoist.
 func providerForKey(key string) string {
+	if isGitHubKey(key) {
+		return "github"
+	}
 	if isJiraKey(key) {
 		return "jira"
 	}
@@ -223,6 +232,8 @@ func buildProviderQueries(cfg *config.Config, jqlFlag, filterFlag string) map[st
 				q = cfg.Todoist.DefaultFilter
 			}
 			queries["todoist"] = q
+		case "github":
+			queries["github"] = cfg.GitHub.DefaultQuery
 		}
 	}
 	return queries
@@ -263,6 +274,20 @@ func loadTaskSource() (TaskSource, *config.Config, error) {
 			client := jira.NewClient(cfg.Jira.URL, cfg.Jira.Email, creds.Token)
 			client.DoneTransitions = cfg.Jira.DoneTransitions
 			sources["jira"] = client
+		case "github":
+			if cfg.GitHub.Credentials == "" {
+				return nil, nil, fmt.Errorf("github not configured: run 'fylla auth github'")
+			}
+			creds, err := config.LoadProviderCredentials(cfg.GitHub.Credentials)
+			if err != nil {
+				return nil, nil, fmt.Errorf("load github credentials: %w", err)
+			}
+			if creds.Token == "" {
+				return nil, nil, fmt.Errorf("github token not set: run 'fylla auth github --token TOKEN'")
+			}
+			client := github.NewClient(creds.Token)
+			client.Repos = cfg.GitHub.Repos
+			sources["github"] = client
 		}
 	}
 
