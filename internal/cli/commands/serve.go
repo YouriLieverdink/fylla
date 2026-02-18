@@ -144,7 +144,7 @@ func serveHandleSchedule(fetcher TaskFetcher, cal CalendarClient, cfg *config.Co
 		query := serveDefaultQuery(cfg)
 
 		start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-		end := now.AddDate(0, 0, cfg.Scheduling.WindowDays)
+		end := start.AddDate(0, 0, cfg.Scheduling.WindowDays-1).Add(24*time.Hour - time.Nanosecond)
 
 		result, err := RunSync(r.Context(), SyncParams{
 			Cal:    cal,

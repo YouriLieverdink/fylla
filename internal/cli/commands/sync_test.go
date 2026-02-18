@@ -1088,11 +1088,11 @@ func TestCLI007_sync_days_override(t *testing.T) {
 			t.Fatalf("BuildSyncParams: %v", err)
 		}
 
-		expectedEnd := now.AddDate(0, 0, 10)
+		expectedStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		expectedEnd := expectedStart.AddDate(0, 0, 9).Add(24*time.Hour - time.Nanosecond)
 		if !end.Equal(expectedEnd) {
 			t.Errorf("end = %v, want %v (10 days)", end, expectedEnd)
 		}
-		expectedStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 		if !start.Equal(expectedStart) {
 			t.Errorf("start = %v, want start of day %v", start, expectedStart)
 		}
@@ -1107,7 +1107,8 @@ func TestCLI007_sync_days_override(t *testing.T) {
 			t.Fatalf("BuildSyncParams: %v", err)
 		}
 
-		expectedEnd := now.AddDate(0, 0, 5)
+		expectedStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		expectedEnd := expectedStart.AddDate(0, 0, 4).Add(24*time.Hour - time.Nanosecond)
 		if !end.Equal(expectedEnd) {
 			t.Errorf("end = %v, want %v (5 days)", end, expectedEnd)
 		}
@@ -1138,13 +1139,13 @@ func TestCLI007_sync_days_override(t *testing.T) {
 		if len(cal.fetchCalls) == 0 {
 			t.Fatal("no fetch calls")
 		}
-		// end should be 10 days from now
-		expectedEnd := now.AddDate(0, 0, 10)
+		// end should cover 10 calendar days starting from today
+		expectedStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		expectedEnd := expectedStart.AddDate(0, 0, 9).Add(24*time.Hour - time.Nanosecond)
 		if !cal.fetchCalls[0].end.Equal(expectedEnd) {
 			t.Errorf("fetch end = %v, want %v", cal.fetchCalls[0].end, expectedEnd)
 		}
 		// start should be start of day (midnight)
-		expectedStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 		if !cal.fetchCalls[0].start.Equal(expectedStart) {
 			t.Errorf("fetch start = %v, want %v", cal.fetchCalls[0].start, expectedStart)
 		}

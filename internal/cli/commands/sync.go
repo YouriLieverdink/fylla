@@ -111,7 +111,7 @@ func BuildSyncParams(flags SyncFlags, cfg *config.Config, now time.Time) (query 
 			days = flags.Days
 		}
 		start = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-		end = now.AddDate(0, 0, days)
+		end = start.AddDate(0, 0, days-1).Add(24*time.Hour - time.Nanosecond)
 	}
 
 	return query, start, end, dryRun, nil
@@ -735,7 +735,7 @@ func newSyncCmd() *cobra.Command {
 	cmd.Flags().BoolP("verbose", "v", false, "Show project and section in task labels")
 	cmd.Flags().String("jql", "", "Custom JQL query override (Jira source)")
 	cmd.Flags().String("filter", "", "Custom filter override (Todoist source)")
-	cmd.Flags().Int("days", 0, "Override scheduling window (days)")
+	cmd.Flags().Int("days", 0, "Number of days to schedule (1 = today only)")
 	cmd.Flags().String("from", "", "Start date (YYYY-MM-DD)")
 	cmd.Flags().String("to", "", "End date (YYYY-MM-DD)")
 
