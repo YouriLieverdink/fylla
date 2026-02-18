@@ -75,6 +75,8 @@ func PrintListResult(w io.Writer, result *ListResult, verbose bool) {
 		score   float64
 	}
 
+	const maxListSummaryWidth = 60
+
 	formatted := make([]formattedTask, len(result.Tasks))
 	maxLeft := 0
 	for i, st := range result.Tasks {
@@ -93,7 +95,8 @@ func PrintListResult(w io.Writer, result *ListResult, verbose bool) {
 			summary: st.Task.Summary,
 			score:   st.Score,
 		}
-		left := displayWidth(prefix) + displayWidth(keySep) + displayWidth(st.Task.Summary)
+		summaryWidth := capWidth(displayWidth(st.Task.Summary), maxListSummaryWidth)
+		left := displayWidth(prefix) + displayWidth(keySep) + summaryWidth
 		if left > maxLeft {
 			maxLeft = left
 		}
@@ -103,7 +106,7 @@ func PrintListResult(w io.Writer, result *ListResult, verbose bool) {
 
 	fmt.Fprintf(w, "%d task(s):\n", len(result.Tasks))
 	for i, ft := range formatted {
-		left := ft.prefix + ft.keySep + ft.summary
+		left := ft.prefix + ft.keySep + truncateString(ft.summary, maxListSummaryWidth)
 		dw := displayWidth(left)
 		padding := ""
 		if maxLeft > dw {

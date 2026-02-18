@@ -14,24 +14,24 @@ go run ./cmd/fylla          # Run
 ## Project Structure
 
 - Entry point: `cmd/fylla/main.go`
-- Internal packages: `internal/{cli,jira,calendar,scheduler,config,timer,todoist}`
+- Internal packages: `internal/{cli,calendar,config,github,jira,prutil,scheduler,task,timer,todoist,web}`
 - Config template: `config/default_config.yaml`
 - Tests: colocated `_test.go` files (Go convention)
 
 ## Architecture
 
 ### Multi-Provider System
-Fylla supports multiple task providers (Jira, Todoist) simultaneously via the `providers` array in config. Key concepts:
+Fylla supports multiple task providers (Jira, Todoist, GitHub) simultaneously via the `providers` array in config. Key concepts:
 
-- **Config:** `providers: [jira, todoist]` — configures which task providers to use, defaults to `["jira"]` when unset
-- **Provider routing:** `isJiraKey()` / `providerForKey()` infers provider from task key format (`PROJ-123` → Jira, numeric → Todoist)
+- **Config:** `providers: [jira, todoist, github]` — configures which task providers to use, defaults to `["jira"]` when unset
+- **Provider routing:** `isJiraKey()` / `isGitHubKey()` / `providerForKey()` infers provider from task key format (`PROJ-123` → Jira, numeric → Todoist, `repo#123` → GitHub)
 - **MultiTaskSource:** wraps multiple `TaskSource` instances, routes key-based operations to the correct provider
 - **multiFetcher:** concurrent fetch from all providers, merges results, handles partial failures
-- **Per-provider credentials:** each provider stores credentials in a separate file (`jira_credentials.json`, `todoist_credentials.json`), path saved in config (`jira.credentials`, `todoist.credentials`)
-- **Calendar descriptions:** `BuildDescription()` infers source from task key to generate correct URLs (Jira browse link vs Todoist app link)
+- **Per-provider credentials:** each provider stores credentials in a separate file (`jira_credentials.json`, `todoist_credentials.json`, `github_credentials.json`), path saved in config (`jira.credentials`, `todoist.credentials`, `github.credentials`)
+- **Calendar descriptions:** `BuildDescription()` infers source from task key to generate correct URLs (Jira browse link, Todoist app link, or GitHub PR link)
 
 ### Key Interfaces
-- `TaskSource` — composite interface combining all task operations (fetch, create, complete, delete, estimate, priority, due date, worklog)
+- `TaskSource` — composite interface combining all task operations (fetch, create, complete, delete, estimate, priority, due date, summary, worklog)
 - `TaskFetcher` — single-method interface for fetching tasks
 - `CalendarClient` — abstracts Google Calendar operations
 - `Surveyor` — abstracts interactive prompts (supports `Select`, `MultiSelect`, `Input`, `Password`)
@@ -42,6 +42,8 @@ Fylla supports multiple task providers (Jira, Todoist) simultaneously via the `p
 - Google Calendar: `google.golang.org/api/calendar/v3` + `golang.org/x/oauth2`
 - YAML: `gopkg.in/yaml.v3`
 - Interactive prompts: `github.com/AlecAivazis/survey/v2`
+- GitHub API: `github.com/google/go-github/v68`
+- Natural date parsing: `github.com/tj/go-naturaldate`
 - HTTP, JSON, filepath, time, os: stdlib
 
 ## Code Conventions

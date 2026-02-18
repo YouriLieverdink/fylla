@@ -280,7 +280,7 @@ func newServeCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().IntP("port", "p", 8080, "Port to listen on")
+	cmd.Flags().IntP("port", "p", 8002, "Port to listen on")
 
 	return cmd
 }
