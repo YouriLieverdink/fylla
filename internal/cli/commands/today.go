@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/iruoy/fylla/internal/calendar"
@@ -83,7 +82,8 @@ func RunToday(ctx context.Context, p TodayParams) (*TodayResult, error) {
 }
 
 // PrintTodayResult writes the full day schedule to the given writer.
-func PrintTodayResult(w io.Writer, result *TodayResult, now time.Time) {
+// When verbose is true, task labels include the [Project / Section] prefix.
+func PrintTodayResult(w io.Writer, result *TodayResult, now time.Time, verbose bool) {
 	if len(result.Events) == 0 {
 		fmt.Fprintln(w, "No Fylla tasks scheduled for today.")
 		return
@@ -116,18 +116,7 @@ func PrintTodayResult(w io.Writer, result *TodayResult, now time.Time) {
 			prefix = "[LATE] "
 		}
 
-		taskLabel := fe.TaskKey
-		if fe.Project != "" {
-			projectPrefix := fe.Project
-			if fe.Section != "" {
-				projectPrefix = projectPrefix + " / " + fe.Section
-				// Strip redundant repo name from task key (e.g. "hardware-insight#5" → "#5")
-				if strings.HasPrefix(taskLabel, fe.Section+"#") {
-					taskLabel = taskLabel[len(fe.Section):]
-				}
-			}
-			taskLabel = "[" + projectPrefix + "] " + taskLabel
-		}
+		taskLabel := syncTaskLabel(fe.TaskKey, fe.Project, fe.Section, verbose)
 
 		fmt.Fprintf(w, "%s%s – %s  %s%s: %s%s\n",
 			marker,
@@ -165,10 +154,12 @@ func newTodayCmd() *cobra.Command {
 				return err
 			}
 
-			PrintTodayResult(cmd.OutOrStdout(), result, now)
+			verbose, _ := cmd.Flags().GetBool("verbose")
+			PrintTodayResult(cmd.OutOrStdout(), result, now, verbose)
 			return nil
 		},
 	}
 
+	cmd.Flags().BoolP("verbose", "v", false, "Show project and section in task labels")
 	return cmd
 }

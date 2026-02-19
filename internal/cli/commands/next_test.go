@@ -120,7 +120,7 @@ func TestPrintNextResult(t *testing.T) {
 
 	t.Run("prints no tasks message", func(t *testing.T) {
 		var buf bytes.Buffer
-		PrintNextResult(&buf, &NextResult{}, now)
+		PrintNextResult(&buf, &NextResult{}, now, false)
 		if !strings.Contains(buf.String(), "No more Fylla tasks today.") {
 			t.Errorf("output = %q, want 'No more Fylla tasks today.'", buf.String())
 		}
@@ -140,7 +140,7 @@ func TestPrintNextResult(t *testing.T) {
 				Start:   time.Date(2025, 1, 20, 11, 0, 0, 0, time.UTC),
 				End:     time.Date(2025, 1, 20, 12, 0, 0, 0, time.UTC),
 			},
-		}, now)
+		}, now, false)
 		out := buf.String()
 		if !strings.Contains(out, "Current:") {
 			t.Errorf("output missing 'Current:', got %q", out)
@@ -171,7 +171,7 @@ func TestPrintNextResult(t *testing.T) {
 				Start:   time.Date(2025, 1, 20, 14, 0, 0, 0, time.UTC),
 				End:     time.Date(2025, 1, 20, 15, 0, 0, 0, time.UTC),
 			},
-		}, now)
+		}, now, false)
 		out := buf.String()
 		if !strings.Contains(out, "14:00 – 15:00") {
 			t.Errorf("output missing '14:00 – 15:00', got %q", out)
@@ -187,7 +187,7 @@ func TestPrintNextResult(t *testing.T) {
 				End:     time.Date(2025, 1, 20, 11, 0, 0, 0, time.UTC),
 				AtRisk:  true,
 			},
-		}, now)
+		}, now, false)
 		out := buf.String()
 		if !strings.Contains(out, "[LATE]") {
 			t.Errorf("output missing '[LATE]', got %q", out)
@@ -210,7 +210,7 @@ func TestPrintNextResult(t *testing.T) {
 				Start:   time.Date(2025, 1, 20, 11, 0, 0, 0, time.UTC),
 				End:     time.Date(2025, 1, 20, 12, 0, 0, 0, time.UTC),
 			},
-		}, now)
+		}, now, true)
 		out := buf.String()
 		if !strings.Contains(out, "[PROJ] PROJ-1: Fix bug") {
 			t.Errorf("missing project prefix for current, got %q", out)
@@ -234,7 +234,7 @@ func TestPrintNextResult(t *testing.T) {
 				Start:   time.Date(2025, 1, 20, 11, 0, 0, 0, time.UTC),
 				End:     time.Date(2025, 1, 20, 12, 0, 0, 0, time.UTC),
 			},
-		}, now)
+		}, now, false)
 		out := buf.String()
 		if !strings.Contains(out, "Current: Team standup (until 11:00)") {
 			t.Errorf("output missing calendar current, got %q", out)
@@ -253,7 +253,7 @@ func TestPrintNextResult(t *testing.T) {
 				End:             time.Date(2025, 1, 20, 12, 0, 0, 0, time.UTC),
 				IsCalendarEvent: true,
 			},
-		}, now)
+		}, now, false)
 		out := buf.String()
 		if !strings.Contains(out, "Next:    Calendly meeting (starts in 30m)") {
 			t.Errorf("output missing calendar next, got %q", out)

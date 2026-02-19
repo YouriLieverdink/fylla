@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/iruoy/fylla/internal/config"
@@ -59,7 +58,8 @@ func RunNext(ctx context.Context, p NextParams) (*NextResult, error) {
 }
 
 // PrintNextResult writes the next task info to the given writer.
-func PrintNextResult(w io.Writer, result *NextResult, now time.Time) {
+// When verbose is true, task labels include the [Project / Section] prefix.
+func PrintNextResult(w io.Writer, result *NextResult, now time.Time, verbose bool) {
 	if result.Current == nil && result.Next == nil {
 		fmt.Fprintln(w, "No more Fylla tasks today.")
 		return
@@ -76,17 +76,7 @@ func PrintNextResult(w io.Writer, result *NextResult, now time.Time) {
 			if result.Current.AtRisk {
 				prefix = "[LATE] "
 			}
-			taskLabel := result.Current.TaskKey
-			if result.Current.Project != "" {
-				projectPrefix := result.Current.Project
-				if result.Current.Section != "" {
-					projectPrefix = projectPrefix + " / " + result.Current.Section
-					if strings.HasPrefix(taskLabel, result.Current.Section+"#") {
-						taskLabel = taskLabel[len(result.Current.Section):]
-					}
-				}
-				taskLabel = "[" + projectPrefix + "] " + taskLabel
-			}
+			taskLabel := syncTaskLabel(result.Current.TaskKey, result.Current.Project, result.Current.Section, verbose)
 			fmt.Fprintf(w, "Current: %s%s: %s (until %s)\n",
 				prefix,
 				taskLabel,
@@ -118,17 +108,7 @@ func PrintNextResult(w io.Writer, result *NextResult, now time.Time) {
 			if result.Next.AtRisk {
 				prefix = "[LATE] "
 			}
-			taskLabel := result.Next.TaskKey
-			if result.Next.Project != "" {
-				projectPrefix := result.Next.Project
-				if result.Next.Section != "" {
-					projectPrefix = projectPrefix + " / " + result.Next.Section
-					if strings.HasPrefix(taskLabel, result.Next.Section+"#") {
-						taskLabel = taskLabel[len(result.Next.Section):]
-					}
-				}
-				taskLabel = "[" + projectPrefix + "] " + taskLabel
-			}
+			taskLabel := syncTaskLabel(result.Next.TaskKey, result.Next.Project, result.Next.Section, verbose)
 			if minutes < 60 {
 				fmt.Fprintf(w, "Next:    %s%s: %s (starts in %dm)\n",
 					prefix,
@@ -173,10 +153,12 @@ func newNextCmd() *cobra.Command {
 				return err
 			}
 
-			PrintNextResult(cmd.OutOrStdout(), result, now)
+			verbose, _ := cmd.Flags().GetBool("verbose")
+			PrintNextResult(cmd.OutOrStdout(), result, now, verbose)
 			return nil
 		},
 	}
 
+	cmd.Flags().BoolP("verbose", "v", false, "Show project and section in task labels")
 	return cmd
 }

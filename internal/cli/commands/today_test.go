@@ -250,7 +250,7 @@ func TestPrintTodayResult(t *testing.T) {
 
 	t.Run("prints empty state", func(t *testing.T) {
 		var buf bytes.Buffer
-		PrintTodayResult(&buf, &TodayResult{}, now)
+		PrintTodayResult(&buf, &TodayResult{}, now, false)
 		if !strings.Contains(buf.String(), "No Fylla tasks scheduled for today.") {
 			t.Errorf("output = %q, want empty state message", buf.String())
 		}
@@ -279,7 +279,7 @@ func TestPrintTodayResult(t *testing.T) {
 					End:     time.Date(2025, 1, 20, 14, 0, 0, 0, time.UTC),
 				},
 			},
-		}, now)
+		}, now, false)
 
 		out := buf.String()
 		if !strings.Contains(out, "Today's schedule:") {
@@ -314,7 +314,7 @@ func TestPrintTodayResult(t *testing.T) {
 					AtRisk:  true,
 				},
 			},
-		}, now)
+		}, now, false)
 
 		out := buf.String()
 		if !strings.Contains(out, "[LATE]") {
@@ -337,7 +337,7 @@ func TestPrintTodayResult(t *testing.T) {
 					End:     time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
 				},
 			},
-		}, now)
+		}, now, true)
 
 		out := buf.String()
 		if !strings.Contains(out, "[PROJ] PROJ-1: Fix login bug") {
@@ -362,7 +362,7 @@ func TestPrintTodayResult(t *testing.T) {
 					IsCalendarEvent: true,
 				},
 			},
-		}, now)
+		}, now, false)
 
 		out := buf.String()
 		if !strings.Contains(out, "T-1: Fix bug") {
