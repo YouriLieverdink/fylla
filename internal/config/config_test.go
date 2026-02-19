@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -634,6 +635,170 @@ func TestActiveProviders(t *testing.T) {
 		}
 	})
 
+}
+
+func TestSetMultiIn(t *testing.T) {
+	t.Run("updates multiple keys in one call", func(t *testing.T) {
+		path := writeTestConfig(t)
+		cfg, err := SetMultiIn(path, map[string]string{
+			"jira.url":   "https://new.atlassian.net",
+			"jira.email": "new@example.com",
+		})
+		if err != nil {
+			t.Fatalf("SetMultiIn: %v", err)
+		}
+		if cfg.Jira.URL != "https://new.atlassian.net" {
+			t.Errorf("URL = %q, want https://new.atlassian.net", cfg.Jira.URL)
+		}
+		if cfg.Jira.Email != "new@example.com" {
+			t.Errorf("Email = %q, want new@example.com", cfg.Jira.Email)
+		}
+	})
+
+	t.Run("flow-style arrays remain flow-style", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.yaml")
+		original := `providers: [jira]
+jira:
+  credentials: ""
+  url: https://company.atlassian.net
+  email: you@example.com
+  defaultJql: "assignee = currentUser() AND status = 'To Do'"
+calendar:
+  credentials: ""
+  sourceCalendars: [primary]
+  fyllaCalendar: fylla
+scheduling:
+  windowDays: 5
+  minTaskDurationMinutes: 25
+  bufferMinutes: 15
+businessHours:
+  - start: "09:00"
+    end: "17:00"
+    workDays: [1, 2, 3, 4, 5]
+weights:
+  priority: 0.45
+  dueDate: 0.30
+  estimate: 0.15
+  age: 0.10
+`
+		if err := os.WriteFile(path, []byte(original), 0644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+
+		_, err := SetMultiIn(path, map[string]string{
+			"jira.email": "updated@example.com",
+		})
+		if err != nil {
+			t.Fatalf("SetMultiIn: %v", err)
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		content := string(data)
+
+		if !strings.Contains(content, "[primary]") {
+			t.Errorf("flow-style sourceCalendars lost, got:\n%s", content)
+		}
+		if !strings.Contains(content, "[1, 2, 3, 4, 5]") {
+			t.Errorf("flow-style workDays lost, got:\n%s", content)
+		}
+	})
+
+	t.Run("does not add sections not in original", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.yaml")
+		// Minimal config without todoist or github sections
+		original := `jira:
+  credentials: ""
+  url: https://company.atlassian.net
+  email: you@example.com
+  defaultJql: "assignee = currentUser() AND status = 'To Do'"
+calendar:
+  credentials: ""
+  sourceCalendars: [primary]
+  fyllaCalendar: fylla
+scheduling:
+  windowDays: 5
+  minTaskDurationMinutes: 25
+  bufferMinutes: 15
+businessHours:
+  - start: "09:00"
+    end: "17:00"
+    workDays: [1, 2, 3, 4, 5]
+weights:
+  priority: 0.45
+  dueDate: 0.30
+  estimate: 0.15
+  age: 0.10
+`
+		if err := os.WriteFile(path, []byte(original), 0644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+
+		_, err := SetMultiIn(path, map[string]string{
+			"jira.url": "https://updated.atlassian.net",
+		})
+		if err != nil {
+			t.Fatalf("SetMultiIn: %v", err)
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		content := string(data)
+
+		if strings.Contains(content, "todoist:") {
+			t.Errorf("todoist section should not appear, got:\n%s", content)
+		}
+		if strings.Contains(content, "github:") {
+			t.Errorf("github section should not appear, got:\n%s", content)
+		}
+	})
+
+	t.Run("creates missing keys", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.yaml")
+		original := `jira:
+  credentials: ""
+  url: ""
+  email: ""
+  defaultJql: "assignee = currentUser()"
+calendar:
+  credentials: ""
+  sourceCalendars: [primary]
+  fyllaCalendar: fylla
+scheduling:
+  windowDays: 5
+  minTaskDurationMinutes: 25
+  bufferMinutes: 15
+businessHours:
+  - start: "09:00"
+    end: "17:00"
+    workDays: [1, 2, 3, 4, 5]
+weights:
+  priority: 0.45
+  dueDate: 0.30
+  estimate: 0.15
+  age: 0.10
+`
+		if err := os.WriteFile(path, []byte(original), 0644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+
+		cfg, err := SetMultiIn(path, map[string]string{
+			"github.credentials": "/tmp/github_credentials.json",
+		})
+		if err != nil {
+			t.Fatalf("SetMultiIn: %v", err)
+		}
+		if cfg.GitHub.Credentials != "/tmp/github_credentials.json" {
+			t.Errorf("GitHub.Credentials = %q", cfg.GitHub.Credentials)
+		}
+	})
 }
 
 // writeTestConfig writes the default config YAML to a temp file and returns its path.

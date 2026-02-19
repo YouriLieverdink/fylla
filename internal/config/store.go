@@ -94,6 +94,48 @@ func Save(cfg *Config) error {
 	return SaveTo(cfg, path)
 }
 
+// SetMultiIn reads a YAML file, applies multiple dotted-key updates in one
+// read/write cycle, and returns the parsed Config. Missing intermediate mapping
+// nodes and leaf keys are created automatically. Because it round-trips through
+// the yaml.Node tree, formatting such as flow-style arrays and blank lines in
+// the original file is preserved for keys that are not modified.
+func SetMultiIn(path string, kvs map[string]string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read config: %w", err)
+	}
+
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
+		return nil, fmt.Errorf("invalid config document")
+	}
+
+	for key, value := range kvs {
+		parts := strings.Split(key, ".")
+		if err := setOrCreateNode(doc.Content[0], parts, value); err != nil {
+			return nil, fmt.Errorf("set %s: %w", key, err)
+		}
+	}
+
+	out, err := yaml.Marshal(&doc)
+	if err != nil {
+		return nil, fmt.Errorf("marshal config: %w", err)
+	}
+	if err := os.WriteFile(path, out, 0644); err != nil {
+		return nil, fmt.Errorf("write config: %w", err)
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal(out, &cfg); err != nil {
+		return nil, fmt.Errorf("parse updated config: %w", err)
+	}
+	return &cfg, nil
+}
+
 // SetIn reads a YAML file, sets a dotted key path to the given value, writes back,
 // and returns the parsed Config.
 func SetIn(path, key, value string) (*Config, error) {
@@ -161,6 +203,40 @@ func setNode(node *yaml.Node, parts []string, value string) error {
 	return fmt.Errorf("key %q not found", parts[0])
 }
 
+func setOrCreateNode(node *yaml.Node, parts []string, value string) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("expected mapping node")
+	}
+
+	for i := 0; i < len(node.Content)-1; i += 2 {
+		keyNode := node.Content[i]
+		valNode := node.Content[i+1]
+
+		if keyNode.Value == parts[0] {
+			if len(parts) == 1 {
+				applyValue(valNode, value)
+				return nil
+			}
+			return setOrCreateNode(valNode, parts[1:], value)
+		}
+	}
+
+	// Key not found — create it
+	keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: parts[0]}
+
+	if len(parts) == 1 {
+		valNode := &yaml.Node{Kind: yaml.ScalarNode}
+		applyValue(valNode, value)
+		node.Content = append(node.Content, keyNode, valNode)
+		return nil
+	}
+
+	// Intermediate mapping node
+	mapNode := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	node.Content = append(node.Content, keyNode, mapNode)
+	return setOrCreateNode(mapNode, parts[1:], value)
+}
+
 // KeyPaths returns the dotted key paths that can be used with Set/SetIn.
 // It walks the default config YAML to discover all settable leaf paths.
 func KeyPaths() []string {
@@ -225,6 +301,7 @@ func applyValue(node *yaml.Node, value string) {
 		items := strings.Split(inner, ",")
 		node.Kind = yaml.SequenceNode
 		node.Tag = "!!seq"
+		node.Style = yaml.FlowStyle
 		node.Value = ""
 		node.Content = nil
 		for _, item := range items {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/iruoy/fylla/internal/calendar"
@@ -70,7 +71,7 @@ type InitParams struct {
 // RunInit walks through first-time setup interactively.
 func RunInit(ctx context.Context, w io.Writer, p InitParams) error {
 	// Ensure config exists
-	cfg, err := config.LoadFrom(p.ConfigPath)
+	_, err := config.LoadFrom(p.ConfigPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
@@ -83,8 +84,9 @@ func RunInit(ctx context.Context, w io.Writer, p InitParams) error {
 	if len(providers) == 0 {
 		return fmt.Errorf("at least one provider must be selected")
 	}
-	cfg.Providers = providers
-	if err := config.SaveTo(cfg, p.ConfigPath); err != nil {
+	if _, err := config.SetMultiIn(p.ConfigPath, map[string]string{
+		"providers": "[" + strings.Join(providers, ", ") + "]",
+	}); err != nil {
 		return fmt.Errorf("save providers: %w", err)
 	}
 	fmt.Fprintf(w, "Providers set to %v.\n", providers)

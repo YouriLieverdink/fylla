@@ -43,11 +43,11 @@ func RunAuthJira(p AuthJiraParams) error {
 		credPath = filepath.Join(filepath.Dir(p.ConfigPath), "jira_credentials.json")
 	}
 
-	cfg.Jira.URL = p.URL
-	cfg.Jira.Email = p.Email
-	cfg.Jira.Credentials = credPath
-
-	if err := config.SaveTo(cfg, p.ConfigPath); err != nil {
+	if _, err := config.SetMultiIn(p.ConfigPath, map[string]string{
+		"jira.url":         p.URL,
+		"jira.email":       p.Email,
+		"jira.credentials": credPath,
+	}); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
 
@@ -103,13 +103,10 @@ func RunAuthGoogle(ctx context.Context, p AuthGoogleParams) error {
 	}
 
 	if p.ConfigPath != "" {
-		cfg, loadErr := config.LoadFrom(p.ConfigPath)
-		if loadErr != nil {
-			return fmt.Errorf("load config: %w", loadErr)
-		}
-		cfg.Calendar.Credentials = p.CredentialsPath
-		if saveErr := config.SaveTo(cfg, p.ConfigPath); saveErr != nil {
-			return fmt.Errorf("save config: %w", saveErr)
+		if _, err := config.SetMultiIn(p.ConfigPath, map[string]string{
+			"calendar.credentials": p.CredentialsPath,
+		}); err != nil {
+			return fmt.Errorf("save config: %w", err)
 		}
 	}
 
@@ -134,8 +131,9 @@ func RunAuthTodoist(p AuthTodoistParams) error {
 		credPath = filepath.Join(filepath.Dir(p.ConfigPath), "todoist_credentials.json")
 	}
 
-	cfg.Todoist.Credentials = credPath
-	if err := config.SaveTo(cfg, p.ConfigPath); err != nil {
+	if _, err := config.SetMultiIn(p.ConfigPath, map[string]string{
+		"todoist.credentials": credPath,
+	}); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
 
@@ -164,8 +162,9 @@ func RunAuthGitHub(p AuthGitHubParams) error {
 		credPath = filepath.Join(filepath.Dir(p.ConfigPath), "github_credentials.json")
 	}
 
-	cfg.GitHub.Credentials = credPath
-	if err := config.SaveTo(cfg, p.ConfigPath); err != nil {
+	if _, err := config.SetMultiIn(p.ConfigPath, map[string]string{
+		"github.credentials": credPath,
+	}); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
 
