@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/iruoy/fylla/internal/config"
@@ -80,6 +81,9 @@ func PrintNextResult(w io.Writer, result *NextResult, now time.Time) {
 				projectPrefix := result.Current.Project
 				if result.Current.Section != "" {
 					projectPrefix = projectPrefix + " / " + result.Current.Section
+					if strings.HasPrefix(taskLabel, result.Current.Section+"#") {
+						taskLabel = taskLabel[len(result.Current.Section):]
+					}
 				}
 				taskLabel = "[" + projectPrefix + "] " + taskLabel
 			}
@@ -119,6 +123,9 @@ func PrintNextResult(w io.Writer, result *NextResult, now time.Time) {
 				projectPrefix := result.Next.Project
 				if result.Next.Section != "" {
 					projectPrefix = projectPrefix + " / " + result.Next.Section
+					if strings.HasPrefix(taskLabel, result.Next.Section+"#") {
+						taskLabel = taskLabel[len(result.Next.Section):]
+					}
 				}
 				taskLabel = "[" + projectPrefix + "] " + taskLabel
 			}

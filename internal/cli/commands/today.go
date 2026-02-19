@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/iruoy/fylla/internal/calendar"
@@ -120,6 +121,10 @@ func PrintTodayResult(w io.Writer, result *TodayResult, now time.Time) {
 			projectPrefix := fe.Project
 			if fe.Section != "" {
 				projectPrefix = projectPrefix + " / " + fe.Section
+				// Strip redundant repo name from task key (e.g. "hardware-insight#5" → "#5")
+				if strings.HasPrefix(taskLabel, fe.Section+"#") {
+					taskLabel = taskLabel[len(fe.Section):]
+				}
 			}
 			taskLabel = "[" + projectPrefix + "] " + taskLabel
 		}
