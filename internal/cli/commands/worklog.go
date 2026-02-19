@@ -12,12 +12,13 @@ import (
 
 // WorklogParams holds all inputs for the worklog command.
 type WorklogParams struct {
-	Cal    CalendarClient
-	Jira   WorklogPoster
-	Cfg    *config.Config
-	Survey Surveyor
-	Date   time.Time
-	W      io.Writer
+	Cal      CalendarClient
+	Jira     WorklogPoster
+	Cfg      *config.Config
+	Survey   Surveyor
+	Date     time.Time
+	W        io.Writer
+	Resolver JiraKeyResolver
 }
 
 // WorklogEntry represents a single worklog to be posted.
@@ -112,8 +113,17 @@ func RunWorklog(ctx context.Context, p WorklogParams) (*WorklogResult, error) {
 				continue
 			}
 
+			taskKey := fe.TaskKey
+			if isGitHubKey(fe.TaskKey) && p.Resolver != nil {
+				resolved, err := resolveGitHubToJira(ctx, p.Resolver, p.Survey, fe.TaskKey, p.Cfg)
+				if err != nil {
+					return nil, fmt.Errorf("resolve jira key for %s: %w", fe.TaskKey, err)
+				}
+				taskKey = resolved
+			}
+
 			entries = append(entries, WorklogEntry{
-				TaskKey:     fe.TaskKey,
+				TaskKey:     taskKey,
 				Duration:    dur,
 				Description: fe.Summary,
 				Started:     fe.Start,
@@ -278,13 +288,19 @@ func newWorklogCmd() *cobra.Command {
 					now.Hour(), now.Minute(), now.Second(), 0, now.Location())
 			}
 
+			var resolver JiraKeyResolver
+			if r, ok := source.(JiraKeyResolver); ok {
+				resolver = r
+			}
+
 			result, err := RunWorklog(cmd.Context(), WorklogParams{
-				Cal:    cal,
-				Jira:   source,
-				Cfg:    cfg,
-				Survey: defaultSurveyor{},
-				Date:   date,
-				W:      cmd.OutOrStdout(),
+				Cal:      cal,
+				Jira:     source,
+				Cfg:      cfg,
+				Survey:   defaultSurveyor{},
+				Date:     date,
+				W:        cmd.OutOrStdout(),
+				Resolver: resolver,
 			})
 			if err != nil {
 				return err

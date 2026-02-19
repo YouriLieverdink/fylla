@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -10,6 +11,16 @@ import (
 	"github.com/iruoy/fylla/internal/calendar"
 	"github.com/iruoy/fylla/internal/timer"
 )
+
+// mockJiraKeyResolver returns a predefined Jira key for testing.
+type mockJiraKeyResolver struct {
+	key string
+	err error
+}
+
+func (m *mockJiraKeyResolver) ResolveJiraKey(_ context.Context, _ string) (string, error) {
+	return m.key, m.err
+}
 
 func TestStop_CalendarEventUpdated(t *testing.T) {
 	now := time.Date(2025, 1, 20, 10, 30, 0, 0, time.UTC)
@@ -183,6 +194,146 @@ func TestStop_RemainingEstimateMessages(t *testing.T) {
 		}
 		if !bytes.Contains([]byte(out), []byte("no time remaining")) {
 			t.Errorf("output should mention no time remaining, got:\n%s", out)
+		}
+	})
+}
+
+func TestStop_GitHubKeyResolvesToJira(t *testing.T) {
+	t.Run("resolved key used for worklog", func(t *testing.T) {
+		now := time.Date(2025, 1, 20, 10, 30, 0, 0, time.UTC)
+		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
+
+		timerPath := filepath.Join(t.TempDir(), "timer.json")
+		_, err := timer.Start("fylla#42", startTime, timerPath)
+		if err != nil {
+			t.Fatalf("timer.Start: %v", err)
+		}
+
+		jira := &mockWorklogPoster{}
+		survey := &mockSurveyor{
+			inputWithDefaultAnswers: []string{"PROJ-123"},
+		}
+
+		result, err := RunStop(context.Background(), StopParams{
+			TimerPath:    timerPath,
+			RoundMinutes: 5,
+			Now:          now,
+			Description:  "PR review",
+			Jira:         jira,
+			Cfg:          worklogConfig(),
+			Resolver:     &mockJiraKeyResolver{key: "PROJ-123"},
+			Survey:       survey,
+		})
+		if err != nil {
+			t.Fatalf("RunStop: %v", err)
+		}
+
+		if result.TaskKey != "PROJ-123" {
+			t.Errorf("TaskKey = %q, want PROJ-123", result.TaskKey)
+		}
+		if len(jira.calls) != 1 {
+			t.Fatalf("expected 1 worklog call, got %d", len(jira.calls))
+		}
+		if jira.calls[0].issueKey != "PROJ-123" {
+			t.Errorf("worklog issueKey = %q, want PROJ-123", jira.calls[0].issueKey)
+		}
+	})
+
+	t.Run("fallback prompt when no key found", func(t *testing.T) {
+		now := time.Date(2025, 1, 20, 10, 30, 0, 0, time.UTC)
+		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
+
+		timerPath := filepath.Join(t.TempDir(), "timer.json")
+		_, err := timer.Start("fylla#99", startTime, timerPath)
+		if err != nil {
+			t.Fatalf("timer.Start: %v", err)
+		}
+
+		jira := &mockWorklogPoster{}
+		survey := &mockSurveyor{
+			selectAnswers: []string{"ADMIN-1"},
+		}
+
+		result, err := RunStop(context.Background(), StopParams{
+			TimerPath:    timerPath,
+			RoundMinutes: 5,
+			Now:          now,
+			Description:  "PR review",
+			Jira:         jira,
+			Cfg:          worklogConfig(),
+			Resolver:     &mockJiraKeyResolver{key: ""},
+			Survey:       survey,
+		})
+		if err != nil {
+			t.Fatalf("RunStop: %v", err)
+		}
+
+		if result.TaskKey != "ADMIN-1" {
+			t.Errorf("TaskKey = %q, want ADMIN-1", result.TaskKey)
+		}
+	})
+
+	t.Run("resolver error falls back to prompt", func(t *testing.T) {
+		now := time.Date(2025, 1, 20, 10, 30, 0, 0, time.UTC)
+		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
+
+		timerPath := filepath.Join(t.TempDir(), "timer.json")
+		_, err := timer.Start("fylla#99", startTime, timerPath)
+		if err != nil {
+			t.Fatalf("timer.Start: %v", err)
+		}
+
+		jira := &mockWorklogPoster{}
+		survey := &mockSurveyor{
+			selectAnswers: []string{"MEETING-1"},
+		}
+
+		result, err := RunStop(context.Background(), StopParams{
+			TimerPath:    timerPath,
+			RoundMinutes: 5,
+			Now:          now,
+			Description:  "PR review",
+			Jira:         jira,
+			Cfg:          worklogConfig(),
+			Resolver:     &mockJiraKeyResolver{err: fmt.Errorf("API error")},
+			Survey:       survey,
+		})
+		if err != nil {
+			t.Fatalf("RunStop: %v", err)
+		}
+
+		if result.TaskKey != "MEETING-1" {
+			t.Errorf("TaskKey = %q, want MEETING-1", result.TaskKey)
+		}
+	})
+
+	t.Run("no resolver skips resolution for GitHub key", func(t *testing.T) {
+		now := time.Date(2025, 1, 20, 10, 30, 0, 0, time.UTC)
+		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
+
+		timerPath := filepath.Join(t.TempDir(), "timer.json")
+		_, err := timer.Start("fylla#42", startTime, timerPath)
+		if err != nil {
+			t.Fatalf("timer.Start: %v", err)
+		}
+
+		jira := &mockWorklogPoster{}
+
+		// Without resolver, should post with the original GitHub key
+		result, err := RunStop(context.Background(), StopParams{
+			TimerPath:    timerPath,
+			RoundMinutes: 5,
+			Now:          now,
+			Description:  "PR review",
+			Jira:         jira,
+			Cfg:          testConfig(),
+		})
+		if err != nil {
+			t.Fatalf("RunStop: %v", err)
+		}
+
+		if result.TaskKey != "fylla#42" {
+			t.Errorf("TaskKey = %q, want fylla#42", result.TaskKey)
 		}
 	})
 }

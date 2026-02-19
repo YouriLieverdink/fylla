@@ -55,6 +55,11 @@ var (
 	_ TaskSource = (*github.Client)(nil)
 )
 
+// JiraKeyResolver resolves a non-Jira task key (e.g. GitHub PR) to a Jira issue key.
+type JiraKeyResolver interface {
+	ResolveJiraKey(ctx context.Context, taskKey string) (string, error)
+}
+
 var jiraKeyRe = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d+$`)
 
 // isJiraKey returns true if key matches the Jira issue key pattern (e.g. PROJ-123).
@@ -166,6 +171,14 @@ func (m *MultiTaskSource) GetSummary(ctx context.Context, issueKey string) (stri
 
 func (m *MultiTaskSource) UpdateSummary(ctx context.Context, issueKey string, summary string) error {
 	return m.routeTo(issueKey).UpdateSummary(ctx, issueKey, summary)
+}
+
+func (m *MultiTaskSource) ResolveJiraKey(ctx context.Context, taskKey string) (string, error) {
+	src := m.routeTo(taskKey)
+	if resolver, ok := src.(JiraKeyResolver); ok {
+		return resolver.ResolveJiraKey(ctx, taskKey)
+	}
+	return "", fmt.Errorf("provider for %q does not support Jira key resolution", taskKey)
 }
 
 // multiFetcher implements TaskFetcher by concurrently querying multiple providers

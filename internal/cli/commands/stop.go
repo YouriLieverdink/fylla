@@ -28,6 +28,8 @@ type StopParams struct {
 	Cal          CalendarClient
 	Estimate     EstimateGetter
 	Cfg          *config.Config
+	Resolver     JiraKeyResolver
+	Survey       Surveyor
 }
 
 // StopResult holds the output of a stop operation.
@@ -48,12 +50,23 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 		return nil, err
 	}
 
-	if err := p.Jira.PostWorklog(ctx, sr.TaskKey, sr.Rounded, p.Description, sr.StartTime); err != nil {
+	worklogKey := sr.TaskKey
+
+	// Resolve GitHub PR keys to Jira issue keys for worklog posting.
+	if isGitHubKey(sr.TaskKey) && p.Resolver != nil {
+		resolved, err := resolveGitHubToJira(ctx, p.Resolver, p.Survey, sr.TaskKey, p.Cfg)
+		if err != nil {
+			return nil, fmt.Errorf("resolve jira key: %w", err)
+		}
+		worklogKey = resolved
+	}
+
+	if err := p.Jira.PostWorklog(ctx, worklogKey, sr.Rounded, p.Description, sr.StartTime); err != nil {
 		return nil, fmt.Errorf("post worklog: %w", err)
 	}
 
 	result := &StopResult{
-		TaskKey:     sr.TaskKey,
+		TaskKey:     worklogKey,
 		Elapsed:     sr.Elapsed,
 		Rounded:     sr.Rounded,
 		Description: p.Description,
@@ -77,6 +90,38 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 	}
 
 	return result, nil
+}
+
+// resolveGitHubToJira resolves a GitHub PR key to a Jira issue key. It first
+// tries to extract a Jira key from the PR's branch name or body. If none is
+// found, it prompts the user to pick from configured fallback issues.
+func resolveGitHubToJira(ctx context.Context, resolver JiraKeyResolver, survey Surveyor, prKey string, cfg *config.Config) (string, error) {
+	jiraKey, err := resolver.ResolveJiraKey(ctx, prKey)
+	if err != nil {
+		// API error — fall through to fallback prompt
+		jiraKey = ""
+	}
+
+	if jiraKey != "" && survey != nil {
+		// Let the user confirm or change the resolved key
+		confirmed, err := survey.InputWithDefault(
+			fmt.Sprintf("Jira issue for %s:", prKey), jiraKey)
+		if err != nil {
+			return "", err
+		}
+		return confirmed, nil
+	}
+
+	// No key found — prompt fallback
+	if survey == nil {
+		return "", fmt.Errorf("no Jira key found for %s and no interactive prompt available", prKey)
+	}
+
+	var fallbacks []string
+	if cfg != nil {
+		fallbacks = cfg.Worklog.FallbackIssues
+	}
+	return promptFallbackIssue(survey, fallbacks)
 }
 
 // updateCalendarEvent finds the calendar event for the task on the timer's start date
@@ -172,6 +217,12 @@ func newStopCmd() *cobra.Command {
 				}
 			}
 
+			// Resolve GitHub PR keys to Jira for worklog posting.
+			var resolver JiraKeyResolver
+			if r, ok := source.(JiraKeyResolver); ok {
+				resolver = r
+			}
+
 			now := time.Now()
 			result, err := RunStop(cmd.Context(), StopParams{
 				TimerPath:    timerPath,
@@ -182,6 +233,8 @@ func newStopCmd() *cobra.Command {
 				Cal:          cal,
 				Estimate:     source,
 				Cfg:          cfg,
+				Resolver:     resolver,
+				Survey:       defaultSurveyor{},
 			})
 			if err != nil {
 				return err

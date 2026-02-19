@@ -157,6 +157,132 @@ func TestFetchTasks(t *testing.T) {
 	})
 }
 
+func TestParsePRKey(t *testing.T) {
+	repos := []string{"iruoy/fylla", "org/backend"}
+
+	tests := []struct {
+		key       string
+		wantOwner string
+		wantRepo  string
+		wantNum   int
+		wantErr   bool
+	}{
+		{"fylla#42", "iruoy", "fylla", 42, false},
+		{"backend#7", "org", "backend", 7, false},
+		{"unknown#1", "", "", 0, true},
+		{"nohash", "", "", 0, true},
+		{"repo#abc", "", "", 0, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			owner, repo, num, err := parsePRKey(tt.key, repos)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for key %q", tt.key)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if owner != tt.wantOwner || repo != tt.wantRepo || num != tt.wantNum {
+				t.Errorf("got (%q, %q, %d), want (%q, %q, %d)",
+					owner, repo, num, tt.wantOwner, tt.wantRepo, tt.wantNum)
+			}
+		})
+	}
+}
+
+func TestResolveJiraKey(t *testing.T) {
+	t.Run("extracts key from branch name", func(t *testing.T) {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/repos/iruoy/fylla/pulls/42", func(w http.ResponseWriter, r *http.Request) {
+			resp := map[string]interface{}{
+				"head": map[string]interface{}{
+					"ref": "feature/PROJ-123-fix-login",
+				},
+				"body": "Some description",
+			}
+			json.NewEncoder(w).Encode(resp)
+		})
+
+		server := httptest.NewServer(mux)
+		defer server.Close()
+
+		client := NewClient("test-token")
+		client.SetHTTPClient(server.Client())
+		client.SetBaseURL(server.URL + "/")
+		client.Repos = []string{"iruoy/fylla"}
+
+		key, err := client.ResolveJiraKey(context.Background(), "fylla#42")
+		if err != nil {
+			t.Fatalf("ResolveJiraKey: %v", err)
+		}
+		if key != "PROJ-123" {
+			t.Errorf("key = %q, want PROJ-123", key)
+		}
+	})
+
+	t.Run("extracts key from body when not in branch", func(t *testing.T) {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/repos/iruoy/fylla/pulls/10", func(w http.ResponseWriter, r *http.Request) {
+			resp := map[string]interface{}{
+				"head": map[string]interface{}{
+					"ref": "fix/something",
+				},
+				"body": "Fixes TEAM-456 login issue",
+			}
+			json.NewEncoder(w).Encode(resp)
+		})
+
+		server := httptest.NewServer(mux)
+		defer server.Close()
+
+		client := NewClient("test-token")
+		client.SetHTTPClient(server.Client())
+		client.SetBaseURL(server.URL + "/")
+		client.Repos = []string{"iruoy/fylla"}
+
+		key, err := client.ResolveJiraKey(context.Background(), "fylla#10")
+		if err != nil {
+			t.Fatalf("ResolveJiraKey: %v", err)
+		}
+		if key != "TEAM-456" {
+			t.Errorf("key = %q, want TEAM-456", key)
+		}
+	})
+
+	t.Run("returns empty when no key found", func(t *testing.T) {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/repos/iruoy/fylla/pulls/5", func(w http.ResponseWriter, r *http.Request) {
+			resp := map[string]interface{}{
+				"head": map[string]interface{}{
+					"ref": "fix/no-jira-key",
+				},
+				"body": "Just a fix, no ticket reference",
+			}
+			json.NewEncoder(w).Encode(resp)
+		})
+
+		server := httptest.NewServer(mux)
+		defer server.Close()
+
+		client := NewClient("test-token")
+		client.SetHTTPClient(server.Client())
+		client.SetBaseURL(server.URL + "/")
+		client.Repos = []string{"iruoy/fylla"}
+
+		key, err := client.ResolveJiraKey(context.Background(), "fylla#5")
+		if err != nil {
+			t.Fatalf("ResolveJiraKey: %v", err)
+		}
+		if key != "" {
+			t.Errorf("key = %q, want empty", key)
+		}
+	})
+}
+
 func TestUnsupportedOperations(t *testing.T) {
 	client := NewClient("token")
 	ctx := context.Background()

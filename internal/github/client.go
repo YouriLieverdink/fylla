@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,6 +15,8 @@ import (
 	"github.com/iruoy/fylla/internal/prutil"
 	"github.com/iruoy/fylla/internal/task"
 )
+
+var jiraKeyPattern = regexp.MustCompile(`[A-Z][A-Z0-9]+-\d+`)
 
 // ErrUnsupported is returned for write operations that don't apply to PRs.
 var ErrUnsupported = errors.New("operation not supported for GitHub pull requests")
@@ -153,6 +158,52 @@ func extractRepoPath(url string) string {
 		}
 	}
 	return ""
+}
+
+// ResolveJiraKey fetches the PR identified by prKey (e.g. "repo#123") and
+// extracts a Jira issue key from its branch name or body. Returns empty string
+// when no key is found.
+func (c *Client) ResolveJiraKey(ctx context.Context, prKey string) (string, error) {
+	owner, repo, number, err := parsePRKey(prKey, c.Repos)
+	if err != nil {
+		return "", fmt.Errorf("parse PR key %q: %w", prKey, err)
+	}
+
+	pr, _, err := c.client.PullRequests.Get(ctx, owner, repo, number)
+	if err != nil {
+		return "", fmt.Errorf("fetch PR %s: %w", prKey, err)
+	}
+
+	// Search branch name first, then body.
+	if key := jiraKeyPattern.FindString(pr.GetHead().GetRef()); key != "" {
+		return key, nil
+	}
+	if key := jiraKeyPattern.FindString(pr.GetBody()); key != "" {
+		return key, nil
+	}
+	return "", nil
+}
+
+// parsePRKey splits "repo#123" into owner, repo, number using the configured
+// repos list to resolve the owner.
+func parsePRKey(key string, repos []string) (string, string, int, error) {
+	idx := strings.Index(key, "#")
+	if idx < 0 {
+		return "", "", 0, fmt.Errorf("missing '#' in key")
+	}
+	repoName := key[:idx]
+	num, err := strconv.Atoi(key[idx+1:])
+	if err != nil {
+		return "", "", 0, fmt.Errorf("invalid PR number: %w", err)
+	}
+
+	for _, r := range repos {
+		parts := strings.SplitN(r, "/", 2)
+		if len(parts) == 2 && parts[1] == repoName {
+			return parts[0], parts[1], num, nil
+		}
+	}
+	return "", "", 0, fmt.Errorf("repo %q not found in configured repos", repoName)
 }
 
 func (c *Client) CreateTask(_ context.Context, _ task.CreateInput) (string, error) {
