@@ -289,7 +289,8 @@ func Test_ALLOC004_slot_at_exactly_minimum(t *testing.T) {
 
 func Test_ALLOC005_splitting_remainder_below_minimum(t *testing.T) {
 	// 60-minute task, 45-minute slot, 25-minute minimum.
-	// Remainder would be 15 min < 25 min minimum → task moves to next slot.
+	// Remainder would be 15 min < 25 min minimum → split anyway,
+	// scheduling 45 min in the first slot and 15 min in the second.
 	tasks := []ScoredTask{
 		{
 			Task: task.Task{
@@ -311,16 +312,24 @@ func Test_ALLOC005_splitting_remainder_below_minimum(t *testing.T) {
 
 	result, _ := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
 
-	if len(result) != 1 {
-		t.Fatalf("expected 1 allocation, got %d", len(result))
+	if len(result) != 2 {
+		t.Fatalf("expected 2 allocations (split), got %d", len(result))
 	}
 
-	// Task should skip the 45-min slot and go to the 2-hour slot
-	if result[0].Start != date(2025, 1, 20, 10, 0) {
-		t.Errorf("expected task to start at 10:00 (second slot), got %v", result[0].Start)
+	// First split: 45 min in the first slot
+	if result[0].Start != date(2025, 1, 20, 9, 0) {
+		t.Errorf("expected first split to start at 09:00, got %v", result[0].Start)
 	}
-	if result[0].End != date(2025, 1, 20, 11, 0) {
-		t.Errorf("expected task to end at 11:00, got %v", result[0].End)
+	if result[0].End != date(2025, 1, 20, 9, 45) {
+		t.Errorf("expected first split to end at 09:45, got %v", result[0].End)
+	}
+
+	// Second split: remaining 15 min in the second slot
+	if result[1].Start != date(2025, 1, 20, 10, 0) {
+		t.Errorf("expected second split to start at 10:00, got %v", result[1].Start)
+	}
+	if result[1].End != date(2025, 1, 20, 10, 15) {
+		t.Errorf("expected second split to end at 10:15, got %v", result[1].End)
 	}
 }
 
@@ -957,5 +966,49 @@ func Test_ALLOC_split_label_three_parts(t *testing.T) {
 		if result[i].Task.Summary != want {
 			t.Errorf("allocation %d: expected summary %q, got %q", i, want, result[i].Task.Summary)
 		}
+	}
+}
+
+func Test_ALLOC_partial_scheduling_when_not_enough_time(t *testing.T) {
+	// 5h30m task, only 2h of slots available.
+	// Task should be partially scheduled (2h) and also reported as unscheduled.
+	tasks := []ScoredTask{
+		{
+			Task: task.Task{
+				Key:               "PROJ-1",
+				Summary:           "Big task",
+				RemainingEstimate: 330 * time.Minute, // 5h30m
+				Project:           "PROJ",
+			},
+			Score: 80,
+		},
+	}
+
+	slots := map[string][]calendar.Slot{
+		"": {
+			{Start: date(2025, 1, 20, 9, 0), End: date(2025, 1, 20, 10, 0)},  // 1h
+			{Start: date(2025, 1, 20, 11, 0), End: date(2025, 1, 20, 12, 0)}, // 1h
+		},
+	}
+
+	result, unsched := Allocate(tasks, slots, AllocateConfig{MinTaskDurationMinutes: 25})
+
+	// Should have 2 partial allocations
+	if len(result) != 2 {
+		t.Fatalf("expected 2 partial allocations, got %d", len(result))
+	}
+	if result[0].Start != date(2025, 1, 20, 9, 0) {
+		t.Errorf("expected first alloc at 09:00, got %v", result[0].Start)
+	}
+	if result[1].Start != date(2025, 1, 20, 11, 0) {
+		t.Errorf("expected second alloc at 11:00, got %v", result[1].Start)
+	}
+
+	// Should also be reported as unscheduled (not enough time)
+	if len(unsched) != 1 {
+		t.Fatalf("expected 1 unscheduled task, got %d", len(unsched))
+	}
+	if unsched[0].Reason != "not enough time" {
+		t.Errorf("expected reason 'not enough time', got %q", unsched[0].Reason)
 	}
 }

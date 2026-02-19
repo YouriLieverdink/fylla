@@ -1335,7 +1335,7 @@ func TestSYNC009_report_unscheduled_tasks(t *testing.T) {
 			{Task: task.Task{Key: "T-1", Summary: "Scheduled"}, Start: now, End: now.Add(time.Hour)},
 		}
 		unscheduled := []scheduler.UnscheduledTask{
-			{Task: task.Task{Key: "T-2", Summary: "Dropped task", RemainingEstimate: 2 * time.Hour}, Reason: "not enough time"},
+			{Task: task.Task{Key: "T-2", Summary: "Dropped task", RemainingEstimate: 2 * time.Hour}, Reason: "not enough time", Remaining: 2 * time.Hour},
 			{Task: task.Task{Key: "T-3", Summary: "Another dropped", RemainingEstimate: 0}, Reason: "no available slots"},
 		}
 		result := &SyncResult{Allocations: allocs, Unscheduled: unscheduled}

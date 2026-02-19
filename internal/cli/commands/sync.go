@@ -244,7 +244,7 @@ func PrintSyncResult(w io.Writer, result *SyncResult, dryRun, verbose bool) {
 		}
 		maxSummary = capWidth(maxSummary, maxSummaryWidth)
 		for _, u := range result.Unscheduled {
-			est := formatDuration(u.Task.RemainingEstimate)
+			est := formatDuration(u.Remaining)
 			taskLabel := syncTaskLabel(u.Task.Key, u.Task.Project, u.Task.Section, verbose)
 			fmt.Fprintf(w, "  %s  %s  %5s  — %s\n",
 				padRight(taskLabel, maxKey),
