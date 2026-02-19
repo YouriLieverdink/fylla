@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestCFG001_DefaultPathAndAutoCreate(t *testing.T) {
@@ -563,6 +564,57 @@ func TestValidateProviders(t *testing.T) {
 			t.Errorf("unexpected error: %v", err)
 		}
 	})
+}
+
+func TestDailyTargetFor(t *testing.T) {
+	tests := []struct {
+		name    string
+		windows []BusinessHoursConfig
+		weekday time.Weekday
+		want    time.Duration
+	}{
+		{
+			name: "two business hour windows sum correctly",
+			windows: []BusinessHoursConfig{
+				{Start: "09:00", End: "12:00", WorkDays: []int{1, 2, 3, 4, 5}},
+				{Start: "13:00", End: "17:00", WorkDays: []int{1, 2, 3, 4, 5}},
+			},
+			weekday: time.Monday,
+			want:    7 * time.Hour,
+		},
+		{
+			name: "single window 8h",
+			windows: []BusinessHoursConfig{
+				{Start: "09:00", End: "17:00", WorkDays: []int{1, 2, 3, 4, 5}},
+			},
+			weekday: time.Wednesday,
+			want:    8 * time.Hour,
+		},
+		{
+			name: "weekend returns 0",
+			windows: []BusinessHoursConfig{
+				{Start: "09:00", End: "17:00", WorkDays: []int{1, 2, 3, 4, 5}},
+			},
+			weekday: time.Saturday,
+			want:    0,
+		},
+		{
+			name: "sunday returns 0",
+			windows: []BusinessHoursConfig{
+				{Start: "09:00", End: "17:00", WorkDays: []int{1, 2, 3, 4, 5}},
+			},
+			weekday: time.Sunday,
+			want:    0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DailyTargetFor(tt.windows, tt.weekday)
+			if got != tt.want {
+				t.Errorf("DailyTargetFor() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestActiveProviders(t *testing.T) {

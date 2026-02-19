@@ -676,6 +676,78 @@ func TestParseTitle(t *testing.T) {
 	})
 }
 
+func TestParseTitleDoneMarker(t *testing.T) {
+	tests := []struct {
+		name  string
+		title string
+		want  ParsedTitle
+	}{
+		{
+			"done with project and summary",
+			"✓ [PROJ] Summary",
+			ParsedTitle{Done: true, Project: "PROJ", Summary: "Summary"},
+		},
+		{
+			"done and at-risk with project",
+			"✓ ⚠️ [PROJ] Summary",
+			ParsedTitle{Done: true, AtRisk: true, Project: "PROJ", Summary: "Summary"},
+		},
+		{
+			"no done marker works as before",
+			"[PROJ] Summary",
+			ParsedTitle{Project: "PROJ", Summary: "Summary"},
+		},
+		{
+			"done without project",
+			"✓ Just a summary",
+			ParsedTitle{Done: true, Summary: "Just a summary"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseTitle(tt.title)
+			if got != tt.want {
+				t.Errorf("ParseTitle(%q) = %+v, want %+v", tt.title, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildDoneTitle(t *testing.T) {
+	tests := []struct {
+		name  string
+		title string
+		want  string
+	}{
+		{"prepends marker", "[PROJ] Fix bug", "✓ [PROJ] Fix bug"},
+		{"prepends to at-risk", "⚠️ [PROJ] Overdue", "✓ ⚠️ [PROJ] Overdue"},
+		{"prepends to plain", "Summary", "✓ Summary"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := BuildDoneTitle(tt.title)
+			if got != tt.want {
+				t.Errorf("BuildDoneTitle(%q) = %q, want %q", tt.title, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("round-trip done marker", func(t *testing.T) {
+		original := BuildTitleWithSection("PROJ", "", "Fix bug", false)
+		done := BuildDoneTitle(original)
+		parsed := ParseTitle(done)
+		if !parsed.Done {
+			t.Error("expected Done=true after BuildDoneTitle")
+		}
+		if parsed.Project != "PROJ" {
+			t.Errorf("Project = %q, want PROJ", parsed.Project)
+		}
+		if parsed.Summary != "Fix bug" {
+			t.Errorf("Summary = %q, want Fix bug", parsed.Summary)
+		}
+	})
+}
+
 func TestBuildDescription(t *testing.T) {
 	tests := []struct {
 		name        string

@@ -29,12 +29,16 @@ Fylla supports multiple task providers (Jira, Todoist, GitHub) simultaneously vi
 - **multiFetcher:** concurrent fetch from all providers, merges results, handles partial failures
 - **Per-provider credentials:** each provider stores credentials in a separate file (`jira_credentials.json`, `todoist_credentials.json`, `github_credentials.json`), path saved in config (`jira.credentials`, `todoist.credentials`, `github.credentials`)
 - **Calendar descriptions:** `BuildDescription()` infers source from task key to generate correct URLs (Jira browse link, Todoist app link, or GitHub PR link)
+- **Done marker:** `DoneMarker` (`✓ `) prefix on calendar event titles indicates completed work. `ParseTitle` strips it and sets `Done bool`. Used by `timer stop` to mark events as done.
+- **Past event preservation:** `reconcile()` takes a `now` parameter and skips events whose end time is before `now`, preserving them as a calendar record
+- **Auto-resync:** `maybeAutoResync()` triggers a sync after schedule-affecting commands when `scheduling.autoResync` is enabled
+- **Worklog command:** `fylla worklog` walks calendar events (tasks + meetings), prompts for adjustments, fills remaining hours, and bulk-posts to Jira
 
 ### Key Interfaces
 - `TaskSource` — composite interface combining all task operations (fetch, create, complete, delete, estimate, priority, due date, summary, worklog)
 - `TaskFetcher` — single-method interface for fetching tasks
 - `CalendarClient` — abstracts Google Calendar operations
-- `Surveyor` — abstracts interactive prompts (supports `Select`, `MultiSelect`, `Input`, `Password`)
+- `Surveyor` — abstracts interactive prompts (supports `Select`, `MultiSelect`, `Input`, `InputWithDefault`, `Password`)
 
 ## Dependencies
 
@@ -54,7 +58,7 @@ Fylla supports multiple task providers (Jira, Todoist, GitHub) simultaneously vi
 - Naming: `MixedCaps`/`mixedCaps`, no underscores; acronyms stay caps (`URL`, `HTTP`, `JQL`)
 - Interfaces: single-method interfaces named with `-er` suffix (`Reader`, `Sorter`)
 - Package names: short, lowercase, singular (`config` not `configs`)
-- Cobra commands: one file per command in `internal/cli/commands/`, register in `root.go`
+- Cobra commands: one file per command in `internal/cli/commands/`, register in `register.go`
 - Config structs: use `yaml:"fieldName"` tags matching `config/default_config.yaml` keys
 - Tests: table-driven with `t.Run` subtests, use `testify` only if already a dependency
 - Context: pass `context.Context` as first param where needed (HTTP calls, calendar API)

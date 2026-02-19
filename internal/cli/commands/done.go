@@ -60,6 +60,7 @@ func newDoneCmd() *cobra.Command {
 			}
 
 			PrintDoneResult(cmd.OutOrStdout(), result)
+			maybeAutoResync(cmd.Context(), cmd.ErrOrStderr())
 			return nil
 		},
 	}

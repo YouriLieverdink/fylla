@@ -108,6 +108,9 @@ func parseGoogleEvent(item *googlecalendar.Event) Event {
 // latePrefix is added before the summary for at-risk tasks.
 const latePrefix = "⚠️ "
 
+// DoneMarker is prepended to event titles to indicate completed work.
+const DoneMarker = "✓ "
+
 // fyllaMarker is written into event descriptions to identify Fylla-managed events.
 const fyllaMarker = "fylla:"
 
@@ -175,6 +178,7 @@ type ParsedTitle struct {
 	Section string
 	Summary string
 	AtRisk  bool
+	Done    bool
 }
 
 // ParseTitle extracts project, summary, and atRisk from a Fylla event title.
@@ -183,6 +187,11 @@ type ParsedTitle struct {
 func ParseTitle(title string) ParsedTitle {
 	var p ParsedTitle
 	s := title
+
+	if strings.HasPrefix(s, DoneMarker) {
+		p.Done = true
+		s = s[len(DoneMarker):]
+	}
 
 	if strings.HasPrefix(s, latePrefix) {
 		p.AtRisk = true
@@ -205,6 +214,11 @@ func ParseTitle(title string) ParsedTitle {
 
 	p.Summary = s
 	return p
+}
+
+// BuildDoneTitle prepends the done marker to a title.
+func BuildDoneTitle(title string) string {
+	return DoneMarker + title
 }
 
 // BuildDescription constructs the calendar event description for a Fylla task.
@@ -309,9 +323,18 @@ func (c *GoogleClient) FetchFyllaEvents(ctx context.Context, start, end time.Tim
 	return events, nil
 }
 
+// buildEventTitle constructs the full title from input, including the done marker if set.
+func buildEventTitle(input CreateEventInput) string {
+	title := BuildTitleWithSection(input.Project, input.Section, input.Summary, input.AtRisk)
+	if input.Done {
+		title = BuildDoneTitle(title)
+	}
+	return title
+}
+
 // UpdateEvent updates an existing event on the fylla calendar.
 func (c *GoogleClient) UpdateEvent(ctx context.Context, eventID string, input CreateEventInput) error {
-	title := BuildTitleWithSection(input.Project, input.Section, input.Summary, input.AtRisk)
+	title := buildEventTitle(input)
 	description := BuildDescription(input.TaskKey, input.Project, c.JiraBaseURL)
 
 	event := &googlecalendar.Event{
@@ -348,11 +371,12 @@ type CreateEventInput struct {
 	Start    time.Time
 	End      time.Time
 	AtRisk   bool
+	Done     bool
 }
 
 // CreateEvent creates a new event on the fylla calendar.
 func (c *GoogleClient) CreateEvent(ctx context.Context, input CreateEventInput) error {
-	title := BuildTitleWithSection(input.Project, input.Section, input.Summary, input.AtRisk)
+	title := buildEventTitle(input)
 	description := BuildDescription(input.TaskKey, input.Project, c.JiraBaseURL)
 
 	event := &googlecalendar.Event{

@@ -190,6 +190,7 @@ func newEditCmd() *cobra.Command {
 			}
 
 			PrintEditResult(cmd.OutOrStdout(), result)
+			maybeAutoResync(cmd.Context(), cmd.ErrOrStderr())
 			return nil
 		},
 	}

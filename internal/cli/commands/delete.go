@@ -60,6 +60,7 @@ func newDeleteCmd() *cobra.Command {
 			}
 
 			PrintDeleteResult(cmd.OutOrStdout(), result)
+			maybeAutoResync(cmd.Context(), cmd.ErrOrStderr())
 			return nil
 		},
 	}

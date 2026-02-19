@@ -492,9 +492,9 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 	var created, updated, deleted, unchanged int
 	if !p.DryRun {
 		if p.Force {
-			// Force mode: delete all existing events, then create fresh
+			// Force mode: delete future events, then create fresh
 			progress(p.Progress, "Clearing previous schedule...")
-			if err := p.Cal.DeleteFyllaEvents(ctx, cleanupStart, p.End); err != nil {
+			if err := p.Cal.DeleteFyllaEvents(ctx, p.Now, p.End); err != nil {
 				return nil, fmt.Errorf("delete fylla events: %w", err)
 			}
 			progress(p.Progress, "Creating %d calendar events...", len(allocations))
@@ -533,7 +533,7 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 				}
 			}
 
-			created, updated, deleted, unchanged, err = reconcile(ctx, p.Cal, existing, desired, p.Progress)
+			created, updated, deleted, unchanged, err = reconcile(ctx, p.Cal, existing, desired, p.Now, p.Progress)
 			if err != nil {
 				return nil, fmt.Errorf("reconcile events: %w", err)
 			}
@@ -567,12 +567,20 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 // reconcile compares desired events against existing Fylla events and applies
 // the minimal set of changes. Events are matched by task key and chronological
 // order (to handle split tasks that produce multiple events per key).
-func reconcile(ctx context.Context, cal CalendarClient, existing []calendar.Event, desired []desiredEvent, prog io.Writer) (created, updated, deleted, unchanged int, err error) {
-	// Group existing events by task key, preserving order.
+func reconcile(ctx context.Context, cal CalendarClient, existing []calendar.Event, desired []desiredEvent, now time.Time, prog io.Writer) (created, updated, deleted, unchanged int, err error) {
+	// Track which existing events are matched.
+	matchedExisting := make(map[string]bool)
+
+	// Preserve past events — don't reconcile events that have already ended.
 	existingByKey := make(map[string][]calendar.Event)
 	for _, ev := range existing {
 		key := calendar.TaskKeyFromDescription(ev.Description)
 		if key == "" {
+			continue
+		}
+		if !ev.End.After(now) {
+			// Past event — mark as matched so it won't be deleted.
+			matchedExisting[ev.ID] = true
 			continue
 		}
 		existingByKey[key] = append(existingByKey[key], ev)
@@ -587,9 +595,6 @@ func reconcile(ctx context.Context, cal CalendarClient, existing []calendar.Even
 	for i, d := range desired {
 		desiredByKey[d.TaskKey] = append(desiredByKey[d.TaskKey], indexedDesired{event: d, index: i})
 	}
-
-	// Track which existing events are matched.
-	matchedExisting := make(map[string]bool)
 
 	// Match desired events against existing by key + position.
 	for key, dList := range desiredByKey {

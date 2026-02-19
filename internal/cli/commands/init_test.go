@@ -16,14 +16,16 @@ import (
 
 // mockSurveyor provides canned responses for testing init flow.
 type mockSurveyor struct {
-	selectAnswers      []string
-	multiSelectAnswers [][]string
-	inputAnswers       []string
-	passwordAnswer     []string
-	selectIdx          int
-	multiSelectIdx     int
-	inputIdx           int
-	passwordIdx        int
+	selectAnswers             []string
+	multiSelectAnswers        [][]string
+	inputAnswers              []string
+	inputWithDefaultAnswers   []string
+	passwordAnswer            []string
+	selectIdx                 int
+	multiSelectIdx            int
+	inputIdx                  int
+	inputWithDefaultIdx       int
+	passwordIdx               int
 }
 
 func (m *mockSurveyor) Select(message string, options []string) (string, error) {
@@ -50,6 +52,16 @@ func (m *mockSurveyor) Input(message string) (string, error) {
 	}
 	answer := m.inputAnswers[m.inputIdx]
 	m.inputIdx++
+	return answer, nil
+}
+
+func (m *mockSurveyor) InputWithDefault(message, defaultVal string) (string, error) {
+	if m.inputWithDefaultIdx >= len(m.inputWithDefaultAnswers) {
+		// Fall back to default value when no answers are queued
+		return defaultVal, nil
+	}
+	answer := m.inputWithDefaultAnswers[m.inputWithDefaultIdx]
+	m.inputWithDefaultIdx++
 	return answer, nil
 }
 

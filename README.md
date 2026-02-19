@@ -151,6 +151,7 @@ scheduling:
   bufferMinutes: 15
   travelBufferMinutes: 30
   snapMinutes: [0, 15, 30, 45]
+  autoResync: false               # re-sync calendar after task changes
 
 businessHours:
   - start: "09:00"
@@ -162,6 +163,9 @@ projectRules:
     - start: "09:00"
       end: "10:00"
       workDays: [1, 2, 3, 4, 5]
+
+worklog:
+  fallbackIssues: []              # Jira issues for non-task time (meetings, admin)
 
 weights:
   priority: 0.45
@@ -238,10 +242,14 @@ fylla clear --from 2025-01-01 --to 2025-06-30
 # Time tracking
 fylla timer start TASK-KEY               # start timer
 fylla timer status                       # check running timer
-fylla timer stop -d "worked on feature"  # stop timer and log work
+fylla timer stop -d "worked on feature"  # stop + log + update calendar + show remaining
 fylla timer log TASK-KEY 2h "description" # manual worklog
 # Multi-provider: task key format routes to correct provider
 # PROJ-123 → Jira, 12345 → Todoist, owner/repo#42 → GitHub
+
+# Bulk worklog posting
+fylla worklog                            # review & post worklogs from today's calendar
+fylla worklog --date 2025-02-18          # post worklogs for a past date
 
 # Task management
 fylla task add                           # create task interactively
@@ -313,6 +321,86 @@ fylla serve --port 3000  # custom port
 | `GET /api/tasks` | Sorted task list (scored) |
 | `GET /api/schedule` | Full dry-run schedule (allocations, at-risk, unscheduled) |
 | `GET /api/status` | Config summary: providers, business hours, window, buffer |
+
+## Worklog Posting
+
+`fylla worklog` turns your calendar into a timesheet. It walks through every
+event for the day — both Fylla-scheduled tasks and regular meetings — lets you
+adjust durations, assign Jira issues to meetings, fills remaining hours with a
+fallback issue, and bulk-posts everything to Jira.
+
+```bash
+fylla worklog                    # today
+fylla worklog --date 2025-02-18  # past date
+```
+
+### Interactive flow
+
+1. **For each Fylla task** — shows the task key, summary, and calendar duration.
+   You confirm or adjust the duration.
+2. **For each meeting** — shows meeting name and duration. You adjust the
+   duration, then pick a Jira issue from configured `worklog.fallbackIssues`
+   (or type one manually).
+3. **Remainder** — if logged hours are below the daily target (derived from
+   `businessHours`), prompts for a fallback issue to cover the gap.
+4. **Summary table** — shows all entries before posting.
+5. **Confirm** — select Yes/No to post all worklogs to Jira.
+
+### Configuration
+
+```yaml
+worklog:
+  fallbackIssues:
+    - ADMIN-1    # general admin
+    - MEET-1     # meetings
+```
+
+The daily target is computed from `businessHours`. For example, two windows
+`09:00-12:00` + `13:00-17:00` on workdays yield a 7h daily target.
+
+## Sync Behavior
+
+### Past event preservation
+
+Re-running `fylla sync` preserves past events — only future events are
+reconciled against the new schedule. This makes the calendar a reliable record
+of what was planned and worked on:
+
+- **Incremental mode** (default): past events (those whose end time is before
+  now) are kept as-is. Only future events are matched, updated, created, or
+  deleted.
+- **Force mode** (`--force`): deletes and recreates future events only. Past
+  events are preserved.
+
+### Timer stop integration
+
+`fylla timer stop` now does more than log work:
+
+1. Posts worklog to Jira (as before)
+2. Updates the calendar event end time to match actual work duration
+3. Marks the event as done (✓ prefix visible in Google Calendar)
+4. Shows remaining estimate — suggests next steps if the task has time left
+   or is at zero
+
+### Auto-resync
+
+When `scheduling.autoResync` is enabled, commands that change the schedule
+automatically trigger a re-sync:
+
+| Command | Why |
+|---------|-----|
+| `fylla timer stop` | Task duration changed |
+| `fylla task done` | Task completed, free up slots |
+| `fylla task add` | New task needs scheduling |
+| `fylla task delete` | Task removed, free up slots |
+| `fylla task edit` | Estimate/due date/priority changed |
+
+Enable in config:
+
+```yaml
+scheduling:
+  autoResync: true
+```
 
 ## Pull Request Reviews
 

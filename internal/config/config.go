@@ -1,6 +1,9 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // Config represents the fylla configuration file.
 type Config struct {
@@ -13,6 +16,7 @@ type Config struct {
 	BusinessHours []BusinessHoursConfig            `yaml:"businessHours"`
 	ProjectRules  map[string][]BusinessHoursConfig `yaml:"projectRules"`
 	Weights       WeightsConfig                    `yaml:"weights"`
+	Worklog       WorklogConfig                    `yaml:"worklog"`
 }
 
 // ActiveProviders returns the list of configured providers.
@@ -62,6 +66,7 @@ type SchedulingConfig struct {
 	BufferMinutes          int   `yaml:"bufferMinutes"`
 	TravelBufferMinutes    int   `yaml:"travelBufferMinutes"`
 	SnapMinutes            []int `yaml:"snapMinutes"`
+	AutoResync             bool  `yaml:"autoResync"`
 }
 
 // BusinessHoursConfig holds default business hours.
@@ -69,6 +74,11 @@ type BusinessHoursConfig struct {
 	Start    string `yaml:"start"`
 	End      string `yaml:"end"`
 	WorkDays []int  `yaml:"workDays"`
+}
+
+// WorklogConfig holds worklog-related settings.
+type WorklogConfig struct {
+	FallbackIssues []string `yaml:"fallbackIssues"`
 }
 
 // WeightsConfig holds sorting algorithm weights.
@@ -173,6 +183,42 @@ func parseHHMM(s string) (int, int, error) {
 		}
 	}
 	return h, m, nil
+}
+
+// DailyTargetFor computes the total working duration for a given weekday
+// by summing all business hour windows that include that day.
+// WorkDays use ISO numbering (1=Monday..7=Sunday), while time.Weekday
+// uses Go's convention (0=Sunday..6=Saturday).
+func DailyTargetFor(windows []BusinessHoursConfig, weekday time.Weekday) time.Duration {
+	// Convert Go weekday to ISO: Sun=0 → 7, Mon=1 → 1, etc.
+	iso := int(weekday)
+	if iso == 0 {
+		iso = 7
+	}
+
+	var total time.Duration
+	for _, w := range windows {
+		active := false
+		for _, d := range w.WorkDays {
+			if d == iso {
+				active = true
+				break
+			}
+		}
+		if !active {
+			continue
+		}
+		startH, startM, err := parseHHMM(w.Start)
+		if err != nil {
+			continue
+		}
+		endH, endM, err := parseHHMM(w.End)
+		if err != nil {
+			continue
+		}
+		total += time.Duration(endH*60+endM-startH*60-startM) * time.Minute
+	}
+	return total
 }
 
 // BusinessHoursFor returns the business hours for a project key.

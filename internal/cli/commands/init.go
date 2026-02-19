@@ -16,6 +16,7 @@ type Surveyor interface {
 	Select(message string, options []string) (string, error)
 	MultiSelect(message string, options []string) ([]string, error)
 	Input(message string) (string, error)
+	InputWithDefault(message, defaultVal string) (string, error)
 	Password(message string) (string, error)
 }
 
@@ -43,6 +44,12 @@ func (d defaultSurveyor) MultiSelect(message string, options []string) ([]string
 func (d defaultSurveyor) Input(message string) (string, error) {
 	var answer string
 	err := survey.AskOne(&survey.Input{Message: message}, &answer)
+	return answer, err
+}
+
+func (d defaultSurveyor) InputWithDefault(message, defaultVal string) (string, error) {
+	var answer string
+	err := survey.AskOne(&survey.Input{Message: message, Default: defaultVal}, &answer)
 	return answer, err
 }
 

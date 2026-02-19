@@ -29,6 +29,7 @@ scheduling:
   bufferMinutes: 15
   travelBufferMinutes: 30
   snapMinutes: [0, 15, 30, 45]
+  autoResync: false
 
 businessHours:
   - start: "09:00"
@@ -40,6 +41,9 @@ projectRules:
     - start: "09:00"
       end: "10:00"
       workDays: [1, 2, 3, 4, 5]
+
+worklog:
+  fallbackIssues: []
 
 weights:
   priority: 0.45

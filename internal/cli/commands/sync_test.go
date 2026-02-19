@@ -131,10 +131,10 @@ func TestSYNC001_delete_existing_fylla_events(t *testing.T) {
 		if len(cal.deletedRanges) != 1 {
 			t.Fatalf("expected 1 delete call, got %d", len(cal.deletedRanges))
 		}
-		cleanupStart := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-		if !cal.deletedRanges[0].start.Equal(cleanupStart) || !cal.deletedRanges[0].end.Equal(end) {
+		// Force mode now only deletes future events (from p.Now onwards)
+		if !cal.deletedRanges[0].start.Equal(now) || !cal.deletedRanges[0].end.Equal(end) {
 			t.Errorf("delete range = %v-%v, want %v-%v",
-				cal.deletedRanges[0].start, cal.deletedRanges[0].end, cleanupStart, end)
+				cal.deletedRanges[0].start, cal.deletedRanges[0].end, now, end)
 		}
 	})
 
@@ -1848,6 +1848,135 @@ func TestSYNC011_incremental_sync(t *testing.T) {
 		out := buf.String()
 		if strings.Contains(out, "Changes:") {
 			t.Errorf("dry-run should not show changes summary, got:\n%s", out)
+		}
+	})
+}
+
+func TestSYNC012_past_event_preservation(t *testing.T) {
+	now := time.Date(2025, 1, 20, 14, 0, 0, 0, time.UTC)
+	start := time.Date(2025, 1, 20, 0, 0, 0, 0, time.UTC)
+	end := now.AddDate(0, 0, 5)
+
+	t.Run("past events preserved during incremental reconcile", func(t *testing.T) {
+		// Past event ended at 12:00, before now (14:00)
+		cal := &mockCalendar{
+			fyllaEvents: []calendar.Event{
+				{
+					ID:          "evt-past",
+					Title:       "[TEST] Past task",
+					Description: "fylla: PAST-1\nhttps://test.atlassian.net/browse/PAST-1",
+					Start:       time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
+					End:         time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
+				},
+			},
+		}
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
+				// Different task — PAST-1 is no longer in the task list
+				{Key: "NEW-1", Summary: "New task", Priority: 1, RemainingEstimate: time.Hour, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+			},
+		}
+
+		result, err := RunSync(context.Background(), SyncParams{
+			Cal:   cal,
+			Tasks: jr,
+			Cfg:   testConfig(),
+			Query: "project = TEST",
+			Now:   now,
+			Start: start,
+			End:   end,
+		})
+		if err != nil {
+			t.Fatalf("RunSync: %v", err)
+		}
+
+		// Past event should NOT be deleted
+		for _, id := range cal.deletedIDs {
+			if id == "evt-past" {
+				t.Error("past event evt-past should not be deleted")
+			}
+		}
+		// New task should be created
+		if result.Created < 1 {
+			t.Errorf("created = %d, want >= 1", result.Created)
+		}
+	})
+
+	t.Run("future events are reconciled normally", func(t *testing.T) {
+		// Future event at 15:00 (after now=14:00), no longer desired
+		cal := &mockCalendar{
+			fyllaEvents: []calendar.Event{
+				{
+					ID:          "evt-future",
+					Title:       "[TEST] Future task",
+					Description: "fylla: OLD-1\nhttps://test.atlassian.net/browse/OLD-1",
+					Start:       time.Date(2025, 1, 20, 15, 0, 0, 0, time.UTC),
+					End:         time.Date(2025, 1, 20, 16, 0, 0, 0, time.UTC),
+				},
+			},
+		}
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
+				{Key: "NEW-1", Summary: "New task", Priority: 1, RemainingEstimate: time.Hour, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+			},
+		}
+
+		result, err := RunSync(context.Background(), SyncParams{
+			Cal:   cal,
+			Tasks: jr,
+			Cfg:   testConfig(),
+			Query: "project = TEST",
+			Now:   now,
+			Start: start,
+			End:   end,
+		})
+		if err != nil {
+			t.Fatalf("RunSync: %v", err)
+		}
+
+		// Future event should be deleted since OLD-1 is not in desired tasks
+		if result.Deleted != 1 {
+			t.Errorf("deleted = %d, want 1", result.Deleted)
+		}
+		found := false
+		for _, id := range cal.deletedIDs {
+			if id == "evt-future" {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("future event evt-future should be deleted")
+		}
+	})
+
+	t.Run("force mode only deletes future events", func(t *testing.T) {
+		cal := &mockCalendar{}
+		jr := &mockTaskFetcher{
+			tasks: []task.Task{
+				{Key: "T-1", Summary: "Task 1", Priority: 1, RemainingEstimate: time.Hour, Project: "TEST", IssueType: "Task", Created: now.AddDate(0, 0, -1)},
+			},
+		}
+
+		_, err := RunSync(context.Background(), SyncParams{
+			Cal:   cal,
+			Tasks: jr,
+			Cfg:   testConfig(),
+			Query: "project = TEST",
+			Now:   now,
+			Start: start,
+			End:   end,
+			Force: true,
+		})
+		if err != nil {
+			t.Fatalf("RunSync: %v", err)
+		}
+
+		// Force mode uses DeleteFyllaEvents from p.Now (not p.Start)
+		if len(cal.deletedRanges) != 1 {
+			t.Fatalf("expected 1 delete call, got %d", len(cal.deletedRanges))
+		}
+		if !cal.deletedRanges[0].start.Equal(now) {
+			t.Errorf("force delete start = %v, want %v (now, not start of window)", cal.deletedRanges[0].start, now)
 		}
 	})
 }
