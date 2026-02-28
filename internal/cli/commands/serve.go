@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/iruoy/fylla/internal/calendar"
 	"github.com/iruoy/fylla/internal/config"
 	"github.com/iruoy/fylla/internal/timer"
 	"github.com/iruoy/fylla/internal/tui"
@@ -259,6 +260,19 @@ func convertSyncResult(r *SyncResult) *msg.SyncResult {
 			TaskKey: u.Task.Key, Summary: u.Task.Summary,
 			Project: u.Task.Project, Section: u.Task.Section,
 			Estimate: u.Task.RemainingEstimate, Reason: u.Reason,
+		})
+	}
+	for _, ev := range r.Events {
+		if ev.Transparency == "transparent" || ev.IsOOO() || ev.AllDay {
+			continue
+		}
+		if calendar.TaskKeyFromDescription(ev.Description) != "" {
+			continue
+		}
+		result.CalendarEvents = append(result.CalendarEvents, msg.CalendarEvent{
+			Summary: ev.Title,
+			Start:   ev.Start,
+			End:     ev.End,
 		})
 	}
 	return result

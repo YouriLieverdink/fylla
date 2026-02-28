@@ -28,15 +28,23 @@ type ScoredTask struct {
 	UpNext    bool
 }
 
+// CalendarEvent represents a non-task calendar event (meeting, etc.).
+type CalendarEvent struct {
+	Summary string
+	Start   time.Time
+	End     time.Time
+}
+
 // SyncResult holds the result of a sync operation for display.
 type SyncResult struct {
-	Allocations []Allocation
-	AtRisk      []Allocation
-	Unscheduled []UnscheduledTask
-	Created     int
-	Updated     int
-	Deleted     int
-	Unchanged   int
+	Allocations    []Allocation
+	AtRisk         []Allocation
+	Unscheduled    []UnscheduledTask
+	CalendarEvents []CalendarEvent
+	Created        int
+	Updated        int
+	Deleted        int
+	Unchanged      int
 }
 
 // Allocation represents a scheduled task allocation.

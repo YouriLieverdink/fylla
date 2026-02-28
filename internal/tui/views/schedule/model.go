@@ -11,12 +11,13 @@ import (
 )
 
 var (
-	headerFmt   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
-	sectionFmt  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"})
-	atRiskStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#FF4672", Dark: "#ED567A"})
-	warnStyle   = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#F2A900", Dark: "#FDCB58"})
-	hintStyle   = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
-	errStyle    = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#FF4672", Dark: "#ED567A"})
+	headerFmt     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
+	sectionFmt    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"})
+	atRiskStyle   = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#FF4672", Dark: "#ED567A"})
+	calEventStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#AAAAAA", Dark: "#555555"})
+	warnStyle     = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#F2A900", Dark: "#FDCB58"})
+	hintStyle     = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
+	errStyle      = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#FF4672", Dark: "#ED567A"})
 )
 
 // Model is the schedule view model.
@@ -68,30 +69,53 @@ func (m Model) View() string {
 	b.WriteString(headerFmt.Render("Schedule Preview (Dry Run)"))
 	b.WriteString("\n\n")
 
-	// Sort allocations chronologically
-	allocs := make([]msg.Allocation, len(m.Result.Allocations))
-	copy(allocs, m.Result.Allocations)
-	sort.Slice(allocs, func(i, j int) bool { return allocs[i].Start.Before(allocs[j].Start) })
+	// Build unified schedule entries (tasks + calendar events)
+	type scheduleEntry struct {
+		Start       time.Time
+		End         time.Time
+		Summary     string
+		Project     string
+		Section     string
+		AtRisk      bool
+		IsCalEvent  bool
+	}
+
+	var entries []scheduleEntry
+	for _, a := range m.Result.Allocations {
+		entries = append(entries, scheduleEntry{
+			Start: a.Start, End: a.End, Summary: a.Summary,
+			Project: a.Project, Section: a.Section, AtRisk: a.AtRisk,
+		})
+	}
+	for _, e := range m.Result.CalendarEvents {
+		entries = append(entries, scheduleEntry{
+			Start: e.Start, End: e.End, Summary: e.Summary, IsCalEvent: true,
+		})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Start.Before(entries[j].Start) })
 
 	atRisk := make([]msg.Allocation, len(m.Result.AtRisk))
 	copy(atRisk, m.Result.AtRisk)
 	sort.Slice(atRisk, func(i, j int) bool { return atRisk[i].Start.Before(atRisk[j].Start) })
 
-	// Group allocations by day
-	if len(allocs) > 0 {
-		b.WriteString(sectionFmt.Render("Scheduled Tasks"))
+	// Group entries by day
+	if len(entries) > 0 {
+		b.WriteString(sectionFmt.Render("Schedule"))
 		b.WriteString("\n")
 		currentDay := ""
-		for _, a := range allocs {
-			day := a.Start.Format("Mon Jan 2")
+		for _, e := range entries {
+			day := e.Start.Format("Mon Jan 2")
 			if day != currentDay {
 				b.WriteString("\n  " + headerFmt.Render(day) + "\n")
 				currentDay = day
 			}
 			line := fmt.Sprintf("    %s - %s  %s%s",
-				a.Start.Format("15:04"), a.End.Format("15:04"),
-				formatPrefix(a.Project, a.Section), a.Summary)
-			if a.AtRisk {
+				e.Start.Format("15:04"), e.End.Format("15:04"),
+				formatPrefix(e.Project, e.Section), e.Summary)
+			switch {
+			case e.IsCalEvent:
+				line = calEventStyle.Render(line)
+			case e.AtRisk:
 				line = atRiskStyle.Render(line)
 			}
 			b.WriteString(line + "\n")
@@ -125,7 +149,7 @@ func (m Model) View() string {
 		b.WriteString("\n")
 	}
 
-	if len(allocs) == 0 && len(m.Result.Unscheduled) == 0 {
+	if len(entries) == 0 && len(m.Result.Unscheduled) == 0 {
 		b.WriteString("  No tasks to schedule.\n")
 	}
 
