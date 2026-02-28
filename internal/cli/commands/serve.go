@@ -257,6 +257,7 @@ func convertSyncResult(r *SyncResult) *msg.SyncResult {
 	for _, u := range r.Unscheduled {
 		result.Unscheduled = append(result.Unscheduled, msg.UnscheduledTask{
 			TaskKey: u.Task.Key, Summary: u.Task.Summary,
+			Project: u.Task.Project, Section: u.Task.Section,
 			Estimate: u.Task.RemainingEstimate, Reason: u.Reason,
 		})
 	}

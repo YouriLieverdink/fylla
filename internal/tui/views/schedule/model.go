@@ -118,8 +118,8 @@ func (m Model) View() string {
 		b.WriteString("\n")
 		for _, u := range m.Result.Unscheduled {
 			est := formatDuration(u.Estimate)
-			b.WriteString(warnStyle.Render(fmt.Sprintf("    %s  %s  (%s)",
-				u.Summary, est, u.Reason)))
+			b.WriteString(warnStyle.Render(fmt.Sprintf("    %s%s  %s  (%s)",
+				formatPrefix(u.Project, u.Section), u.Summary, est, u.Reason)))
 			b.WriteString("\n")
 		}
 		b.WriteString("\n")

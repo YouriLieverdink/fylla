@@ -61,14 +61,19 @@ func Allocate(tasks []ScoredTask, slotsByProject map[string][]calendar.Slot, cfg
 		available = snapSlotStarts(available, cfg.SnapMinutes, 0)
 
 		// Filter out slots that start before the task's not-before date
+		hadSlots := len(available) > 0
 		if st.Task.NotBefore != nil {
 			available = filterSlotsNotBefore(available, *st.Task.NotBefore)
 		}
 
 		if len(available) == 0 {
+			reason := "no available slots"
+			if hadSlots && st.Task.NotBefore != nil {
+				reason = "starts after scheduling window"
+			}
 			unscheduled = append(unscheduled, UnscheduledTask{
 				Task:      st.Task,
-				Reason:    "no available slots",
+				Reason:    reason,
 				Remaining: estimate,
 			})
 			continue

@@ -53,6 +53,8 @@ type Allocation struct {
 // UnscheduledTask represents a task that could not be scheduled.
 type UnscheduledTask struct {
 	TaskKey  string
+	Project  string
+	Section  string
 	Summary  string
 	Estimate time.Duration
 	Reason   string
