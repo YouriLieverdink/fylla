@@ -105,10 +105,7 @@ func (m Model) View() string {
 			if e.AtRisk {
 				prefix = "[LATE] "
 			}
-			taskLabel := e.TaskKey
-			if e.Summary != "" {
-				taskLabel = fmt.Sprintf("%s: %s", e.TaskKey, e.Summary)
-			}
+			taskLabel := formatPrefix(e.Project, e.Section) + e.Summary
 			label = fmt.Sprintf("%s  %s%s  %s", timeRange, prefix, taskLabel, durStr)
 			switch {
 			case isSelected:
@@ -140,6 +137,16 @@ func (m Model) View() string {
 	b.WriteString(hintStyle.Render("  " + hints))
 
 	return b.String()
+}
+
+func formatPrefix(project, section string) string {
+	if project != "" && section != "" {
+		return project + " / " + section + ": "
+	}
+	if project != "" {
+		return project + ": "
+	}
+	return ""
 }
 
 func formatDuration(d time.Duration) string {

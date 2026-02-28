@@ -20,6 +20,7 @@ var (
 // Model is the timer view model.
 type Model struct {
 	TaskKey  string
+	Summary  string
 	Elapsed  time.Duration
 	Running  bool
 	Loading  bool
@@ -59,7 +60,11 @@ func (m Model) View() string {
 	}
 
 	b.WriteString("  " + runningStyle.Render("RUNNING") + "\n\n")
-	b.WriteString("  Task: " + taskStyle.Render(m.TaskKey) + "\n\n")
+	label := m.Summary
+	if label == "" {
+		label = m.TaskKey
+	}
+	b.WriteString("  Task: " + taskStyle.Render(label) + "\n\n")
 
 	// Big elapsed display
 	h := int(m.Elapsed.Hours())

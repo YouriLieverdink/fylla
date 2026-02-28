@@ -42,6 +42,7 @@ type TaskEditedMsg struct {
 // TimerStatusMsg carries the current timer status.
 type TimerStatusMsg struct {
 	TaskKey string
+	Summary string
 	Elapsed time.Duration
 	Running bool
 	Err     error
@@ -50,6 +51,7 @@ type TimerStatusMsg struct {
 // TimerStartedMsg is sent after starting a timer.
 type TimerStartedMsg struct {
 	TaskKey string
+	Summary string
 	Err     error
 }
 

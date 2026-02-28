@@ -53,10 +53,10 @@ func deleteTaskCmd(cb Callbacks, taskKey string) tea.Cmd {
 	}
 }
 
-func startTimerCmd(cb Callbacks, taskKey string) tea.Cmd {
+func startTimerCmd(cb Callbacks, taskKey, summary string) tea.Cmd {
 	return func() tea.Msg {
 		err := cb.StartTimer(taskKey)
-		return msg.TimerStartedMsg{TaskKey: taskKey, Err: err}
+		return msg.TimerStartedMsg{TaskKey: taskKey, Summary: summary, Err: err}
 	}
 }
 

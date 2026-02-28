@@ -2,6 +2,7 @@ package schedule
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -67,20 +68,29 @@ func (m Model) View() string {
 	b.WriteString(headerFmt.Render("Schedule Preview (Dry Run)"))
 	b.WriteString("\n\n")
 
+	// Sort allocations chronologically
+	allocs := make([]msg.Allocation, len(m.Result.Allocations))
+	copy(allocs, m.Result.Allocations)
+	sort.Slice(allocs, func(i, j int) bool { return allocs[i].Start.Before(allocs[j].Start) })
+
+	atRisk := make([]msg.Allocation, len(m.Result.AtRisk))
+	copy(atRisk, m.Result.AtRisk)
+	sort.Slice(atRisk, func(i, j int) bool { return atRisk[i].Start.Before(atRisk[j].Start) })
+
 	// Group allocations by day
-	if len(m.Result.Allocations) > 0 {
+	if len(allocs) > 0 {
 		b.WriteString(sectionFmt.Render("Scheduled Tasks"))
 		b.WriteString("\n")
 		currentDay := ""
-		for _, a := range m.Result.Allocations {
+		for _, a := range allocs {
 			day := a.Start.Format("Mon Jan 2")
 			if day != currentDay {
 				b.WriteString("\n  " + headerFmt.Render(day) + "\n")
 				currentDay = day
 			}
-			line := fmt.Sprintf("    %s - %s  %s: %s",
+			line := fmt.Sprintf("    %s - %s  %s%s",
 				a.Start.Format("15:04"), a.End.Format("15:04"),
-				a.TaskKey, a.Summary)
+				formatPrefix(a.Project, a.Section), a.Summary)
 			if a.AtRisk {
 				line = atRiskStyle.Render(line)
 			}
@@ -90,12 +100,12 @@ func (m Model) View() string {
 	}
 
 	// At-risk
-	if len(m.Result.AtRisk) > 0 {
+	if len(atRisk) > 0 {
 		b.WriteString(atRiskStyle.Render("At Risk"))
 		b.WriteString("\n")
-		for _, a := range m.Result.AtRisk {
-			b.WriteString(atRiskStyle.Render(fmt.Sprintf("    %s: %s (%s - %s)",
-				a.TaskKey, a.Summary,
+		for _, a := range atRisk {
+			b.WriteString(atRiskStyle.Render(fmt.Sprintf("    %s%s (%s - %s)",
+				formatPrefix(a.Project, a.Section), a.Summary,
 				a.Start.Format("15:04"), a.End.Format("15:04"))))
 			b.WriteString("\n")
 		}
@@ -108,14 +118,14 @@ func (m Model) View() string {
 		b.WriteString("\n")
 		for _, u := range m.Result.Unscheduled {
 			est := formatDuration(u.Estimate)
-			b.WriteString(warnStyle.Render(fmt.Sprintf("    %s: %s  %s  (%s)",
-				u.TaskKey, u.Summary, est, u.Reason)))
+			b.WriteString(warnStyle.Render(fmt.Sprintf("    %s  %s  (%s)",
+				u.Summary, est, u.Reason)))
 			b.WriteString("\n")
 		}
 		b.WriteString("\n")
 	}
 
-	if len(m.Result.Allocations) == 0 && len(m.Result.Unscheduled) == 0 {
+	if len(allocs) == 0 && len(m.Result.Unscheduled) == 0 {
 		b.WriteString("  No tasks to schedule.\n")
 	}
 
@@ -142,6 +152,16 @@ func (m Model) View() string {
 	}
 
 	return strings.Join(lines[start:end], "\n")
+}
+
+func formatPrefix(project, section string) string {
+	if project != "" && section != "" {
+		return project + " / " + section + ": "
+	}
+	if project != "" {
+		return project + ": "
+	}
+	return ""
 }
 
 func formatDuration(d time.Duration) string {

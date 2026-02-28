@@ -169,12 +169,12 @@ func (m Model) View() string {
 			t := filtered[i]
 			isSelected := i == m.Cursor
 
-			// Format: rank. KEY: Summary  (estimate)  score
 			rank := fmt.Sprintf("%2d.", i+1)
 			est := formatDuration(t.Estimate)
 			score := fmt.Sprintf("%5.1f", t.Score)
 
-			line := fmt.Sprintf("%s %s: %s  %s  %s", rank, t.Key, truncate(t.Summary, 50), est, score)
+			label := formatPrefix(t.Project, t.Section) + truncate(t.Summary, 50)
+			line := fmt.Sprintf("%s %s  %s  %s", rank, label, est, score)
 
 			if t.UpNext {
 				line += upNextStyle.Render(" [UP NEXT]")
@@ -206,6 +206,16 @@ func (m Model) View() string {
 	}
 
 	return b.String()
+}
+
+func formatPrefix(project, section string) string {
+	if project != "" && section != "" {
+		return project + " / " + section + ": "
+	}
+	if project != "" {
+		return project + ": "
+	}
+	return ""
 }
 
 func formatDuration(d time.Duration) string {

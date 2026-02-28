@@ -61,6 +61,7 @@ type model struct {
 	timer        timerView.Model
 	config       configView.Model
 	timerKey     string
+	timerSummary string
 	timerElapsed time.Duration
 	timerRunning bool
 	toast        string
@@ -198,9 +199,11 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		m.timer.Loading = false
 		if mssg.Err == nil {
 			m.timerKey = mssg.TaskKey
+			m.timerSummary = mssg.Summary
 			m.timerElapsed = mssg.Elapsed
 			m.timerRunning = mssg.Running
 			m.timer.TaskKey = mssg.TaskKey
+			m.timer.Summary = mssg.Summary
 			m.timer.Elapsed = mssg.Elapsed
 			m.timer.Running = mssg.Running
 			m.timer.Err = nil
@@ -225,12 +228,18 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setToast(fmt.Sprintf("Timer error: %v", mssg.Err), true)
 		} else {
 			m.timerKey = mssg.TaskKey
+			m.timerSummary = mssg.Summary
 			m.timerElapsed = 0
 			m.timerRunning = true
 			m.timer.TaskKey = mssg.TaskKey
+			m.timer.Summary = mssg.Summary
 			m.timer.Elapsed = 0
 			m.timer.Running = true
-			m.setToast(fmt.Sprintf("Timer started for %s", mssg.TaskKey), false)
+			label := mssg.Summary
+			if label == "" {
+				label = mssg.TaskKey
+			}
+			m.setToast(fmt.Sprintf("Timer started for %s", label), false)
 			cmds = append(cmds, timerTickCmd())
 		}
 		cmds = append(cmds, clearToastCmd())
@@ -280,13 +289,19 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		if mssg.Err != nil {
 			m.setToast(fmt.Sprintf("Stop error: %v", mssg.Err), true)
 		} else {
+			stoppedLabel := m.timerSummary
+			if stoppedLabel == "" {
+				stoppedLabel = mssg.TaskKey
+			}
 			m.timerRunning = false
 			m.timerKey = ""
+			m.timerSummary = ""
 			m.timerElapsed = 0
 			m.timer.Running = false
 			m.timer.TaskKey = ""
+			m.timer.Summary = ""
 			m.timer.Elapsed = 0
-			m.setToast(fmt.Sprintf("Timer stopped for %s", mssg.TaskKey), false)
+			m.setToast(fmt.Sprintf("Timer stopped for %s", stoppedLabel), false)
 		}
 		cmds = append(cmds, clearToastCmd())
 		return m, tea.Batch(cmds...)
@@ -371,7 +386,7 @@ func (m model) updateTimeline(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, loadTodayCmd(m.cb)
 	case key.Matches(mssg, keys.Enter), key.Matches(mssg, keys.Timer):
 		if e := m.timeline.SelectedEvent(); e != nil && !e.IsCalendarEvent && e.TaskKey != "" {
-			return m, startTimerCmd(m.cb, e.TaskKey)
+			return m, startTimerCmd(m.cb, e.TaskKey, e.Summary)
 		}
 	case key.Matches(mssg, keys.Done):
 		if e := m.timeline.SelectedEvent(); e != nil && !e.IsCalendarEvent && e.TaskKey != "" {
@@ -394,7 +409,7 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, loadTasksCmd(m.cb)
 	case key.Matches(mssg, keys.Enter), key.Matches(mssg, keys.Timer):
 		if t := m.tasks.SelectedTask(); t != nil {
-			return m, startTimerCmd(m.cb, t.Key)
+			return m, startTimerCmd(m.cb, t.Key, t.Summary)
 		}
 	case key.Matches(mssg, keys.Done):
 		if t := m.tasks.SelectedTask(); t != nil {
@@ -665,6 +680,7 @@ func (m model) View() string {
 	hints := "1-5:tabs  ?:help  q:quit"
 	statusBar := components.StatusBar{
 		TimerKey:     m.timerKey,
+		TimerSummary: m.timerSummary,
 		TimerElapsed: m.timerElapsed,
 		TimerRunning: m.timerRunning,
 		Toast:        m.toast,
@@ -726,13 +742,11 @@ func (m model) renderHelp() string {
 
 	b.WriteString(hint.Render("Press ? or Esc to close"))
 
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}).
+	content := lipgloss.NewStyle().
 		Padding(1, 3).
 		Render(b.String())
 
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 }
 
 // Run starts the TUI application.

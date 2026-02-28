@@ -31,6 +31,7 @@ var (
 // StatusBar holds the state for the bottom status bar.
 type StatusBar struct {
 	TimerKey     string
+	TimerSummary string
 	TimerElapsed time.Duration
 	TimerRunning bool
 	Toast        string
@@ -44,7 +45,11 @@ func (s StatusBar) Render() string {
 	var left string
 
 	if s.TimerRunning {
-		left = timerStyle.Render(fmt.Sprintf(" %s %s", s.TimerKey, formatElapsed(s.TimerElapsed)))
+		label := s.TimerSummary
+		if label == "" {
+			label = s.TimerKey
+		}
+		left = timerStyle.Render(fmt.Sprintf(" %s %s", label, formatElapsed(s.TimerElapsed)))
 	}
 
 	if s.Toast != "" {
