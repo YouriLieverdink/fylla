@@ -177,6 +177,9 @@ func collectBusyRanges(events []Event, bufferMinutes, travelBufferMinutes int) [
 		if e.Transparency == "transparent" {
 			continue // free events don't block scheduling
 		}
+		if e.AllDay {
+			continue // all-day events (birthdays, holidays) don't block scheduling
+		}
 		start := e.Start
 		end := e.End.Add(buffer)
 		if e.Location != "" {

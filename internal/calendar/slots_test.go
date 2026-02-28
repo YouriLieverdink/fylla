@@ -557,6 +557,50 @@ func Test_SLOT_transparent_events_dont_block(t *testing.T) {
 	})
 }
 
+func Test_SLOT_allday_events_dont_block(t *testing.T) {
+	// Monday 2025-01-20
+	now := dt(2025, 1, 20, 7, 0)
+	rangeStart := dt(2025, 1, 20, 0, 0)
+	rangeEnd := dt(2025, 1, 20, 23, 59)
+
+	t.Run("all-day event does not block scheduling", func(t *testing.T) {
+		birthday := Event{
+			Title:  "John's Birthday",
+			Start:  dt(2025, 1, 20, 0, 0),
+			End:    dt(2025, 1, 21, 0, 0),
+			AllDay: true,
+		}
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{birthday}, defaultHours(), 0, 1, nil, 0)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// Should have one continuous slot 09:00-17:00
+		if len(slots) != 1 {
+			t.Fatalf("expected 1 slot, got %d", len(slots))
+		}
+		if slots[0].Start != dt(2025, 1, 20, 9, 0) || slots[0].End != dt(2025, 1, 20, 17, 0) {
+			t.Errorf("expected 09:00-17:00, got %v-%v", slots[0].Start, slots[0].End)
+		}
+	})
+
+	t.Run("all-day OOO still blocks scheduling", func(t *testing.T) {
+		ooo := Event{
+			Title:     "PTO",
+			Start:     dt(2025, 1, 20, 0, 0),
+			End:       dt(2025, 1, 21, 0, 0),
+			EventType: "outOfOffice",
+			AllDay:    true,
+		}
+		slots, err := FindFreeSlots(now, rangeStart, rangeEnd, []Event{ooo}, defaultHours(), 0, 1, nil, 0)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(slots) != 0 {
+			t.Errorf("expected no slots during OOO, got %d", len(slots))
+		}
+	})
+}
+
 func Test_SLOT008_multiple_business_hour_windows(t *testing.T) {
 	// Monday 2025-01-20
 	now := dt(2025, 1, 20, 7, 0)
