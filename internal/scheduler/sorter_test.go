@@ -292,6 +292,68 @@ func Test_SORT010_crunch_mode(t *testing.T) {
 	})
 }
 
+func Test_SORT012_not_before_penalty(t *testing.T) {
+	now := time.Date(2025, 6, 15, 9, 0, 0, 0, time.UTC)
+
+	t.Run("nil NotBefore returns 1.0", func(t *testing.T) {
+		got := NotBeforePenalty(nil, now)
+		if got != 1.0 {
+			t.Errorf("expected 1.0, got %.2f", got)
+		}
+	})
+
+	t.Run("past NotBefore returns 1.0", func(t *testing.T) {
+		past := now.Add(-24 * time.Hour)
+		got := NotBeforePenalty(&past, now)
+		if got != 1.0 {
+			t.Errorf("expected 1.0, got %.2f", got)
+		}
+	})
+
+	t.Run("NotBefore 7+ days away returns 0.2", func(t *testing.T) {
+		future := now.Add(10 * 24 * time.Hour)
+		got := NotBeforePenalty(&future, now)
+		if got != 0.2 {
+			t.Errorf("expected 0.2, got %.2f", got)
+		}
+	})
+
+	t.Run("NotBefore 3.5 days away returns midpoint", func(t *testing.T) {
+		mid := now.Add(84 * time.Hour) // 3.5 days
+		got := Round(NotBeforePenalty(&mid, now), 2)
+		// 1.0 - 0.8*(3.5/7) = 1.0 - 0.4 = 0.6
+		if got != 0.6 {
+			t.Errorf("expected 0.6, got %.2f", got)
+		}
+	})
+
+	t.Run("actionable task ranks above same-priority future task", func(t *testing.T) {
+		created := now.Add(-24 * time.Hour)
+		future := now.Add(5 * 24 * time.Hour)
+		actionable := task.Task{Key: "A-1", Priority: 3, IssueType: "Task", Created: created}
+		blocked := task.Task{Key: "B-1", Priority: 3, IssueType: "Task", Created: created, NotBefore: &future}
+
+		sorted := SortTasks([]task.Task{blocked, actionable}, defaultWeights, now)
+		if sorted[0].Task.Key != "A-1" {
+			t.Errorf("expected actionable task A-1 first, got %s", sorted[0].Task.Key)
+		}
+	})
+
+	t.Run("upnext task exempt from penalty", func(t *testing.T) {
+		created := now.Add(-24 * time.Hour)
+		future := now.Add(10 * 24 * time.Hour)
+		upnext := task.Task{Key: "UP-1", Priority: 3, IssueType: "Task", Created: created, NotBefore: &future, UpNext: true}
+		regular := task.Task{Key: "R-1", Priority: 3, IssueType: "Task", Created: created}
+
+		upScore := CompositeScore(upnext, defaultWeights, now)
+		regScore := CompositeScore(regular, defaultWeights, now)
+
+		if upScore <= regScore {
+			t.Errorf("expected upnext task to score higher than regular: UP=%.2f, R=%.2f", upScore, regScore)
+		}
+	})
+}
+
 func Test_SORT011_upnext_overrides_score(t *testing.T) {
 	now := time.Date(2025, 6, 15, 9, 0, 0, 0, time.UTC)
 	created := now.Add(-24 * time.Hour)

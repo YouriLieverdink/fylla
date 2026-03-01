@@ -26,6 +26,7 @@ type ScoredTask struct {
 	Project   string
 	Section   string
 	UpNext    bool
+	NotBefore *time.Time
 }
 
 // CalendarEvent represents a non-task calendar event (meeting, etc.).

@@ -179,6 +179,9 @@ func (m Model) View() string {
 			if t.UpNext {
 				line += upNextStyle.Render(" [UP NEXT]")
 			}
+			if t.NotBefore != nil && t.NotBefore.After(time.Now()) {
+				line += hintStyle.Render(fmt.Sprintf(" [not before %s]", t.NotBefore.Format("Jan 2")))
+			}
 
 			cursor := "  "
 			if isSelected {

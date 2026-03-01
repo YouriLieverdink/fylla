@@ -44,6 +44,8 @@ func CompositeScore(t task.Task, w config.WeightsConfig, now time.Time) float64 
 
 	if t.UpNext {
 		score += w.UpNext
+	} else {
+		score *= NotBeforePenalty(t.NotBefore, now)
 	}
 
 	return score
@@ -117,6 +119,20 @@ func CrunchBoost(dueDate *time.Time, now time.Time) float64 {
 		return 20
 	}
 	return 20 * (1 - days/3)
+}
+
+// NotBeforePenalty returns a multiplier (0.2 to 1.0) based on how far away
+// the NotBefore date is. Tasks actionable now get 1.0, tasks 7+ days away
+// get 0.2, with linear interpolation in between.
+func NotBeforePenalty(notBefore *time.Time, now time.Time) float64 {
+	if notBefore == nil || !notBefore.After(now) {
+		return 1.0
+	}
+	days := notBefore.Sub(now).Hours() / 24
+	if days >= 7 {
+		return 0.2
+	}
+	return 1.0 - 0.8*days/7
 }
 
 // Round is a helper to round floats for test comparisons.

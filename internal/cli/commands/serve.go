@@ -108,6 +108,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 					Project:   st.Task.Project,
 					Section:   st.Task.Section,
 					UpNext:    st.Task.UpNext,
+					NotBefore: st.Task.NotBefore,
 				}
 			}
 			return tasks, nil
