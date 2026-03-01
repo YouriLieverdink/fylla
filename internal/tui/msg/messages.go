@@ -67,7 +67,10 @@ type TimerStoppedMsg struct {
 }
 
 // TimerTickMsg triggers timer display updates.
-type TimerTickMsg struct{}
+// Gen is a generation counter to deduplicate concurrent tick chains.
+type TimerTickMsg struct {
+	Gen int
+}
 
 // SyncPreviewMsg carries the dry-run sync result.
 type SyncPreviewMsg struct {

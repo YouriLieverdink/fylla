@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/iruoy/fylla/internal/task"
 	"github.com/spf13/cobra"
 )
 
@@ -110,6 +111,9 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 			return nil, fmt.Errorf("get summary: %w", err)
 		}
 
+		// Strip bracket estimate (e.g. [2h]) so keyword operations don't lose it
+		titleEst, summary := task.ParseTitleEstimate(summary)
+
 		changed := false
 
 		// Handle direct summary update: replace the base summary
@@ -177,6 +181,10 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 		}
 
 		if changed {
+			// Re-add bracket estimate if one was present
+			if titleEst > 0 {
+				summary = task.SetTitleEstimate(summary, titleEst)
+			}
 			if err := p.Source.UpdateSummary(ctx, p.TaskKey, summary); err != nil {
 				return nil, fmt.Errorf("update summary: %w", err)
 			}

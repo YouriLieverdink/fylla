@@ -68,6 +68,7 @@ type model struct {
 	timerSummary string
 	timerElapsed time.Duration
 	timerRunning bool
+	tickGen      int
 	toast        string
 	toastIsError bool
 	showHelp     bool
@@ -235,15 +236,16 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.timer.Err = mssg.Err
 		}
 		if m.timerRunning {
-			cmds = append(cmds, timerTickCmd())
+			m.tickGen++
+			cmds = append(cmds, timerTickCmd(m.tickGen))
 		}
 		return m, tea.Batch(cmds...)
 
 	case msg.TimerTickMsg:
-		if m.timerRunning {
+		if m.timerRunning && mssg.Gen == m.tickGen {
 			m.timerElapsed += time.Second
 			m.timer.Elapsed = m.timerElapsed
-			cmds = append(cmds, timerTickCmd())
+			cmds = append(cmds, timerTickCmd(m.tickGen))
 		}
 		return m, tea.Batch(cmds...)
 
@@ -266,7 +268,8 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 				label = mssg.TaskKey
 			}
 			m.setToast(fmt.Sprintf("Timer started for %s", label), false)
-			cmds = append(cmds, timerTickCmd())
+			m.tickGen++
+			cmds = append(cmds, timerTickCmd(m.tickGen))
 		}
 		cmds = append(cmds, clearToastCmd())
 		return m, tea.Batch(cmds...)

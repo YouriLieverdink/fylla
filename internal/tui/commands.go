@@ -92,9 +92,9 @@ func timerStatusCmd(cb Callbacks) tea.Cmd {
 	}
 }
 
-func timerTickCmd() tea.Cmd {
+func timerTickCmd(gen int) tea.Cmd {
 	return tea.Tick(time.Second, func(time.Time) tea.Msg {
-		return msg.TimerTickMsg{}
+		return msg.TimerTickMsg{Gen: gen}
 	})
 }
 
