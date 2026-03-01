@@ -26,6 +26,7 @@ type ScoredTask struct {
 	Project   string
 	Section   string
 	UpNext    bool
+	NoSplit   bool
 	NotBefore *time.Time
 }
 

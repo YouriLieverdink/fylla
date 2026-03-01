@@ -108,6 +108,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 					Project:   st.Task.Project,
 					Section:   st.Task.Section,
 					UpNext:    st.Task.UpNext,
+					NoSplit:   st.Task.NoSplit,
 					NotBefore: st.Task.NotBefore,
 				}
 			}
@@ -186,30 +187,51 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			_, err := RunConfigSet(ConfigSetParams{ConfigPath: cfgPath, Key: key, Value: value})
 			return err
 		},
-		AddTask: func(summary, project, issueType, estimate, dueDate, priority string) (string, string, error) {
+		AddTask: func(summary, project, section, issueType, description, estimate, dueDate, priority string) (string, string, error) {
 			result, err := RunAdd(ctx, AddParams{
-				Summary:   summary,
-				Project:   project,
-				IssueType: issueType,
-				Estimate:  estimate,
-				DueDate:   dueDate,
-				Priority:  priority,
-				Inline:    true,
-				Creator:   source,
+				Summary:     summary,
+				Project:     project,
+				Section:     section,
+				IssueType:   issueType,
+				Description: description,
+				Estimate:    estimate,
+				DueDate:     dueDate,
+				Priority:    priority,
+				Inline:      true,
+				Creator:     source,
 			})
 			if err != nil {
 				return "", "", err
 			}
 			return result.Key, result.Summary, nil
 		},
-		EditTask: func(taskKey, estimate, due, priority string) error {
-			_, err := RunEdit(ctx, EditParams{
-				TaskKey:  taskKey,
-				Estimate: estimate,
-				Due:      due,
-				Priority: priority,
+		EditTask: func(params tui.EditTaskParams) error {
+			ep := EditParams{
+				TaskKey:  params.TaskKey,
+				Summary:  params.Summary,
+				Estimate: params.Estimate,
+				Due:      params.Due,
+				Priority: params.Priority,
 				Source:   source,
-			})
+			}
+			if params.NotBefore != "" {
+				ep.NotBefore = params.NotBefore
+			}
+			if params.UpNext != nil {
+				if *params.UpNext {
+					ep.UpNext = true
+				} else {
+					ep.NoUpNext = true
+				}
+			}
+			if params.NoSplit != nil {
+				if *params.NoSplit {
+					ep.NoSplit = true
+				} else {
+					ep.NoNoSplit = true
+				}
+			}
+			_, err := RunEdit(ctx, ep)
 			return err
 		},
 		StopTimer: func(description string) (string, time.Duration, error) {
@@ -231,6 +253,15 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				return "", 0, err
 			}
 			return result.TaskKey, result.Elapsed, nil
+		},
+		ListProjects: func() ([]string, error) {
+			if pl, ok := source.(ProjectLister); ok {
+				return pl.ListProjects(ctx)
+			}
+			return nil, nil
+		},
+		Provider: func() string {
+			return cfg.ActiveProviders()[0]
 		},
 	}
 }

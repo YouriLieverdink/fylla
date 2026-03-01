@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -46,6 +47,7 @@ type formKind int
 const (
 	formNone formKind = iota
 	formAddTask
+	formAddTaskPending // waiting for project/section options to load
 	formEditTask
 	formSetConfig
 )
@@ -367,6 +369,41 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		m.toastIsError = false
 		return m, nil
 
+	case msg.FormOptionsMsg:
+		if m.formKind == formAddTaskPending {
+			projectField := components.FormFieldDef{Label: "Project", Placeholder: "Project key"}
+			if len(mssg.Projects) > 0 {
+				projectField = components.FormFieldDef{
+					Label:   "Project",
+					Kind:    components.FieldSelect,
+					Options: mssg.Projects,
+					Value:   mssg.Projects[0],
+				}
+			}
+			fields := []components.FormFieldDef{
+				{Label: "Summary", Placeholder: "Task summary"},
+				projectField,
+			}
+			if mssg.Provider == "jira" {
+				fields = append(fields, components.FormFieldDef{
+					Label: "Issue Type", Kind: components.FieldSelect,
+					Options: []string{"Task", "Bug", "Story", "Epic"}, Value: "Task",
+				})
+			}
+			fields = append(fields,
+				components.FormFieldDef{Label: "Description", Placeholder: "Description"},
+				components.FormFieldDef{Label: "Estimate", Placeholder: "e.g. 2h, 30m"},
+				components.FormFieldDef{Label: "Due Date", Placeholder: "e.g. 2025-03-01"},
+				components.FormFieldDef{Label: "Priority", Kind: components.FieldSelect, Options: []string{"Highest", "High", "Medium", "Low", "Lowest"}, Value: "Medium"},
+				components.FormFieldDef{Label: "Up Next", Kind: components.FieldToggle},
+				components.FormFieldDef{Label: "No Split", Kind: components.FieldToggle},
+				components.FormFieldDef{Label: "Not Before", Placeholder: "e.g. 2025-03-01"},
+			)
+			m.form = components.NewForm("Add Task", fields)
+			m.formKind = formAddTask
+		}
+		return m, nil
+
 	case msg.AutoRefreshMsg:
 		cmds = append(cmds, m.refreshActiveView(), autoRefreshCmd())
 		return m, tea.Batch(cmds...)
@@ -424,14 +461,8 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(mssg, keys.Search):
 		m.tasks.ToggleFilter()
 	case key.Matches(mssg, keys.Add):
-		m.form = components.NewForm("Add Task", []components.FormField{
-			{Label: "Summary", Placeholder: "Task summary"},
-			{Label: "Project", Placeholder: "Project key"},
-			{Label: "Estimate", Placeholder: "e.g. 2h, 30m"},
-			{Label: "Due Date", Placeholder: "e.g. 2025-03-01"},
-			{Label: "Priority", Placeholder: "Highest/High/Medium/Low/Lowest"},
-		})
-		m.formKind = formAddTask
+		m.formKind = formAddTaskPending
+		return m, loadFormOptionsCmd(m.cb)
 	case key.Matches(mssg, keys.Edit):
 		if t := m.tasks.SelectedTask(); t != nil {
 			estStr := ""
@@ -450,10 +481,28 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if t.DueDate != nil {
 				dueStr = t.DueDate.Format("2006-01-02")
 			}
-			m.form = components.NewForm(fmt.Sprintf("Edit %s", t.Key), []components.FormField{
+			priStr := priorityName(t.Priority)
+			summary := stripConstraints(t.Summary)
+			notBeforeStr := ""
+			if t.NotBefore != nil {
+				notBeforeStr = t.NotBefore.Format("2006-01-02")
+			}
+			upNextVal := "false"
+			if t.UpNext {
+				upNextVal = "true"
+			}
+			noSplitVal := "false"
+			if t.NoSplit {
+				noSplitVal = "true"
+			}
+			m.form = components.NewForm(fmt.Sprintf("Edit %s", t.Key), []components.FormFieldDef{
+				{Label: "Summary", Placeholder: "Task summary", Value: summary},
 				{Label: "Estimate", Placeholder: "e.g. 2h, 30m", Value: estStr},
 				{Label: "Due Date", Placeholder: "e.g. 2025-03-01", Value: dueStr},
-				{Label: "Priority", Placeholder: "Highest/High/Medium/Low/Lowest"},
+				{Label: "Priority", Kind: components.FieldSelect, Options: []string{"Highest", "High", "Medium", "Low", "Lowest"}, Value: priStr},
+				{Label: "Up Next", Kind: components.FieldToggle, Value: upNextVal},
+				{Label: "No Split", Kind: components.FieldToggle, Value: noSplitVal},
+				{Label: "Not Before", Placeholder: "e.g. 2025-03-01", Value: notBeforeStr},
 			})
 			m.formKind = formEditTask
 			m.formTaskKey = t.Key
@@ -519,7 +568,7 @@ func (m model) updateConfig(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.config.Loading = true
 		return m, loadConfigCmd(m.cb)
 	case key.Matches(mssg, keys.Edit):
-		m.form = components.NewForm("Set Config", []components.FormField{
+		m.form = components.NewForm("Set Config", []components.FormFieldDef{
 			{Label: "Key", Placeholder: "e.g. scheduling.windowDays"},
 			{Label: "Value", Placeholder: "new value"},
 		})
@@ -575,21 +624,104 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case mssg.Type == tea.KeyShiftTab:
 		m.form.FocusPrev()
 		return m, nil
+	case mssg.Type == tea.KeyLeft:
+		if m.form.IsSelectField() {
+			m.form.CycleSelectLeft()
+			return m, nil
+		}
+		if m.form.IsToggleField() {
+			m.form.ToggleValue()
+			return m, nil
+		}
+		if ti := m.form.FocusedTextInput(); ti != nil {
+			var cmd tea.Cmd
+			*ti, cmd = ti.Update(mssg)
+			return m, cmd
+		}
+		return m, nil
+	case mssg.Type == tea.KeyRight:
+		if m.form.IsSelectField() {
+			m.form.CycleSelectRight()
+			return m, nil
+		}
+		if m.form.IsToggleField() {
+			m.form.ToggleValue()
+			return m, nil
+		}
+		if ti := m.form.FocusedTextInput(); ti != nil {
+			var cmd tea.Cmd
+			*ti, cmd = ti.Update(mssg)
+			return m, cmd
+		}
+		return m, nil
+	case mssg.Type == tea.KeySpace:
+		if m.form.IsToggleField() {
+			m.form.ToggleValue()
+			return m, nil
+		}
+		if ti := m.form.FocusedTextInput(); ti != nil {
+			var cmd tea.Cmd
+			*ti, cmd = ti.Update(mssg)
+			return m, cmd
+		}
+		return m, nil
 	case key.Matches(mssg, keys.Enter):
 		m.form.Active = false
 		vals := m.form.Values()
 		switch m.formKind {
 		case formAddTask:
-			summary := vals[0]
+			summary := m.form.ValueByLabel("Summary")
 			if summary == "" {
 				m.formKind = formNone
 				return m, nil
 			}
+			if nb := m.form.ValueByLabel("Not Before"); nb != "" {
+				summary += " not before " + nb
+			}
+			if m.form.ValueByLabel("Up Next") == "true" {
+				summary += " upnext"
+			}
+			if m.form.ValueByLabel("No Split") == "true" {
+				summary += " nosplit"
+			}
 			m.formKind = formNone
-			return m, addTaskCmd(m.cb, summary, vals[1], "", vals[2], vals[3], vals[4])
+			return m, addTaskCmd(m.cb, summary,
+				m.form.ValueByLabel("Project"), "",
+				m.form.ValueByLabel("Issue Type"),
+				m.form.ValueByLabel("Description"),
+				m.form.ValueByLabel("Estimate"),
+				m.form.ValueByLabel("Due Date"),
+				m.form.ValueByLabel("Priority"),
+			)
 		case formEditTask:
+			// vals: Summary, Estimate, DueDate, Priority, UpNext, NoSplit, NotBefore
 			m.formKind = formNone
-			return m, editTaskCmd(m.cb, m.formTaskKey, vals[0], vals[1], vals[2])
+			var upNext *bool
+			if vals[4] == "true" {
+				v := true
+				upNext = &v
+			} else {
+				v := false
+				upNext = &v
+			}
+			var noSplit *bool
+			if vals[5] == "true" {
+				v := true
+				noSplit = &v
+			} else {
+				v := false
+				noSplit = &v
+			}
+			return m, editTaskCmd(m.cb, EditTaskParams{
+				TaskKey:   m.formTaskKey,
+				Summary:   vals[0],
+				Estimate:  vals[1],
+				Due:       vals[2],
+				Priority:  vals[3],
+				UpNext:    upNext,
+				NoSplit:   noSplit,
+				NotBefore: vals[6],
+			})
 		case formSetConfig:
 			cfgKey := vals[0]
 			cfgVal := vals[1]
@@ -603,10 +735,13 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.formKind = formNone
 		return m, nil
 	default:
-		// Pass key to focused input
-		var cmd tea.Cmd
-		m.form.Fields[m.form.Focus], cmd = m.form.Fields[m.form.Focus].Update(mssg)
-		return m, cmd
+		// Pass key to focused text input
+		if ti := m.form.FocusedTextInput(); ti != nil {
+			var cmd tea.Cmd
+			*ti, cmd = ti.Update(mssg)
+			return m, cmd
+		}
+		return m, nil
 	}
 }
 
@@ -747,6 +882,29 @@ func (m model) renderHelp() string {
 		Render(b.String())
 
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
+}
+
+var priorityLevelNames = map[int]string{
+	1: "Highest",
+	2: "High",
+	3: "Medium",
+	4: "Low",
+	5: "Lowest",
+}
+
+func priorityName(level int) string {
+	if name, ok := priorityLevelNames[level]; ok {
+		return name
+	}
+	return "Medium"
+}
+
+func stripConstraints(summary string) string {
+	s := regexp.MustCompile(`(?i)\bupnext\b`).ReplaceAllString(summary, "")
+	s = regexp.MustCompile(`(?i)\bnosplit\b`).ReplaceAllString(s, "")
+	s = regexp.MustCompile(`(?i)\bnot before \S+`).ReplaceAllString(s, "")
+	s = strings.TrimSpace(regexp.MustCompile(`\s{2,}`).ReplaceAllString(s, " "))
+	return s
 }
 
 // Run starts the TUI application.

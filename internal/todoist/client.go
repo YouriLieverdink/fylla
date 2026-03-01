@@ -202,6 +202,18 @@ func (c *Client) loadSections(ctx context.Context) error {
 	return nil
 }
 
+// ListSections returns available section names.
+func (c *Client) ListSections(ctx context.Context) ([]string, error) {
+	if err := c.loadSections(ctx); err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(c.sections))
+	for _, name := range c.sections {
+		names = append(names, name)
+	}
+	return names, nil
+}
+
 func (c *Client) sectionName(id string) string {
 	if id == "" || c.sections == nil {
 		return ""
@@ -341,6 +353,17 @@ func (c *Client) CreateTask(ctx context.Context, input task.CreateInput) (string
 			for id, name := range c.projects {
 				if strings.EqualFold(name, input.Project) {
 					payload["project_id"] = id
+					break
+				}
+			}
+		}
+	}
+
+	if input.Section != "" {
+		if err := c.loadSections(ctx); err == nil {
+			for id, name := range c.sections {
+				if strings.EqualFold(name, input.Section) {
+					payload["section_id"] = id
 					break
 				}
 			}

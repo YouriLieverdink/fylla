@@ -104,5 +104,12 @@ type ToastMsg struct {
 // ClearToastMsg clears the current toast.
 type ClearToastMsg struct{}
 
+// FormOptionsMsg carries project/section lists for populating add form selectors.
+type FormOptionsMsg struct {
+	Projects []string
+	Provider string // primary provider name (e.g. "jira", "todoist")
+	Err      error
+}
+
 // AutoRefreshMsg triggers an auto-refresh of the current view.
 type AutoRefreshMsg struct{}

@@ -7,6 +7,18 @@ import (
 	"github.com/iruoy/fylla/internal/tui/msg"
 )
 
+// EditTaskParams holds all parameters for editing a task from the TUI.
+type EditTaskParams struct {
+	TaskKey   string
+	Summary   string
+	Estimate  string
+	Due       string
+	Priority  string
+	UpNext    *bool
+	NoSplit   *bool
+	NotBefore string
+}
+
 // Callbacks holds function references that the TUI uses to invoke business logic.
 type Callbacks struct {
 	LoadToday   func() ([]msg.FyllaEvent, error)
@@ -20,9 +32,11 @@ type Callbacks struct {
 	ClearEvents func() (int, error)
 	LoadConfig  func() (string, error)
 	SetConfig   func(key, value string) error
-	AddTask     func(summary, project, issueType, estimate, dueDate, priority string) (key, summaryOut string, err error)
-	EditTask    func(taskKey, estimate, due, priority string) error
-	StopTimer   func(description string) (taskKey string, elapsed time.Duration, err error)
+	AddTask      func(summary, project, section, issueType, description, estimate, dueDate, priority string) (key, summaryOut string, err error)
+	EditTask     func(params EditTaskParams) error
+	StopTimer    func(description string) (taskKey string, elapsed time.Duration, err error)
+	ListProjects func() ([]string, error)
+	Provider     func() string
 }
 
 func loadTodayCmd(cb Callbacks) tea.Cmd {
@@ -113,17 +127,17 @@ func setConfigCmd(cb Callbacks, key, value string) tea.Cmd {
 	}
 }
 
-func addTaskCmd(cb Callbacks, summary, project, issueType, estimate, dueDate, priority string) tea.Cmd {
+func addTaskCmd(cb Callbacks, summary, project, section, issueType, description, estimate, dueDate, priority string) tea.Cmd {
 	return func() tea.Msg {
-		key, summaryOut, err := cb.AddTask(summary, project, issueType, estimate, dueDate, priority)
+		key, summaryOut, err := cb.AddTask(summary, project, section, issueType, description, estimate, dueDate, priority)
 		return msg.TaskAddedMsg{Key: key, Summary: summaryOut, Err: err}
 	}
 }
 
-func editTaskCmd(cb Callbacks, taskKey, estimate, due, priority string) tea.Cmd {
+func editTaskCmd(cb Callbacks, params EditTaskParams) tea.Cmd {
 	return func() tea.Msg {
-		err := cb.EditTask(taskKey, estimate, due, priority)
-		return msg.TaskEditedMsg{TaskKey: taskKey, Err: err}
+		err := cb.EditTask(params)
+		return msg.TaskEditedMsg{TaskKey: params.TaskKey, Err: err}
 	}
 }
 
@@ -131,6 +145,23 @@ func stopTimerCmd(cb Callbacks, description string) tea.Cmd {
 	return func() tea.Msg {
 		taskKey, elapsed, err := cb.StopTimer(description)
 		return msg.TimerStoppedMsg{TaskKey: taskKey, Elapsed: elapsed, Err: err}
+	}
+}
+
+func loadFormOptionsCmd(cb Callbacks) tea.Cmd {
+	return func() tea.Msg {
+		var projects []string
+		if cb.ListProjects != nil {
+			p, err := cb.ListProjects()
+			if err == nil {
+				projects = p
+			}
+		}
+		var provider string
+		if cb.Provider != nil {
+			provider = cb.Provider()
+		}
+		return msg.FormOptionsMsg{Projects: projects, Provider: provider}
 	}
 }
 

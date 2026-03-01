@@ -36,6 +36,7 @@ type ProjectLister interface {
 // AddParams holds inputs for the add command.
 type AddParams struct {
 	Project     string
+	Section     string
 	IssueType   string
 	Summary     string
 	Description string
@@ -58,6 +59,7 @@ type AddResult struct {
 func BuildCreateInput(p AddParams) (task.CreateInput, error) {
 	input := task.CreateInput{
 		Project:     p.Project,
+		Section:     p.Section,
 		Summary:     p.Summary,
 		Description: p.Description,
 		IssueType:   p.IssueType,

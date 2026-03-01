@@ -22,6 +22,7 @@ type Task struct {
 // CreateInput holds the fields for creating a new task.
 type CreateInput struct {
 	Project     string
+	Section     string
 	IssueType   string
 	Summary     string
 	Description string
