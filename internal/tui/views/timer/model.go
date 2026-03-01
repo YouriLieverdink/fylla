@@ -21,6 +21,8 @@ var (
 type Model struct {
 	TaskKey  string
 	Summary  string
+	Project  string
+	Section  string
 	Elapsed  time.Duration
 	Running  bool
 	Loading  bool
@@ -60,8 +62,8 @@ func (m Model) View() string {
 	}
 
 	b.WriteString("  " + runningStyle.Render("RUNNING") + "\n\n")
-	label := m.Summary
-	if label == "" {
+	label := formatPrefix(m.Project, m.Section) + m.Summary
+	if m.Summary == "" {
 		label = m.TaskKey
 	}
 	b.WriteString("  Task: " + taskStyle.Render(label) + "\n\n")
@@ -78,4 +80,14 @@ func (m Model) View() string {
 	b.WriteString(hintStyle.Render("  " + hints))
 
 	return b.String()
+}
+
+func formatPrefix(project, section string) string {
+	if project != "" && section != "" {
+		return project + " / " + section + ": "
+	}
+	if project != "" {
+		return project + ": "
+	}
+	return ""
 }

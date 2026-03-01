@@ -43,6 +43,8 @@ type TaskEditedMsg struct {
 type TimerStatusMsg struct {
 	TaskKey string
 	Summary string
+	Project string
+	Section string
 	Elapsed time.Duration
 	Running bool
 	Err     error
@@ -52,6 +54,8 @@ type TimerStatusMsg struct {
 type TimerStartedMsg struct {
 	TaskKey string
 	Summary string
+	Project string
+	Section string
 	Err     error
 }
 

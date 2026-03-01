@@ -27,7 +27,7 @@ func TestStop_CalendarEventUpdated(t *testing.T) {
 	startTime := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
 
 	timerPath := filepath.Join(t.TempDir(), "timer.json")
-	_, err := timer.Start("PROJ-1", startTime, timerPath)
+	_, err := timer.Start("PROJ-1", "", "", startTime, timerPath)
 	if err != nil {
 		t.Fatalf("timer.Start: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestStop_NoCalendarGracefullySkipped(t *testing.T) {
 	startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
 	timerPath := filepath.Join(t.TempDir(), "timer.json")
-	_, err := timer.Start("PROJ-2", startTime, timerPath)
+	_, err := timer.Start("PROJ-2", "", "", startTime, timerPath)
 	if err != nil {
 		t.Fatalf("timer.Start: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestStop_RemainingEstimateMessages(t *testing.T) {
 		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
 		timerPath := filepath.Join(t.TempDir(), "timer.json")
-		_, err := timer.Start("PROJ-3", startTime, timerPath)
+		_, err := timer.Start("PROJ-3", "", "", startTime, timerPath)
 		if err != nil {
 			t.Fatalf("timer.Start: %v", err)
 		}
@@ -158,7 +158,7 @@ func TestStop_RemainingEstimateMessages(t *testing.T) {
 		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
 		timerPath := filepath.Join(t.TempDir(), "timer.json")
-		_, err := timer.Start("PROJ-4", startTime, timerPath)
+		_, err := timer.Start("PROJ-4", "", "", startTime, timerPath)
 		if err != nil {
 			t.Fatalf("timer.Start: %v", err)
 		}
@@ -204,7 +204,7 @@ func TestStop_GitHubKeyResolvesToJira(t *testing.T) {
 		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
 		timerPath := filepath.Join(t.TempDir(), "timer.json")
-		_, err := timer.Start("fylla#42", startTime, timerPath)
+		_, err := timer.Start("fylla#42", "", "", startTime, timerPath)
 		if err != nil {
 			t.Fatalf("timer.Start: %v", err)
 		}
@@ -244,7 +244,7 @@ func TestStop_GitHubKeyResolvesToJira(t *testing.T) {
 		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
 		timerPath := filepath.Join(t.TempDir(), "timer.json")
-		_, err := timer.Start("fylla#99", startTime, timerPath)
+		_, err := timer.Start("fylla#99", "", "", startTime, timerPath)
 		if err != nil {
 			t.Fatalf("timer.Start: %v", err)
 		}
@@ -278,7 +278,7 @@ func TestStop_GitHubKeyResolvesToJira(t *testing.T) {
 		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
 		timerPath := filepath.Join(t.TempDir(), "timer.json")
-		_, err := timer.Start("fylla#99", startTime, timerPath)
+		_, err := timer.Start("fylla#99", "", "", startTime, timerPath)
 		if err != nil {
 			t.Fatalf("timer.Start: %v", err)
 		}
@@ -312,7 +312,7 @@ func TestStop_GitHubKeyResolvesToJira(t *testing.T) {
 		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
 		timerPath := filepath.Join(t.TempDir(), "timer.json")
-		_, err := timer.Start("fylla#42", startTime, timerPath)
+		_, err := timer.Start("fylla#42", "", "", startTime, timerPath)
 		if err != nil {
 			t.Fatalf("timer.Start: %v", err)
 		}

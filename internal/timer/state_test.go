@@ -18,7 +18,7 @@ func TestTIMER001_StartTimerStoresTaskKeyAndStartTime(t *testing.T) {
 		path := tmpPath(t)
 		now := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		s, err := Start("PROJ-123", now, path)
+		s, err := Start("PROJ-123", "", "", now, path)
 		if err != nil {
 			t.Fatalf("Start: %v", err)
 		}
@@ -34,7 +34,7 @@ func TestTIMER001_StartTimerStoresTaskKeyAndStartTime(t *testing.T) {
 		path := tmpPath(t)
 		now := time.Date(2025, 6, 15, 14, 30, 0, 0, time.UTC)
 
-		s, err := Start("ADMIN-42", now, path)
+		s, err := Start("ADMIN-42", "", "", now, path)
 		if err != nil {
 			t.Fatalf("Start: %v", err)
 		}
@@ -49,7 +49,7 @@ func TestTIMER002_TimerStatePersisted(t *testing.T) {
 		path := tmpPath(t)
 		now := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if _, err := Start("PROJ-123", now, path); err != nil {
+		if _, err := Start("PROJ-123", "", "", now, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		if _, err := os.Stat(path); err != nil {
@@ -61,7 +61,7 @@ func TestTIMER002_TimerStatePersisted(t *testing.T) {
 		path := tmpPath(t)
 		now := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if _, err := Start("PROJ-123", now, path); err != nil {
+		if _, err := Start("PROJ-123", "", "", now, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 
@@ -98,7 +98,7 @@ func TestTIMER002_TimerStatePersisted(t *testing.T) {
 		path := tmpPath(t)
 		now := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if _, err := Start("PROJ-123", now, path); err != nil {
+		if _, err := Start("PROJ-123", "", "", now, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		loaded, err := Load(path)
@@ -131,7 +131,7 @@ func TestTIMER003_StopTimerCalculatesElapsed(t *testing.T) {
 		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 		stop := start.Add(5 * time.Minute)
 
-		if _, err := Start("PROJ-123", start, path); err != nil {
+		if _, err := Start("PROJ-123", "", "", start, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		result, err := Stop(stop, 5, path)
@@ -147,7 +147,7 @@ func TestTIMER003_StopTimerCalculatesElapsed(t *testing.T) {
 		path := tmpPath(t)
 		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if _, err := Start("PROJ-123", start, path); err != nil {
+		if _, err := Start("PROJ-123", "", "", start, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		if _, err := Stop(start.Add(10*time.Minute), 5, path); err != nil {
@@ -170,7 +170,7 @@ func TestTIMER003_StopTimerCalculatesElapsed(t *testing.T) {
 		path := tmpPath(t)
 		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if _, err := Start("PROJ-456", start, path); err != nil {
+		if _, err := Start("PROJ-456", "", "", start, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		result, err := Stop(start.Add(30*time.Minute), 5, path)
@@ -193,7 +193,7 @@ func TestTIMER004_StopPromptForDescription(t *testing.T) {
 		path := tmpPath(t)
 		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if _, err := Start("PROJ-123", start, path); err != nil {
+		if _, err := Start("PROJ-123", "", "", start, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		result, err := Stop(start.Add(15*time.Minute), 5, path)
@@ -212,7 +212,7 @@ func TestTIMER004_StopPromptForDescription(t *testing.T) {
 		path := tmpPath(t)
 		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if _, err := Start("PROJ-123", start, path); err != nil {
+		if _, err := Start("PROJ-123", "", "", start, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		result, err := Stop(start.Add(7*time.Minute), 5, path)
@@ -259,7 +259,7 @@ func TestTIMER005_TimeRoundedToNearest5Minutes(t *testing.T) {
 		path := tmpPath(t)
 		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if _, err := Start("PROJ-123", start, path); err != nil {
+		if _, err := Start("PROJ-123", "", "", start, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		result, err := Stop(start.Add(7*time.Minute), 10, path)
@@ -278,7 +278,7 @@ func TestTIMER006_StatusShowsRunningTaskAndElapsed(t *testing.T) {
 		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 		now := start.Add(83 * time.Minute) // 1h 23m
 
-		if _, err := Start("PROJ-123", start, path); err != nil {
+		if _, err := Start("PROJ-123", "", "", start, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		state, elapsed, err := Status(now, path)
@@ -314,7 +314,7 @@ func TestTIMER006_StatusShowsRunningTaskAndElapsed(t *testing.T) {
 		path := tmpPath(t)
 		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if _, err := Start("PROJ-123", start, path); err != nil {
+		if _, err := Start("PROJ-123", "", "", start, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 

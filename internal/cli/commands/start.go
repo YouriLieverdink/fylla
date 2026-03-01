@@ -12,13 +12,15 @@ import (
 // StartParams holds inputs for the start command.
 type StartParams struct {
 	TaskKey   string
+	Project   string
+	Section   string
 	TimerPath string
 	Now       time.Time
 }
 
 // RunStart begins a timer for the specified task.
 func RunStart(p StartParams) (*timer.State, error) {
-	return timer.Start(p.TaskKey, p.Now, p.TimerPath)
+	return timer.Start(p.TaskKey, p.Project, p.Section, p.Now, p.TimerPath)
 }
 
 // PrintStartResult writes the start confirmation to the given writer.

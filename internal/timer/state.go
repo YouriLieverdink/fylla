@@ -13,6 +13,8 @@ import (
 type State struct {
 	TaskKey   string    `json:"taskKey"`
 	StartTime time.Time `json:"startTime"`
+	Project   string    `json:"project,omitempty"`
+	Section   string    `json:"section,omitempty"`
 }
 
 // StopResult holds the computed values when a timer is stopped.
@@ -33,8 +35,8 @@ func DefaultPath() (string, error) {
 }
 
 // Start creates a new timer state and persists it to the given path.
-func Start(taskKey string, now time.Time, path string) (*State, error) {
-	s := &State{TaskKey: taskKey, StartTime: now}
+func Start(taskKey, project, section string, now time.Time, path string) (*State, error) {
+	s := &State{TaskKey: taskKey, StartTime: now, Project: project, Section: section}
 	if err := save(s, path); err != nil {
 		return nil, fmt.Errorf("start timer: %w", err)
 	}

@@ -18,6 +18,8 @@ type StatusParams struct {
 // StatusResult holds the output of a status operation.
 type StatusResult struct {
 	TaskKey string
+	Project string
+	Section string
 	Elapsed time.Duration
 }
 
@@ -32,6 +34,8 @@ func RunStatus(p StatusParams) (*StatusResult, error) {
 	}
 	return &StatusResult{
 		TaskKey: state.TaskKey,
+		Project: state.Project,
+		Section: state.Section,
 		Elapsed: elapsed,
 	}, nil
 }

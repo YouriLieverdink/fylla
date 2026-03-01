@@ -123,27 +123,40 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			_, err := RunDelete(ctx, DeleteParams{TaskKey: taskKey, Deleter: source})
 			return err
 		},
-		StartTimer: func(taskKey string) error {
+		StartTimer: func(taskKey, project, section string) error {
 			path, err := timer.DefaultPath()
 			if err != nil {
 				return err
 			}
-			_, err = RunStart(StartParams{TaskKey: taskKey, TimerPath: path, Now: time.Now()})
+			_, err = RunStart(StartParams{TaskKey: taskKey, Project: project, Section: section, TimerPath: path, Now: time.Now()})
 			return err
 		},
-		TimerStatus: func() (string, time.Duration, bool, error) {
+		TimerStatus: func() (string, string, string, string, time.Duration, bool, error) {
 			path, err := timer.DefaultPath()
 			if err != nil {
-				return "", 0, false, err
+				return "", "", "", "", 0, false, err
 			}
 			result, err := RunStatus(StatusParams{TimerPath: path, Now: time.Now()})
 			if err != nil {
-				return "", 0, false, err
+				return "", "", "", "", 0, false, err
 			}
 			if result == nil {
-				return "", 0, false, nil
+				return "", "", "", "", 0, false, nil
 			}
-			return result.TaskKey, result.Elapsed, true, nil
+			summary, _ := source.GetSummary(ctx, result.TaskKey)
+			project, section := result.Project, result.Section
+			if project == "" {
+				if tasks, err := fetcher.FetchTasks(ctx, query); err == nil {
+					for _, t := range tasks {
+						if t.Key == result.TaskKey {
+							project = t.Project
+							section = t.Section
+							break
+						}
+					}
+				}
+			}
+			return result.TaskKey, summary, project, section, result.Elapsed, true, nil
 		},
 		SyncPreview: func() (*msg.SyncResult, error) {
 			now := time.Now()

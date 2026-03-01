@@ -51,6 +51,7 @@ const (
 	formEditTask
 	formSetConfig
 	formSnoozeTask
+	formStopTimer
 )
 
 type model struct {
@@ -225,6 +226,8 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.timerRunning = mssg.Running
 			m.timer.TaskKey = mssg.TaskKey
 			m.timer.Summary = mssg.Summary
+			m.timer.Project = mssg.Project
+			m.timer.Section = mssg.Section
 			m.timer.Elapsed = mssg.Elapsed
 			m.timer.Running = mssg.Running
 			m.timer.Err = nil
@@ -254,6 +257,8 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.timerRunning = true
 			m.timer.TaskKey = mssg.TaskKey
 			m.timer.Summary = mssg.Summary
+			m.timer.Project = mssg.Project
+			m.timer.Section = mssg.Section
 			m.timer.Elapsed = 0
 			m.timer.Running = true
 			label := mssg.Summary
@@ -321,6 +326,8 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.timer.Running = false
 			m.timer.TaskKey = ""
 			m.timer.Summary = ""
+			m.timer.Project = ""
+			m.timer.Section = ""
 			m.timer.Elapsed = 0
 			m.setToast(fmt.Sprintf("Timer stopped for %s", stoppedLabel), false)
 		}
@@ -470,7 +477,7 @@ func (m model) updateTimeline(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, loadTodayCmd(m.cb)
 	case key.Matches(mssg, keys.Enter), key.Matches(mssg, keys.Timer):
 		if e := m.timeline.SelectedEvent(); e != nil && !e.IsCalendarEvent && e.TaskKey != "" {
-			return m, startTimerCmd(m.cb, e.TaskKey, e.Summary)
+			return m, startTimerCmd(m.cb, e.TaskKey, e.Summary, e.Project, e.Section)
 		}
 	case key.Matches(mssg, keys.Done):
 		if e := m.timeline.SelectedEvent(); e != nil && !e.IsCalendarEvent && e.TaskKey != "" {
@@ -495,7 +502,7 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, loadTasksCmd(m.cb)
 	case key.Matches(mssg, keys.Enter), key.Matches(mssg, keys.Timer):
 		if t := m.tasks.SelectedTask(); t != nil {
-			return m, startTimerCmd(m.cb, t.Key, t.Summary)
+			return m, startTimerCmd(m.cb, t.Key, t.Summary, t.Project, t.Section)
 		}
 	case key.Matches(mssg, keys.Done):
 		if t := m.tasks.SelectedTask(); t != nil {
@@ -645,7 +652,11 @@ func (m model) updateTimer(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, timerStatusCmd(m.cb)
 	case key.Matches(mssg, keys.Stop):
 		if m.timerRunning {
-			return m, stopTimerCmd(m.cb, "")
+			m.form = components.NewForm("Stop Timer", []components.FormFieldDef{
+				{Label: "Comment", Placeholder: "What did you work on?"},
+			})
+			m.formKind = formStopTimer
+			return m, nil
 		}
 	}
 	return m, nil
@@ -791,6 +802,10 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.formKind = formNone
 			return m, snoozeTaskCmd(m.cb, m.formTaskKey, duration)
+		case formStopTimer:
+			comment := m.form.ValueByLabel("Comment")
+			m.formKind = formNone
+			return m, stopTimerCmd(m.cb, comment)
 		case formSetConfig:
 			cfgKey := vals[0]
 			cfgVal := vals[1]

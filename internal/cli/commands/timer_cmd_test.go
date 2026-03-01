@@ -111,7 +111,7 @@ func TestCLI011_stop_ends_timer_and_logs(t *testing.T) {
 		stopTime := startTime.Add(1*time.Hour + 25*time.Minute)
 
 		// Start timer first
-		_, err := timer.Start("PROJ-123", startTime, timerPath)
+		_, err := timer.Start("PROJ-123", "", "", startTime, timerPath)
 		if err != nil {
 			t.Fatalf("Start: %v", err)
 		}
@@ -143,7 +143,7 @@ func TestCLI011_stop_ends_timer_and_logs(t *testing.T) {
 		startTime := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
 		stopTime := startTime.Add(45 * time.Minute)
 
-		_, err := timer.Start("PROJ-456", startTime, timerPath)
+		_, err := timer.Start("PROJ-456", "", "", startTime, timerPath)
 		if err != nil {
 			t.Fatalf("Start: %v", err)
 		}
@@ -200,7 +200,7 @@ func TestCLI012_stop_description_flag(t *testing.T) {
 		startTime := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
 		stopTime := startTime.Add(30 * time.Minute)
 
-		_, err := timer.Start("PROJ-789", startTime, timerPath)
+		_, err := timer.Start("PROJ-789", "", "", startTime, timerPath)
 		if err != nil {
 			t.Fatalf("Start: %v", err)
 		}
@@ -251,7 +251,7 @@ func TestCLI013_status_shows_running_task(t *testing.T) {
 		startTime := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
 		checkTime := startTime.Add(1*time.Hour + 23*time.Minute)
 
-		_, err := timer.Start("PROJ-123", startTime, timerPath)
+		_, err := timer.Start("PROJ-123", "", "", startTime, timerPath)
 		if err != nil {
 			t.Fatalf("Start: %v", err)
 		}
