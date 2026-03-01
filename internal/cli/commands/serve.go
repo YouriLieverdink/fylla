@@ -107,9 +107,10 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 					Score:     st.Score,
 					Project:   st.Task.Project,
 					Section:   st.Task.Section,
-					UpNext:    st.Task.UpNext,
-					NoSplit:   st.Task.NoSplit,
-					NotBefore: st.Task.NotBefore,
+					UpNext:       st.Task.UpNext,
+					NoSplit:      st.Task.NoSplit,
+					NotBefore:    st.Task.NotBefore,
+					NotBeforeRaw: st.Task.NotBeforeRaw,
 				}
 			}
 			return tasks, nil
@@ -262,6 +263,52 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 		},
 		Provider: func() string {
 			return cfg.ActiveProviders()[0]
+		},
+		SnoozeTask: func(taskKey, target string) error {
+			_, err := RunSnooze(ctx, SnoozeParams{
+				TaskKey: taskKey,
+				Target:  target,
+				Source:  source,
+			})
+			return err
+		},
+		ViewTask: func(taskKey string) (*msg.ViewResult, error) {
+			result, err := RunView(ctx, ViewParams{
+				TaskKey: taskKey,
+				Source:  source,
+			})
+			if err != nil {
+				return nil, err
+			}
+			return &msg.ViewResult{
+				Key:       result.Key,
+				Summary:   result.Summary,
+				Priority:  result.Priority,
+				Estimate:  result.Estimate,
+				DueDate:   result.DueDate,
+				NotBefore: result.NotBefore,
+				UpNext:    result.UpNext,
+				NoSplit:   result.NoSplit,
+			}, nil
+		},
+		LoadReport: func(days int) (*msg.ReportResult, error) {
+			result, err := RunReport(ctx, ReportParams{
+				Cal:  cal,
+				Cfg:  cfg,
+				Now:  time.Now(),
+				Days: days,
+			})
+			if err != nil {
+				return nil, err
+			}
+			return &msg.ReportResult{
+				Start:       result.Start,
+				End:         result.End,
+				TasksDone:   result.TasksDone,
+				TaskTime:    result.TaskTime,
+				MeetingTime: result.MeetingTime,
+				TotalEvents: result.TotalEvents,
+			}, nil
 		},
 	}
 }

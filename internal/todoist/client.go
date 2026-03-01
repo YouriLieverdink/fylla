@@ -73,7 +73,9 @@ type paginatedResults[T any] struct {
 }
 
 type todoistDue struct {
-	Date string `json:"date"` // YYYY-MM-DD
+	Date        string `json:"date"`         // YYYY-MM-DD
+	IsRecurring bool   `json:"is_recurring"` // true if task repeats
+	String      string `json:"string"`       // human-readable recurrence ("every Monday")
 }
 
 type todoistDuration struct {
@@ -279,11 +281,17 @@ func (c *Client) parseTask(t todoistTask) task.Task {
 	}
 
 	// Extract scheduling constraints from summary
-	cleaned, notBefore, upNext, noSplit := task.ExtractConstraints(result.Summary, time.Now(), result.DueDate)
+	cleaned, notBefore, notBeforeRaw, upNext, noSplit := task.ExtractConstraints(result.Summary, time.Now(), result.DueDate)
 	result.Summary = cleaned
 	result.NotBefore = notBefore
+	result.NotBeforeRaw = notBeforeRaw
 	result.UpNext = upNext
 	result.NoSplit = noSplit
+
+	// Parse Todoist native recurrence
+	if t.Due != nil && t.Due.IsRecurring && t.Due.String != "" {
+		result.Recurrence = parseTodoistRecurrence(t.Due.String)
+	}
 
 	return result
 }
@@ -629,6 +637,20 @@ func (c *Client) UpdateSummary(ctx context.Context, taskID string, summary strin
 		return fmt.Errorf("todoist update summary: status %d: %s", resp.StatusCode, string(body))
 	}
 	return nil
+}
+
+// parseTodoistRecurrence converts a Todoist recurrence string to a task.Recurrence.
+func parseTodoistRecurrence(s string) *task.Recurrence {
+	// Todoist uses strings like "every day", "every mon, wed", "every! weekday"
+	// Normalize: strip "every" prefix and "!" (strict marker)
+	lower := strings.ToLower(strings.TrimSpace(s))
+	lower = strings.TrimPrefix(lower, "every")
+	lower = strings.TrimPrefix(lower, "!")
+	lower = strings.TrimSpace(lower)
+
+	// Wrap in "(every ...)" to reuse the shared parser
+	_, rec := task.ExtractRecurrence("(" + "every " + lower + ")")
+	return rec
 }
 
 // UpdatePriority sets the priority on a Todoist task.

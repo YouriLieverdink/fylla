@@ -11,6 +11,7 @@ type Config struct {
 	Jira          JiraConfig                       `yaml:"jira"`
 	Todoist       TodoistConfig                    `yaml:"todoist"`
 	GitHub        GitHubConfig                     `yaml:"github"`
+	Local         LocalConfig                      `yaml:"local"`
 	Calendar      CalendarConfig                   `yaml:"calendar"`
 	Scheduling    SchedulingConfig                 `yaml:"scheduling"`
 	BusinessHours []BusinessHoursConfig            `yaml:"businessHours"`
@@ -50,6 +51,13 @@ type GitHubConfig struct {
 	Credentials  string   `yaml:"credentials"`
 	DefaultQuery string   `yaml:"defaultQuery"`
 	Repos        []string `yaml:"repos"`
+}
+
+// LocalConfig holds local task provider settings.
+type LocalConfig struct {
+	StorePath      string `yaml:"storePath"`
+	DefaultFilter  string `yaml:"defaultFilter"`
+	DefaultProject string `yaml:"defaultProject"`
 }
 
 // CalendarConfig holds Google Calendar settings.
@@ -97,7 +105,7 @@ func (c *Config) Validate() error {
 		seen := make(map[string]bool)
 		for _, p := range c.Providers {
 			switch p {
-			case "jira", "todoist", "github":
+			case "jira", "todoist", "github", "local":
 			default:
 				return fmt.Errorf("unknown provider %q (must be 'jira', 'todoist', or 'github')", p)
 			}

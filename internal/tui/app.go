@@ -50,6 +50,7 @@ const (
 	formAddTaskPending // waiting for project/section options to load
 	formEditTask
 	formSetConfig
+	formSnoozeTask
 )
 
 type model struct {
@@ -76,6 +77,8 @@ type model struct {
 	form         components.Form
 	formKind     formKind
 	formTaskKey  string
+	viewDetail   *msg.ViewResult
+	reportResult *msg.ReportResult
 }
 
 func initialModel(deps Deps) model {
@@ -132,6 +135,22 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.showHelp {
 			if key.Matches(mssg, keys.Escape) || key.Matches(mssg, keys.Help) {
 				m.showHelp = false
+			}
+			return m, nil
+		}
+
+		// View detail overlay
+		if m.viewDetail != nil {
+			if key.Matches(mssg, keys.Escape) || mssg.Type == tea.KeyRunes {
+				m.viewDetail = nil
+			}
+			return m, nil
+		}
+
+		// Report overlay
+		if m.reportResult != nil {
+			if key.Matches(mssg, keys.Escape) || mssg.Type == tea.KeyRunes {
+				m.reportResult = nil
 			}
 			return m, nil
 		}
@@ -397,12 +416,40 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 				components.FormFieldDef{Label: "Priority", Kind: components.FieldSelect, Options: []string{"Highest", "High", "Medium", "Low", "Lowest"}, Value: "Medium"},
 				components.FormFieldDef{Label: "Up Next", Kind: components.FieldToggle},
 				components.FormFieldDef{Label: "No Split", Kind: components.FieldToggle},
-				components.FormFieldDef{Label: "Not Before", Placeholder: "e.g. 2025-03-01"},
+				components.FormFieldDef{Label: "Not Before", Placeholder: "e.g. -3d, 2025-03-01"},
 			)
 			m.form = components.NewForm("Add Task", fields)
 			m.formKind = formAddTask
 		}
 		return m, nil
+
+	case msg.TaskSnoozedMsg:
+		if mssg.Err != nil {
+			m.setToast(fmt.Sprintf("Snooze error: %v", mssg.Err), true)
+		} else {
+			m.setToast(fmt.Sprintf("Snoozed %s", mssg.TaskKey), false)
+			cmds = append(cmds, m.refreshActiveView())
+		}
+		cmds = append(cmds, clearToastCmd())
+		return m, tea.Batch(cmds...)
+
+	case msg.TaskViewedMsg:
+		if mssg.Err != nil {
+			m.setToast(fmt.Sprintf("View error: %v", mssg.Err), true)
+			cmds = append(cmds, clearToastCmd())
+		} else {
+			m.viewDetail = mssg.Result
+		}
+		return m, tea.Batch(cmds...)
+
+	case msg.ReportLoadedMsg:
+		if mssg.Err != nil {
+			m.setToast(fmt.Sprintf("Report error: %v", mssg.Err), true)
+			cmds = append(cmds, clearToastCmd())
+		} else {
+			m.reportResult = mssg.Result
+		}
+		return m, tea.Batch(cmds...)
 
 	case msg.AutoRefreshMsg:
 		cmds = append(cmds, m.refreshActiveView(), autoRefreshCmd())
@@ -431,6 +478,8 @@ func (m model) updateTimeline(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case key.Matches(mssg, keys.Sync):
 		return m, syncApplyCmd(m.cb, false)
+	case key.Matches(mssg, keys.Report):
+		return m, loadReportCmd(m.cb, 1)
 	}
 	return m, nil
 }
@@ -482,11 +531,11 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				dueStr = t.DueDate.Format("2006-01-02")
 			}
 			priStr := priorityName(t.Priority)
-			summary := stripConstraints(t.Summary)
-			notBeforeStr := ""
-			if t.NotBefore != nil {
+			notBeforeStr := t.NotBeforeRaw
+			if notBeforeStr == "" && t.NotBefore != nil {
 				notBeforeStr = t.NotBefore.Format("2006-01-02")
 			}
+			summary := stripConstraints(t.Summary)
 			upNextVal := "false"
 			if t.UpNext {
 				upNextVal = "true"
@@ -502,10 +551,22 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				{Label: "Priority", Kind: components.FieldSelect, Options: []string{"Highest", "High", "Medium", "Low", "Lowest"}, Value: priStr},
 				{Label: "Up Next", Kind: components.FieldToggle, Value: upNextVal},
 				{Label: "No Split", Kind: components.FieldToggle, Value: noSplitVal},
-				{Label: "Not Before", Placeholder: "e.g. 2025-03-01", Value: notBeforeStr},
+				{Label: "Not Before", Placeholder: "e.g. -3d, 2025-03-01", Value: notBeforeStr},
 			})
 			m.formKind = formEditTask
 			m.formTaskKey = t.Key
+		}
+	case key.Matches(mssg, keys.Snooze):
+		if t := m.tasks.SelectedTask(); t != nil {
+			m.form = components.NewForm(fmt.Sprintf("Snooze %s", t.Key), []components.FormFieldDef{
+				{Label: "Duration", Placeholder: "e.g. 3d, 1w, Monday"},
+			})
+			m.formKind = formSnoozeTask
+			m.formTaskKey = t.Key
+		}
+	case key.Matches(mssg, keys.ViewTask):
+		if t := m.tasks.SelectedTask(); t != nil {
+			return m, viewTaskCmd(m.cb, t.Key)
 		}
 	}
 	return m, nil
@@ -722,6 +783,14 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				NoSplit:   noSplit,
 				NotBefore: vals[6],
 			})
+		case formSnoozeTask:
+			duration := m.form.ValueByLabel("Duration")
+			if duration == "" {
+				m.formKind = formNone
+				return m, nil
+			}
+			m.formKind = formNone
+			return m, snoozeTaskCmd(m.cb, m.formTaskKey, duration)
 		case formSetConfig:
 			cfgKey := vals[0]
 			cfgVal := vals[1]
@@ -784,6 +853,14 @@ func (m model) View() string {
 	// Confirm dialog overlay
 	if m.confirm.Active {
 		return m.confirm.View(m.width, m.height)
+	}
+
+	if m.viewDetail != nil {
+		return m.renderViewDetail()
+	}
+
+	if m.reportResult != nil {
+		return m.renderReport()
 	}
 
 	if m.showHelp {
@@ -854,13 +931,16 @@ func (m model) renderHelp() string {
 	b.WriteString(bold.Render("Timeline") + "\n")
 	b.WriteString("  t/Enter       Start timer\n")
 	b.WriteString("  d             Mark done\n")
-	b.WriteString("  s             Sync\n\n")
+	b.WriteString("  s             Sync\n")
+	b.WriteString("  R             Report\n\n")
 
 	b.WriteString(bold.Render("Tasks") + "\n")
 	b.WriteString("  a             Add task\n")
 	b.WriteString("  e             Edit task\n")
 	b.WriteString("  d             Mark done\n")
 	b.WriteString("  D             Delete\n")
+	b.WriteString("  S             Snooze\n")
+	b.WriteString("  v             View details\n")
 	b.WriteString("  t             Start timer\n")
 	b.WriteString("  /             Search\n\n")
 
@@ -882,6 +962,88 @@ func (m model) renderHelp() string {
 		Render(b.String())
 
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
+}
+
+func (m model) renderViewDetail() string {
+	bold := lipgloss.NewStyle().Bold(true)
+	hint := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
+
+	v := m.viewDetail
+	var b strings.Builder
+	b.WriteString(bold.Render(fmt.Sprintf("Task %s", v.Key)) + "\n\n")
+	b.WriteString(fmt.Sprintf("  Summary:    %s\n", v.Summary))
+	if name, ok := priorityLevelNames[v.Priority]; ok {
+		b.WriteString(fmt.Sprintf("  Priority:   %s\n", name))
+	}
+	if v.Estimate > 0 {
+		b.WriteString(fmt.Sprintf("  Estimate:   %s\n", formatDurationShort(v.Estimate)))
+	} else {
+		b.WriteString("  Estimate:   none\n")
+	}
+	if v.DueDate != nil {
+		b.WriteString(fmt.Sprintf("  Due:        %s\n", v.DueDate.Format("Mon Jan 2, 2006")))
+	} else {
+		b.WriteString("  Due:        none\n")
+	}
+	if v.NotBefore != nil {
+		b.WriteString(fmt.Sprintf("  Not Before: %s\n", v.NotBefore.Format("Mon Jan 2, 2006")))
+	}
+	if v.UpNext {
+		b.WriteString("  Up Next:    yes\n")
+	}
+	if v.NoSplit {
+		b.WriteString("  No Split:   yes\n")
+	}
+	b.WriteString("\n")
+	b.WriteString(hint.Render("Press any key to close"))
+
+	content := lipgloss.NewStyle().Padding(1, 3).Render(b.String())
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}).
+		Padding(1, 2).
+		Render(content)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+}
+
+func (m model) renderReport() string {
+	bold := lipgloss.NewStyle().Bold(true)
+	hint := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
+
+	r := m.reportResult
+	var b strings.Builder
+	if r.Start.Format("2006-01-02") == r.End.Format("2006-01-02") {
+		b.WriteString(bold.Render(fmt.Sprintf("Report for %s", r.Start.Format("Mon Jan 2, 2006"))) + "\n\n")
+	} else {
+		b.WriteString(bold.Render(fmt.Sprintf("Report for %s — %s",
+			r.Start.Format("Mon Jan 2"), r.End.Format("Mon Jan 2, 2006"))) + "\n\n")
+	}
+	b.WriteString(fmt.Sprintf("  Tasks completed:  %d\n", r.TasksDone))
+	b.WriteString(fmt.Sprintf("  Time on tasks:    %s\n", formatDurationShort(r.TaskTime)))
+	b.WriteString(fmt.Sprintf("  Meeting time:     %s\n", formatDurationShort(r.MeetingTime)))
+	b.WriteString(fmt.Sprintf("  Total events:     %d\n", r.TotalEvents))
+	b.WriteString("\n")
+	b.WriteString(hint.Render("Press any key to close"))
+
+	content := lipgloss.NewStyle().Padding(1, 3).Render(b.String())
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}).
+		Padding(1, 2).
+		Render(content)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+}
+
+func formatDurationShort(d time.Duration) string {
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	if h > 0 && m > 0 {
+		return fmt.Sprintf("%dh%dm", h, m)
+	}
+	if h > 0 {
+		return fmt.Sprintf("%dh", h)
+	}
+	return fmt.Sprintf("%dm", m)
 }
 
 var priorityLevelNames = map[int]string{

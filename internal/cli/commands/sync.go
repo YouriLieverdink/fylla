@@ -86,6 +86,11 @@ func BuildSyncParams(flags SyncFlags, cfg *config.Config, now time.Time) (query 
 		if query == "" {
 			query = cfg.Todoist.DefaultFilter
 		}
+	case "local":
+		query = flags.Filter
+		if query == "" {
+			query = cfg.Local.DefaultFilter
+		}
 	default:
 		query = flags.JQL
 		if query == "" {
@@ -434,7 +439,10 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 		return nil, fmt.Errorf("fetch tasks: %w", err)
 	}
 
-	// Step 2: Sort by composite score
+	// Step 2: Expand recurring tasks into instances within the scheduling window
+	tasks = task.ExpandAll(tasks, p.Start, p.End)
+
+	// Step 3: Sort by composite score
 	progress(p.Progress, "Sorting %d tasks...", len(tasks))
 	sorted := scheduler.SortTasks(tasks, p.Cfg.Weights, p.Now)
 

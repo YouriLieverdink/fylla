@@ -37,6 +37,9 @@ type Callbacks struct {
 	StopTimer    func(description string) (taskKey string, elapsed time.Duration, err error)
 	ListProjects func() ([]string, error)
 	Provider     func() string
+	SnoozeTask   func(taskKey, target string) error
+	ViewTask     func(taskKey string) (*msg.ViewResult, error)
+	LoadReport   func(days int) (*msg.ReportResult, error)
 }
 
 func loadTodayCmd(cb Callbacks) tea.Cmd {
@@ -162,6 +165,27 @@ func loadFormOptionsCmd(cb Callbacks) tea.Cmd {
 			provider = cb.Provider()
 		}
 		return msg.FormOptionsMsg{Projects: projects, Provider: provider}
+	}
+}
+
+func snoozeTaskCmd(cb Callbacks, taskKey, target string) tea.Cmd {
+	return func() tea.Msg {
+		err := cb.SnoozeTask(taskKey, target)
+		return msg.TaskSnoozedMsg{TaskKey: taskKey, Err: err}
+	}
+}
+
+func viewTaskCmd(cb Callbacks, taskKey string) tea.Cmd {
+	return func() tea.Msg {
+		result, err := cb.ViewTask(taskKey)
+		return msg.TaskViewedMsg{Result: result, Err: err}
+	}
+}
+
+func loadReportCmd(cb Callbacks, days int) tea.Cmd {
+	return func() tea.Msg {
+		result, err := cb.LoadReport(days)
+		return msg.ReportLoadedMsg{Result: result, Err: err}
 	}
 }
 

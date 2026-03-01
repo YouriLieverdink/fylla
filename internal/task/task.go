@@ -2,6 +2,12 @@ package task
 
 import "time"
 
+// Recurrence describes a repeating schedule for a task.
+type Recurrence struct {
+	Freq string // "daily", "weekly", "biweekly", "monthly"
+	Days []int  // ISO weekdays: 1=Mon..7=Sun; empty = all applicable
+}
+
 // Task represents a schedulable task from any source (Jira, Todoist, etc.).
 type Task struct {
 	Key               string
@@ -15,8 +21,10 @@ type Task struct {
 	Project           string
 	Section           string
 	NotBefore         *time.Time
+	NotBeforeRaw      string // raw value from summary (e.g. "-3d") for round-trip editing
 	UpNext            bool
 	NoSplit           bool
+	Recurrence        *Recurrence
 }
 
 // CreateInput holds the fields for creating a new task.

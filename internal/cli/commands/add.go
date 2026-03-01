@@ -18,6 +18,8 @@ func defaultProject(cfg *config.Config, provider string) string {
 	switch provider {
 	case "todoist":
 		return cfg.Todoist.DefaultProject
+	case "local":
+		return cfg.Local.DefaultProject
 	default:
 		return cfg.Jira.DefaultProject
 	}
@@ -236,9 +238,11 @@ Extracted attributes inside ():
 			}
 
 			issueType, _ := cmd.Flags().GetString("type")
+			section, _ := cmd.Flags().GetString("section")
 
 			p := AddParams{
 				Project:   project,
+				Section:   section,
 				IssueType: issueType,
 				Creator:   creator,
 			}
@@ -333,6 +337,7 @@ Extracted attributes inside ():
 	}
 
 	cmd.Flags().String("project", "", "Pre-select project")
+	cmd.Flags().String("section", "", "Section for the task")
 	cmd.Flags().String("provider", "", "Provider to create the task on (defaults to first configured)")
 	cmd.Flags().StringP("type", "t", "", "Issue type (Task, Bug, Story, Epic) — Jira only")
 

@@ -162,10 +162,18 @@ func parseIssue(issue issueJSON) task.Task {
 		}
 	}
 
+	// Extract recurrence from summary (title-encoded)
+	cleanedRec, rec := task.ExtractRecurrence(t.Summary)
+	if rec != nil {
+		t.Summary = cleanedRec
+		t.Recurrence = rec
+	}
+
 	// Extract scheduling constraints from summary
-	cleaned, notBefore, upNext, noSplit := task.ExtractConstraints(t.Summary, time.Now(), t.DueDate)
+	cleaned, notBefore, notBeforeRaw, upNext, noSplit := task.ExtractConstraints(t.Summary, time.Now(), t.DueDate)
 	t.Summary = cleaned
 	t.NotBefore = notBefore
+	t.NotBeforeRaw = notBeforeRaw
 	t.UpNext = upNext
 	t.NoSplit = noSplit
 

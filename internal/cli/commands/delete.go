@@ -39,9 +39,9 @@ func PrintDeleteResult(w io.Writer, result *DeleteResult) {
 
 func newDeleteCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "delete TASK-KEY",
-		Short: "Delete a task",
-		Args:  cobra.ExactArgs(1),
+		Use:   "delete TASK-KEY [TASK-KEY...]",
+		Short: "Delete one or more tasks",
+		Args:  cobra.MinimumNArgs(1),
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
@@ -51,15 +51,27 @@ func newDeleteCmd() *cobra.Command {
 				return err
 			}
 
-			result, err := RunDelete(cmd.Context(), DeleteParams{
-				TaskKey: args[0],
-				Deleter: source,
-			})
-			if err != nil {
-				return err
+			if len(args) == 1 {
+				result, err := RunDelete(cmd.Context(), DeleteParams{
+					TaskKey: args[0],
+					Deleter: source,
+				})
+				if err != nil {
+					return err
+				}
+				PrintDeleteResult(cmd.OutOrStdout(), result)
+			} else {
+				ctx := cmd.Context()
+				results := RunBatch(args, func(key string) error {
+					_, err := RunDelete(ctx, DeleteParams{
+						TaskKey: key,
+						Deleter: source,
+					})
+					return err
+				})
+				PrintBatchResults(cmd.OutOrStdout(), results, "deleted")
 			}
 
-			PrintDeleteResult(cmd.OutOrStdout(), result)
 			maybeAutoResync(cmd.Context(), cmd.ErrOrStderr())
 			return nil
 		},

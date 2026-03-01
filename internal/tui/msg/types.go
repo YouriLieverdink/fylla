@@ -25,9 +25,10 @@ type ScoredTask struct {
 	Score     float64
 	Project   string
 	Section   string
-	UpNext    bool
-	NoSplit   bool
-	NotBefore *time.Time
+	UpNext       bool
+	NoSplit      bool
+	NotBefore    *time.Time
+	NotBeforeRaw string
 }
 
 // CalendarEvent represents a non-task calendar event (meeting, etc.).
@@ -68,4 +69,26 @@ type UnscheduledTask struct {
 	Summary  string
 	Estimate time.Duration
 	Reason   string
+}
+
+// ViewResult holds task details for the view overlay.
+type ViewResult struct {
+	Key       string
+	Summary   string
+	Priority  int
+	Estimate  time.Duration
+	DueDate   *time.Time
+	NotBefore *time.Time
+	UpNext    bool
+	NoSplit   bool
+}
+
+// ReportResult holds summary stats for the report overlay.
+type ReportResult struct {
+	Start       time.Time
+	End         time.Time
+	TasksDone   int
+	TaskTime    time.Duration
+	MeetingTime time.Duration
+	TotalEvents int
 }

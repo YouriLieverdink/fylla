@@ -111,5 +111,23 @@ type FormOptionsMsg struct {
 	Err      error
 }
 
+// TaskSnoozedMsg is sent after snoozing a task.
+type TaskSnoozedMsg struct {
+	TaskKey string
+	Err     error
+}
+
+// TaskViewedMsg carries the result of viewing a task's details.
+type TaskViewedMsg struct {
+	Result *ViewResult
+	Err    error
+}
+
+// ReportLoadedMsg carries the result of loading a report.
+type ReportLoadedMsg struct {
+	Result *ReportResult
+	Err    error
+}
+
 // AutoRefreshMsg triggers an auto-refresh of the current view.
 type AutoRefreshMsg struct{}

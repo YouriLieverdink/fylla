@@ -197,6 +197,11 @@ func newListCmd() *cobra.Command {
 					if query == "" {
 						query = cfg.Todoist.DefaultFilter
 					}
+				case "local":
+					query = filter
+					if query == "" {
+						query = cfg.Local.DefaultFilter
+					}
 				default:
 					query = jql
 					if query == "" {

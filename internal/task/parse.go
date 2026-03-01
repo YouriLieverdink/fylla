@@ -40,6 +40,7 @@ type ParsedInput struct {
 	NotBeforeRaw string // carries raw relative offset (e.g. "-3d") for round-trip serialization
 	UpNext       bool
 	NoSplit      bool
+	Recurrence   *Recurrence
 }
 
 // ParseTitleEstimate extracts a duration like [2h], [30m], or [1h30m] from text.
@@ -116,10 +117,13 @@ func formatBracketDuration(d time.Duration) string {
 func ParseInput(text string, ref time.Time) ParsedInput {
 	var result ParsedInput
 
-	// 1. Extract [duration] from the full text
+	// 1. Extract (every ...) recurrence clause before other parsing
+	text, result.Recurrence = ExtractRecurrence(text)
+
+	// 2. Extract [duration] from the full text
 	result.Estimate, text = ParseTitleEstimate(text)
 
-	// 2. Extract (...) attributes block
+	// 3. Extract (...) attributes block
 	if m := attrsRe.FindStringSubmatch(text); m != nil {
 		attrs := m[1]
 		text = strings.TrimSpace(spacesRe.ReplaceAllString(attrsRe.ReplaceAllString(text, ""), " "))
@@ -263,7 +267,7 @@ func extractNotBeforeClause(text string, ref time.Time, dueDate *time.Time) (str
 // from a task summary string. Returns the cleaned summary and extracted values.
 // The dueDate is used to resolve relative not-before offsets (e.g. "-3d").
 // This is used by Jira/Todoist clients when reading tasks back.
-func ExtractConstraints(summary string, ref time.Time, dueDate *time.Time) (cleaned string, notBefore *time.Time, upNext, noSplit bool) {
+func ExtractConstraints(summary string, ref time.Time, dueDate *time.Time) (cleaned string, notBefore *time.Time, notBeforeRaw string, upNext, noSplit bool) {
 	cleaned = summary
 
 	if nosplitRe.MatchString(cleaned) {
@@ -276,7 +280,7 @@ func ExtractConstraints(summary string, ref time.Time, dueDate *time.Time) (clea
 		cleaned = strings.TrimSpace(upnextRe.ReplaceAllString(cleaned, ""))
 	}
 
-	cleaned, notBefore, _ = extractNotBeforeClause(cleaned, ref, dueDate)
+	cleaned, notBefore, notBeforeRaw = extractNotBeforeClause(cleaned, ref, dueDate)
 	cleaned = strings.TrimSpace(spacesRe.ReplaceAllString(cleaned, " "))
 	return
 }

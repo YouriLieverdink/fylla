@@ -15,4 +15,5 @@ func Register(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(newInitCmd())
 	rootCmd.AddCommand(newServeCmd())
 	rootCmd.AddCommand(newWorklogCmd())
+	rootCmd.AddCommand(newReportCmd())
 }

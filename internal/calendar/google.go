@@ -232,10 +232,26 @@ func BuildDescription(taskKey, project, jiraBaseURL string) string {
 			return fmt.Sprintf("%s %s\nhttps://github.com/%s/pull/%s", fyllaMarker, taskKey, project, number)
 		}
 	}
+	if isLocalKey(taskKey) {
+		return fmt.Sprintf("%s %s", fyllaMarker, taskKey)
+	}
 	if isNumericKey(taskKey) {
 		return fmt.Sprintf("%s %s\nhttps://todoist.com/app/task/%s", fyllaMarker, taskKey, taskKey)
 	}
 	return fmt.Sprintf("%s %s\n%s/browse/%s", fyllaMarker, taskKey, jiraBaseURL, taskKey)
+}
+
+// isLocalKey returns true if key matches the local task key format (e.g. L-1).
+func isLocalKey(key string) bool {
+	if len(key) < 3 || key[0] != 'L' || key[1] != '-' {
+		return false
+	}
+	for _, c := range key[2:] {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // parseGitHubNumber extracts the PR number from a GH#repo#123 key.

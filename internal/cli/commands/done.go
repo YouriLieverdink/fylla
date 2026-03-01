@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/iruoy/fylla/internal/task"
 	"github.com/spf13/cobra"
 )
 
@@ -25,8 +26,11 @@ type DoneResult struct {
 }
 
 // RunDone marks a task as complete using the configured source.
+// If the key has a recurrence instance suffix (@YYYY-MM-DD), it is stripped
+// so the original task key is used for the provider call.
 func RunDone(ctx context.Context, p DoneParams) (*DoneResult, error) {
-	if err := p.Completer.CompleteTask(ctx, p.TaskKey); err != nil {
+	key, _ := task.StripInstanceSuffix(p.TaskKey)
+	if err := p.Completer.CompleteTask(ctx, key); err != nil {
 		return nil, fmt.Errorf("complete task: %w", err)
 	}
 	return &DoneResult{TaskKey: p.TaskKey}, nil
@@ -39,9 +43,9 @@ func PrintDoneResult(w io.Writer, result *DoneResult) {
 
 func newDoneCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "done TASK-KEY",
-		Short: "Mark a task as done",
-		Args:  cobra.ExactArgs(1),
+		Use:   "done TASK-KEY [TASK-KEY...]",
+		Short: "Mark one or more tasks as done",
+		Args:  cobra.MinimumNArgs(1),
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
@@ -51,15 +55,27 @@ func newDoneCmd() *cobra.Command {
 				return err
 			}
 
-			result, err := RunDone(cmd.Context(), DoneParams{
-				TaskKey:   args[0],
-				Completer: source,
-			})
-			if err != nil {
-				return err
+			if len(args) == 1 {
+				result, err := RunDone(cmd.Context(), DoneParams{
+					TaskKey:   args[0],
+					Completer: source,
+				})
+				if err != nil {
+					return err
+				}
+				PrintDoneResult(cmd.OutOrStdout(), result)
+			} else {
+				ctx := cmd.Context()
+				results := RunBatch(args, func(key string) error {
+					_, err := RunDone(ctx, DoneParams{
+						TaskKey:   key,
+						Completer: source,
+					})
+					return err
+				})
+				PrintBatchResults(cmd.OutOrStdout(), results, "marked as done")
 			}
 
-			PrintDoneResult(cmd.OutOrStdout(), result)
 			maybeAutoResync(cmd.Context(), cmd.ErrOrStderr())
 			return nil
 		},

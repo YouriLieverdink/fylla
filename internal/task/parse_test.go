@@ -284,7 +284,7 @@ func TestExtractConstraints(t *testing.T) {
 	ref := time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC)
 
 	t.Run("all constraints", func(t *testing.T) {
-		cleaned, notBefore, upNext, noSplit := ExtractConstraints(
+		cleaned, notBefore, _, upNext, noSplit := ExtractConstraints(
 			"Write docs not before 2025-03-01 upnext nosplit", ref, nil,
 		)
 		if cleaned != "Write docs" {
@@ -306,7 +306,7 @@ func TestExtractConstraints(t *testing.T) {
 	})
 
 	t.Run("parenthesized not before", func(t *testing.T) {
-		cleaned, notBefore, upNext, noSplit := ExtractConstraints(
+		cleaned, notBefore, _, upNext, noSplit := ExtractConstraints(
 			"Write docs (not before 2025-03-01)", ref, nil,
 		)
 		if cleaned != "Write docs" {
@@ -328,7 +328,7 @@ func TestExtractConstraints(t *testing.T) {
 	})
 
 	t.Run("no constraints", func(t *testing.T) {
-		cleaned, notBefore, upNext, noSplit := ExtractConstraints("Plain task", ref, nil)
+		cleaned, notBefore, _, upNext, noSplit := ExtractConstraints("Plain task", ref, nil)
 		if cleaned != "Plain task" {
 			t.Errorf("cleaned = %q, want %q", cleaned, "Plain task")
 		}
@@ -483,7 +483,7 @@ func TestExtractConstraints_relative(t *testing.T) {
 	due := time.Date(2025, 3, 15, 0, 0, 0, 0, time.UTC)
 
 	t.Run("with due date", func(t *testing.T) {
-		cleaned, notBefore, _, _ := ExtractConstraints(
+		cleaned, notBefore, notBeforeRaw, _, _ := ExtractConstraints(
 			"Write docs not before -3d", ref, &due,
 		)
 		if cleaned != "Write docs" {
@@ -496,10 +496,13 @@ func TestExtractConstraints_relative(t *testing.T) {
 		if !notBefore.Equal(want) {
 			t.Errorf("notBefore = %v, want %v", *notBefore, want)
 		}
+		if notBeforeRaw != "-3d" {
+			t.Errorf("notBeforeRaw = %q, want %q", notBeforeRaw, "-3d")
+		}
 	})
 
 	t.Run("without due date", func(t *testing.T) {
-		cleaned, notBefore, _, _ := ExtractConstraints(
+		cleaned, notBefore, _, _, _ := ExtractConstraints(
 			"Write docs not before -3d", ref, nil,
 		)
 		if cleaned != "Write docs" {

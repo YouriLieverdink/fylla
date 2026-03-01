@@ -11,6 +11,7 @@ import (
 	"github.com/iruoy/fylla/internal/config"
 	"github.com/iruoy/fylla/internal/github"
 	"github.com/iruoy/fylla/internal/jira"
+	"github.com/iruoy/fylla/internal/local"
 	"github.com/iruoy/fylla/internal/task"
 	"github.com/iruoy/fylla/internal/todoist"
 )
@@ -53,6 +54,7 @@ var (
 	_ TaskSource = (*jira.Client)(nil)
 	_ TaskSource = (*todoist.Client)(nil)
 	_ TaskSource = (*github.Client)(nil)
+	_ TaskSource = (*local.Client)(nil)
 )
 
 // JiraKeyResolver resolves a non-Jira task key (e.g. GitHub PR) to a Jira issue key.
@@ -60,7 +62,10 @@ type JiraKeyResolver interface {
 	ResolveJiraKey(ctx context.Context, taskKey string) (string, error)
 }
 
-var jiraKeyRe = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d+$`)
+var (
+	jiraKeyRe  = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d+$`)
+	localKeyRe = regexp.MustCompile(`^L-\d+$`)
+)
 
 // isJiraKey returns true if key matches the Jira issue key pattern (e.g. PROJ-123).
 func isJiraKey(key string) bool {
@@ -72,10 +77,18 @@ func isGitHubKey(key string) bool {
 	return strings.Contains(key, "#")
 }
 
+// isLocalKey returns true if key matches the local task key format (e.g. L-1).
+func isLocalKey(key string) bool {
+	return localKeyRe.MatchString(key)
+}
+
 // providerForKey infers the provider name from a task key.
 func providerForKey(key string) string {
 	if isGitHubKey(key) {
 		return "github"
+	}
+	if isLocalKey(key) {
+		return "local"
 	}
 	if isJiraKey(key) {
 		return "jira"
@@ -247,6 +260,8 @@ func buildProviderQueries(cfg *config.Config, jqlFlag, filterFlag string) map[st
 			queries["todoist"] = q
 		case "github":
 			queries["github"] = cfg.GitHub.DefaultQuery
+		case "local":
+			queries["local"] = cfg.Local.DefaultFilter
 		}
 	}
 	return queries
@@ -301,6 +316,11 @@ func loadTaskSource() (TaskSource, *config.Config, error) {
 			client := github.NewClient(creds.Token)
 			client.Repos = cfg.GitHub.Repos
 			sources["github"] = client
+		case "local":
+			storePath := cfg.Local.StorePath
+			client := local.NewClient(storePath)
+			client.DefaultProject = cfg.Local.DefaultProject
+			sources["local"] = client
 		}
 	}
 
