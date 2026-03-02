@@ -107,6 +107,24 @@ func Status(now time.Time, path string) (*State, time.Duration, error) {
 	return s, elapsed, nil
 }
 
+// Abort loads the running timer, removes the state file without logging work,
+// and returns the state so callers can report the task key.
+func Abort(path string) (*State, error) {
+	s, err := Load(path)
+	if err != nil {
+		return nil, err
+	}
+	if s == nil {
+		return nil, fmt.Errorf("no timer running")
+	}
+
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("remove timer state: %w", err)
+	}
+
+	return s, nil
+}
+
 // RoundDuration rounds d to the nearest roundMinutes, with a minimum of roundMinutes.
 func RoundDuration(d time.Duration, roundMinutes int) time.Duration {
 	if roundMinutes <= 0 {

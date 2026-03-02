@@ -27,6 +27,7 @@ type globalKeyMap struct {
 	Force    key.Binding
 	Clear    key.Binding
 	Stop     key.Binding
+	Abort    key.Binding
 	Snooze   key.Binding
 	ViewTask key.Binding
 	Report   key.Binding
@@ -57,6 +58,7 @@ var keys = globalKeyMap{
 	Force:    key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "force")),
 	Clear:    key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "clear")),
 	Stop:     key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "stop")),
+	Abort:    key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "abort")),
 	Snooze:   key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "snooze")),
 	ViewTask: key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "view")),
 	Report:   key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "report")),

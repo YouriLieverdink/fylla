@@ -250,10 +250,25 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			_, err := RunEdit(ctx, ep)
 			return err
 		},
-		StopTimer: func(description string) (string, time.Duration, error) {
+		AbortTimer: func() (string, error) {
+			path, err := timer.DefaultPath()
+			if err != nil {
+				return "", err
+			}
+			result, err := RunAbort(AbortParams{TimerPath: path})
+			if err != nil {
+				return "", err
+			}
+			return result.TaskKey, nil
+		},
+		StopTimer: func(description string, done bool) (string, time.Duration, error) {
 			path, err := timer.DefaultPath()
 			if err != nil {
 				return "", 0, err
+			}
+			var resolver JiraKeyResolver
+			if r, ok := source.(JiraKeyResolver); ok {
+				resolver = r
 			}
 			result, err := RunStop(ctx, StopParams{
 				TimerPath:    path,
@@ -264,6 +279,9 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				Cal:          cal,
 				Estimate:     source,
 				Cfg:          cfg,
+				Resolver:     resolver,
+				Completer:    source,
+				Done:         done,
 			})
 			if err != nil {
 				return "", 0, err

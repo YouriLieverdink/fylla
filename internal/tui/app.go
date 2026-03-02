@@ -40,6 +40,7 @@ const (
 	confirmSyncApply
 	confirmSyncForce
 	confirmClearEvents
+	confirmAbortTimer
 )
 
 type formKind int
@@ -350,6 +351,29 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, clearToastCmd())
 		return m, tea.Batch(cmds...)
 
+	case msg.TimerAbortedMsg:
+		if mssg.Err != nil {
+			m.setToast(fmt.Sprintf("Abort error: %v", mssg.Err), true)
+		} else {
+			stoppedLabel := m.timerSummary
+			if stoppedLabel == "" {
+				stoppedLabel = mssg.TaskKey
+			}
+			m.timerRunning = false
+			m.timerKey = ""
+			m.timerSummary = ""
+			m.timerElapsed = 0
+			m.timer.Running = false
+			m.timer.TaskKey = ""
+			m.timer.Summary = ""
+			m.timer.Project = ""
+			m.timer.Section = ""
+			m.timer.Elapsed = 0
+			m.setToast(fmt.Sprintf("Timer aborted for %s", stoppedLabel), false)
+		}
+		cmds = append(cmds, clearToastCmd())
+		return m, tea.Batch(cmds...)
+
 	case msg.SyncPreviewMsg:
 		m.schedule.Loading = false
 		if mssg.Err != nil {
@@ -633,6 +657,9 @@ func (m model) updateConfirm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case confirmClearEvents:
 				m.confirmType = confirmNone
 				return m, clearEventsCmd(m.cb)
+			case confirmAbortTimer:
+				m.confirmType = confirmNone
+				return m, abortTimerCmd(m.cb)
 			}
 		}
 		m.confirmType = confirmNone
@@ -668,8 +695,15 @@ func (m model) updateTimer(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.timerRunning {
 			m.form = components.NewForm("Stop Timer", []components.FormFieldDef{
 				{Label: "Comment", Placeholder: "What did you work on?"},
+				{Label: "Mark done", Kind: components.FieldToggle},
 			})
 			m.formKind = formStopTimer
+			return m, nil
+		}
+	case key.Matches(mssg, keys.Abort):
+		if m.timerRunning {
+			m.confirm = components.NewConfirm("Abort timer? Work will not be logged.")
+			m.confirmType = confirmAbortTimer
 			return m, nil
 		}
 	}
@@ -844,8 +878,9 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, snoozeTaskCmd(m.cb, m.formTaskKey, duration)
 		case formStopTimer:
 			comment := m.form.ValueByLabel("Comment")
+			done := m.form.ValueByLabel("Mark done") == "true"
 			m.formKind = formNone
-			return m, stopTimerCmd(m.cb, comment)
+			return m, stopTimerCmd(m.cb, comment, done)
 		case formSetConfig:
 			cfgKey := vals[0]
 			cfgVal := vals[1]
@@ -1005,7 +1040,8 @@ func (m model) renderHelp() string {
 	b.WriteString("  c             Clear events\n\n")
 
 	b.WriteString(bold.Render("Timer") + "\n")
-	b.WriteString("  s             Stop timer\n\n")
+	b.WriteString("  s             Stop timer\n")
+	b.WriteString("  x             Abort timer\n\n")
 
 	b.WriteString(bold.Render("Config") + "\n")
 	b.WriteString("  e             Edit value\n\n")

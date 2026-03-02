@@ -66,6 +66,12 @@ type TimerStoppedMsg struct {
 	Err     error
 }
 
+// TimerAbortedMsg is sent after aborting a timer.
+type TimerAbortedMsg struct {
+	TaskKey string
+	Err     error
+}
+
 // TimerTickMsg triggers timer display updates.
 // Gen is a generation counter to deduplicate concurrent tick chains.
 type TimerTickMsg struct {

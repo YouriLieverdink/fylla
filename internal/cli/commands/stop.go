@@ -30,17 +30,20 @@ type StopParams struct {
 	Cfg          *config.Config
 	Resolver     JiraKeyResolver
 	Survey       Surveyor
+	Completer    TaskCompleter
+	Done         bool
 }
 
 // StopResult holds the output of a stop operation.
 type StopResult struct {
-	TaskKey          string
-	Elapsed          time.Duration
-	Rounded          time.Duration
-	Description      string
-	CalendarUpdated  bool
+	TaskKey           string
+	Elapsed           time.Duration
+	Rounded           time.Duration
+	Description       string
+	CalendarUpdated   bool
 	RemainingEstimate time.Duration
-	HasRemaining     bool
+	HasRemaining      bool
+	Done              bool
 }
 
 // RunStop stops the timer, posts the worklog to Jira, and returns the result.
@@ -87,6 +90,17 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 			result.RemainingEstimate = remaining
 			result.HasRemaining = true
 		}
+	}
+
+	// Mark task as done if requested
+	if p.Done && p.Completer != nil {
+		if _, err := RunDone(ctx, DoneParams{
+			TaskKey:   sr.TaskKey,
+			Completer: p.Completer,
+		}); err != nil {
+			return nil, fmt.Errorf("mark done: %w", err)
+		}
+		result.Done = true
 	}
 
 	return result, nil
@@ -173,7 +187,9 @@ func PrintStopResult(w io.Writer, result *StopResult) {
 	if result.CalendarUpdated {
 		fmt.Fprintf(w, "Calendar event updated\n")
 	}
-	if result.HasRemaining {
+	if result.Done {
+		fmt.Fprintf(w, "Marked %s as done\n", result.TaskKey)
+	} else if result.HasRemaining {
 		if result.RemainingEstimate > 0 {
 			fmt.Fprintf(w, "%s has %s remaining — will be rescheduled on next sync.\n",
 				result.TaskKey, formatElapsed(result.RemainingEstimate))
@@ -196,6 +212,7 @@ func newStopCmd() *cobra.Command {
 			}
 
 			description, _ := cmd.Flags().GetString("description")
+			done, _ := cmd.Flags().GetBool("done")
 			if description == "" {
 				prompt := &survey.Input{Message: "Work description:"}
 				if err := survey.AskOne(prompt, &description); err != nil {
@@ -235,6 +252,8 @@ func newStopCmd() *cobra.Command {
 				Cfg:          cfg,
 				Resolver:     resolver,
 				Survey:       defaultSurveyor{},
+				Completer:    source,
+				Done:         done,
 			})
 			if err != nil {
 				return err
@@ -247,6 +266,7 @@ func newStopCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringP("description", "d", "", "Work description (skips interactive prompt)")
+	cmd.Flags().BoolP("done", "D", false, "Mark the task as done after logging work")
 
 	return cmd
 }
