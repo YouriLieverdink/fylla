@@ -37,4 +37,5 @@ type CreateInput struct {
 	Estimate    time.Duration
 	DueDate     *time.Time
 	Priority    string // Priority name (Highest, High, Medium, Low, Lowest)
+	Parent      string // Parent issue key (e.g. Epic key)
 }

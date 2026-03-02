@@ -50,9 +50,21 @@ const (
 	formAddTaskPending // waiting for project/section options to load
 	formEditTask
 	formSetConfig
+	formEditTaskPending // waiting for epic options to load for edit form
 	formSnoozeTask
 	formStopTimer
 )
+
+type pendingEditData struct {
+	summary      string
+	estimate     string
+	dueDate      string
+	priority     string
+	upNext       string
+	noSplit      string
+	notBefore    string
+	parentKey    string // current parent key
+}
 
 type model struct {
 	cb           Callbacks
@@ -78,8 +90,9 @@ type model struct {
 	confirmKey   string
 	form         components.Form
 	formKind     formKind
-	formTaskKey  string
-	viewDetail   *msg.ViewResult
+	formTaskKey   string
+	pendingEdit   *pendingEditData
+	viewDetail    *msg.ViewResult
 	reportResult *msg.ReportResult
 }
 
@@ -399,6 +412,13 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case msg.FormOptionsMsg:
+		if m.formKind == formEditTaskPending && m.pendingEdit != nil {
+			m.pendingEdit.parentKey = mssg.ParentKey
+			m.form = buildEditForm(m.formTaskKey, *m.pendingEdit, mssg.Epics)
+			m.formKind = formEditTask
+			m.pendingEdit = nil
+			return m, nil
+		}
 		if m.formKind == formAddTaskPending {
 			projectField := components.FormFieldDef{Label: "Project", Placeholder: "Project key"}
 			if len(mssg.Projects) > 0 {
@@ -424,6 +444,18 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 				components.FormFieldDef{Label: "Estimate", Placeholder: "e.g. 2h, 30m"},
 				components.FormFieldDef{Label: "Due Date", Placeholder: "e.g. 2025-03-01"},
 				components.FormFieldDef{Label: "Priority", Kind: components.FieldSelect, Options: []string{"Highest", "High", "Medium", "Low", "Lowest"}, Value: "Medium"},
+			)
+			if mssg.Provider == "jira" {
+				epicOptions := []string{"None"}
+				for _, e := range mssg.Epics {
+					epicOptions = append(epicOptions, e.Label)
+				}
+				fields = append(fields, components.FormFieldDef{
+					Label: "Parent", Kind: components.FieldSelect,
+					Options: epicOptions, Value: "None",
+				})
+			}
+			fields = append(fields,
 				components.FormFieldDef{Label: "Up Next", Kind: components.FieldToggle},
 				components.FormFieldDef{Label: "No Split", Kind: components.FieldToggle},
 				components.FormFieldDef{Label: "Not Before", Placeholder: "e.g. -3d, 2025-03-01"},
@@ -460,6 +492,16 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reportResult = mssg.Result
 		}
 		return m, tea.Batch(cmds...)
+
+	case msg.EpicsLoadedMsg:
+		if m.form.Active && (m.formKind == formAddTask || m.formKind == formEditTask) {
+			epicOptions := []string{"None"}
+			for _, e := range mssg.Epics {
+				epicOptions = append(epicOptions, e.Label)
+			}
+			m.form.UpdateSelectByLabel("Parent", epicOptions, "None")
+		}
+		return m, nil
 
 	case msg.AutoRefreshMsg:
 		cmds = append(cmds, m.refreshActiveView(), autoRefreshCmd())
@@ -524,47 +566,16 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, loadFormOptionsCmd(m.cb)
 	case key.Matches(mssg, keys.Edit):
 		if t := m.tasks.SelectedTask(); t != nil {
-			estStr := ""
-			if t.Estimate > 0 {
-				h := int(t.Estimate.Hours())
-				mins := int(t.Estimate.Minutes()) % 60
-				if h > 0 && mins > 0 {
-					estStr = fmt.Sprintf("%dh%dm", h, mins)
-				} else if h > 0 {
-					estStr = fmt.Sprintf("%dh", h)
-				} else {
-					estStr = fmt.Sprintf("%dm", mins)
-				}
-			}
-			dueStr := ""
-			if t.DueDate != nil {
-				dueStr = t.DueDate.Format("2006-01-02")
-			}
-			priStr := priorityName(t.Priority)
-			notBeforeStr := t.NotBeforeRaw
-			if notBeforeStr == "" && t.NotBefore != nil {
-				notBeforeStr = t.NotBefore.Format("2006-01-02")
-			}
-			summary := stripConstraints(t.Summary)
-			upNextVal := "false"
-			if t.UpNext {
-				upNextVal = "true"
-			}
-			noSplitVal := "false"
-			if t.NoSplit {
-				noSplitVal = "true"
-			}
-			m.form = components.NewForm(fmt.Sprintf("Edit %s", t.Key), []components.FormFieldDef{
-				{Label: "Summary", Placeholder: "Task summary", Value: summary},
-				{Label: "Estimate", Placeholder: "e.g. 2h, 30m", Value: estStr},
-				{Label: "Due Date", Placeholder: "e.g. 2025-03-01", Value: dueStr},
-				{Label: "Priority", Kind: components.FieldSelect, Options: []string{"Highest", "High", "Medium", "Low", "Lowest"}, Value: priStr},
-				{Label: "Up Next", Kind: components.FieldToggle, Value: upNextVal},
-				{Label: "No Split", Kind: components.FieldToggle, Value: noSplitVal},
-				{Label: "Not Before", Placeholder: "e.g. -3d, 2025-03-01", Value: notBeforeStr},
-			})
-			m.formKind = formEditTask
+			ed := buildPendingEditData(t)
 			m.formTaskKey = t.Key
+			// For Jira tasks, load epics asynchronously scoped to the task's project
+			if isJiraKeyPattern(t.Key) {
+				m.pendingEdit = &ed
+				m.formKind = formEditTaskPending
+				return m, loadEditFormOptionsCmd(m.cb, t.Project, t.Key)
+			}
+			m.form = buildEditForm(t.Key, ed, nil)
+			m.formKind = formEditTask
 		}
 	case key.Matches(mssg, keys.Snooze):
 		if t := m.tasks.SelectedTask(); t != nil {
@@ -702,6 +713,9 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case mssg.Type == tea.KeyLeft:
 		if m.form.IsSelectField() {
 			m.form.CycleSelectLeft()
+			if m.form.FocusedLabel() == "Project" {
+				return m, loadEpicsCmd(m.cb, m.form.ValueByLabel("Project"))
+			}
 			return m, nil
 		}
 		if m.form.IsToggleField() {
@@ -717,6 +731,9 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case mssg.Type == tea.KeyRight:
 		if m.form.IsSelectField() {
 			m.form.CycleSelectRight()
+			if m.form.FocusedLabel() == "Project" {
+				return m, loadEpicsCmd(m.cb, m.form.ValueByLabel("Project"))
+			}
 			return m, nil
 		}
 		if m.form.IsToggleField() {
@@ -759,6 +776,15 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.form.ValueByLabel("No Split") == "true" {
 				summary += " nosplit"
 			}
+			parent := m.form.ValueByLabel("Parent")
+			if parent == "None" || parent == "" {
+				parent = ""
+			} else {
+				// Extract key from "KEY — Summary" label
+				if idx := strings.Index(parent, " — "); idx > 0 {
+					parent = parent[:idx]
+				}
+			}
 			m.formKind = formNone
 			return m, addTaskCmd(m.cb, summary,
 				m.form.ValueByLabel("Project"), "",
@@ -767,35 +793,46 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.form.ValueByLabel("Estimate"),
 				m.form.ValueByLabel("Due Date"),
 				m.form.ValueByLabel("Priority"),
+				parent,
 			)
 		case formEditTask:
-			// vals: Summary, Estimate, DueDate, Priority, UpNext, NoSplit, NotBefore
 			m.formKind = formNone
+			upNextVal := m.form.ValueByLabel("Up Next")
 			var upNext *bool
-			if vals[4] == "true" {
+			if upNextVal == "true" {
 				v := true
 				upNext = &v
 			} else {
 				v := false
 				upNext = &v
 			}
+			noSplitVal := m.form.ValueByLabel("No Split")
 			var noSplit *bool
-			if vals[5] == "true" {
+			if noSplitVal == "true" {
 				v := true
 				noSplit = &v
 			} else {
 				v := false
 				noSplit = &v
+			}
+			parent := m.form.ValueByLabel("Parent")
+			if parent == "None" || parent == "" {
+				parent = ""
+			} else {
+				if idx := strings.Index(parent, " — "); idx > 0 {
+					parent = parent[:idx]
+				}
 			}
 			return m, editTaskCmd(m.cb, EditTaskParams{
 				TaskKey:   m.formTaskKey,
-				Summary:   vals[0],
-				Estimate:  vals[1],
-				Due:       vals[2],
-				Priority:  vals[3],
+				Summary:   m.form.ValueByLabel("Summary"),
+				Estimate:  m.form.ValueByLabel("Estimate"),
+				Due:       m.form.ValueByLabel("Due Date"),
+				Priority:  m.form.ValueByLabel("Priority"),
 				UpNext:    upNext,
 				NoSplit:   noSplit,
-				NotBefore: vals[6],
+				NotBefore: m.form.ValueByLabel("Not Before"),
+				Parent:    parent,
 			})
 		case formSnoozeTask:
 			duration := m.form.ValueByLabel("Duration")
@@ -1077,6 +1114,74 @@ func priorityName(level int) string {
 		return name
 	}
 	return "Medium"
+}
+
+var jiraKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d+$`)
+
+func isJiraKeyPattern(key string) bool {
+	return jiraKeyPattern.MatchString(key)
+}
+
+func buildPendingEditData(t *msg.ScoredTask) pendingEditData {
+	ed := pendingEditData{}
+	if t.Estimate > 0 {
+		h := int(t.Estimate.Hours())
+		mins := int(t.Estimate.Minutes()) % 60
+		if h > 0 && mins > 0 {
+			ed.estimate = fmt.Sprintf("%dh%dm", h, mins)
+		} else if h > 0 {
+			ed.estimate = fmt.Sprintf("%dh", h)
+		} else {
+			ed.estimate = fmt.Sprintf("%dm", mins)
+		}
+	}
+	if t.DueDate != nil {
+		ed.dueDate = t.DueDate.Format("2006-01-02")
+	}
+	ed.priority = priorityName(t.Priority)
+	ed.notBefore = t.NotBeforeRaw
+	if ed.notBefore == "" && t.NotBefore != nil {
+		ed.notBefore = t.NotBefore.Format("2006-01-02")
+	}
+	ed.summary = stripConstraints(t.Summary)
+	ed.upNext = "false"
+	if t.UpNext {
+		ed.upNext = "true"
+	}
+	ed.noSplit = "false"
+	if t.NoSplit {
+		ed.noSplit = "true"
+	}
+	return ed
+}
+
+func buildEditForm(taskKey string, ed pendingEditData, epics []msg.EpicOption) components.Form {
+	fields := []components.FormFieldDef{
+		{Label: "Summary", Placeholder: "Task summary", Value: ed.summary},
+		{Label: "Estimate", Placeholder: "e.g. 2h, 30m", Value: ed.estimate},
+		{Label: "Due Date", Placeholder: "e.g. 2025-03-01", Value: ed.dueDate},
+		{Label: "Priority", Kind: components.FieldSelect, Options: []string{"Highest", "High", "Medium", "Low", "Lowest"}, Value: ed.priority},
+	}
+	if epics != nil {
+		epicOptions := []string{"None"}
+		currentVal := "None"
+		for _, e := range epics {
+			epicOptions = append(epicOptions, e.Label)
+			if e.Key == ed.parentKey {
+				currentVal = e.Label
+			}
+		}
+		fields = append(fields, components.FormFieldDef{
+			Label: "Parent", Kind: components.FieldSelect,
+			Options: epicOptions, Value: currentVal,
+		})
+	}
+	fields = append(fields,
+		components.FormFieldDef{Label: "Up Next", Kind: components.FieldToggle, Value: ed.upNext},
+		components.FormFieldDef{Label: "No Split", Kind: components.FieldToggle, Value: ed.noSplit},
+		components.FormFieldDef{Label: "Not Before", Placeholder: "e.g. -3d, 2025-03-01", Value: ed.notBefore},
+	)
+	return components.NewForm(fmt.Sprintf("Edit %s", taskKey), fields)
 }
 
 func stripConstraints(summary string) string {

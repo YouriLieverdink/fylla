@@ -57,6 +57,21 @@ var (
 	_ TaskSource = (*local.Client)(nil)
 )
 
+// EpicLister lists open epics from a provider, optionally scoped to a project.
+type EpicLister interface {
+	ListEpics(ctx context.Context, project string) ([]jira.Epic, error)
+}
+
+// ParentUpdater updates the parent of a task.
+type ParentUpdater interface {
+	UpdateParent(ctx context.Context, issueKey, parentKey string) error
+}
+
+// ParentGetter fetches the parent key of a task.
+type ParentGetter interface {
+	GetParent(ctx context.Context, issueKey string) (string, error)
+}
+
 // JiraKeyResolver resolves a non-Jira task key (e.g. GitHub PR) to a Jira issue key.
 type JiraKeyResolver interface {
 	ResolveJiraKey(ctx context.Context, taskKey string) (string, error)

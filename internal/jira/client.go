@@ -359,6 +359,10 @@ func (c *Client) CreateTask(ctx context.Context, input task.CreateInput) (string
 		fields["priority"] = map[string]string{"name": input.Priority}
 	}
 
+	if input.Parent != "" {
+		fields["parent"] = map[string]string{"key": input.Parent}
+	}
+
 	payload := map[string]interface{}{"fields": fields}
 
 	resp, err := c.do(ctx, http.MethodPost, "/rest/api/3/issue", payload)
@@ -716,6 +720,97 @@ func (c *Client) ListProjects(ctx context.Context) ([]string, error) {
 		keys[i] = p.Key
 	}
 	return keys, nil
+}
+
+// Epic represents a Jira epic issue.
+type Epic struct {
+	Key     string
+	Summary string
+}
+
+// ListEpics searches for open epics in Jira, optionally scoped to a project.
+func (c *Client) ListEpics(ctx context.Context, project string) ([]Epic, error) {
+	jql := "issuetype = Epic AND status != Done ORDER BY summary ASC"
+	if project != "" {
+		jql = fmt.Sprintf("project = %s AND issuetype = Epic AND status != Done ORDER BY summary ASC", project)
+	}
+	payload := map[string]interface{}{
+		"jql":    jql,
+		"fields": []string{"summary"},
+	}
+
+	resp, err := c.do(ctx, http.MethodPost, "/rest/api/3/search/jql", payload)
+	if err != nil {
+		return nil, fmt.Errorf("list epics: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("jira list epics: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result searchResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode epics response: %w", err)
+	}
+
+	epics := make([]Epic, len(result.Issues))
+	for i, issue := range result.Issues {
+		epics[i] = Epic{Key: issue.Key, Summary: issue.Fields.Summary}
+	}
+	return epics, nil
+}
+
+// UpdateParent sets the parent issue for the specified Jira issue.
+func (c *Client) UpdateParent(ctx context.Context, issueKey, parentKey string) error {
+	payload := map[string]interface{}{
+		"fields": map[string]interface{}{
+			"parent": map[string]string{"key": parentKey},
+		},
+	}
+
+	resp, err := c.do(ctx, http.MethodPut, fmt.Sprintf("/rest/api/3/issue/%s", issueKey), payload)
+	if err != nil {
+		return fmt.Errorf("update parent: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("jira update parent: status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+// GetParent fetches the parent issue key for the specified Jira issue.
+func (c *Client) GetParent(ctx context.Context, issueKey string) (string, error) {
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/rest/api/3/issue/%s?fields=parent", issueKey), nil)
+	if err != nil {
+		return "", fmt.Errorf("get parent: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("jira get parent: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Fields struct {
+			Parent *struct {
+				Key string `json:"key"`
+			} `json:"parent"`
+		} `json:"fields"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decode parent response: %w", err)
+	}
+
+	if result.Fields.Parent == nil {
+		return "", nil
+	}
+	return result.Fields.Parent.Key, nil
 }
 
 // formatDuration converts a time.Duration to Jira duration string (e.g. "4h", "2h 30m").

@@ -45,9 +45,11 @@ type AddParams struct {
 	Estimate    string // raw duration string
 	DueDate     string // raw date string, e.g. "2025-02-15"
 	Priority    string
+	Parent      string
 	Inline      bool // true when args were provided on the command line
 	Creator     TaskCreator
 	Projects    ProjectLister
+	Epics       EpicLister
 }
 
 // AddResult holds the output of an add operation.
@@ -66,6 +68,7 @@ func BuildCreateInput(p AddParams) (task.CreateInput, error) {
 		Description: p.Description,
 		IssueType:   p.IssueType,
 		Priority:    p.Priority,
+		Parent:      p.Parent,
 	}
 
 	if input.Priority == "" {
@@ -120,6 +123,9 @@ func RequiredFields(p AddParams, provider string) []string {
 	}
 	if p.Priority == "" {
 		fields = append(fields, "priority")
+	}
+	if provider == "jira" && p.Parent == "" {
+		fields = append(fields, "parent")
 	}
 	return fields
 }
@@ -249,6 +255,12 @@ Extracted attributes inside ():
 			if pl, ok := creator.(ProjectLister); ok {
 				p.Projects = pl
 			}
+			if el, ok := creator.(EpicLister); ok {
+				p.Epics = el
+			}
+
+			parent, _ := cmd.Flags().GetString("parent")
+			p.Parent = parent
 
 			// If positional args are provided, parse them as inline input
 			if len(args) > 0 {
@@ -322,6 +334,24 @@ Extracted attributes inside ():
 					if err := survey.AskOne(prompt, &p.Priority); err != nil {
 						return fmt.Errorf("prompt priority: %w", err)
 					}
+				case "parent":
+					if p.Epics != nil {
+						epics, err := p.Epics.ListEpics(cmd.Context(), p.Project)
+						if err == nil && len(epics) > 0 {
+							options := []string{"None"}
+							for _, e := range epics {
+								options = append(options, fmt.Sprintf("%s — %s", e.Key, e.Summary))
+							}
+							var sel string
+							prompt := &survey.Select{Message: "Parent (Epic):", Options: options}
+							if err := survey.AskOne(prompt, &sel); err != nil {
+								return fmt.Errorf("prompt parent: %w", err)
+							}
+							if sel != "None" {
+								p.Parent = strings.SplitN(sel, " — ", 2)[0]
+							}
+						}
+					}
 				}
 			}
 
@@ -340,6 +370,7 @@ Extracted attributes inside ():
 	cmd.Flags().String("section", "", "Section for the task")
 	cmd.Flags().String("provider", "", "Provider to create the task on (defaults to first configured)")
 	cmd.Flags().StringP("type", "t", "", "Issue type (Task, Bug, Story, Epic) — Jira only")
+	cmd.Flags().String("parent", "", "Parent issue key (e.g. Epic) — Jira only")
 
 	return cmd
 }

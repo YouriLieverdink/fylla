@@ -31,6 +31,7 @@ type EditParams struct {
 	NoNoSplit   bool
 	NotBefore   string
 	NoNotBefore bool
+	Parent      string
 	Source      TaskSource
 }
 
@@ -48,6 +49,7 @@ type EditResult struct {
 	NotBeforeSet     bool
 	NotBeforeRemoved bool
 	SummaryUpdated   bool
+	ParentUpdated    bool
 }
 
 // RunEdit applies one or more edits to a task.
@@ -98,6 +100,24 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 			return nil, fmt.Errorf("priority: %w", err)
 		}
 		result.PriorityResult = r
+	}
+
+	if p.Parent != "" {
+		var pu ParentUpdater
+		if u, ok := p.Source.(ParentUpdater); ok {
+			pu = u
+		} else if ms, ok := p.Source.(*MultiTaskSource); ok {
+			routed := ms.routeTo(p.TaskKey)
+			if u, ok := routed.(ParentUpdater); ok {
+				pu = u
+			}
+		}
+		if pu != nil {
+			if err := pu.UpdateParent(ctx, p.TaskKey, p.Parent); err != nil {
+				return nil, fmt.Errorf("update parent: %w", err)
+			}
+			result.ParentUpdated = true
+		}
 	}
 
 	// Summary-keyword operations (upnext, nosplit, not before, direct summary)
@@ -255,6 +275,9 @@ func PrintEditResult(w io.Writer, result *EditResult) {
 	if result.NotBeforeRemoved {
 		fmt.Fprintf(w, "%s not-before date removed\n", result.TaskKey)
 	}
+	if result.ParentUpdated {
+		fmt.Fprintf(w, "%s parent updated\n", result.TaskKey)
+	}
 }
 
 func newEditCmd() *cobra.Command {
@@ -270,6 +293,7 @@ func newEditCmd() *cobra.Command {
 		notBefore   string
 		noNotBefore bool
 		summary     string
+		parent      string
 	)
 
 	cmd := &cobra.Command{
@@ -282,7 +306,7 @@ func newEditCmd() *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if estimate == "" && due == "" && !noDue && priority == "" && !upNext && !noUpNext &&
-				!noSplit && !noNoSplit && notBefore == "" && !noNotBefore && summary == "" {
+				!noSplit && !noNoSplit && notBefore == "" && !noNotBefore && summary == "" && parent == "" {
 				return fmt.Errorf("at least one flag is required")
 			}
 			if due != "" && noDue {
@@ -316,6 +340,7 @@ func newEditCmd() *cobra.Command {
 				NoNoSplit:   noNoSplit,
 				NotBefore:   notBefore,
 				NoNotBefore: noNotBefore,
+				Parent:      parent,
 				Source:      source,
 			})
 			if err != nil {
@@ -339,6 +364,7 @@ func newEditCmd() *cobra.Command {
 	cmd.Flags().StringVar(&notBefore, "not-before", "", "set not-before date (YYYY-MM-DD)")
 	cmd.Flags().BoolVar(&noNotBefore, "no-not-before", false, "remove not-before date")
 	cmd.Flags().StringVarP(&summary, "summary", "s", "", "set summary text")
+	cmd.Flags().StringVar(&parent, "parent", "", "set parent issue (e.g. Epic key) — Jira only")
 
 	return cmd
 }

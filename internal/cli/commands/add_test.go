@@ -72,7 +72,7 @@ func TestCLI017_add_interactive_creation(t *testing.T) {
 
 	t.Run("interactive mode requires all fields for jira", func(t *testing.T) {
 		fields := RequiredFields(AddParams{}, "jira")
-		expected := []string{"project", "issueType", "summary", "description", "estimate", "dueDate", "priority"}
+		expected := []string{"project", "issueType", "summary", "description", "estimate", "dueDate", "priority", "parent"}
 		if len(fields) != len(expected) {
 			t.Fatalf("fields = %v, want %v", fields, expected)
 		}

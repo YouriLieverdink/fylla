@@ -83,6 +83,12 @@ type ViewResult struct {
 	NoSplit   bool
 }
 
+// EpicOption represents an epic for form select fields.
+type EpicOption struct {
+	Key   string
+	Label string // "KEY — Summary"
+}
+
 // ReportResult holds summary stats for the report overlay.
 type ReportResult struct {
 	Start       time.Time

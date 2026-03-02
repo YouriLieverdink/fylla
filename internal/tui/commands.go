@@ -17,6 +17,7 @@ type EditTaskParams struct {
 	UpNext    *bool
 	NoSplit   *bool
 	NotBefore string
+	Parent    string
 }
 
 // Callbacks holds function references that the TUI uses to invoke business logic.
@@ -32,10 +33,12 @@ type Callbacks struct {
 	ClearEvents func() (int, error)
 	LoadConfig  func() (string, error)
 	SetConfig   func(key, value string) error
-	AddTask      func(summary, project, section, issueType, description, estimate, dueDate, priority string) (key, summaryOut string, err error)
+	AddTask      func(summary, project, section, issueType, description, estimate, dueDate, priority, parent string) (key, summaryOut string, err error)
 	EditTask     func(params EditTaskParams) error
 	StopTimer    func(description string) (taskKey string, elapsed time.Duration, err error)
 	ListProjects func() ([]string, error)
+	ListEpics    func(project string) ([]msg.EpicOption, error)
+	GetParent    func(taskKey string) (string, error)
 	Provider     func() string
 	SnoozeTask   func(taskKey, target string) error
 	ViewTask     func(taskKey string) (*msg.ViewResult, error)
@@ -133,9 +136,9 @@ func setConfigCmd(cb Callbacks, key, value string) tea.Cmd {
 	}
 }
 
-func addTaskCmd(cb Callbacks, summary, project, section, issueType, description, estimate, dueDate, priority string) tea.Cmd {
+func addTaskCmd(cb Callbacks, summary, project, section, issueType, description, estimate, dueDate, priority, parent string) tea.Cmd {
 	return func() tea.Msg {
-		key, summaryOut, err := cb.AddTask(summary, project, section, issueType, description, estimate, dueDate, priority)
+		key, summaryOut, err := cb.AddTask(summary, project, section, issueType, description, estimate, dueDate, priority, parent)
 		return msg.TaskAddedMsg{Key: key, Summary: summaryOut, Err: err}
 	}
 }
@@ -167,7 +170,56 @@ func loadFormOptionsCmd(cb Callbacks) tea.Cmd {
 		if cb.Provider != nil {
 			provider = cb.Provider()
 		}
-		return msg.FormOptionsMsg{Projects: projects, Provider: provider}
+		var epics []msg.EpicOption
+		if cb.ListEpics != nil && provider == "jira" {
+			project := ""
+			if len(projects) > 0 {
+				project = projects[0]
+			}
+			e, err := cb.ListEpics(project)
+			if err == nil && e != nil {
+				epics = e
+			} else {
+				epics = []msg.EpicOption{}
+			}
+		}
+		return msg.FormOptionsMsg{Projects: projects, Provider: provider, Epics: epics}
+	}
+}
+
+func loadEditFormOptionsCmd(cb Callbacks, project, taskKey string) tea.Cmd {
+	return func() tea.Msg {
+		var epics []msg.EpicOption
+		if cb.ListEpics != nil {
+			e, err := cb.ListEpics(project)
+			if err == nil && e != nil {
+				epics = e
+			} else {
+				epics = []msg.EpicOption{}
+			}
+		}
+		var provider string
+		if cb.Provider != nil {
+			provider = cb.Provider()
+		}
+		var parentKey string
+		if cb.GetParent != nil {
+			p, err := cb.GetParent(taskKey)
+			if err == nil {
+				parentKey = p
+			}
+		}
+		return msg.FormOptionsMsg{Provider: provider, Epics: epics, ParentKey: parentKey}
+	}
+}
+
+func loadEpicsCmd(cb Callbacks, project string) tea.Cmd {
+	return func() tea.Msg {
+		if cb.ListEpics == nil {
+			return msg.EpicsLoadedMsg{}
+		}
+		epics, err := cb.ListEpics(project)
+		return msg.EpicsLoadedMsg{Epics: epics, Err: err}
 	}
 }
 

@@ -229,6 +229,34 @@ func (f *Form) ValueByLabel(label string) string {
 	return ""
 }
 
+// FocusedLabel returns the label of the currently focused field.
+func (f *Form) FocusedLabel() string {
+	if f.Focus >= 0 && f.Focus < len(f.Labels) {
+		return f.Labels[f.Focus]
+	}
+	return ""
+}
+
+// UpdateSelectByLabel replaces the options and resets the selected index for a select field identified by label.
+func (f *Form) UpdateSelectByLabel(label string, options []string, value string) {
+	for i, l := range f.Labels {
+		if l == label && f.kinds[i] == FieldSelect {
+			idx := f.selIdx[i]
+			if idx >= 0 {
+				f.selects[idx].options = options
+				f.selects[idx].selected = 0
+				for j, opt := range options {
+					if strings.EqualFold(opt, value) {
+						f.selects[idx].selected = j
+						break
+					}
+				}
+			}
+			return
+		}
+	}
+}
+
 // View renders the form overlay.
 func (f Form) View(width, height int) string {
 	if !f.Active {

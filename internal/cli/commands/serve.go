@@ -201,7 +201,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			_, err := RunConfigSet(ConfigSetParams{ConfigPath: cfgPath, Key: key, Value: value})
 			return err
 		},
-		AddTask: func(summary, project, section, issueType, description, estimate, dueDate, priority string) (string, string, error) {
+		AddTask: func(summary, project, section, issueType, description, estimate, dueDate, priority, parent string) (string, string, error) {
 			result, err := RunAdd(ctx, AddParams{
 				Summary:     summary,
 				Project:     project,
@@ -211,6 +211,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				Estimate:    estimate,
 				DueDate:     dueDate,
 				Priority:    priority,
+				Parent:      parent,
 				Inline:      true,
 				Creator:     source,
 			})
@@ -226,6 +227,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				Estimate: params.Estimate,
 				Due:      params.Due,
 				Priority: params.Priority,
+				Parent:   params.Parent,
 				Source:   source,
 			}
 			if params.NotBefore != "" {
@@ -273,6 +275,48 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				return pl.ListProjects(ctx)
 			}
 			return nil, nil
+		},
+		ListEpics: func(project string) ([]msg.EpicOption, error) {
+			var el EpicLister
+			if e, ok := source.(EpicLister); ok {
+				el = e
+			} else if ms, ok := source.(*MultiTaskSource); ok {
+				if jiraSrc, ok := ms.sources["jira"]; ok {
+					if e, ok := jiraSrc.(EpicLister); ok {
+						el = e
+					}
+				}
+			}
+			if el == nil {
+				return nil, nil
+			}
+			epics, err := el.ListEpics(ctx, project)
+			if err != nil {
+				return nil, err
+			}
+			options := make([]msg.EpicOption, len(epics))
+			for i, e := range epics {
+				options[i] = msg.EpicOption{
+					Key:   e.Key,
+					Label: fmt.Sprintf("%s — %s", e.Key, e.Summary),
+				}
+			}
+			return options, nil
+		},
+		GetParent: func(taskKey string) (string, error) {
+			var pg ParentGetter
+			if g, ok := source.(ParentGetter); ok {
+				pg = g
+			} else if ms, ok := source.(*MultiTaskSource); ok {
+				routed := ms.routeTo(taskKey)
+				if g, ok := routed.(ParentGetter); ok {
+					pg = g
+				}
+			}
+			if pg == nil {
+				return "", nil
+			}
+			return pg.GetParent(ctx, taskKey)
 		},
 		Provider: func() string {
 			return cfg.ActiveProviders()[0]
