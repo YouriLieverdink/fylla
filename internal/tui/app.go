@@ -598,6 +598,7 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.formKind = formEditTaskPending
 				return m, loadEditFormOptionsCmd(m.cb, t.Project, t.Key)
 			}
+			m.pendingEdit = &ed
 			m.form = buildEditForm(t.Key, ed, nil)
 			m.formKind = formEditTask
 		}
@@ -857,16 +858,18 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					parent = parent[:idx]
 				}
 			}
+			hadNotBefore := m.pendingEdit != nil && m.pendingEdit.notBefore != ""
 			return m, editTaskCmd(m.cb, EditTaskParams{
-				TaskKey:   m.formTaskKey,
-				Summary:   m.form.ValueByLabel("Summary"),
-				Estimate:  m.form.ValueByLabel("Estimate"),
-				Due:       m.form.ValueByLabel("Due Date"),
-				Priority:  m.form.ValueByLabel("Priority"),
-				UpNext:    upNext,
-				NoSplit:   noSplit,
-				NotBefore: m.form.ValueByLabel("Not Before"),
-				Parent:    parent,
+				TaskKey:      m.formTaskKey,
+				Summary:      m.form.ValueByLabel("Summary"),
+				Estimate:     m.form.ValueByLabel("Estimate"),
+				Due:          m.form.ValueByLabel("Due Date"),
+				Priority:     m.form.ValueByLabel("Priority"),
+				UpNext:       upNext,
+				NoSplit:      noSplit,
+				NotBefore:    m.form.ValueByLabel("Not Before"),
+				HadNotBefore: hadNotBefore,
+				Parent:       parent,
 			})
 		case formSnoozeTask:
 			duration := m.form.ValueByLabel("Duration")

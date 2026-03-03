@@ -16,8 +16,9 @@ type EditTaskParams struct {
 	Priority  string
 	UpNext    *bool
 	NoSplit   *bool
-	NotBefore string
-	Parent    string
+	NotBefore    string
+	HadNotBefore bool
+	Parent       string
 }
 
 // Callbacks holds function references that the TUI uses to invoke business logic.

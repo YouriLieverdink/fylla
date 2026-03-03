@@ -232,6 +232,8 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			}
 			if params.NotBefore != "" {
 				ep.NotBefore = params.NotBefore
+			} else if params.HadNotBefore {
+				ep.NoNotBefore = true
 			}
 			if params.UpNext != nil {
 				if *params.UpNext {
