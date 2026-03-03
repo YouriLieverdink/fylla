@@ -123,7 +123,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = mssg.Width
 		m.height = mssg.Height
-		contentHeight := m.height - 4
+		contentHeight := m.height - 5
 		m.timeline.SetSize(m.width, contentHeight)
 		m.tasks.SetSize(m.width, contentHeight)
 		m.schedule.SetSize(m.width, contentHeight)
@@ -976,6 +976,7 @@ func (m model) View() string {
 
 	contentArea := lipgloss.NewStyle().
 		Height(contentHeight).
+		MaxHeight(contentHeight).
 		Width(m.width).
 		Render(content)
 
