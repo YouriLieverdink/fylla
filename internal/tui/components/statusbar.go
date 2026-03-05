@@ -38,6 +38,7 @@ type StatusBar struct {
 	ToastIsError bool
 	HelpHints    string
 	Width        int
+	LoadingText  string
 }
 
 // Render renders the status bar.
@@ -57,6 +58,15 @@ func (s StatusBar) Render() string {
 			left = errorMsgStyle.Render(s.Toast)
 		} else {
 			left = successMsgStyle.Render(s.Toast)
+		}
+	}
+
+	if s.LoadingText != "" {
+		loading := statusStyle.Render(s.LoadingText)
+		if left != "" {
+			left = left + "  " + loading
+		} else {
+			left = loading
 		}
 	}
 

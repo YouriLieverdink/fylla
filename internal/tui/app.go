@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/iruoy/fylla/internal/tui/components"
@@ -95,9 +96,14 @@ type model struct {
 	pendingEdit   *pendingEditData
 	viewDetail    *msg.ViewResult
 	reportResult *msg.ReportResult
+	spinner      spinner.Model
+	saving       string // non-empty shows spinner in status bar with this label
 }
 
 func initialModel(deps Deps) model {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
 	return model{
 		cb:       deps.CB,
 		timeline: timeline.New(),
@@ -105,11 +111,13 @@ func initialModel(deps Deps) model {
 		schedule: schedule.New(),
 		timer:    timerView.New(),
 		config:   configView.New(),
+		spinner:  s,
 	}
 }
 
 func (m model) Init() tea.Cmd {
 	return tea.Batch(
+		m.spinner.Tick,
 		loadTodayCmd(m.cb),
 		timerStatusCmd(m.cb),
 		autoRefreshCmd(),
@@ -120,6 +128,11 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch mssg := mssg.(type) {
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(mssg)
+		return m, cmd
+
 	case tea.WindowSizeMsg:
 		m.width = mssg.Width
 		m.height = mssg.Height
@@ -133,6 +146,15 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Pending form states — only allow escape
+		if m.formKind == formAddTaskPending || m.formKind == formEditTaskPending {
+			if key.Matches(mssg, keys.Escape) {
+				m.formKind = formNone
+				m.pendingEdit = nil
+			}
+			return m, nil
+		}
+
 		// Form overlay takes priority
 		if m.form.Active {
 			return m.updateForm(mssg)
@@ -309,6 +331,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case msg.TaskAddedMsg:
+		m.saving = ""
 		if mssg.Err != nil {
 			m.setToast(fmt.Sprintf("Add error: %v", mssg.Err), true)
 		} else {
@@ -319,6 +342,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case msg.TaskEditedMsg:
+		m.saving = ""
 		if mssg.Err != nil {
 			m.setToast(fmt.Sprintf("Edit error: %v", mssg.Err), true)
 		} else {
@@ -329,6 +353,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case msg.TimerStoppedMsg:
+		m.saving = ""
 		if mssg.Err != nil {
 			m.setToast(fmt.Sprintf("Stop error: %v", mssg.Err), true)
 		} else {
@@ -416,6 +441,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case msg.ConfigSetMsg:
+		m.saving = ""
 		if mssg.Err != nil {
 			m.setToast(fmt.Sprintf("Config error: %v", mssg.Err), true)
 		} else {
@@ -489,6 +515,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case msg.TaskSnoozedMsg:
+		m.saving = ""
 		if mssg.Err != nil {
 			m.setToast(fmt.Sprintf("Snooze error: %v", mssg.Err), true)
 		} else {
@@ -820,6 +847,7 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.formKind = formNone
+			m.saving = "Adding task"
 			return m, addTaskCmd(m.cb, summary,
 				m.form.ValueByLabel("Project"), "",
 				m.form.ValueByLabel("Issue Type"),
@@ -867,6 +895,7 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				priority = ""
 			}
 			m.pendingEdit = nil
+			m.saving = "Saving task"
 			return m, editTaskCmd(m.cb, EditTaskParams{
 				TaskKey:      m.formTaskKey,
 				Summary:      m.form.ValueByLabel("Summary"),
@@ -890,11 +919,13 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.formKind = formNone
+			m.saving = "Snoozing task"
 			return m, snoozeTaskCmd(m.cb, m.formTaskKey, duration)
 		case formStopTimer:
 			comment := m.form.ValueByLabel("Comment")
 			done := m.form.ValueByLabel("Mark done") == "true"
 			m.formKind = formNone
+			m.saving = "Stopping timer"
 			return m, stopTimerCmd(m.cb, comment, done)
 		case formSetConfig:
 			cfgKey := vals[0]
@@ -904,6 +935,7 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.formKind = formNone
+			m.saving = "Saving config"
 			return m, setConfigCmd(m.cb, cfgKey, cfgVal)
 		}
 		m.formKind = formNone
@@ -943,6 +975,67 @@ func (m model) refreshActiveView() tea.Cmd {
 func (m *model) setToast(text string, isError bool) {
 	m.toast = text
 	m.toastIsError = isError
+}
+
+func (m model) isLoading() bool {
+	switch m.activeTab {
+	case tabTimeline:
+		if m.timeline.Loading {
+			return true
+		}
+	case tabTasks:
+		if m.tasks.Loading {
+			return true
+		}
+	case tabSchedule:
+		if m.schedule.Loading {
+			return true
+		}
+	case tabTimer:
+		if m.timer.Loading {
+			return true
+		}
+	case tabConfig:
+		if m.config.Loading {
+			return true
+		}
+	}
+	return m.formKind == formAddTaskPending || m.formKind == formEditTaskPending
+}
+
+func (m model) loadingLabel() string {
+	switch m.activeTab {
+	case tabTimeline:
+		if m.timeline.Loading {
+			return "Loading timeline"
+		}
+	case tabTasks:
+		if m.tasks.Loading {
+			return "Loading tasks"
+		}
+	case tabSchedule:
+		if m.schedule.Loading {
+			return "Loading schedule"
+		}
+	case tabTimer:
+		if m.timer.Loading {
+			return "Loading timer"
+		}
+	case tabConfig:
+		if m.config.Loading {
+			return "Loading config"
+		}
+	}
+	if m.formKind == formAddTaskPending {
+		return "Loading form options"
+	}
+	if m.formKind == formEditTaskPending {
+		return "Loading edit options"
+	}
+	if m.saving != "" {
+		return m.saving
+	}
+	return ""
 }
 
 func (m model) View() string {
@@ -996,6 +1089,10 @@ func (m model) View() string {
 		Render(content)
 
 	hints := "1-5:tabs  ?:help  q:quit"
+	var loadingText string
+	if label := m.loadingLabel(); label != "" {
+		loadingText = m.spinner.View() + " " + label
+	}
 	statusBar := components.StatusBar{
 		TimerKey:     m.timerKey,
 		TimerSummary: m.timerSummary,
@@ -1005,6 +1102,7 @@ func (m model) View() string {
 		ToastIsError: m.toastIsError,
 		HelpHints:    hints,
 		Width:        m.width,
+		LoadingText:  loadingText,
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left,
