@@ -77,6 +77,16 @@ type fieldsJSON struct {
 	Created      string            `json:"created"`
 	Project      projectJSON       `json:"project"`
 	TimeTracking *timeTrackingJSON `json:"timetracking"`
+	Parent       *parentJSON       `json:"parent"`
+}
+
+type parentJSON struct {
+	Key    string           `json:"key"`
+	Fields parentFieldsJSON `json:"fields"`
+}
+
+type parentFieldsJSON struct {
+	Summary string `json:"summary"`
 }
 
 type priorityJSON struct {
@@ -122,6 +132,10 @@ func parseIssue(issue issueJSON) task.Task {
 		Priority:  3, // default Medium
 		IssueType: issue.Fields.IssueType.Name,
 		Project:   issue.Fields.Project.Key,
+	}
+
+	if issue.Fields.Parent != nil && issue.Fields.Parent.Fields.Summary != "" {
+		t.Section = issue.Fields.Parent.Fields.Summary
 	}
 
 	if issue.Fields.Priority != nil {
@@ -188,7 +202,7 @@ func (c *Client) FetchTasks(ctx context.Context, jql string) ([]task.Task, error
 	for {
 		payload := map[string]interface{}{
 			"jql":    jql,
-			"fields": []string{"summary", "priority", "duedate", "issuetype", "created", "project", "timetracking"},
+			"fields": []string{"summary", "priority", "duedate", "issuetype", "created", "project", "timetracking", "parent"},
 		}
 		if nextPageToken != "" {
 			payload["nextPageToken"] = nextPageToken

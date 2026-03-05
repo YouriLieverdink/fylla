@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/iruoy/fylla/internal/tui/msg"
 )
 
@@ -118,7 +119,7 @@ func (m Model) View() string {
 			case e.AtRisk:
 				line = atRiskStyle.Render(line)
 			}
-			b.WriteString(line + "\n")
+			b.WriteString(truncate(line, m.Width) + "\n")
 		}
 		b.WriteString("\n")
 	}
@@ -128,10 +129,10 @@ func (m Model) View() string {
 		b.WriteString(atRiskStyle.Render("At Risk"))
 		b.WriteString("\n")
 		for _, a := range atRisk {
-			b.WriteString(atRiskStyle.Render(fmt.Sprintf("    %s%s (%s - %s)",
+			line := atRiskStyle.Render(fmt.Sprintf("    %s%s (%s - %s)",
 				formatPrefix(a.Project, a.Section), a.Summary,
-				a.Start.Format("15:04"), a.End.Format("15:04"))))
-			b.WriteString("\n")
+				a.Start.Format("15:04"), a.End.Format("15:04")))
+			b.WriteString(truncate(line, m.Width) + "\n")
 		}
 		b.WriteString("\n")
 	}
@@ -142,9 +143,9 @@ func (m Model) View() string {
 		b.WriteString("\n")
 		for _, u := range m.Result.Unscheduled {
 			est := formatDuration(u.Estimate)
-			b.WriteString(warnStyle.Render(fmt.Sprintf("    %s%s  %s  (%s)",
-				formatPrefix(u.Project, u.Section), u.Summary, est, u.Reason)))
-			b.WriteString("\n")
+			line := warnStyle.Render(fmt.Sprintf("    %s%s  %s  (%s)",
+				formatPrefix(u.Project, u.Section), u.Summary, est, u.Reason))
+			b.WriteString(truncate(line, m.Width) + "\n")
 		}
 		b.WriteString("\n")
 	}
@@ -176,6 +177,13 @@ func (m Model) View() string {
 	}
 
 	return strings.Join(lines[start:end], "\n")
+}
+
+func truncate(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+	return ansi.Truncate(s, width, "…")
 }
 
 func formatPrefix(project, section string) string {
