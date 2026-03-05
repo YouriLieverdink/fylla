@@ -19,6 +19,10 @@ type EditTaskParams struct {
 	NotBefore    string
 	HadNotBefore bool
 	Parent       string
+	HadDue       bool
+	HadEstimate  bool
+	HadPriority  bool
+	HadParent    bool
 }
 
 // Callbacks holds function references that the TUI uses to invoke business logic.

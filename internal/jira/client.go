@@ -519,15 +519,22 @@ func (c *Client) GetPriority(ctx context.Context, issueKey string) (int, error) 
 }
 
 // UpdatePriority sets the priority for the specified Jira issue.
+// A priority of 0 clears the priority field.
 func (c *Client) UpdatePriority(ctx context.Context, issueKey string, priority int) error {
-	name, ok := priorityLevelToName[priority]
-	if !ok {
-		return fmt.Errorf("invalid priority level %d (must be 1-5)", priority)
+	var priorityVal interface{}
+	if priority == 0 {
+		priorityVal = nil
+	} else {
+		name, ok := priorityLevelToName[priority]
+		if !ok {
+			return fmt.Errorf("invalid priority level %d (must be 1-5)", priority)
+		}
+		priorityVal = map[string]string{"name": name}
 	}
 
 	payload := map[string]interface{}{
 		"fields": map[string]interface{}{
-			"priority": map[string]string{"name": name},
+			"priority": priorityVal,
 		},
 	}
 
@@ -776,11 +783,18 @@ func (c *Client) ListEpics(ctx context.Context, project string) ([]Epic, error) 
 	return epics, nil
 }
 
-// UpdateParent sets the parent issue for the specified Jira issue.
+// UpdateParent sets or clears the parent issue for the specified Jira issue.
+// An empty parentKey clears the parent field.
 func (c *Client) UpdateParent(ctx context.Context, issueKey, parentKey string) error {
+	var parentVal interface{}
+	if parentKey == "" {
+		parentVal = nil
+	} else {
+		parentVal = map[string]string{"key": parentKey}
+	}
 	payload := map[string]interface{}{
 		"fields": map[string]interface{}{
-			"parent": map[string]string{"key": parentKey},
+			"parent": parentVal,
 		},
 	}
 

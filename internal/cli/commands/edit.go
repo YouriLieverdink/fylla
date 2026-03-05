@@ -32,6 +32,9 @@ type EditParams struct {
 	NotBefore   string
 	NoNotBefore bool
 	Parent      string
+	NoParent    bool
+	NoEstimate  bool
+	NoPriority  bool
 	Source      TaskSource
 }
 
@@ -50,6 +53,9 @@ type EditResult struct {
 	NotBeforeRemoved bool
 	SummaryUpdated   bool
 	ParentUpdated    bool
+	ParentRemoved    bool
+	EstimateRemoved  bool
+	PriorityRemoved  bool
 }
 
 // RunEdit applies one or more edits to a task.
@@ -67,6 +73,13 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 			return nil, fmt.Errorf("estimate: %w", err)
 		}
 		result.EstimateResult = r
+	}
+
+	if p.NoEstimate {
+		if err := p.Source.UpdateEstimate(ctx, p.TaskKey, 0); err != nil {
+			return nil, fmt.Errorf("remove estimate: %w", err)
+		}
+		result.EstimateRemoved = true
 	}
 
 	if p.Due != "" {
@@ -102,6 +115,13 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 		result.PriorityResult = r
 	}
 
+	if p.NoPriority {
+		if err := p.Source.UpdatePriority(ctx, p.TaskKey, 0); err != nil {
+			return nil, fmt.Errorf("remove priority: %w", err)
+		}
+		result.PriorityRemoved = true
+	}
+
 	if p.Parent != "" {
 		var pu ParentUpdater
 		if u, ok := p.Source.(ParentUpdater); ok {
@@ -117,6 +137,24 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 				return nil, fmt.Errorf("update parent: %w", err)
 			}
 			result.ParentUpdated = true
+		}
+	}
+
+	if p.NoParent {
+		var pu ParentUpdater
+		if u, ok := p.Source.(ParentUpdater); ok {
+			pu = u
+		} else if ms, ok := p.Source.(*MultiTaskSource); ok {
+			routed := ms.routeTo(p.TaskKey)
+			if u, ok := routed.(ParentUpdater); ok {
+				pu = u
+			}
+		}
+		if pu != nil {
+			if err := pu.UpdateParent(ctx, p.TaskKey, ""); err != nil {
+				return nil, fmt.Errorf("remove parent: %w", err)
+			}
+			result.ParentRemoved = true
 		}
 	}
 
@@ -278,14 +316,25 @@ func PrintEditResult(w io.Writer, result *EditResult) {
 	if result.ParentUpdated {
 		fmt.Fprintf(w, "%s parent updated\n", result.TaskKey)
 	}
+	if result.ParentRemoved {
+		fmt.Fprintf(w, "%s parent removed\n", result.TaskKey)
+	}
+	if result.EstimateRemoved {
+		fmt.Fprintf(w, "Estimate for %s removed\n", result.TaskKey)
+	}
+	if result.PriorityRemoved {
+		fmt.Fprintf(w, "Priority for %s removed\n", result.TaskKey)
+	}
 }
 
 func newEditCmd() *cobra.Command {
 	var (
 		estimate    string
+		noEstimate  bool
 		due         string
 		noDue       bool
 		priority    string
+		noPriority  bool
 		upNext      bool
 		noUpNext    bool
 		noSplit     bool
@@ -294,6 +343,7 @@ func newEditCmd() *cobra.Command {
 		noNotBefore bool
 		summary     string
 		parent      string
+		noParent    bool
 	)
 
 	cmd := &cobra.Command{
@@ -305,12 +355,22 @@ func newEditCmd() *cobra.Command {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if estimate == "" && due == "" && !noDue && priority == "" && !upNext && !noUpNext &&
-				!noSplit && !noNoSplit && notBefore == "" && !noNotBefore && summary == "" && parent == "" {
+			if estimate == "" && !noEstimate && due == "" && !noDue && priority == "" && !noPriority &&
+				!upNext && !noUpNext && !noSplit && !noNoSplit && notBefore == "" && !noNotBefore &&
+				summary == "" && parent == "" && !noParent {
 				return fmt.Errorf("at least one flag is required")
 			}
 			if due != "" && noDue {
 				return fmt.Errorf("--due and --no-due are mutually exclusive")
+			}
+			if estimate != "" && noEstimate {
+				return fmt.Errorf("--estimate and --no-estimate are mutually exclusive")
+			}
+			if priority != "" && noPriority {
+				return fmt.Errorf("--priority and --no-priority are mutually exclusive")
+			}
+			if parent != "" && noParent {
+				return fmt.Errorf("--parent and --no-parent are mutually exclusive")
 			}
 			if upNext && noUpNext {
 				return fmt.Errorf("--up-next and --no-up-next are mutually exclusive")
@@ -331,9 +391,11 @@ func newEditCmd() *cobra.Command {
 				TaskKey:     args[0],
 				Summary:     summary,
 				Estimate:    estimate,
+				NoEstimate:  noEstimate,
 				Due:         due,
 				NoDue:       noDue,
 				Priority:    priority,
+				NoPriority:  noPriority,
 				UpNext:      upNext,
 				NoUpNext:    noUpNext,
 				NoSplit:     noSplit,
@@ -341,6 +403,7 @@ func newEditCmd() *cobra.Command {
 				NotBefore:   notBefore,
 				NoNotBefore: noNotBefore,
 				Parent:      parent,
+				NoParent:    noParent,
 				Source:      source,
 			})
 			if err != nil {
@@ -354,9 +417,11 @@ func newEditCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&estimate, "estimate", "e", "", "set estimate (e.g. 4h, +2h, -1h)")
+	cmd.Flags().BoolVar(&noEstimate, "no-estimate", false, "remove estimate")
 	cmd.Flags().StringVarP(&due, "due", "d", "", "set due date (YYYY-MM-DD, natural language, +7d, -3d)")
 	cmd.Flags().BoolVar(&noDue, "no-due", false, "remove due date")
 	cmd.Flags().StringVarP(&priority, "priority", "p", "", "set priority (Highest, High, Medium, Low, Lowest, 1-5, +1, -1)")
+	cmd.Flags().BoolVar(&noPriority, "no-priority", false, "remove priority")
 	cmd.Flags().BoolVar(&upNext, "up-next", false, "mark as up next")
 	cmd.Flags().BoolVar(&noUpNext, "no-up-next", false, "unmark as up next")
 	cmd.Flags().BoolVar(&noSplit, "no-split", false, "mark as no-split")
@@ -365,6 +430,7 @@ func newEditCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&noNotBefore, "no-not-before", false, "remove not-before date")
 	cmd.Flags().StringVarP(&summary, "summary", "s", "", "set summary text")
 	cmd.Flags().StringVar(&parent, "parent", "", "set parent issue (e.g. Epic key) — Jira only")
+	cmd.Flags().BoolVar(&noParent, "no-parent", false, "remove parent issue")
 
 	return cmd
 }

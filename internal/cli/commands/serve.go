@@ -235,6 +235,18 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			} else if params.HadNotBefore {
 				ep.NoNotBefore = true
 			}
+			if params.Due == "" && params.HadDue {
+				ep.NoDue = true
+			}
+			if params.Estimate == "" && params.HadEstimate {
+				ep.NoEstimate = true
+			}
+			if params.Priority == "" && params.HadPriority {
+				ep.NoPriority = true
+			}
+			if params.Parent == "" && params.HadParent {
+				ep.NoParent = true
+			}
 			if params.UpNext != nil {
 				if *params.UpNext {
 					ep.UpNext = true

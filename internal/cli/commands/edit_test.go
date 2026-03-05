@@ -26,6 +26,8 @@ type editMock struct {
 	updatedDue     time.Time
 	updatedPri     int
 	removedDue     bool
+	updatedParent  string
+	parentUpdated  bool
 }
 
 func (m *editMock) GetEstimate(_ context.Context, _ string) (time.Duration, error) {
@@ -67,6 +69,12 @@ func (m *editMock) GetSummary(_ context.Context, _ string) (string, error) {
 func (m *editMock) UpdateSummary(_ context.Context, _ string, s string) error {
 	m.updatedSummary = s
 	return m.updateSumErr
+}
+
+func (m *editMock) UpdateParent(_ context.Context, _ string, parent string) error {
+	m.updatedParent = parent
+	m.parentUpdated = true
+	return m.updateErr
 }
 
 func TestRunEdit_Validation(t *testing.T) {
@@ -460,6 +468,125 @@ func TestPrintEditResult(t *testing.T) {
 		output := buf.String()
 		if !strings.Contains(output, "unmarked as up next") {
 			t.Errorf("missing unmarked output: %s", output)
+		}
+	})
+
+	t.Run("cleared fields", func(t *testing.T) {
+		var buf bytes.Buffer
+		PrintEditResult(&buf, &EditResult{
+			TaskKey:         "PROJ-1",
+			EstimateRemoved: true,
+			PriorityRemoved: true,
+			ParentRemoved:   true,
+		})
+		output := buf.String()
+		if !strings.Contains(output, "Estimate for PROJ-1 removed") {
+			t.Errorf("missing estimate removed output: %s", output)
+		}
+		if !strings.Contains(output, "Priority for PROJ-1 removed") {
+			t.Errorf("missing priority removed output: %s", output)
+		}
+		if !strings.Contains(output, "parent removed") {
+			t.Errorf("missing parent removed output: %s", output)
+		}
+	})
+}
+
+func TestRunEdit_ClearFields(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("no-estimate clears estimate", func(t *testing.T) {
+		m := &editMock{}
+		result, err := RunEdit(ctx, EditParams{
+			TaskKey:    "PROJ-1",
+			NoEstimate: true,
+			Source:     m,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !result.EstimateRemoved {
+			t.Fatal("expected EstimateRemoved")
+		}
+		if m.updatedEst != 0 {
+			t.Errorf("expected estimate set to 0, got %v", m.updatedEst)
+		}
+	})
+
+	t.Run("no-priority clears priority", func(t *testing.T) {
+		m := &editMock{}
+		result, err := RunEdit(ctx, EditParams{
+			TaskKey:    "PROJ-1",
+			NoPriority: true,
+			Source:     m,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !result.PriorityRemoved {
+			t.Fatal("expected PriorityRemoved")
+		}
+		if m.updatedPri != 0 {
+			t.Errorf("expected priority set to 0, got %d", m.updatedPri)
+		}
+	})
+
+	t.Run("no-parent clears parent", func(t *testing.T) {
+		m := &editMock{}
+		result, err := RunEdit(ctx, EditParams{
+			TaskKey:  "PROJ-1",
+			NoParent: true,
+			Source:   m,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !result.ParentRemoved {
+			t.Fatal("expected ParentRemoved")
+		}
+		if !m.parentUpdated {
+			t.Fatal("expected UpdateParent to be called")
+		}
+		if m.updatedParent != "" {
+			t.Errorf("expected parent set to empty, got %q", m.updatedParent)
+		}
+	})
+}
+
+func TestRunEdit_ClearMutualExclusion(t *testing.T) {
+	t.Run("estimate and no-estimate", func(t *testing.T) {
+		cmd := newEditCmd()
+		cmd.SetArgs([]string{"PROJ-123", "--estimate", "4h", "--no-estimate"})
+		err := cmd.Execute()
+		if err == nil {
+			t.Fatal("expected error for --estimate and --no-estimate")
+		}
+		if !strings.Contains(err.Error(), "mutually exclusive") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("priority and no-priority", func(t *testing.T) {
+		cmd := newEditCmd()
+		cmd.SetArgs([]string{"PROJ-123", "--priority", "High", "--no-priority"})
+		err := cmd.Execute()
+		if err == nil {
+			t.Fatal("expected error for --priority and --no-priority")
+		}
+		if !strings.Contains(err.Error(), "mutually exclusive") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("parent and no-parent", func(t *testing.T) {
+		cmd := newEditCmd()
+		cmd.SetArgs([]string{"PROJ-123", "--parent", "EPIC-1", "--no-parent"})
+		err := cmd.Execute()
+		if err == nil {
+			t.Fatal("expected error for --parent and --no-parent")
+		}
+		if !strings.Contains(err.Error(), "mutually exclusive") {
+			t.Errorf("unexpected error: %v", err)
 		}
 	})
 }

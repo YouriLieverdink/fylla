@@ -440,7 +440,6 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingEdit.parentKey = mssg.ParentKey
 			m.form = buildEditForm(m.formTaskKey, *m.pendingEdit, mssg.Epics)
 			m.formKind = formEditTask
-			m.pendingEdit = nil
 			return m, nil
 		}
 		if m.formKind == formAddTaskPending {
@@ -859,17 +858,30 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 			hadNotBefore := m.pendingEdit != nil && m.pendingEdit.notBefore != ""
+			hadDue := m.pendingEdit != nil && m.pendingEdit.dueDate != ""
+			hadEstimate := m.pendingEdit != nil && m.pendingEdit.estimate != ""
+			hadPriority := m.pendingEdit != nil && m.pendingEdit.priority != ""
+			hadParent := m.pendingEdit != nil && m.pendingEdit.parentKey != ""
+			priority := m.form.ValueByLabel("Priority")
+			if priority == "None" {
+				priority = ""
+			}
+			m.pendingEdit = nil
 			return m, editTaskCmd(m.cb, EditTaskParams{
 				TaskKey:      m.formTaskKey,
 				Summary:      m.form.ValueByLabel("Summary"),
 				Estimate:     m.form.ValueByLabel("Estimate"),
 				Due:          m.form.ValueByLabel("Due Date"),
-				Priority:     m.form.ValueByLabel("Priority"),
+				Priority:     priority,
 				UpNext:       upNext,
 				NoSplit:      noSplit,
 				NotBefore:    m.form.ValueByLabel("Not Before"),
 				HadNotBefore: hadNotBefore,
 				Parent:       parent,
+				HadDue:       hadDue,
+				HadEstimate:  hadEstimate,
+				HadPriority:  hadPriority,
+				HadParent:    hadParent,
 			})
 		case formSnoozeTask:
 			duration := m.form.ValueByLabel("Duration")
@@ -1200,7 +1212,7 @@ func buildEditForm(taskKey string, ed pendingEditData, epics []msg.EpicOption) c
 		{Label: "Summary", Placeholder: "Task summary", Value: ed.summary},
 		{Label: "Estimate", Placeholder: "e.g. 2h, 30m", Value: ed.estimate},
 		{Label: "Due Date", Placeholder: "e.g. 2025-03-01", Value: ed.dueDate},
-		{Label: "Priority", Kind: components.FieldSelect, Options: []string{"Highest", "High", "Medium", "Low", "Lowest"}, Value: ed.priority},
+		{Label: "Priority", Kind: components.FieldSelect, Options: []string{"None", "Highest", "High", "Medium", "Low", "Lowest"}, Value: ed.priority},
 	}
 	if epics != nil {
 		epicOptions := []string{"None"}
