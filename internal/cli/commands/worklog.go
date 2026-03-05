@@ -121,6 +121,13 @@ func RunWorklog(ctx context.Context, p WorklogParams) (*WorklogResult, error) {
 				}
 				taskKey = resolved
 			}
+			if isLocalKey(fe.TaskKey) {
+				resolved, err := resolveToFallbackIssue(p.Survey, p.Cfg)
+				if err != nil {
+					return nil, fmt.Errorf("resolve worklog target for %s: %w", fe.TaskKey, err)
+				}
+				taskKey = resolved
+			}
 
 			entries = append(entries, WorklogEntry{
 				TaskKey:     taskKey,

@@ -64,6 +64,15 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 		worklogKey = resolved
 	}
 
+	// Resolve local task keys to a fallback issue for worklog posting.
+	if isLocalKey(sr.TaskKey) {
+		resolved, err := resolveToFallbackIssue(p.Survey, p.Cfg)
+		if err != nil {
+			return nil, fmt.Errorf("resolve worklog target: %w", err)
+		}
+		worklogKey = resolved
+	}
+
 	if err := p.Jira.PostWorklog(ctx, worklogKey, sr.Rounded, p.Description, sr.StartTime); err != nil {
 		return nil, fmt.Errorf("post worklog: %w", err)
 	}
@@ -199,6 +208,14 @@ func PrintStopResult(w io.Writer, result *StopResult) {
 				result.TaskKey, result.TaskKey)
 		}
 	}
+}
+
+func resolveToFallbackIssue(survey Surveyor, cfg *config.Config) (string, error) {
+	var fallbacks []string
+	if cfg != nil {
+		fallbacks = cfg.Worklog.FallbackIssues
+	}
+	return promptFallbackIssue(survey, fallbacks)
 }
 
 func newStopCmd() *cobra.Command {

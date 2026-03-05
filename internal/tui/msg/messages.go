@@ -120,7 +120,8 @@ type ClearToastMsg struct{}
 // FormOptionsMsg carries project/section lists for populating add form selectors.
 type FormOptionsMsg struct {
 	Projects  []string
-	Provider  string // primary provider name (e.g. "jira", "todoist")
+	Provider  string   // primary provider name (e.g. "jira", "todoist")
+	Providers []string // all active provider names
 	Epics     []EpicOption
 	ParentKey string // current parent key (for edit form pre-population)
 	Err       error
@@ -148,6 +149,12 @@ type ReportLoadedMsg struct {
 type EpicsLoadedMsg struct {
 	Epics []EpicOption
 	Err   error
+}
+
+// ProjectsLoadedMsg carries the result of loading projects for a specific provider.
+type ProjectsLoadedMsg struct {
+	Projects []string
+	Err      error
 }
 
 // AutoRefreshMsg triggers an auto-refresh of the current view.

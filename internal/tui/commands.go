@@ -38,14 +38,15 @@ type Callbacks struct {
 	ClearEvents func() (int, error)
 	LoadConfig  func() (string, error)
 	SetConfig   func(key, value string) error
-	AddTask      func(summary, project, section, issueType, description, estimate, dueDate, priority, parent string) (key, summaryOut string, err error)
+	AddTask      func(provider, summary, project, section, issueType, description, estimate, dueDate, priority, parent string) (key, summaryOut string, err error)
 	EditTask     func(params EditTaskParams) error
 	StopTimer    func(description string, done bool) (taskKey string, elapsed time.Duration, err error)
 	AbortTimer   func() (taskKey string, err error)
-	ListProjects func() ([]string, error)
+	ListProjects func(provider string) ([]string, error)
 	ListEpics    func(project string) ([]msg.EpicOption, error)
 	GetParent    func(taskKey string) (string, error)
 	Provider     func() string
+	Providers    func() []string
 	SnoozeTask   func(taskKey, target string) error
 	ViewTask     func(taskKey string) (*msg.ViewResult, error)
 	LoadReport   func(days int) (*msg.ReportResult, error)
@@ -142,9 +143,9 @@ func setConfigCmd(cb Callbacks, key, value string) tea.Cmd {
 	}
 }
 
-func addTaskCmd(cb Callbacks, summary, project, section, issueType, description, estimate, dueDate, priority, parent string) tea.Cmd {
+func addTaskCmd(cb Callbacks, provider, summary, project, section, issueType, description, estimate, dueDate, priority, parent string) tea.Cmd {
 	return func() tea.Msg {
-		key, summaryOut, err := cb.AddTask(summary, project, section, issueType, description, estimate, dueDate, priority, parent)
+		key, summaryOut, err := cb.AddTask(provider, summary, project, section, issueType, description, estimate, dueDate, priority, parent)
 		return msg.TaskAddedMsg{Key: key, Summary: summaryOut, Err: err}
 	}
 }
@@ -172,16 +173,20 @@ func abortTimerCmd(cb Callbacks) tea.Cmd {
 
 func loadFormOptionsCmd(cb Callbacks) tea.Cmd {
 	return func() tea.Msg {
-		var projects []string
-		if cb.ListProjects != nil {
-			p, err := cb.ListProjects()
-			if err == nil {
-				projects = p
-			}
-		}
 		var provider string
 		if cb.Provider != nil {
 			provider = cb.Provider()
+		}
+		var providers []string
+		if cb.Providers != nil {
+			providers = cb.Providers()
+		}
+		var projects []string
+		if cb.ListProjects != nil {
+			p, err := cb.ListProjects(provider)
+			if err == nil {
+				projects = p
+			}
 		}
 		var epics []msg.EpicOption
 		if cb.ListEpics != nil && provider == "jira" {
@@ -196,7 +201,7 @@ func loadFormOptionsCmd(cb Callbacks) tea.Cmd {
 				epics = []msg.EpicOption{}
 			}
 		}
-		return msg.FormOptionsMsg{Projects: projects, Provider: provider, Epics: epics}
+		return msg.FormOptionsMsg{Projects: projects, Provider: provider, Providers: providers, Epics: epics}
 	}
 }
 
@@ -223,6 +228,16 @@ func loadEditFormOptionsCmd(cb Callbacks, project, taskKey string) tea.Cmd {
 			}
 		}
 		return msg.FormOptionsMsg{Provider: provider, Epics: epics, ParentKey: parentKey}
+	}
+}
+
+func loadProjectsCmd(cb Callbacks, provider string) tea.Cmd {
+	return func() tea.Msg {
+		if cb.ListProjects == nil {
+			return msg.ProjectsLoadedMsg{}
+		}
+		projects, err := cb.ListProjects(provider)
+		return msg.ProjectsLoadedMsg{Projects: projects, Err: err}
 	}
 }
 

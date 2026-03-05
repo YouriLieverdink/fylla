@@ -229,6 +229,41 @@ func (f *Form) ValueByLabel(label string) string {
 	return ""
 }
 
+// SetValueByLabel sets the value of the field with the given label.
+func (f *Form) SetValueByLabel(label, value string) {
+	for i, l := range f.Labels {
+		if l == label {
+			switch f.kinds[i] {
+			case FieldText:
+				f.texts[f.textIdx[i]].SetValue(value)
+			case FieldSelect:
+				idx := f.selIdx[i]
+				for j, opt := range f.selects[idx].options {
+					if strings.EqualFold(opt, value) {
+						f.selects[idx].selected = j
+						break
+					}
+				}
+			case FieldToggle:
+				f.toggles[f.togIdx[i]].value = value == "true"
+			}
+			return
+		}
+	}
+}
+
+// FocusByLabel moves focus to the field with the given label.
+func (f *Form) FocusByLabel(label string) {
+	for i, l := range f.Labels {
+		if l == label {
+			f.blurCurrent()
+			f.Focus = i
+			f.focusCurrent()
+			return
+		}
+	}
+}
+
 // FocusedLabel returns the label of the currently focused field.
 func (f *Form) FocusedLabel() string {
 	if f.Focus >= 0 && f.Focus < len(f.Labels) {
@@ -252,6 +287,22 @@ func (f *Form) UpdateSelectByLabel(label string, options []string, value string)
 					}
 				}
 			}
+			return
+		}
+	}
+}
+
+// ConvertToTextByLabel converts a select field to a text input field.
+func (f *Form) ConvertToTextByLabel(label, placeholder string) {
+	for i, l := range f.Labels {
+		if l == label && f.kinds[i] == FieldSelect {
+			ti := textinput.New()
+			ti.Placeholder = placeholder
+			ti.CharLimit = 120
+			f.kinds[i] = FieldText
+			f.selIdx[i] = -1
+			f.textIdx[i] = len(f.texts)
+			f.texts = append(f.texts, ti)
 			return
 		}
 	}

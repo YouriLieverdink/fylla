@@ -91,8 +91,9 @@ type model struct {
 	confirmType  confirmAction
 	confirmKey   string
 	form         components.Form
-	formKind     formKind
+	formKind      formKind
 	formTaskKey   string
+	formOptions   *msg.FormOptionsMsg
 	pendingEdit   *pendingEditData
 	viewDetail    *msg.ViewResult
 	reportResult *msg.ReportResult
@@ -469,47 +470,8 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.formKind == formAddTaskPending {
-			projectField := components.FormFieldDef{Label: "Project", Placeholder: "Project key"}
-			if len(mssg.Projects) > 0 {
-				projectField = components.FormFieldDef{
-					Label:   "Project",
-					Kind:    components.FieldSelect,
-					Options: mssg.Projects,
-					Value:   mssg.Projects[0],
-				}
-			}
-			fields := []components.FormFieldDef{
-				{Label: "Summary", Placeholder: "Task summary"},
-				projectField,
-			}
-			if mssg.Provider == "jira" {
-				fields = append(fields, components.FormFieldDef{
-					Label: "Issue Type", Kind: components.FieldSelect,
-					Options: []string{"Task", "Bug", "Story", "Epic"}, Value: "Task",
-				})
-			}
-			fields = append(fields,
-				components.FormFieldDef{Label: "Description", Placeholder: "Description"},
-				components.FormFieldDef{Label: "Estimate", Placeholder: "e.g. 2h, 30m"},
-				components.FormFieldDef{Label: "Due Date", Placeholder: "e.g. 2025-03-01"},
-				components.FormFieldDef{Label: "Priority", Kind: components.FieldSelect, Options: []string{"Highest", "High", "Medium", "Low", "Lowest"}, Value: "Medium"},
-			)
-			if mssg.Provider == "jira" {
-				epicOptions := []string{"None"}
-				for _, e := range mssg.Epics {
-					epicOptions = append(epicOptions, e.Label)
-				}
-				fields = append(fields, components.FormFieldDef{
-					Label: "Parent", Kind: components.FieldSelect,
-					Options: epicOptions, Value: "None",
-				})
-			}
-			fields = append(fields,
-				components.FormFieldDef{Label: "Up Next", Kind: components.FieldToggle},
-				components.FormFieldDef{Label: "No Split", Kind: components.FieldToggle},
-				components.FormFieldDef{Label: "Not Before", Placeholder: "e.g. -3d, 2025-03-01"},
-			)
-			m.form = components.NewForm("Add Task", fields)
+			m.formOptions = &mssg
+			m.form = buildAddForm(mssg.Provider, &mssg)
 			m.formKind = formAddTask
 		}
 		return m, nil
@@ -542,6 +504,17 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reportResult = mssg.Result
 		}
 		return m, tea.Batch(cmds...)
+
+	case msg.ProjectsLoadedMsg:
+		if m.form.Active && m.formKind == formAddTask && m.formOptions != nil {
+			m.formOptions.Projects = mssg.Projects
+			if len(mssg.Projects) > 0 {
+				m.form.UpdateSelectByLabel("Project", mssg.Projects, mssg.Projects[0])
+			} else {
+				m.form.ConvertToTextByLabel("Project", "Project key")
+			}
+		}
+		return m, nil
 
 	case msg.EpicsLoadedMsg:
 		if m.form.Active && (m.formKind == formAddTask || m.formKind == formEditTask) {
@@ -764,6 +737,7 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(mssg, keys.Escape):
 		m.form.Active = false
 		m.formKind = formNone
+		m.formOptions = nil
 		return m, nil
 	case mssg.Type == tea.KeyTab:
 		m.form.FocusNext()
@@ -774,6 +748,9 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case mssg.Type == tea.KeyLeft:
 		if m.form.IsSelectField() {
 			m.form.CycleSelectLeft()
+			if m.form.FocusedLabel() == "Provider" && m.formKind == formAddTask && m.formOptions != nil {
+				return m, m.rebuildAddFormForProvider()
+			}
 			if m.form.FocusedLabel() == "Project" {
 				return m, loadEpicsCmd(m.cb, m.form.ValueByLabel("Project"))
 			}
@@ -792,6 +769,9 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case mssg.Type == tea.KeyRight:
 		if m.form.IsSelectField() {
 			m.form.CycleSelectRight()
+			if m.form.FocusedLabel() == "Provider" && m.formKind == formAddTask && m.formOptions != nil {
+				return m, m.rebuildAddFormForProvider()
+			}
 			if m.form.FocusedLabel() == "Project" {
 				return m, loadEpicsCmd(m.cb, m.form.ValueByLabel("Project"))
 			}
@@ -846,9 +826,14 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					parent = parent[:idx]
 				}
 			}
+			provider := m.form.ValueByLabel("Provider")
+			if provider == "" && m.formOptions != nil {
+				provider = m.formOptions.Provider
+			}
 			m.formKind = formNone
+			m.formOptions = nil
 			m.saving = "Adding task"
-			return m, addTaskCmd(m.cb, summary,
+			return m, addTaskCmd(m.cb, provider, summary,
 				m.form.ValueByLabel("Project"), "",
 				m.form.ValueByLabel("Issue Type"),
 				m.form.ValueByLabel("Description"),
@@ -1303,6 +1288,86 @@ func buildPendingEditData(t *msg.ScoredTask) pendingEditData {
 		ed.noSplit = "true"
 	}
 	return ed
+}
+
+func buildAddForm(provider string, opts *msg.FormOptionsMsg) components.Form {
+	var fields []components.FormFieldDef
+	if len(opts.Providers) > 1 {
+		fields = append(fields, components.FormFieldDef{
+			Label: "Provider", Kind: components.FieldSelect,
+			Options: opts.Providers, Value: provider,
+		})
+	}
+	projectField := components.FormFieldDef{Label: "Project", Placeholder: "Project key"}
+	if len(opts.Projects) > 0 {
+		projectField = components.FormFieldDef{
+			Label:   "Project",
+			Kind:    components.FieldSelect,
+			Options: opts.Projects,
+			Value:   opts.Projects[0],
+		}
+	}
+	fields = append(fields,
+		components.FormFieldDef{Label: "Summary", Placeholder: "Task summary"},
+		projectField,
+	)
+	if provider == "jira" {
+		fields = append(fields, components.FormFieldDef{
+			Label: "Issue Type", Kind: components.FieldSelect,
+			Options: []string{"Task", "Bug", "Story", "Epic"}, Value: "Task",
+		})
+	}
+	fields = append(fields,
+		components.FormFieldDef{Label: "Description", Placeholder: "Description"},
+		components.FormFieldDef{Label: "Estimate", Placeholder: "e.g. 2h, 30m"},
+		components.FormFieldDef{Label: "Due Date", Placeholder: "e.g. 2025-03-01"},
+		components.FormFieldDef{Label: "Priority", Kind: components.FieldSelect, Options: []string{"Highest", "High", "Medium", "Low", "Lowest"}, Value: "Medium"},
+	)
+	if provider == "jira" {
+		epicOptions := []string{"None"}
+		for _, e := range opts.Epics {
+			epicOptions = append(epicOptions, e.Label)
+		}
+		fields = append(fields, components.FormFieldDef{
+			Label: "Parent", Kind: components.FieldSelect,
+			Options: epicOptions, Value: "None",
+		})
+	}
+	fields = append(fields,
+		components.FormFieldDef{Label: "Up Next", Kind: components.FieldToggle},
+		components.FormFieldDef{Label: "No Split", Kind: components.FieldToggle},
+		components.FormFieldDef{Label: "Not Before", Placeholder: "e.g. -3d, 2025-03-01"},
+	)
+	return components.NewForm("Add Task", fields)
+}
+
+func (m *model) rebuildAddFormForProvider() tea.Cmd {
+	newProvider := m.form.ValueByLabel("Provider")
+	// Preserve user-entered values
+	preserved := map[string]string{
+		"Summary":     m.form.ValueByLabel("Summary"),
+		"Description": m.form.ValueByLabel("Description"),
+		"Estimate":    m.form.ValueByLabel("Estimate"),
+		"Due Date":    m.form.ValueByLabel("Due Date"),
+		"Priority":    m.form.ValueByLabel("Priority"),
+		"Up Next":     m.form.ValueByLabel("Up Next"),
+		"No Split":    m.form.ValueByLabel("No Split"),
+		"Not Before":  m.form.ValueByLabel("Not Before"),
+	}
+	m.form = buildAddForm(newProvider, m.formOptions)
+	for label, val := range preserved {
+		if val != "" {
+			m.form.SetValueByLabel(label, val)
+		}
+	}
+	// Focus the Provider field after rebuild
+	m.form.FocusByLabel("Provider")
+	var cmds []tea.Cmd
+	cmds = append(cmds, loadProjectsCmd(m.cb, newProvider))
+	if newProvider == "jira" {
+		cmds = append(cmds, loadEpicsCmd(m.cb, m.form.ValueByLabel("Project")))
+	}
+	return tea.Batch(cmds...)
 }
 
 func buildEditForm(taskKey string, ed pendingEditData, epics []msg.EpicOption) components.Form {

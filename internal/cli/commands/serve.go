@@ -7,6 +7,7 @@ import (
 
 	"github.com/iruoy/fylla/internal/calendar"
 	"github.com/iruoy/fylla/internal/config"
+	"github.com/iruoy/fylla/internal/task"
 	"github.com/iruoy/fylla/internal/timer"
 	"github.com/iruoy/fylla/internal/tui"
 	"github.com/iruoy/fylla/internal/tui/msg"
@@ -201,7 +202,13 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			_, err := RunConfigSet(ConfigSetParams{ConfigPath: cfgPath, Key: key, Value: value})
 			return err
 		},
-		AddTask: func(summary, project, section, issueType, description, estimate, dueDate, priority, parent string) (string, string, error) {
+		AddTask: func(provider, summary, project, section, issueType, description, estimate, dueDate, priority, parent string) (string, string, error) {
+			var creator TaskCreator = source
+			if provider != "" {
+				if ms, ok := source.(*MultiTaskSource); ok {
+					creator = &providerCreator{ms: ms, provider: provider}
+				}
+			}
 			result, err := RunAdd(ctx, AddParams{
 				Summary:     summary,
 				Project:     project,
@@ -213,7 +220,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				Priority:    priority,
 				Parent:      parent,
 				Inline:      true,
-				Creator:     source,
+				Creator:     creator,
 			})
 			if err != nil {
 				return "", "", err
@@ -302,7 +309,17 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			}
 			return result.TaskKey, result.Elapsed, nil
 		},
-		ListProjects: func() ([]string, error) {
+		ListProjects: func(provider string) ([]string, error) {
+			if provider != "" {
+				if ms, ok := source.(*MultiTaskSource); ok {
+					if src, ok := ms.sources[provider]; ok {
+						if pl, ok := src.(ProjectLister); ok {
+							return pl.ListProjects(ctx)
+						}
+					}
+					return nil, nil
+				}
+			}
 			if pl, ok := source.(ProjectLister); ok {
 				return pl.ListProjects(ctx)
 			}
@@ -353,6 +370,9 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 		Provider: func() string {
 			return cfg.ActiveProviders()[0]
 		},
+		Providers: func() []string {
+			return cfg.ActiveProviders()
+		},
 		SnoozeTask: func(taskKey, target string) error {
 			_, err := RunSnooze(ctx, SnoozeParams{
 				TaskKey: taskKey,
@@ -400,6 +420,15 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			}, nil
 		},
 	}
+}
+
+type providerCreator struct {
+	ms       *MultiTaskSource
+	provider string
+}
+
+func (p *providerCreator) CreateTask(ctx context.Context, input task.CreateInput) (string, error) {
+	return p.ms.CreateTaskOn(ctx, p.provider, input)
 }
 
 func convertSyncResult(r *SyncResult) *msg.SyncResult {

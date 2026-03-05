@@ -184,6 +184,18 @@ func (c *Client) ResolveJiraKey(ctx context.Context, prKey string) (string, erro
 	return "", nil
 }
 
+// resolveRepo maps a short repo name to its owner and repo using the
+// configured repos list (e.g. "fylla" → "iruoy", "fylla").
+func resolveRepo(repoName string, repos []string) (string, string, error) {
+	for _, r := range repos {
+		parts := strings.SplitN(r, "/", 2)
+		if len(parts) == 2 && parts[1] == repoName {
+			return parts[0], parts[1], nil
+		}
+	}
+	return "", "", fmt.Errorf("repo %q not found in configured repos", repoName)
+}
+
 // parsePRKey splits "repo#123" into owner, repo, number using the configured
 // repos list to resolve the owner.
 func parsePRKey(key string, repos []string) (string, string, int, error) {
@@ -197,17 +209,41 @@ func parsePRKey(key string, repos []string) (string, string, int, error) {
 		return "", "", 0, fmt.Errorf("invalid PR number: %w", err)
 	}
 
-	for _, r := range repos {
-		parts := strings.SplitN(r, "/", 2)
-		if len(parts) == 2 && parts[1] == repoName {
-			return parts[0], parts[1], num, nil
-		}
+	owner, repo, err := resolveRepo(repoName, repos)
+	if err != nil {
+		return "", "", 0, err
 	}
-	return "", "", 0, fmt.Errorf("repo %q not found in configured repos", repoName)
+	return owner, repo, num, nil
 }
 
-func (c *Client) CreateTask(_ context.Context, _ task.CreateInput) (string, error) {
-	return "", fmt.Errorf("github: %w", ErrUnsupported)
+func (c *Client) CreateTask(ctx context.Context, input task.CreateInput) (string, error) {
+	owner, repo, err := resolveRepo(input.Project, c.Repos)
+	if err != nil {
+		return "", fmt.Errorf("github create issue: %w", err)
+	}
+	req := &gh.IssueRequest{
+		Title: &input.Summary,
+	}
+	if input.Description != "" {
+		req.Body = &input.Description
+	}
+	issue, _, err := c.client.Issues.Create(ctx, owner, repo, req)
+	if err != nil {
+		return "", fmt.Errorf("github create issue: %w", err)
+	}
+	return fmt.Sprintf("%s#%d", repo, issue.GetNumber()), nil
+}
+
+// ListProjects returns the short repo names from the configured repos list.
+func (c *Client) ListProjects(_ context.Context) ([]string, error) {
+	projects := make([]string, 0, len(c.Repos))
+	for _, r := range c.Repos {
+		parts := strings.SplitN(r, "/", 2)
+		if len(parts) == 2 {
+			projects = append(projects, parts[1])
+		}
+	}
+	return projects, nil
 }
 
 func (c *Client) CompleteTask(_ context.Context, _ string) error {

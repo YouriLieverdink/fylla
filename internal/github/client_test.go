@@ -283,13 +283,95 @@ func TestResolveJiraKey(t *testing.T) {
 	})
 }
 
+func TestCreateTask(t *testing.T) {
+	t.Run("creates issue and returns key", func(t *testing.T) {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/repos/iruoy/fylla/issues", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				http.Error(w, "want POST", http.StatusMethodNotAllowed)
+				return
+			}
+			var req map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&req)
+			resp := map[string]interface{}{
+				"number": 99,
+				"title":  req["title"],
+			}
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(resp)
+		})
+
+		server := httptest.NewServer(mux)
+		defer server.Close()
+
+		client := NewClient("test-token")
+		client.SetHTTPClient(server.Client())
+		client.SetBaseURL(server.URL + "/")
+		client.Repos = []string{"iruoy/fylla"}
+
+		key, err := client.CreateTask(context.Background(), task.CreateInput{
+			Project: "fylla",
+			Summary: "New issue",
+		})
+		if err != nil {
+			t.Fatalf("CreateTask: %v", err)
+		}
+		if key != "fylla#99" {
+			t.Errorf("key = %q, want fylla#99", key)
+		}
+	})
+
+	t.Run("unknown repo returns error", func(t *testing.T) {
+		client := NewClient("test-token")
+		client.Repos = []string{"iruoy/fylla"}
+
+		_, err := client.CreateTask(context.Background(), task.CreateInput{
+			Project: "unknown",
+			Summary: "test",
+		})
+		if err == nil {
+			t.Fatal("expected error for unknown repo")
+		}
+	})
+}
+
+func TestListProjects(t *testing.T) {
+	t.Run("returns short repo names", func(t *testing.T) {
+		client := NewClient("test-token")
+		client.Repos = []string{"iruoy/fylla", "org/backend"}
+
+		projects, err := client.ListProjects(context.Background())
+		if err != nil {
+			t.Fatalf("ListProjects: %v", err)
+		}
+		if len(projects) != 2 {
+			t.Fatalf("expected 2 projects, got %d", len(projects))
+		}
+		if projects[0] != "fylla" {
+			t.Errorf("projects[0] = %q, want fylla", projects[0])
+		}
+		if projects[1] != "backend" {
+			t.Errorf("projects[1] = %q, want backend", projects[1])
+		}
+	})
+
+	t.Run("no repos returns empty list", func(t *testing.T) {
+		client := NewClient("test-token")
+
+		projects, err := client.ListProjects(context.Background())
+		if err != nil {
+			t.Fatalf("ListProjects: %v", err)
+		}
+		if len(projects) != 0 {
+			t.Errorf("expected 0 projects, got %d", len(projects))
+		}
+	})
+}
+
 func TestUnsupportedOperations(t *testing.T) {
 	client := NewClient("token")
 	ctx := context.Background()
 
-	if _, err := client.CreateTask(ctx, task.CreateInput{}); err == nil {
-		t.Error("CreateTask should return error")
-	}
 	if err := client.CompleteTask(ctx, "r#1"); err == nil {
 		t.Error("CompleteTask should return error")
 	}
