@@ -108,19 +108,40 @@ func (m *Model) BackspaceFilter() {
 }
 
 func (m *Model) filteredTasks() []msg.ScoredTask {
+	now := time.Now()
+	var source []msg.ScoredTask
 	if m.Filter == "" {
-		return m.Tasks
-	}
-	lower := strings.ToLower(m.Filter)
-	var result []msg.ScoredTask
-	for _, t := range m.Tasks {
-		if strings.Contains(strings.ToLower(t.Summary), lower) ||
-			strings.Contains(strings.ToLower(t.Key), lower) ||
-			strings.Contains(strings.ToLower(t.Project), lower) {
-			result = append(result, t)
+		source = m.Tasks
+	} else {
+		lower := strings.ToLower(m.Filter)
+		for _, t := range m.Tasks {
+			if strings.Contains(strings.ToLower(t.Summary), lower) ||
+				strings.Contains(strings.ToLower(t.Key), lower) ||
+				strings.Contains(strings.ToLower(t.Project), lower) {
+				source = append(source, t)
+			}
 		}
 	}
-	return result
+	// Return actionable tasks first, then deferred (not-before in the future).
+	var actionable, deferred []msg.ScoredTask
+	for _, t := range source {
+		if t.NotBefore != nil && t.NotBefore.After(now) {
+			deferred = append(deferred, t)
+		} else {
+			actionable = append(actionable, t)
+		}
+	}
+	return append(actionable, deferred...)
+}
+
+func (m *Model) splitPoint(filtered []msg.ScoredTask) int {
+	now := time.Now()
+	for i, t := range filtered {
+		if t.NotBefore != nil && t.NotBefore.After(now) {
+			return i
+		}
+	}
+	return len(filtered)
 }
 
 // View renders the tasks view.
@@ -151,25 +172,69 @@ func (m Model) View() string {
 		}
 		b.WriteString("\n")
 	} else {
-		// Calculate visible range for scrolling
+		split := m.splitPoint(filtered)
+		nActionable := split
+		nDeferred := len(filtered) - split
+
+		// Build display lines: each line is either a task (with its flat index) or a header.
+		type displayLine struct {
+			taskIdx int    // index into filtered, or -1 for header
+			header  string // non-empty for header lines
+		}
+		var lines []displayLine
+		if nActionable > 0 {
+			lines = append(lines, displayLine{taskIdx: -1, header: fmt.Sprintf("Actionable (%d)", nActionable)})
+			for i := 0; i < nActionable; i++ {
+				lines = append(lines, displayLine{taskIdx: i})
+			}
+		}
+		if nDeferred > 0 {
+			if nActionable > 0 {
+				lines = append(lines, displayLine{taskIdx: -1}) // blank separator
+			}
+			lines = append(lines, displayLine{taskIdx: -1, header: fmt.Sprintf("Not yet (%d)", nDeferred)})
+			for i := split; i < len(filtered); i++ {
+				lines = append(lines, displayLine{taskIdx: i})
+			}
+		}
+
+		// Calculate visible range for scrolling based on cursor position in display lines.
+		// Find the display line index for the current cursor.
+		cursorDisplayIdx := 0
+		for di, dl := range lines {
+			if dl.taskIdx == m.Cursor {
+				cursorDisplayIdx = di
+				break
+			}
+		}
+
 		visibleHeight := m.Height - 6
 		if visibleHeight < 3 {
 			visibleHeight = 3
 		}
 		startIdx := 0
-		if m.Cursor >= visibleHeight {
-			startIdx = m.Cursor - visibleHeight + 1
+		if cursorDisplayIdx >= visibleHeight {
+			startIdx = cursorDisplayIdx - visibleHeight + 1
 		}
 		endIdx := startIdx + visibleHeight
-		if endIdx > len(filtered) {
-			endIdx = len(filtered)
+		if endIdx > len(lines) {
+			endIdx = len(lines)
 		}
 
-		for i := startIdx; i < endIdx; i++ {
-			t := filtered[i]
-			isSelected := i == m.Cursor
+		for di := startIdx; di < endIdx; di++ {
+			dl := lines[di]
+			if dl.taskIdx == -1 {
+				if dl.header != "" {
+					b.WriteString(headerFmt.Render("  " + dl.header))
+				}
+				b.WriteString("\n")
+				continue
+			}
 
-			rank := fmt.Sprintf("%2d.", i+1)
+			t := filtered[dl.taskIdx]
+			isSelected := dl.taskIdx == m.Cursor
+
+			rank := fmt.Sprintf("%2d.", dl.taskIdx+1)
 			est := formatDuration(t.Estimate)
 			score := fmt.Sprintf("%5.1f", t.Score)
 
@@ -194,8 +259,8 @@ func (m Model) View() string {
 			b.WriteString("\n")
 		}
 
-		if len(filtered) > visibleHeight {
-			b.WriteString(hintStyle.Render(fmt.Sprintf("\n  Showing %d-%d of %d", startIdx+1, endIdx, len(filtered))))
+		if len(lines) > visibleHeight {
+			b.WriteString(hintStyle.Render(fmt.Sprintf("\n  Showing %d-%d of %d lines", startIdx+1, endIdx, len(lines))))
 			b.WriteString("\n")
 		}
 	}
