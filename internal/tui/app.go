@@ -66,6 +66,7 @@ type pendingEditData struct {
 	noSplit      string
 	notBefore    string
 	parentKey    string // current parent key
+	section      string
 }
 
 type model struct {
@@ -465,7 +466,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 	case msg.FormOptionsMsg:
 		if m.formKind == formEditTaskPending && m.pendingEdit != nil {
 			m.pendingEdit.parentKey = mssg.ParentKey
-			m.form = buildEditForm(m.formTaskKey, *m.pendingEdit, mssg.Epics)
+			m.form = buildEditForm(m.formTaskKey, *m.pendingEdit, mssg.Epics, mssg.Sections)
 			m.formKind = formEditTask
 			return m, nil
 		}
@@ -512,6 +513,21 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 				m.form.UpdateSelectByLabel("Project", mssg.Projects, mssg.Projects[0])
 			} else {
 				m.form.ConvertToTextByLabel("Project", "Project key")
+			}
+		}
+		return m, nil
+
+	case msg.SectionsLoadedMsg:
+		if m.form.Active && (m.formKind == formAddTask || m.formKind == formEditTask) {
+			if len(mssg.Sections) > 0 {
+				sectionOptions := append([]string{"None"}, mssg.Sections...)
+				current := m.form.ValueByLabel("Section")
+				if current == "" {
+					current = "None"
+				}
+				m.form.UpdateSelectByLabel("Section", sectionOptions, current)
+			} else {
+				m.form.ConvertToTextByLabel("Section", "Section name")
 			}
 		}
 		return m, nil
@@ -591,15 +607,9 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if t := m.tasks.SelectedTask(); t != nil {
 			ed := buildPendingEditData(t)
 			m.formTaskKey = t.Key
-			// For Jira tasks, load epics asynchronously scoped to the task's project
-			if isJiraKeyPattern(t.Key) {
-				m.pendingEdit = &ed
-				m.formKind = formEditTaskPending
-				return m, loadEditFormOptionsCmd(m.cb, t.Project, t.Key)
-			}
 			m.pendingEdit = &ed
-			m.form = buildEditForm(t.Key, ed, nil)
-			m.formKind = formEditTask
+			m.formKind = formEditTaskPending
+			return m, loadEditFormOptionsCmd(m.cb, t.Project, t.Key)
 		}
 	case key.Matches(mssg, keys.Snooze):
 		if t := m.tasks.SelectedTask(); t != nil {
@@ -752,7 +762,12 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, m.rebuildAddFormForProvider()
 			}
 			if m.form.FocusedLabel() == "Project" {
-				return m, loadEpicsCmd(m.cb, m.form.ValueByLabel("Project"))
+				project := m.form.ValueByLabel("Project")
+				provider := m.form.ValueByLabel("Provider")
+				if provider == "" && m.formOptions != nil {
+					provider = m.formOptions.Provider
+				}
+				return m, tea.Batch(loadEpicsCmd(m.cb, project), loadSectionsCmd(m.cb, provider, project))
 			}
 			return m, nil
 		}
@@ -773,7 +788,12 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, m.rebuildAddFormForProvider()
 			}
 			if m.form.FocusedLabel() == "Project" {
-				return m, loadEpicsCmd(m.cb, m.form.ValueByLabel("Project"))
+				project := m.form.ValueByLabel("Project")
+				provider := m.form.ValueByLabel("Provider")
+				if provider == "" && m.formOptions != nil {
+					provider = m.formOptions.Provider
+				}
+				return m, tea.Batch(loadEpicsCmd(m.cb, project), loadSectionsCmd(m.cb, provider, project))
 			}
 			return m, nil
 		}
@@ -830,11 +850,15 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if provider == "" && m.formOptions != nil {
 				provider = m.formOptions.Provider
 			}
+			section := m.form.ValueByLabel("Section")
+			if section == "None" {
+				section = ""
+			}
 			m.formKind = formNone
 			m.formOptions = nil
 			m.saving = "Adding task"
 			return m, addTaskCmd(m.cb, provider, summary,
-				m.form.ValueByLabel("Project"), "",
+				m.form.ValueByLabel("Project"), section,
 				m.form.ValueByLabel("Issue Type"),
 				m.form.ValueByLabel("Description"),
 				m.form.ValueByLabel("Estimate"),
@@ -870,11 +894,16 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					parent = parent[:idx]
 				}
 			}
+			editSection := m.form.ValueByLabel("Section")
+			if editSection == "None" {
+				editSection = ""
+			}
 			hadNotBefore := m.pendingEdit != nil && m.pendingEdit.notBefore != ""
 			hadDue := m.pendingEdit != nil && m.pendingEdit.dueDate != ""
 			hadEstimate := m.pendingEdit != nil && m.pendingEdit.estimate != ""
 			hadPriority := m.pendingEdit != nil && m.pendingEdit.priority != ""
 			hadParent := m.pendingEdit != nil && m.pendingEdit.parentKey != ""
+			hadSection := m.pendingEdit != nil && m.pendingEdit.section != ""
 			priority := m.form.ValueByLabel("Priority")
 			if priority == "None" {
 				priority = ""
@@ -892,10 +921,12 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				NotBefore:    m.form.ValueByLabel("Not Before"),
 				HadNotBefore: hadNotBefore,
 				Parent:       parent,
+				Section:      editSection,
 				HadDue:       hadDue,
 				HadEstimate:  hadEstimate,
 				HadPriority:  hadPriority,
 				HadParent:    hadParent,
+				HadSection:   hadSection,
 			})
 		case formSnoozeTask:
 			duration := m.form.ValueByLabel("Duration")
@@ -1259,6 +1290,7 @@ func isJiraKeyPattern(key string) bool {
 
 func buildPendingEditData(t *msg.ScoredTask) pendingEditData {
 	ed := pendingEditData{}
+	ed.section = t.Section
 	if t.Estimate > 0 {
 		h := int(t.Estimate.Hours())
 		mins := int(t.Estimate.Minutes()) % 60
@@ -1317,6 +1349,17 @@ func buildAddForm(provider string, opts *msg.FormOptionsMsg) components.Form {
 			Options: []string{"Task", "Bug", "Story", "Epic"}, Value: "Task",
 		})
 	}
+	if provider != "jira" && provider != "github" {
+		if len(opts.Sections) > 0 {
+			sectionOptions := append([]string{"None"}, opts.Sections...)
+			fields = append(fields, components.FormFieldDef{
+				Label: "Section", Kind: components.FieldSelect,
+				Options: sectionOptions, Value: "None",
+			})
+		} else {
+			fields = append(fields, components.FormFieldDef{Label: "Section", Placeholder: "Section name"})
+		}
+	}
 	fields = append(fields,
 		components.FormFieldDef{Label: "Description", Placeholder: "Description"},
 		components.FormFieldDef{Label: "Estimate", Placeholder: "e.g. 2h, 30m"},
@@ -1350,6 +1393,7 @@ func (m *model) rebuildAddFormForProvider() tea.Cmd {
 		"Estimate":    m.form.ValueByLabel("Estimate"),
 		"Due Date":    m.form.ValueByLabel("Due Date"),
 		"Priority":    m.form.ValueByLabel("Priority"),
+		"Section":     m.form.ValueByLabel("Section"),
 		"Up Next":     m.form.ValueByLabel("Up Next"),
 		"No Split":    m.form.ValueByLabel("No Split"),
 		"Not Before":  m.form.ValueByLabel("Not Before"),
@@ -1367,10 +1411,11 @@ func (m *model) rebuildAddFormForProvider() tea.Cmd {
 	if newProvider == "jira" {
 		cmds = append(cmds, loadEpicsCmd(m.cb, m.form.ValueByLabel("Project")))
 	}
+	cmds = append(cmds, loadSectionsCmd(m.cb, newProvider, m.form.ValueByLabel("Project")))
 	return tea.Batch(cmds...)
 }
 
-func buildEditForm(taskKey string, ed pendingEditData, epics []msg.EpicOption) components.Form {
+func buildEditForm(taskKey string, ed pendingEditData, epics []msg.EpicOption, sections []string) components.Form {
 	fields := []components.FormFieldDef{
 		{Label: "Summary", Placeholder: "Task summary", Value: ed.summary},
 		{Label: "Estimate", Placeholder: "e.g. 2h, 30m", Value: ed.estimate},
@@ -1389,6 +1434,33 @@ func buildEditForm(taskKey string, ed pendingEditData, epics []msg.EpicOption) c
 		fields = append(fields, components.FormFieldDef{
 			Label: "Parent", Kind: components.FieldSelect,
 			Options: epicOptions, Value: currentVal,
+		})
+	}
+	if sections != nil {
+		sectionOptions := []string{"None"}
+		sectionOptions = append(sectionOptions, sections...)
+		currentVal := "None"
+		if ed.section != "" {
+			for _, s := range sections {
+				if s == ed.section {
+					currentVal = ed.section
+					break
+				}
+			}
+			if currentVal == "None" {
+				// Section exists but not in the list; add it
+				sectionOptions = append(sectionOptions, ed.section)
+				currentVal = ed.section
+			}
+		}
+		fields = append(fields, components.FormFieldDef{
+			Label: "Section", Kind: components.FieldSelect,
+			Options: sectionOptions, Value: currentVal,
+		})
+	} else if epics == nil {
+		// No sections loaded and not Jira — show a text input
+		fields = append(fields, components.FormFieldDef{
+			Label: "Section", Placeholder: "Section name", Value: ed.section,
 		})
 	}
 	fields = append(fields,

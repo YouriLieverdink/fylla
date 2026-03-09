@@ -235,6 +235,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				Due:      params.Due,
 				Priority: params.Priority,
 				Parent:   params.Parent,
+				Section:  params.Section,
 				Source:   source,
 			}
 			if params.NotBefore != "" {
@@ -253,6 +254,9 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			}
 			if params.Parent == "" && params.HadParent {
 				ep.NoParent = true
+			}
+			if params.Section == "" && params.HadSection {
+				ep.NoSection = true
 			}
 			if params.UpNext != nil {
 				if *params.UpNext {
@@ -308,6 +312,22 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				return "", 0, err
 			}
 			return result.TaskKey, result.Elapsed, nil
+		},
+		ListSections: func(provider, project string) ([]string, error) {
+			if provider != "" {
+				if ms, ok := source.(*MultiTaskSource); ok {
+					if src, ok := ms.sources[provider]; ok {
+						if sl, ok := src.(SectionLister); ok {
+							return sl.ListSections(ctx, project)
+						}
+					}
+					return nil, nil
+				}
+			}
+			if sl, ok := source.(SectionLister); ok {
+				return sl.ListSections(ctx, project)
+			}
+			return nil, nil
 		},
 		ListProjects: func(provider string) ([]string, error) {
 			if provider != "" {

@@ -20,8 +20,9 @@ type Client struct {
 	BaseURL    string
 	Token      string
 	HTTPClient *http.Client
-	projects   map[string]string // id → name cache
-	sections   map[string]string // id → name cache
+	projects   map[string]string          // id → name cache
+	sections   map[string]string          // id → name cache
+	sectionsByProject map[string][]string // project_id → []section names
 }
 
 // NewClient creates a Todoist client with the given API token.
@@ -198,16 +199,35 @@ func (c *Client) loadSections(ctx context.Context) error {
 	}
 
 	c.sections = make(map[string]string, len(page.Results))
+	c.sectionsByProject = make(map[string][]string)
 	for _, s := range page.Results {
 		c.sections[s.ID] = s.Name
+		c.sectionsByProject[s.ProjectID] = append(c.sectionsByProject[s.ProjectID], s.Name)
 	}
 	return nil
 }
 
-// ListSections returns available section names.
-func (c *Client) ListSections(ctx context.Context) ([]string, error) {
+// ListSections returns available section names, optionally filtered by project.
+func (c *Client) ListSections(ctx context.Context, project string) ([]string, error) {
 	if err := c.loadSections(ctx); err != nil {
 		return nil, err
+	}
+	if project != "" {
+		if err := c.loadProjects(ctx); err != nil {
+			return nil, err
+		}
+		// Find project ID by name
+		var projectID string
+		for id, name := range c.projects {
+			if strings.EqualFold(name, project) {
+				projectID = id
+				break
+			}
+		}
+		if projectID != "" {
+			return c.sectionsByProject[projectID], nil
+		}
+		return nil, nil
 	}
 	names := make([]string, 0, len(c.sections))
 	for _, name := range c.sections {
@@ -651,6 +671,45 @@ func parseTodoistRecurrence(s string) *task.Recurrence {
 	// Wrap in "(every ...)" to reuse the shared parser
 	_, rec := task.ExtractRecurrence("(" + "every " + lower + ")")
 	return rec
+}
+
+// UpdateSection moves a Todoist task to a different section (or removes it).
+func (c *Client) UpdateSection(ctx context.Context, taskID, section string) error {
+	var sectionID string
+	if section != "" {
+		if err := c.loadSections(ctx); err != nil {
+			return err
+		}
+		for id, name := range c.sections {
+			if strings.EqualFold(name, section) {
+				sectionID = id
+				break
+			}
+		}
+		if sectionID == "" {
+			return fmt.Errorf("section %q not found", section)
+		}
+	}
+
+	payload := map[string]interface{}{
+		"section_id": sectionID,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal update: %w", err)
+	}
+
+	resp, err := c.do(ctx, http.MethodPost, "/tasks/"+taskID, strings.NewReader(string(data)))
+	if err != nil {
+		return fmt.Errorf("update section: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("todoist update section: status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
 }
 
 // UpdatePriority sets the priority on a Todoist task.

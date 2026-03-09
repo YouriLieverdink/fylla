@@ -35,6 +35,11 @@ type ProjectLister interface {
 	ListProjects(ctx context.Context) ([]string, error)
 }
 
+// SectionLister returns available section names, optionally filtered by project.
+type SectionLister interface {
+	ListSections(ctx context.Context, project string) ([]string, error)
+}
+
 // AddParams holds inputs for the add command.
 type AddParams struct {
 	Project     string
@@ -49,6 +54,7 @@ type AddParams struct {
 	Inline      bool // true when args were provided on the command line
 	Creator     TaskCreator
 	Projects    ProjectLister
+	Sections    SectionLister
 	Epics       EpicLister
 }
 
@@ -123,6 +129,9 @@ func RequiredFields(p AddParams, provider string) []string {
 	}
 	if p.Priority == "" {
 		fields = append(fields, "priority")
+	}
+	if (provider == "todoist" || provider == "local") && p.Section == "" {
+		fields = append(fields, "section")
 	}
 	if provider == "jira" && p.Parent == "" {
 		fields = append(fields, "parent")
@@ -255,6 +264,9 @@ Extracted attributes inside ():
 			if pl, ok := creator.(ProjectLister); ok {
 				p.Projects = pl
 			}
+			if sl, ok := creator.(SectionLister); ok {
+				p.Sections = sl
+			}
 			if el, ok := creator.(EpicLister); ok {
 				p.Epics = el
 			}
@@ -294,7 +306,27 @@ Extracted attributes inside ():
 					if err := survey.AskOne(prompt, &p.Project); err != nil {
 						return fmt.Errorf("prompt project: %w", err)
 					}
-				case "issueType":
+				case "section":
+				if p.Sections != nil {
+					names, err := p.Sections.ListSections(cmd.Context(), p.Project)
+					if err == nil && len(names) > 0 {
+						options := append([]string{"None"}, names...)
+						var sel string
+						prompt := &survey.Select{Message: "Section:", Options: options}
+						if err := survey.AskOne(prompt, &sel); err != nil {
+							return fmt.Errorf("prompt section: %w", err)
+						}
+						if sel != "None" {
+							p.Section = sel
+						}
+						break
+					}
+				}
+				prompt := &survey.Input{Message: "Section:"}
+				if err := survey.AskOne(prompt, &p.Section); err != nil {
+					return fmt.Errorf("prompt section: %w", err)
+				}
+			case "issueType":
 					prompt := &survey.Select{
 						Message: "Issue type:",
 						Options: []string{"Task", "Bug", "Story", "Epic"},

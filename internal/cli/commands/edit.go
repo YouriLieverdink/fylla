@@ -33,6 +33,8 @@ type EditParams struct {
 	NoNotBefore bool
 	Parent      string
 	NoParent    bool
+	Section     string
+	NoSection   bool
 	NoEstimate  bool
 	NoPriority  bool
 	Source      TaskSource
@@ -54,6 +56,8 @@ type EditResult struct {
 	SummaryUpdated   bool
 	ParentUpdated    bool
 	ParentRemoved    bool
+	SectionUpdated   bool
+	SectionRemoved   bool
 	EstimateRemoved  bool
 	PriorityRemoved  bool
 }
@@ -155,6 +159,42 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 				return nil, fmt.Errorf("remove parent: %w", err)
 			}
 			result.ParentRemoved = true
+		}
+	}
+
+	if p.Section != "" {
+		var su SectionUpdater
+		if u, ok := p.Source.(SectionUpdater); ok {
+			su = u
+		} else if ms, ok := p.Source.(*MultiTaskSource); ok {
+			routed := ms.routeTo(p.TaskKey)
+			if u, ok := routed.(SectionUpdater); ok {
+				su = u
+			}
+		}
+		if su != nil {
+			if err := su.UpdateSection(ctx, p.TaskKey, p.Section); err != nil {
+				return nil, fmt.Errorf("update section: %w", err)
+			}
+			result.SectionUpdated = true
+		}
+	}
+
+	if p.NoSection {
+		var su SectionUpdater
+		if u, ok := p.Source.(SectionUpdater); ok {
+			su = u
+		} else if ms, ok := p.Source.(*MultiTaskSource); ok {
+			routed := ms.routeTo(p.TaskKey)
+			if u, ok := routed.(SectionUpdater); ok {
+				su = u
+			}
+		}
+		if su != nil {
+			if err := su.UpdateSection(ctx, p.TaskKey, ""); err != nil {
+				return nil, fmt.Errorf("remove section: %w", err)
+			}
+			result.SectionRemoved = true
 		}
 	}
 
@@ -319,6 +359,12 @@ func PrintEditResult(w io.Writer, result *EditResult) {
 	if result.ParentRemoved {
 		fmt.Fprintf(w, "%s parent removed\n", result.TaskKey)
 	}
+	if result.SectionUpdated {
+		fmt.Fprintf(w, "%s section updated\n", result.TaskKey)
+	}
+	if result.SectionRemoved {
+		fmt.Fprintf(w, "%s section removed\n", result.TaskKey)
+	}
 	if result.EstimateRemoved {
 		fmt.Fprintf(w, "Estimate for %s removed\n", result.TaskKey)
 	}
@@ -344,6 +390,8 @@ func newEditCmd() *cobra.Command {
 		summary     string
 		parent      string
 		noParent    bool
+		section     string
+		noSection   bool
 	)
 
 	cmd := &cobra.Command{
@@ -357,7 +405,7 @@ func newEditCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if estimate == "" && !noEstimate && due == "" && !noDue && priority == "" && !noPriority &&
 				!upNext && !noUpNext && !noSplit && !noNoSplit && notBefore == "" && !noNotBefore &&
-				summary == "" && parent == "" && !noParent {
+				summary == "" && parent == "" && !noParent && section == "" && !noSection {
 				return fmt.Errorf("at least one flag is required")
 			}
 			if due != "" && noDue {
@@ -371,6 +419,9 @@ func newEditCmd() *cobra.Command {
 			}
 			if parent != "" && noParent {
 				return fmt.Errorf("--parent and --no-parent are mutually exclusive")
+			}
+			if section != "" && noSection {
+				return fmt.Errorf("--section and --no-section are mutually exclusive")
 			}
 			if upNext && noUpNext {
 				return fmt.Errorf("--up-next and --no-up-next are mutually exclusive")
@@ -404,6 +455,8 @@ func newEditCmd() *cobra.Command {
 				NoNotBefore: noNotBefore,
 				Parent:      parent,
 				NoParent:    noParent,
+				Section:     section,
+				NoSection:   noSection,
 				Source:      source,
 			})
 			if err != nil {
@@ -431,6 +484,8 @@ func newEditCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&summary, "summary", "s", "", "set summary text")
 	cmd.Flags().StringVar(&parent, "parent", "", "set parent issue (e.g. Epic key) — Jira only")
 	cmd.Flags().BoolVar(&noParent, "no-parent", false, "remove parent issue")
+	cmd.Flags().StringVar(&section, "section", "", "set section")
+	cmd.Flags().BoolVar(&noSection, "no-section", false, "remove section")
 
 	return cmd
 }

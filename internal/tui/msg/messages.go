@@ -120,6 +120,7 @@ type ClearToastMsg struct{}
 // FormOptionsMsg carries project/section lists for populating add form selectors.
 type FormOptionsMsg struct {
 	Projects  []string
+	Sections  []string
 	Provider  string   // primary provider name (e.g. "jira", "todoist")
 	Providers []string // all active provider names
 	Epics     []EpicOption
@@ -154,6 +155,12 @@ type EpicsLoadedMsg struct {
 // ProjectsLoadedMsg carries the result of loading projects for a specific provider.
 type ProjectsLoadedMsg struct {
 	Projects []string
+	Err      error
+}
+
+// SectionsLoadedMsg carries the result of loading sections for a specific project.
+type SectionsLoadedMsg struct {
+	Sections []string
 	Err      error
 }
 

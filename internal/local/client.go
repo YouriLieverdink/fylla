@@ -464,6 +464,24 @@ func (c *Client) UpdateSummary(_ context.Context, taskKey string, summary string
 	return c.save(s, path)
 }
 
+// UpdateSection sets the section for a local task.
+func (c *Client) UpdateSection(_ context.Context, taskKey, section string) error {
+	id, err := parseLocalKey(taskKey)
+	if err != nil {
+		return err
+	}
+	s, path, err := c.load()
+	if err != nil {
+		return err
+	}
+	lt := findByID(s, id)
+	if lt == nil {
+		return fmt.Errorf("task %s not found", taskKey)
+	}
+	lt.Section = section
+	return c.save(s, path)
+}
+
 // ListProjects returns unique project names from existing tasks.
 func (c *Client) ListProjects(_ context.Context) ([]string, error) {
 	s, _, err := c.load()
@@ -481,8 +499,8 @@ func (c *Client) ListProjects(_ context.Context) ([]string, error) {
 	return names, nil
 }
 
-// ListSections returns unique section names from existing tasks.
-func (c *Client) ListSections(_ context.Context) ([]string, error) {
+// ListSections returns unique section names from existing tasks, optionally filtered by project.
+func (c *Client) ListSections(_ context.Context, project string) ([]string, error) {
 	s, _, err := c.load()
 	if err != nil {
 		return nil, err
@@ -491,6 +509,9 @@ func (c *Client) ListSections(_ context.Context) ([]string, error) {
 	var names []string
 	for _, lt := range s.Tasks {
 		if lt.Section != "" && !seen[lt.Section] {
+			if project != "" && !strings.EqualFold(lt.Project, project) {
+				continue
+			}
 			seen[lt.Section] = true
 			names = append(names, lt.Section)
 		}

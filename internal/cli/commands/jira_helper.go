@@ -72,6 +72,11 @@ type ParentGetter interface {
 	GetParent(ctx context.Context, issueKey string) (string, error)
 }
 
+// SectionUpdater updates the section of a task.
+type SectionUpdater interface {
+	UpdateSection(ctx context.Context, taskKey, section string) error
+}
+
 // JiraKeyResolver resolves a non-Jira task key (e.g. GitHub PR) to a Jira issue key.
 type JiraKeyResolver interface {
 	ResolveJiraKey(ctx context.Context, taskKey string) (string, error)

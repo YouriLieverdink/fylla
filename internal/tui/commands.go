@@ -19,10 +19,12 @@ type EditTaskParams struct {
 	NotBefore    string
 	HadNotBefore bool
 	Parent       string
+	Section      string
 	HadDue       bool
 	HadEstimate  bool
 	HadPriority  bool
 	HadParent    bool
+	HadSection   bool
 }
 
 // Callbacks holds function references that the TUI uses to invoke business logic.
@@ -43,6 +45,7 @@ type Callbacks struct {
 	StopTimer    func(description string, done bool) (taskKey string, elapsed time.Duration, err error)
 	AbortTimer   func() (taskKey string, err error)
 	ListProjects func(provider string) ([]string, error)
+	ListSections func(provider, project string) ([]string, error)
 	ListEpics    func(project string) ([]msg.EpicOption, error)
 	GetParent    func(taskKey string) (string, error)
 	Provider     func() string
@@ -188,6 +191,17 @@ func loadFormOptionsCmd(cb Callbacks) tea.Cmd {
 				projects = p
 			}
 		}
+		var sections []string
+		if cb.ListSections != nil {
+			project := ""
+			if len(projects) > 0 {
+				project = projects[0]
+			}
+			s, err := cb.ListSections(provider, project)
+			if err == nil {
+				sections = s
+			}
+		}
 		var epics []msg.EpicOption
 		if cb.ListEpics != nil && provider == "jira" {
 			project := ""
@@ -201,7 +215,7 @@ func loadFormOptionsCmd(cb Callbacks) tea.Cmd {
 				epics = []msg.EpicOption{}
 			}
 		}
-		return msg.FormOptionsMsg{Projects: projects, Provider: provider, Providers: providers, Epics: epics}
+		return msg.FormOptionsMsg{Projects: projects, Sections: sections, Provider: provider, Providers: providers, Epics: epics}
 	}
 }
 
@@ -220,6 +234,13 @@ func loadEditFormOptionsCmd(cb Callbacks, project, taskKey string) tea.Cmd {
 		if cb.Provider != nil {
 			provider = cb.Provider()
 		}
+		var sections []string
+		if cb.ListSections != nil {
+			s, err := cb.ListSections(provider, project)
+			if err == nil {
+				sections = s
+			}
+		}
 		var parentKey string
 		if cb.GetParent != nil {
 			p, err := cb.GetParent(taskKey)
@@ -227,7 +248,7 @@ func loadEditFormOptionsCmd(cb Callbacks, project, taskKey string) tea.Cmd {
 				parentKey = p
 			}
 		}
-		return msg.FormOptionsMsg{Provider: provider, Epics: epics, ParentKey: parentKey}
+		return msg.FormOptionsMsg{Provider: provider, Sections: sections, Epics: epics, ParentKey: parentKey}
 	}
 }
 
@@ -238,6 +259,16 @@ func loadProjectsCmd(cb Callbacks, provider string) tea.Cmd {
 		}
 		projects, err := cb.ListProjects(provider)
 		return msg.ProjectsLoadedMsg{Projects: projects, Err: err}
+	}
+}
+
+func loadSectionsCmd(cb Callbacks, provider, project string) tea.Cmd {
+	return func() tea.Msg {
+		if cb.ListSections == nil {
+			return msg.SectionsLoadedMsg{}
+		}
+		sections, err := cb.ListSections(provider, project)
+		return msg.SectionsLoadedMsg{Sections: sections, Err: err}
 	}
 }
 
