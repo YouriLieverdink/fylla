@@ -27,6 +27,12 @@ type EditTaskParams struct {
 	HadSection   bool
 }
 
+// FallbackIssue pairs a Jira key with its summary for display.
+type FallbackIssue struct {
+	Key     string
+	Summary string
+}
+
 // Callbacks holds function references that the TUI uses to invoke business logic.
 type Callbacks struct {
 	LoadToday   func() ([]msg.FyllaEvent, error)
@@ -42,7 +48,7 @@ type Callbacks struct {
 	SetConfig   func(key, value string) error
 	AddTask      func(provider, summary, project, section, issueType, description, estimate, dueDate, priority, parent string) (key, summaryOut string, err error)
 	EditTask     func(params EditTaskParams) error
-	StopTimer    func(description string, done bool) (taskKey string, elapsed time.Duration, err error)
+	StopTimer    func(description string, done bool, fallbackIssue string) (taskKey string, elapsed time.Duration, err error)
 	AbortTimer   func() (taskKey string, err error)
 	ListProjects func(provider string) ([]string, error)
 	ListSections func(provider, project string) ([]string, error)
@@ -57,6 +63,7 @@ type Callbacks struct {
 	UpdateWorklog  func(issueKey, worklogID string, timeSpent time.Duration, description string, started time.Time) error
 	DeleteWorklog  func(issueKey, worklogID string) error
 	AddWorklog     func(issueKey string, timeSpent time.Duration, description string, started time.Time) error
+	FallbackIssues func() []FallbackIssue
 }
 
 func loadTodayCmd(cb Callbacks) tea.Cmd {
@@ -164,9 +171,9 @@ func editTaskCmd(cb Callbacks, params EditTaskParams) tea.Cmd {
 	}
 }
 
-func stopTimerCmd(cb Callbacks, description string, done bool) tea.Cmd {
+func stopTimerCmd(cb Callbacks, description string, done bool, fallbackIssue string) tea.Cmd {
 	return func() tea.Msg {
-		taskKey, elapsed, err := cb.StopTimer(description, done)
+		taskKey, elapsed, err := cb.StopTimer(description, done, fallbackIssue)
 		return msg.TimerStoppedMsg{TaskKey: taskKey, Elapsed: elapsed, Err: err}
 	}
 }

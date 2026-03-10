@@ -114,14 +114,31 @@ func RunWorklog(ctx context.Context, p WorklogParams) (*WorklogResult, error) {
 			}
 
 			taskKey := fe.TaskKey
-			if isGitHubKey(fe.TaskKey) && p.Resolver != nil {
-				resolved, err := resolveGitHubToJira(ctx, p.Resolver, p.Survey, fe.TaskKey, p.Cfg)
+			if isGitHubKey(fe.TaskKey) {
+				if p.Resolver != nil {
+					resolved, err := resolveGitHubToJira(ctx, p.Resolver, p.Survey, fe.TaskKey, p.Cfg)
+					if err != nil {
+						return nil, fmt.Errorf("resolve jira key for %s: %w", fe.TaskKey, err)
+					}
+					taskKey = resolved
+				} else if p.Survey != nil {
+					resolved, err := resolveToFallbackIssue(p.Survey, p.Cfg)
+					if err != nil {
+						return nil, fmt.Errorf("resolve worklog target for %s: %w", fe.TaskKey, err)
+					}
+					taskKey = resolved
+				} else {
+					return nil, fmt.Errorf("cannot post worklog for GitHub key %s: no resolver or interactive prompt available", fe.TaskKey)
+				}
+			}
+			if isLocalKey(fe.TaskKey) {
+				resolved, err := resolveToFallbackIssue(p.Survey, p.Cfg)
 				if err != nil {
-					return nil, fmt.Errorf("resolve jira key for %s: %w", fe.TaskKey, err)
+					return nil, fmt.Errorf("resolve worklog target for %s: %w", fe.TaskKey, err)
 				}
 				taskKey = resolved
 			}
-			if isLocalKey(fe.TaskKey) {
+			if !isJiraKey(taskKey) && p.Cfg.Worklog.Provider == "jira" {
 				resolved, err := resolveToFallbackIssue(p.Survey, p.Cfg)
 				if err != nil {
 					return nil, fmt.Errorf("resolve worklog target for %s: %w", fe.TaskKey, err)

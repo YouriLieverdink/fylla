@@ -20,18 +20,19 @@ type WorklogPoster interface {
 
 // StopParams holds inputs for the stop command.
 type StopParams struct {
-	TimerPath    string
-	RoundMinutes int
-	Now          time.Time
-	Description  string
-	Jira         WorklogPoster
-	Cal          CalendarClient
-	Estimate     EstimateGetter
-	Cfg          *config.Config
-	Resolver     JiraKeyResolver
-	Survey       Surveyor
-	Completer    TaskCompleter
-	Done         bool
+	TimerPath     string
+	RoundMinutes  int
+	Now           time.Time
+	Description   string
+	Jira          WorklogPoster
+	Cal           CalendarClient
+	Estimate      EstimateGetter
+	Cfg           *config.Config
+	Resolver      JiraKeyResolver
+	Survey        Surveyor
+	Completer     TaskCompleter
+	Done          bool
+	FallbackIssue string // pre-resolved Jira key for non-Jira tasks (used by TUI)
 }
 
 // StopResult holds the output of a stop operation.
@@ -56,21 +57,50 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 	worklogKey := sr.TaskKey
 
 	// Resolve GitHub PR keys to Jira issue keys for worklog posting.
-	if isGitHubKey(sr.TaskKey) && p.Resolver != nil {
-		resolved, err := resolveGitHubToJira(ctx, p.Resolver, p.Survey, sr.TaskKey, p.Cfg)
-		if err != nil {
-			return nil, fmt.Errorf("resolve jira key: %w", err)
+	if isGitHubKey(sr.TaskKey) {
+		if p.FallbackIssue != "" {
+			worklogKey = p.FallbackIssue
+		} else if p.Resolver != nil {
+			resolved, err := resolveGitHubToJira(ctx, p.Resolver, p.Survey, sr.TaskKey, p.Cfg)
+			if err != nil {
+				return nil, fmt.Errorf("resolve jira key: %w", err)
+			}
+			worklogKey = resolved
+		} else if p.Survey != nil {
+			resolved, err := resolveToFallbackIssue(p.Survey, p.Cfg)
+			if err != nil {
+				return nil, fmt.Errorf("resolve worklog target: %w", err)
+			}
+			worklogKey = resolved
+		} else {
+			return nil, fmt.Errorf("cannot post worklog for GitHub key %s: no resolver or interactive prompt available", sr.TaskKey)
 		}
-		worklogKey = resolved
 	}
 
 	// Resolve local task keys to a fallback issue for worklog posting.
 	if isLocalKey(sr.TaskKey) {
-		resolved, err := resolveToFallbackIssue(p.Survey, p.Cfg)
-		if err != nil {
-			return nil, fmt.Errorf("resolve worklog target: %w", err)
+		if p.FallbackIssue != "" {
+			worklogKey = p.FallbackIssue
+		} else {
+			resolved, err := resolveToFallbackIssue(p.Survey, p.Cfg)
+			if err != nil {
+				return nil, fmt.Errorf("resolve worklog target: %w", err)
+			}
+			worklogKey = resolved
 		}
-		worklogKey = resolved
+	}
+
+	// Resolve non-Jira keys (e.g. Todoist) when worklog provider is jira.
+	if !isJiraKey(worklogKey) && p.Cfg.Worklog.Provider == "jira" {
+		if p.FallbackIssue != "" {
+			worklogKey = p.FallbackIssue
+		} else {
+			resolved, err := resolveToFallbackIssue(p.Survey, p.Cfg)
+			if err != nil {
+				return nil, fmt.Errorf("resolve worklog target: %w", err)
+			}
+			worklogKey = resolved
+		}
 	}
 
 	if err := p.Jira.PostWorklog(ctx, worklogKey, sr.Rounded, p.Description, sr.StartTime); err != nil {

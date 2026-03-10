@@ -307,7 +307,7 @@ func TestStop_GitHubKeyResolvesToJira(t *testing.T) {
 		}
 	})
 
-	t.Run("no resolver skips resolution for GitHub key", func(t *testing.T) {
+	t.Run("no resolver falls back to prompt for GitHub key", func(t *testing.T) {
 		now := time.Date(2025, 1, 20, 10, 30, 0, 0, time.UTC)
 		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
@@ -318,22 +318,74 @@ func TestStop_GitHubKeyResolvesToJira(t *testing.T) {
 		}
 
 		jira := &mockWorklogPoster{}
+		survey := &mockSurveyor{
+			selectAnswers: []string{"ADMIN-1"},
+		}
 
-		// Without resolver, should post with the original GitHub key
+		// Without resolver, should show fallback prompt instead of passing raw key
 		result, err := RunStop(context.Background(), StopParams{
 			TimerPath:    timerPath,
 			RoundMinutes: 5,
 			Now:          now,
 			Description:  "PR review",
 			Jira:         jira,
-			Cfg:          testConfig(),
+			Cfg:          worklogConfig(),
+			Survey:       survey,
 		})
 		if err != nil {
 			t.Fatalf("RunStop: %v", err)
 		}
 
-		if result.TaskKey != "fylla#42" {
-			t.Errorf("TaskKey = %q, want fylla#42", result.TaskKey)
+		if result.TaskKey != "ADMIN-1" {
+			t.Errorf("TaskKey = %q, want ADMIN-1", result.TaskKey)
+		}
+		if len(jira.calls) != 1 {
+			t.Fatalf("expected 1 worklog call, got %d", len(jira.calls))
+		}
+		if jira.calls[0].issueKey != "ADMIN-1" {
+			t.Errorf("worklog posted to %q, want ADMIN-1", jira.calls[0].issueKey)
 		}
 	})
+}
+
+func TestStop_TodoistKeyResolvesToJiraFallback(t *testing.T) {
+	now := time.Date(2025, 1, 20, 10, 30, 0, 0, time.UTC)
+	startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
+
+	timerPath := filepath.Join(t.TempDir(), "timer.json")
+	_, err := timer.Start("12345", "", "", startTime, timerPath)
+	if err != nil {
+		t.Fatalf("timer.Start: %v", err)
+	}
+
+	jira := &mockWorklogPoster{}
+	cfg := worklogConfig()
+	cfg.Worklog.Provider = "jira"
+
+	survey := &mockSurveyor{
+		selectAnswers: []string{"ADMIN-1"},
+	}
+
+	result, err := RunStop(context.Background(), StopParams{
+		TimerPath:    timerPath,
+		RoundMinutes: 5,
+		Now:          now,
+		Description:  "Todoist task work",
+		Jira:         jira,
+		Cfg:          cfg,
+		Survey:       survey,
+	})
+	if err != nil {
+		t.Fatalf("RunStop: %v", err)
+	}
+
+	if result.TaskKey != "ADMIN-1" {
+		t.Errorf("TaskKey = %q, want ADMIN-1", result.TaskKey)
+	}
+	if len(jira.calls) != 1 {
+		t.Fatalf("expected 1 worklog call, got %d", len(jira.calls))
+	}
+	if jira.calls[0].issueKey != "ADMIN-1" {
+		t.Errorf("worklog posted to %q, want ADMIN-1", jira.calls[0].issueKey)
+	}
 }

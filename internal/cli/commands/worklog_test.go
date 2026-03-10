@@ -278,3 +278,113 @@ func TestWorklog_UserCancels(t *testing.T) {
 		t.Errorf("expected 0 worklog calls, got %d", len(jira.calls))
 	}
 }
+
+func TestWorklog_GitHubKeyNoResolverFallsBackToPrompt(t *testing.T) {
+	date := time.Date(2025, 1, 20, 17, 0, 0, 0, time.UTC) // Monday
+
+	cal := &mockCalendar{
+		fyllaEvents: []calendar.Event{
+			{
+				ID:          "f1",
+				Title:       "[fylla] PR review",
+				Description: "fylla: fylla#42\nhttps://github.com/iruoy/fylla/pull/42",
+				Start:       time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
+				End:         time.Date(2025, 1, 20, 17, 0, 0, 0, time.UTC),
+			},
+		},
+		events: []calendar.Event{},
+	}
+	jira := &mockWorklogPoster{}
+
+	survey := &mockSurveyor{
+		// Accept default duration, pick fallback issue for GitHub key, confirm
+		inputWithDefaultAnswers: []string{"8h"},
+		selectAnswers:           []string{"ADMIN-1", "Yes"},
+	}
+
+	var buf bytes.Buffer
+	result, err := RunWorklog(context.Background(), WorklogParams{
+		Cal:    cal,
+		Jira:   jira,
+		Cfg:    worklogConfig(),
+		Survey: survey,
+		Date:   date,
+		W:      &buf,
+		// Resolver is nil — should fall back to prompt
+	})
+	if err != nil {
+		t.Fatalf("RunWorklog: %v", err)
+	}
+
+	if result.Posted != 1 {
+		t.Errorf("Posted = %d, want 1", result.Posted)
+	}
+	if len(result.Entries) != 1 {
+		t.Fatalf("Entries = %d, want 1", len(result.Entries))
+	}
+	if result.Entries[0].TaskKey != "ADMIN-1" {
+		t.Errorf("TaskKey = %q, want ADMIN-1", result.Entries[0].TaskKey)
+	}
+	if len(jira.calls) != 1 {
+		t.Fatalf("expected 1 worklog call, got %d", len(jira.calls))
+	}
+	if jira.calls[0].issueKey != "ADMIN-1" {
+		t.Errorf("worklog posted to %q, want ADMIN-1", jira.calls[0].issueKey)
+	}
+}
+
+func TestWorklog_TodoistKeyResolvesToJiraFallback(t *testing.T) {
+	date := time.Date(2025, 1, 20, 17, 0, 0, 0, time.UTC) // Monday
+
+	cal := &mockCalendar{
+		fyllaEvents: []calendar.Event{
+			{
+				ID:          "f1",
+				Title:       "Buy groceries",
+				Description: "fylla: 12345\nhttps://todoist.com/app/task/12345",
+				Start:       time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
+				End:         time.Date(2025, 1, 20, 17, 0, 0, 0, time.UTC),
+			},
+		},
+		events: []calendar.Event{},
+	}
+	jira := &mockWorklogPoster{}
+
+	cfg := worklogConfig()
+	cfg.Worklog.Provider = "jira"
+
+	survey := &mockSurveyor{
+		// Accept default duration, pick fallback issue for Todoist key, confirm
+		inputWithDefaultAnswers: []string{"8h"},
+		selectAnswers:           []string{"ADMIN-1", "Yes"},
+	}
+
+	var buf bytes.Buffer
+	result, err := RunWorklog(context.Background(), WorklogParams{
+		Cal:    cal,
+		Jira:   jira,
+		Cfg:    cfg,
+		Survey: survey,
+		Date:   date,
+		W:      &buf,
+	})
+	if err != nil {
+		t.Fatalf("RunWorklog: %v", err)
+	}
+
+	if result.Posted != 1 {
+		t.Errorf("Posted = %d, want 1", result.Posted)
+	}
+	if len(result.Entries) != 1 {
+		t.Fatalf("Entries = %d, want 1", len(result.Entries))
+	}
+	if result.Entries[0].TaskKey != "ADMIN-1" {
+		t.Errorf("TaskKey = %q, want ADMIN-1", result.Entries[0].TaskKey)
+	}
+	if len(jira.calls) != 1 {
+		t.Fatalf("expected 1 worklog call, got %d", len(jira.calls))
+	}
+	if jira.calls[0].issueKey != "ADMIN-1" {
+		t.Errorf("worklog posted to %q, want ADMIN-1", jira.calls[0].issueKey)
+	}
+}

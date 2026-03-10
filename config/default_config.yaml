@@ -48,6 +48,7 @@ projectRules:
       workDays: [1, 2, 3, 4, 5]
 
 worklog:
+  provider: ""
   fallbackIssues: []
 
 weights:

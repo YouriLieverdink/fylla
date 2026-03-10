@@ -59,6 +59,7 @@ const (
 	formEditTaskPending // waiting for epic options to load for edit form
 	formSnoozeTask
 	formStopTimer
+	formStopTimerPending // waiting for tasks to load for picker
 	formAddWorklog
 	formAddWorklogPending // waiting for tasks to load for picker
 	formEditWorklog
@@ -176,6 +177,12 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if m.formKind == formStopTimerPending {
+			if key.Matches(mssg, keys.Escape) {
+				m.formKind = formStopTimer // return to form
+			}
+			return m, nil
+		}
 
 		// Picker overlay takes priority
 		if m.picker.Active {
@@ -276,23 +283,42 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case msg.TasksLoadedMsg:
-		if m.formKind == formAddWorklogPending {
+		if m.formKind == formAddWorklogPending || m.formKind == formStopTimerPending {
+			returnKind := formAddWorklog
+			if m.formKind == formStopTimerPending {
+				returnKind = formStopTimer
+			}
 			if mssg.Err != nil {
-				m.formKind = formAddWorklog // go back to form
+				m.formKind = returnKind
 				m.setToast(fmt.Sprintf("Failed to load tasks: %v", mssg.Err), true)
 				cmds = append(cmds, clearToastCmd())
 				return m, tea.Batch(cmds...)
 			}
-			items := make([]components.PickerItem, len(mssg.Tasks))
-			for i, t := range mssg.Tasks {
-				items[i] = components.PickerItem{
+			var items []components.PickerItem
+			if returnKind == formStopTimer && m.cb.FallbackIssues != nil {
+				for _, fb := range m.cb.FallbackIssues() {
+					label := fb.Key
+					if fb.Summary != "" {
+						label = fmt.Sprintf("%-10s  %s", fb.Key, fb.Summary)
+					}
+					items = append(items, components.PickerItem{
+						Key:   fb.Key,
+						Label: label,
+					})
+				}
+			}
+			for _, t := range mssg.Tasks {
+				if returnKind == formStopTimer && !isJiraKeyPattern(t.Key) {
+					continue
+				}
+				items = append(items, components.PickerItem{
 					Key:   t.Key,
 					Label: fmt.Sprintf("%-10s  %s", t.Key, t.Summary),
-				}
+				})
 			}
 			m.picker = components.NewPicker("Search Tasks (Enter to select, Esc to cancel)", items)
 			m.pickerFieldLabel = "Issue Key"
-			m.formKind = formAddWorklog
+			m.formKind = returnKind
 			return m, nil
 		}
 		m.tasks.Loading = false
@@ -867,10 +893,34 @@ func (m model) updateTimer(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, timerStatusCmd(m.cb)
 	case key.Matches(mssg, keys.Stop):
 		if m.timerRunning {
-			m.form = components.NewForm("Stop Timer", []components.FormFieldDef{
+			fields := []components.FormFieldDef{
 				{Label: "Comment", Placeholder: "What did you work on?"},
 				{Label: "Mark done", Kind: components.FieldToggle},
-			})
+			}
+			if needsWorklogIssue(m.timerKey) {
+				var fallbacks []FallbackIssue
+				if m.cb.FallbackIssues != nil {
+					fallbacks = m.cb.FallbackIssues()
+				}
+				issueField := components.FormFieldDef{
+					Label:       "Issue Key",
+					Placeholder: "PROJ-123 (/ to search)",
+				}
+				if len(fallbacks) > 0 {
+					options := make([]string, len(fallbacks))
+					for i, fb := range fallbacks {
+						if fb.Summary != "" {
+							options[i] = fb.Key + "  " + fb.Summary
+						} else {
+							options[i] = fb.Key
+						}
+					}
+					issueField.Kind = components.FieldSelect
+					issueField.Options = options
+				}
+				fields = append([]components.FormFieldDef{issueField}, fields...)
+			}
+			m.form = components.NewForm("Stop Timer", fields)
 			m.formKind = formStopTimer
 			return m, nil
 		}
@@ -964,9 +1014,13 @@ func (m model) updatePicker(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// "/" on Issue Key field in add worklog form opens the async task picker
-	if m.formKind == formAddWorklog && m.form.FocusedLabel() == "Issue Key" && key.Matches(mssg, keys.Search) {
-		m.formKind = formAddWorklogPending
+	// "/" on Issue Key field opens the async task picker
+	if (m.formKind == formAddWorklog || m.formKind == formStopTimer) && m.form.FocusedLabel() == "Issue Key" && key.Matches(mssg, keys.Search) {
+		if m.formKind == formAddWorklog {
+			m.formKind = formAddWorklogPending
+		} else {
+			m.formKind = formStopTimerPending
+		}
 		return m, loadTasksCmd(m.cb)
 	}
 
@@ -1185,9 +1239,10 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case formStopTimer:
 			comment := m.form.ValueByLabel("Comment")
 			done := m.form.ValueByLabel("Mark done") == "true"
+			fallbackIssue := extractIssueKey(m.form.ValueByLabel("Issue Key"))
 			m.formKind = formNone
 			m.saving = "Stopping timer"
-			return m, stopTimerCmd(m.cb, comment, done)
+			return m, stopTimerCmd(m.cb, comment, done, fallbackIssue)
 		case formAddWorklog:
 			issueKey := m.form.ValueByLabel("Issue Key")
 			durationStr := m.form.ValueByLabel("Duration")
@@ -1294,7 +1349,7 @@ func (m model) isLoading() bool {
 			return true
 		}
 	}
-	return m.formKind == formAddTaskPending || m.formKind == formEditTaskPending || m.formKind == formAddWorklogPending
+	return m.formKind == formAddTaskPending || m.formKind == formEditTaskPending || m.formKind == formAddWorklogPending || m.formKind == formStopTimerPending
 }
 
 func (m model) loadingLabel() string {
@@ -1330,7 +1385,7 @@ func (m model) loadingLabel() string {
 	if m.formKind == formEditTaskPending {
 		return "Loading edit options"
 	}
-	if m.formKind == formAddWorklogPending {
+	if m.formKind == formAddWorklogPending || m.formKind == formStopTimerPending {
 		return "Loading tasks"
 	}
 	if m.saving != "" {
@@ -1561,6 +1616,17 @@ var jiraKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d+$`)
 
 func isJiraKeyPattern(key string) bool {
 	return jiraKeyPattern.MatchString(key)
+}
+
+func needsWorklogIssue(key string) bool {
+	return key != "" && !isJiraKeyPattern(key)
+}
+
+func extractIssueKey(val string) string {
+	if i := strings.IndexByte(val, ' '); i > 0 {
+		return val[:i]
+	}
+	return val
 }
 
 func buildPendingEditData(t *msg.ScoredTask) pendingEditData {

@@ -86,6 +86,7 @@ type BusinessHoursConfig struct {
 
 // WorklogConfig holds worklog-related settings.
 type WorklogConfig struct {
+	Provider       string   `yaml:"provider"`
 	FallbackIssues []string `yaml:"fallbackIssues"`
 }
 

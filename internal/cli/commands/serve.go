@@ -286,7 +286,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			}
 			return result.TaskKey, nil
 		},
-		StopTimer: func(description string, done bool) (string, time.Duration, error) {
+		StopTimer: func(description string, done bool, fallbackIssue string) (string, time.Duration, error) {
 			path, err := timer.DefaultPath()
 			if err != nil {
 				return "", 0, err
@@ -296,17 +296,18 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				resolver = r
 			}
 			result, err := RunStop(ctx, StopParams{
-				TimerPath:    path,
-				RoundMinutes: 5,
-				Now:          time.Now(),
-				Description:  description,
-				Jira:         source,
-				Cal:          cal,
-				Estimate:     source,
-				Cfg:          cfg,
-				Resolver:     resolver,
-				Completer:    source,
-				Done:         done,
+				TimerPath:     path,
+				RoundMinutes:  5,
+				Now:           time.Now(),
+				Description:   description,
+				Jira:          source,
+				Cal:           cal,
+				Estimate:      source,
+				Cfg:           cfg,
+				Resolver:      resolver,
+				Completer:     source,
+				Done:          done,
+				FallbackIssue: fallbackIssue,
 			})
 			if err != nil {
 				return "", 0, err
@@ -496,6 +497,15 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 		},
 		AddWorklog: func(issueKey string, timeSpent time.Duration, description string, started time.Time) error {
 			return source.PostWorklog(ctx, issueKey, timeSpent, description, started)
+		},
+		FallbackIssues: func() []tui.FallbackIssue {
+			keys := cfg.Worklog.FallbackIssues
+			issues := make([]tui.FallbackIssue, len(keys))
+			for i, k := range keys {
+				summary, _ := source.GetSummary(ctx, k)
+				issues[i] = tui.FallbackIssue{Key: k, Summary: summary}
+			}
+			return issues
 		},
 		LoadReport: func(days int) (*msg.ReportResult, error) {
 			result, err := RunReport(ctx, ReportParams{
