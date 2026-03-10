@@ -105,8 +105,9 @@ type model struct {
 	formTaskKey     string
 	formWorklogID   string
 	formWorklogKey  string
-	formOptions   *msg.FormOptionsMsg
-	pendingEdit   *pendingEditData
+	formOptions      *msg.FormOptionsMsg
+	pickerFieldLabel string
+	pendingEdit      *pendingEditData
 	viewDetail    *msg.ViewResult
 	reportResult *msg.ReportResult
 	spinner      spinner.Model
@@ -290,6 +291,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.picker = components.NewPicker("Search Tasks (Enter to select, Esc to cancel)", items)
+			m.pickerFieldLabel = "Issue Key"
 			m.formKind = formAddWorklog
 			return m, nil
 		}
@@ -904,6 +906,36 @@ func (m model) updateSchedule(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+const pickerThreshold = 5
+
+func (m *model) openPickerForSelect() {
+	label := m.form.FocusedLabel()
+	opts := m.form.FocusedSelectOptions()
+	items := make([]components.PickerItem, len(opts))
+	for i, opt := range opts {
+		items[i] = components.PickerItem{Key: opt, Label: opt}
+	}
+	m.picker = components.NewPicker("Select "+label+" (Enter to select, Esc to cancel)", items)
+	m.pickerFieldLabel = label
+}
+
+func (m model) pickerSideEffect(label string) tea.Cmd {
+	switch label {
+	case "Provider":
+		if m.formKind == formAddTask && m.formOptions != nil {
+			return m.rebuildAddFormForProvider()
+		}
+	case "Project":
+		project := m.form.ValueByLabel("Project")
+		provider := m.form.ValueByLabel("Provider")
+		if provider == "" && m.formOptions != nil {
+			provider = m.formOptions.Provider
+		}
+		return tea.Batch(loadEpicsCmd(m.cb, project), loadSectionsCmd(m.cb, provider, project))
+	}
+	return nil
+}
+
 func (m model) updatePicker(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(mssg, keys.Escape):
@@ -920,10 +952,9 @@ func (m model) updatePicker(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		selected := m.picker.Selected()
 		m.picker.Active = false
 		if selected != nil {
-			m.form.SetValueByLabel("Issue Key", selected.Key)
+			m.form.SetValueByLabel(m.pickerFieldLabel, selected.Key)
 		}
-		// Return to the form underneath
-		return m, nil
+		return m, m.pickerSideEffect(m.pickerFieldLabel)
 	default:
 		var cmd tea.Cmd
 		m.picker.Filter, cmd = m.picker.Filter.Update(mssg)
@@ -933,10 +964,16 @@ func (m model) updatePicker(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// "/" on Issue Key field in add worklog form opens the task picker
+	// "/" on Issue Key field in add worklog form opens the async task picker
 	if m.formKind == formAddWorklog && m.form.FocusedLabel() == "Issue Key" && key.Matches(mssg, keys.Search) {
 		m.formKind = formAddWorklogPending
 		return m, loadTasksCmd(m.cb)
+	}
+
+	// "/" on any select field with many options opens the picker
+	if key.Matches(mssg, keys.Search) && m.form.IsSelectField() && m.form.FocusedSelectOptionCount() > pickerThreshold {
+		m.openPickerForSelect()
+		return m, nil
 	}
 
 	switch {
@@ -953,6 +990,10 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case mssg.Type == tea.KeyLeft:
 		if m.form.IsSelectField() {
+			if m.form.FocusedSelectOptionCount() > pickerThreshold {
+				m.openPickerForSelect()
+				return m, nil
+			}
 			m.form.CycleSelectLeft()
 			if m.form.FocusedLabel() == "Provider" && m.formKind == formAddTask && m.formOptions != nil {
 				return m, m.rebuildAddFormForProvider()
@@ -979,6 +1020,10 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case mssg.Type == tea.KeyRight:
 		if m.form.IsSelectField() {
+			if m.form.FocusedSelectOptionCount() > pickerThreshold {
+				m.openPickerForSelect()
+				return m, nil
+			}
 			m.form.CycleSelectRight()
 			if m.form.FocusedLabel() == "Provider" && m.formKind == formAddTask && m.formOptions != nil {
 				return m, m.rebuildAddFormForProvider()
@@ -1015,6 +1060,10 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case key.Matches(mssg, keys.Enter):
+		if m.form.IsSelectField() && m.form.FocusedSelectOptionCount() > pickerThreshold {
+			m.openPickerForSelect()
+			return m, nil
+		}
 		m.form.Active = false
 		vals := m.form.Values()
 		switch m.formKind {

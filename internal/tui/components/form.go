@@ -264,6 +264,22 @@ func (f *Form) FocusByLabel(label string) {
 	}
 }
 
+// FocusedSelectOptionCount returns the number of options for the focused select field, or 0 if not a select.
+func (f *Form) FocusedSelectOptionCount() int {
+	if idx := f.selIdx[f.Focus]; idx >= 0 {
+		return len(f.selects[idx].options)
+	}
+	return 0
+}
+
+// FocusedSelectOptions returns the options slice for the focused select field, or nil if not a select.
+func (f *Form) FocusedSelectOptions() []string {
+	if idx := f.selIdx[f.Focus]; idx >= 0 {
+		return f.selects[idx].options
+	}
+	return nil
+}
+
 // FocusedLabel returns the label of the currently focused field.
 func (f *Form) FocusedLabel() string {
 	if f.Focus >= 0 && f.Focus < len(f.Labels) {
