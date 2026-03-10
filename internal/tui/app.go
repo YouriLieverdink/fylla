@@ -526,6 +526,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 					current = "None"
 				}
 				m.form.UpdateSelectByLabel("Section", sectionOptions, current)
+				m.form.ConvertToSelectByLabel("Section", sectionOptions, current)
 			} else {
 				m.form.ConvertToTextByLabel("Section", "Section name")
 			}

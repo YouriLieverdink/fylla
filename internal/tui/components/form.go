@@ -292,6 +292,26 @@ func (f *Form) UpdateSelectByLabel(label string, options []string, value string)
 	}
 }
 
+// ConvertToSelectByLabel converts a text input field back to a select field.
+func (f *Form) ConvertToSelectByLabel(label string, options []string, value string) {
+	for i, l := range f.Labels {
+		if l == label && f.kinds[i] == FieldText {
+			sel := selectField{options: options}
+			for j, opt := range options {
+				if strings.EqualFold(opt, value) {
+					sel.selected = j
+					break
+				}
+			}
+			f.kinds[i] = FieldSelect
+			f.textIdx[i] = -1
+			f.selIdx[i] = len(f.selects)
+			f.selects = append(f.selects, sel)
+			return
+		}
+	}
+}
+
 // ConvertToTextByLabel converts a select field to a text input field.
 func (f *Form) ConvertToTextByLabel(label, placeholder string) {
 	for i, l := range f.Labels {
