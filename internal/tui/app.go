@@ -113,6 +113,11 @@ type model struct {
 	reportResult *msg.ReportResult
 	spinner      spinner.Model
 	saving       string // non-empty shows spinner in status bar with this label
+
+	// Background prefetch cache
+	cachedTasks       []msg.ScoredTask
+	cachedFormOptions *msg.FormOptionsMsg
+	cachedFallback    []msg.FallbackIssue
 }
 
 func initialModel(deps Deps) model {
@@ -136,6 +141,9 @@ func (m model) Init() tea.Cmd {
 		m.spinner.Tick,
 		loadTodayCmd(m.cb),
 		timerStatusCmd(m.cb),
+		loadTasksCmd(m.cb),
+		loadFormOptionsCmd(m.cb),
+		prefetchFallbackCmd(m.cb),
 		autoRefreshCmd(),
 	)
 }
@@ -283,6 +291,10 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case msg.TasksLoadedMsg:
+		// Always update cache on successful fetch
+		if mssg.Err == nil {
+			m.cachedTasks = mssg.Tasks
+		}
 		if m.formKind == formAddWorklogPending || m.formKind == formStopTimerPending {
 			returnKind := formAddWorklog
 			if m.formKind == formStopTimerPending {
@@ -294,31 +306,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, clearToastCmd())
 				return m, tea.Batch(cmds...)
 			}
-			var items []components.PickerItem
-			if returnKind == formStopTimer && m.cb.FallbackIssues != nil {
-				for _, fb := range m.cb.FallbackIssues() {
-					label := fb.Key
-					if fb.Summary != "" {
-						label = fmt.Sprintf("%-10s  %s", fb.Key, fb.Summary)
-					}
-					items = append(items, components.PickerItem{
-						Key:   fb.Key,
-						Label: label,
-					})
-				}
-			}
-			for _, t := range mssg.Tasks {
-				if returnKind == formStopTimer && !isJiraKeyPattern(t.Key) {
-					continue
-				}
-				items = append(items, components.PickerItem{
-					Key:   t.Key,
-					Label: fmt.Sprintf("%-10s  %s", t.Key, t.Summary),
-				})
-			}
-			m.picker = components.NewPicker("Search Tasks (Enter to select, Esc to cancel)", items)
-			m.pickerFieldLabel = "Issue Key"
-			m.formKind = returnKind
+			m.openTaskPicker(mssg.Tasks, returnKind)
 			return m, nil
 		}
 		m.tasks.Loading = false
@@ -546,8 +534,12 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.formKind == formAddTaskPending {
 			m.formOptions = &mssg
+			m.cachedFormOptions = &mssg
 			m.form = buildAddForm(mssg.Provider, &mssg)
 			m.formKind = formAddTask
+		} else {
+			// Background prefetch — just cache it
+			m.cachedFormOptions = &mssg
 		}
 		return m, nil
 
@@ -660,6 +652,10 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, clearToastCmd())
 		return m, tea.Batch(cmds...)
 
+	case msg.FallbackLoadedMsg:
+		m.cachedFallback = mssg.Issues
+		return m, nil
+
 	case msg.AutoRefreshMsg:
 		cmds = append(cmds, m.refreshActiveView(), autoRefreshCmd())
 		return m, tea.Batch(cmds...)
@@ -692,6 +688,12 @@ func (m model) updateTimeline(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.confirmKey = e.TaskKey
 		}
 	case key.Matches(mssg, keys.Add):
+		if m.cachedFormOptions != nil {
+			m.formOptions = m.cachedFormOptions
+			m.form = buildAddForm(m.cachedFormOptions.Provider, m.cachedFormOptions)
+			m.formKind = formAddTask
+			return m, loadFormOptionsCmd(m.cb) // refresh cache in background
+		}
 		m.formKind = formAddTaskPending
 		return m, loadFormOptionsCmd(m.cb)
 	case key.Matches(mssg, keys.Snooze):
@@ -741,6 +743,12 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(mssg, keys.Search):
 		m.tasks.ToggleFilter()
 	case key.Matches(mssg, keys.Add):
+		if m.cachedFormOptions != nil {
+			m.formOptions = m.cachedFormOptions
+			m.form = buildAddForm(m.cachedFormOptions.Provider, m.cachedFormOptions)
+			m.formKind = formAddTask
+			return m, loadFormOptionsCmd(m.cb) // refresh cache in background
+		}
 		m.formKind = formAddTaskPending
 		return m, loadFormOptionsCmd(m.cb)
 	case key.Matches(mssg, keys.Edit):
@@ -898,17 +906,13 @@ func (m model) updateTimer(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				{Label: "Mark done", Kind: components.FieldToggle},
 			}
 			if needsWorklogIssue(m.timerKey) {
-				var fallbacks []FallbackIssue
-				if m.cb.FallbackIssues != nil {
-					fallbacks = m.cb.FallbackIssues()
-				}
 				issueField := components.FormFieldDef{
 					Label:       "Issue Key",
 					Placeholder: "PROJ-123 (/ to search)",
 				}
-				if len(fallbacks) > 0 {
-					options := make([]string, len(fallbacks))
-					for i, fb := range fallbacks {
+				if len(m.cachedFallback) > 0 {
+					options := make([]string, len(m.cachedFallback))
+					for i, fb := range m.cachedFallback {
 						if fb.Summary != "" {
 							options[i] = fb.Key + "  " + fb.Summary
 						} else {
@@ -957,6 +961,34 @@ func (m model) updateSchedule(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 const pickerThreshold = 5
+
+func (m *model) openTaskPicker(tasks []msg.ScoredTask, returnKind formKind) {
+	var items []components.PickerItem
+	if returnKind == formStopTimer {
+		for _, fb := range m.cachedFallback {
+			label := fb.Key
+			if fb.Summary != "" {
+				label = fmt.Sprintf("%-10s  %s", fb.Key, fb.Summary)
+			}
+			items = append(items, components.PickerItem{
+				Key:   fb.Key,
+				Label: label,
+			})
+		}
+	}
+	for _, t := range tasks {
+		if returnKind == formStopTimer && !isJiraKeyPattern(t.Key) {
+			continue
+		}
+		items = append(items, components.PickerItem{
+			Key:   t.Key,
+			Label: fmt.Sprintf("%-10s  %s", t.Key, t.Summary),
+		})
+	}
+	m.picker = components.NewPicker("Search Tasks (Enter to select, Esc to cancel)", items)
+	m.pickerFieldLabel = "Issue Key"
+	m.formKind = returnKind
+}
 
 func (m *model) openPickerForSelect() {
 	label := m.form.FocusedLabel()
@@ -1014,8 +1046,16 @@ func (m model) updatePicker(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// "/" on Issue Key field opens the async task picker
+	// "/" on Issue Key field opens the task picker
 	if (m.formKind == formAddWorklog || m.formKind == formStopTimer) && m.form.FocusedLabel() == "Issue Key" && key.Matches(mssg, keys.Search) {
+		returnKind := formAddWorklog
+		if m.formKind == formStopTimer {
+			returnKind = formStopTimer
+		}
+		if m.cachedTasks != nil {
+			m.openTaskPicker(m.cachedTasks, returnKind)
+			return m, loadTasksCmd(m.cb) // refresh cache in background
+		}
 		if m.formKind == formAddWorklog {
 			m.formKind = formAddWorklogPending
 		} else {
@@ -1296,6 +1336,13 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *model) switchTab(tab int) (tea.Model, tea.Cmd) {
 	m.activeTab = tab
+	// Serve cached tasks instantly, then refresh in background
+	if tab == tabTasks && m.cachedTasks != nil {
+		m.tasks.Tasks = m.cachedTasks
+		m.tasks.Loading = false
+		m.tasks.Err = nil
+		return *m, loadTasksCmd(m.cb) // background refresh
+	}
 	return *m, m.refreshActiveView()
 }
 

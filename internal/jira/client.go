@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/iruoy/fylla/internal/task"
@@ -885,13 +886,29 @@ func (c *Client) FetchWorklogs(ctx context.Context, since, until time.Time) ([]W
 	}
 	resp.Body.Close()
 
+	type wlResult struct {
+		entries []WorklogEntry
+	}
+	results := make([]wlResult, len(result.Issues))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 5)
+	for i, issue := range result.Issues {
+		wg.Add(1)
+		go func(idx int, key, summary string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			wls, err := c.fetchIssueWorklogs(ctx, key, summary, since, until)
+			if err == nil {
+				results[idx] = wlResult{entries: wls}
+			}
+		}(i, issue.Key, issue.Fields.Summary)
+	}
+	wg.Wait()
+
 	var entries []WorklogEntry
-	for _, issue := range result.Issues {
-		issueWorklogs, err := c.fetchIssueWorklogs(ctx, issue.Key, issue.Fields.Summary, since, until)
-		if err != nil {
-			continue // skip issues with worklog fetch errors
-		}
-		entries = append(entries, issueWorklogs...)
+	for _, r := range results {
+		entries = append(entries, r.entries...)
 	}
 	return entries, nil
 }

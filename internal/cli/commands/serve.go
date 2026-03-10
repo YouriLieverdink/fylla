@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/iruoy/fylla/internal/calendar"
@@ -501,10 +502,16 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 		FallbackIssues: func() []tui.FallbackIssue {
 			keys := cfg.Worklog.FallbackIssues
 			issues := make([]tui.FallbackIssue, len(keys))
+			var wg sync.WaitGroup
 			for i, k := range keys {
-				summary, _ := source.GetSummary(ctx, k)
-				issues[i] = tui.FallbackIssue{Key: k, Summary: summary}
+				wg.Add(1)
+				go func(idx int, key string) {
+					defer wg.Done()
+					summary, _ := source.GetSummary(ctx, key)
+					issues[idx] = tui.FallbackIssue{Key: key, Summary: summary}
+				}(i, k)
 			}
+			wg.Wait()
 			return issues
 		},
 		LoadReport: func(days int) (*msg.ReportResult, error) {

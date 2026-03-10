@@ -342,6 +342,20 @@ func addWorklogCmd(cb Callbacks, issueKey string, timeSpent time.Duration, descr
 	}
 }
 
+func prefetchFallbackCmd(cb Callbacks) tea.Cmd {
+	return func() tea.Msg {
+		if cb.FallbackIssues == nil {
+			return msg.FallbackLoadedMsg{}
+		}
+		issues := cb.FallbackIssues()
+		result := make([]msg.FallbackIssue, len(issues))
+		for i, fb := range issues {
+			result[i] = msg.FallbackIssue{Key: fb.Key, Summary: fb.Summary}
+		}
+		return msg.FallbackLoadedMsg{Issues: result}
+	}
+}
+
 func autoRefreshCmd() tea.Cmd {
 	return tea.Tick(60*time.Second, func(time.Time) tea.Msg {
 		return msg.AutoRefreshMsg{}

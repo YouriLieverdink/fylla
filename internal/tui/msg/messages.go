@@ -185,5 +185,16 @@ type WorklogAddedMsg struct {
 	Err error
 }
 
+// FallbackLoadedMsg carries prefetched fallback issue summaries.
+type FallbackLoadedMsg struct {
+	Issues []FallbackIssue
+}
+
+// FallbackIssue pairs a Jira key with its summary for display.
+type FallbackIssue struct {
+	Key     string
+	Summary string
+}
+
 // AutoRefreshMsg triggers an auto-refresh of the current view.
 type AutoRefreshMsg struct{}
