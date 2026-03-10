@@ -5,19 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/iruoy/fylla/internal/tui/msg"
-)
-
-var (
-	currentStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#43BF6D", Dark: "#73F59F"})
-	atRiskStyle   = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#FF4672", Dark: "#ED567A"}).Bold(true)
-	calEventStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#AAAAAA", Dark: "#555555"})
-	selectedStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"})
-	pastStyle     = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#AAAAAA", Dark: "#555555"})
-	headerFmt     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
-	hintStyle     = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
-	errStyle      = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#FF4672", Dark: "#ED567A"})
+	"github.com/iruoy/fylla/internal/tui/styles"
 )
 
 // Model is the timeline view model.
@@ -69,7 +58,7 @@ func (m Model) View() string {
 		return "  Loading today's schedule..."
 	}
 	if m.Err != nil {
-		return errStyle.Render(fmt.Sprintf("  Error: %v", m.Err))
+		return styles.ErrStyle.Render(fmt.Sprintf("  Error: %v", m.Err))
 	}
 	if len(m.Events) == 0 {
 		return "  No events scheduled for today."
@@ -77,7 +66,7 @@ func (m Model) View() string {
 
 	now := time.Now()
 	var b strings.Builder
-	b.WriteString(headerFmt.Render("Today's Schedule"))
+	b.WriteString(styles.HeaderFmt.Render("Today's Schedule"))
 	b.WriteString("\n\n")
 
 	for i, e := range m.Events {
@@ -87,35 +76,35 @@ func (m Model) View() string {
 
 		timeRange := fmt.Sprintf("%s - %s", e.Start.Format("15:04"), e.End.Format("15:04"))
 		dur := e.End.Sub(e.Start)
-		durStr := formatDuration(dur)
+		durStr := styles.FormatDurationParens(dur)
 
 		var label string
 		if e.IsCalendarEvent {
 			label = fmt.Sprintf("%s  %s  %s", timeRange, e.Summary, durStr)
 			switch {
 			case isPast:
-				label = pastStyle.Render(label)
+				label = styles.PastStyle.Render(label)
 			case isSelected:
-				label = selectedStyle.Render(label)
+				label = styles.SelectedStyle.Render(label)
 			default:
-				label = calEventStyle.Render(label)
+				label = styles.CalEventStyle.Render(label)
 			}
 		} else {
 			prefix := ""
 			if e.AtRisk {
 				prefix = "[LATE] "
 			}
-			taskLabel := formatPrefix(e.Project, e.Section) + e.Summary
+			taskLabel := styles.FormatPrefix(e.Project, e.Section) + e.Summary
 			label = fmt.Sprintf("%s  %s%s  %s", timeRange, prefix, taskLabel, durStr)
 			switch {
 			case isSelected:
-				label = selectedStyle.Render(label)
+				label = styles.SelectedStyle.Render(label)
 			case isCurrent:
-				label = currentStyle.Render(label)
+				label = styles.CurrentStyle.Render(label)
 			case e.AtRisk:
-				label = atRiskStyle.Render(label)
+				label = styles.AtRiskStyle.Render(label)
 			case isPast:
-				label = pastStyle.Render(label)
+				label = styles.PastStyle.Render(label)
 			}
 		}
 
@@ -133,30 +122,8 @@ func (m Model) View() string {
 	}
 
 	b.WriteString("\n")
-	hints := "j/k:navigate  enter/t:timer  d:done  s:sync  r:refresh"
-	b.WriteString(hintStyle.Render("  " + hints))
+	hints := "j/k:navigate  enter/t:timer  d:done  D:delete  a:add  S:snooze  v:view  s:sync  R:report  r:refresh"
+	b.WriteString(styles.HintStyle.Render("  " + hints))
 
 	return b.String()
-}
-
-func formatPrefix(project, section string) string {
-	if project != "" && section != "" {
-		return project + " / " + section + ": "
-	}
-	if project != "" {
-		return project + ": "
-	}
-	return ""
-}
-
-func formatDuration(d time.Duration) string {
-	h := int(d.Hours())
-	m := int(d.Minutes()) % 60
-	if h > 0 && m > 0 {
-		return fmt.Sprintf("(%dh%dm)", h, m)
-	}
-	if h > 0 {
-		return fmt.Sprintf("(%dh)", h)
-	}
-	return fmt.Sprintf("(%dm)", m)
 }

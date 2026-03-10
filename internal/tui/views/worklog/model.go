@@ -6,15 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/iruoy/fylla/internal/tui/msg"
-)
-
-var (
-	selectedStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"})
-	headerFmt     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
-	hintStyle     = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
-	errStyle      = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#FF4672", Dark: "#ED567A"})
+	"github.com/iruoy/fylla/internal/tui/styles"
 )
 
 // Model is the worklog view model.
@@ -95,7 +88,7 @@ func (m Model) View() string {
 		return "  Loading worklogs..."
 	}
 	if m.Err != nil {
-		return errStyle.Render(fmt.Sprintf("  Error: %v", m.Err))
+		return styles.ErrStyle.Render(fmt.Sprintf("  Error: %v", m.Err))
 	}
 
 	sorted := m.sortedEntries()
@@ -106,8 +99,8 @@ func (m Model) View() string {
 		viewLabel = "This Week"
 	}
 	total := totalTime(sorted)
-	title := fmt.Sprintf("Worklogs — %s (%d entries, %s)", viewLabel, len(sorted), formatDuration(total))
-	b.WriteString(headerFmt.Render(title))
+	title := fmt.Sprintf("Worklogs — %s (%d entries, %s)", viewLabel, len(sorted), styles.FormatDuration(total))
+	b.WriteString(styles.HeaderFmt.Render(title))
 	b.WriteString("\n\n")
 
 	if len(sorted) == 0 {
@@ -119,8 +112,8 @@ func (m Model) View() string {
 	}
 
 	b.WriteString("\n")
-	hints := "j/k:navigate  a:add  e:edit  D:delete  w:toggle week  r:refresh"
-	b.WriteString(hintStyle.Render("  " + hints))
+	hints := "j/k:navigate  a:add  e:edit  D:delete  w:toggle week  R:report  r:refresh"
+	b.WriteString(styles.HintStyle.Render("  " + hints))
 
 	return b.String()
 }
@@ -146,7 +139,7 @@ func (m Model) renderDayView(b *strings.Builder, sorted []msg.WorklogEntry) {
 		cursor := "  "
 		if isSelected {
 			cursor = "> "
-			line = selectedStyle.Render(line)
+			line = styles.SelectedStyle.Render(line)
 		}
 		b.WriteString(cursor)
 		b.WriteString(line)
@@ -154,7 +147,7 @@ func (m Model) renderDayView(b *strings.Builder, sorted []msg.WorklogEntry) {
 	}
 
 	if len(sorted) > visibleHeight {
-		b.WriteString(hintStyle.Render(fmt.Sprintf("\n  Showing %d-%d of %d", startIdx+1, endIdx, len(sorted))))
+		b.WriteString(styles.HintStyle.Render(fmt.Sprintf("\n  Showing %d-%d of %d", startIdx+1, endIdx, len(sorted))))
 		b.WriteString("\n")
 	}
 }
@@ -189,7 +182,7 @@ func (m Model) renderWeekView(b *strings.Builder, sorted []msg.WorklogEntry) {
 		g := groups[day]
 		t, _ := time.Parse("2006-01-02", g.date)
 		dayTotal := totalTime(g.entries)
-		lines = append(lines, displayLine{entryIdx: -1, header: fmt.Sprintf("%s  %s", t.Format("Mon Jan 2"), formatDuration(dayTotal))})
+		lines = append(lines, displayLine{entryIdx: -1, header: fmt.Sprintf("%s  %s", t.Format("Mon Jan 2"), styles.FormatDuration(dayTotal))})
 		for _, e := range g.entries {
 			entryToFlat[flatIdx] = len(lines)
 			lines = append(lines, displayLine{entryIdx: flatIdx})
@@ -226,7 +219,7 @@ func (m Model) renderWeekView(b *strings.Builder, sorted []msg.WorklogEntry) {
 		dl := lines[di]
 		if dl.entryIdx == -1 {
 			if dl.header != "" {
-				b.WriteString(headerFmt.Render("  " + dl.header))
+				b.WriteString(styles.HeaderFmt.Render("  " + dl.header))
 			}
 			b.WriteString("\n")
 			continue
@@ -238,7 +231,7 @@ func (m Model) renderWeekView(b *strings.Builder, sorted []msg.WorklogEntry) {
 		cursor := "  "
 		if isSelected {
 			cursor = "> "
-			line = selectedStyle.Render(line)
+			line = styles.SelectedStyle.Render(line)
 		}
 		b.WriteString(cursor)
 		b.WriteString(line)
@@ -248,7 +241,7 @@ func (m Model) renderWeekView(b *strings.Builder, sorted []msg.WorklogEntry) {
 
 func formatEntryLine(e msg.WorklogEntry) string {
 	timeStr := e.Started.Format("15:04")
-	dur := formatDuration(e.TimeSpent)
+	dur := styles.FormatDuration(e.TimeSpent)
 	desc := e.Description
 	if desc == "" {
 		desc = "-"
@@ -257,19 +250,4 @@ func formatEntryLine(e msg.WorklogEntry) string {
 		desc = desc[:37] + "..."
 	}
 	return fmt.Sprintf("%s  %-10s  %6s  %s", timeStr, e.IssueKey, dur, desc)
-}
-
-func formatDuration(d time.Duration) string {
-	if d <= 0 {
-		return "0m"
-	}
-	h := int(d.Hours())
-	m := int(d.Minutes()) % 60
-	if h > 0 && m > 0 {
-		return fmt.Sprintf("%dh%dm", h, m)
-	}
-	if h > 0 {
-		return fmt.Sprintf("%dh", h)
-	}
-	return fmt.Sprintf("%dm", m)
 }

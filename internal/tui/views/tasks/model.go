@@ -5,25 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/iruoy/fylla/internal/tui/msg"
+	"github.com/iruoy/fylla/internal/tui/styles"
 )
-
-var (
-	selectedStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"})
-	headerFmt     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
-	hintStyle     = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
-	errStyle      = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#FF4672", Dark: "#ED567A"})
-	upNextStyle   = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#43BF6D", Dark: "#73F59F"})
-)
-
-var priorityNames = map[int]string{
-	1: "Highest",
-	2: "High",
-	3: "Medium",
-	4: "Low",
-	5: "Lowest",
-}
 
 // Model is the tasks view model.
 type Model struct {
@@ -117,7 +101,8 @@ func (m *Model) filteredTasks() []msg.ScoredTask {
 		for _, t := range m.Tasks {
 			if strings.Contains(strings.ToLower(t.Summary), lower) ||
 				strings.Contains(strings.ToLower(t.Key), lower) ||
-				strings.Contains(strings.ToLower(t.Project), lower) {
+				strings.Contains(strings.ToLower(t.Project), lower) ||
+				strings.Contains(strings.ToLower(t.Section), lower) {
 				source = append(source, t)
 			}
 		}
@@ -150,7 +135,7 @@ func (m Model) View() string {
 		return "  Loading tasks..."
 	}
 	if m.Err != nil {
-		return errStyle.Render(fmt.Sprintf("  Error: %v", m.Err))
+		return styles.ErrStyle.Render(fmt.Sprintf("  Error: %v", m.Err))
 	}
 
 	filtered := m.filteredTasks()
@@ -161,7 +146,7 @@ func (m Model) View() string {
 	if m.Filter != "" {
 		title = fmt.Sprintf("Tasks (%d/%d) filter: %s", len(filtered), len(m.Tasks), m.Filter)
 	}
-	b.WriteString(headerFmt.Render(title))
+	b.WriteString(styles.HeaderFmt.Render(title))
 	b.WriteString("\n\n")
 
 	if len(filtered) == 0 {
@@ -225,7 +210,7 @@ func (m Model) View() string {
 			dl := lines[di]
 			if dl.taskIdx == -1 {
 				if dl.header != "" {
-					b.WriteString(headerFmt.Render("  " + dl.header))
+					b.WriteString(styles.HeaderFmt.Render("  " + dl.header))
 				}
 				b.WriteString("\n")
 				continue
@@ -235,23 +220,23 @@ func (m Model) View() string {
 			isSelected := dl.taskIdx == m.Cursor
 
 			rank := fmt.Sprintf("%2d.", dl.taskIdx+1)
-			est := formatDuration(t.Estimate)
+			est := styles.FormatDurationPadded(t.Estimate)
 			score := fmt.Sprintf("%5.1f", t.Score)
 
-			label := formatPrefix(t.Project, t.Section) + truncate(t.Summary, 50)
+			label := styles.FormatPrefix(t.Project, t.Section) + styles.Truncate(t.Summary, 50)
 			line := fmt.Sprintf("%s %s  %s  %s", rank, label, est, score)
 
 			if t.UpNext {
-				line += upNextStyle.Render(" [UP NEXT]")
+				line += styles.UpNextStyle.Render(" [UP NEXT]")
 			}
 			if t.NotBefore != nil && t.NotBefore.After(time.Now()) {
-				line += hintStyle.Render(fmt.Sprintf(" [not before %s]", t.NotBefore.Format("Jan 2")))
+				line += styles.HintStyle.Render(fmt.Sprintf(" [not before %s]", t.NotBefore.Format("Jan 2")))
 			}
 
 			cursor := "  "
 			if isSelected {
 				cursor = "> "
-				line = selectedStyle.Render(line)
+				line = styles.SelectedStyle.Render(line)
 			}
 
 			b.WriteString(cursor)
@@ -260,50 +245,18 @@ func (m Model) View() string {
 		}
 
 		if len(lines) > visibleHeight {
-			b.WriteString(hintStyle.Render(fmt.Sprintf("\n  Showing %d-%d of %d lines", startIdx+1, endIdx, len(lines))))
+			b.WriteString(styles.HintStyle.Render(fmt.Sprintf("\n  Showing %d-%d of %d lines", startIdx+1, endIdx, len(lines))))
 			b.WriteString("\n")
 		}
 	}
 
 	b.WriteString("\n")
 	if m.filterMode {
-		b.WriteString(hintStyle.Render("  Type to filter, Esc to clear"))
+		b.WriteString(styles.HintStyle.Render("  Type to filter, Esc to clear"))
 	} else {
-		hints := "j/k:navigate  t/enter:timer  d:done  D:delete  a:add  e:edit  /:filter  r:refresh"
-		b.WriteString(hintStyle.Render("  " + hints))
+		hints := "j/k:navigate  t/enter:timer  d:done  D:delete  a:add  e:edit  /:filter  R:report  r:refresh"
+		b.WriteString(styles.HintStyle.Render("  " + hints))
 	}
 
 	return b.String()
-}
-
-func formatPrefix(project, section string) string {
-	if project != "" && section != "" {
-		return project + " / " + section + ": "
-	}
-	if project != "" {
-		return project + ": "
-	}
-	return ""
-}
-
-func formatDuration(d time.Duration) string {
-	if d <= 0 {
-		return "  --"
-	}
-	h := int(d.Hours())
-	m := int(d.Minutes()) % 60
-	if h > 0 && m > 0 {
-		return fmt.Sprintf("%dh%dm", h, m)
-	}
-	if h > 0 {
-		return fmt.Sprintf("%dh", h)
-	}
-	return fmt.Sprintf("%dm", m)
-}
-
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max-3] + "..."
 }

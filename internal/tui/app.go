@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/iruoy/fylla/internal/tui/components"
 	"github.com/iruoy/fylla/internal/tui/msg"
+	"github.com/iruoy/fylla/internal/tui/styles"
 	configView "github.com/iruoy/fylla/internal/tui/views/config"
 	"github.com/iruoy/fylla/internal/tui/views/schedule"
 	"github.com/iruoy/fylla/internal/tui/views/tasks"
@@ -82,10 +83,10 @@ type model struct {
 	height       int
 	timeline     timeline.Model
 	tasks        tasks.Model
-	schedule     schedule.Model
+	schedule     *schedule.Model
 	timer        timerView.Model
 	worklog      worklog.Model
-	config       configView.Model
+	config       *configView.Model
 	timerKey     string
 	timerSummary string
 	timerElapsed time.Duration
@@ -120,10 +121,10 @@ func initialModel(deps Deps) model {
 		cb:       deps.CB,
 		timeline: timeline.New(),
 		tasks:    tasks.New(),
-		schedule: schedule.New(),
+		schedule: ptrSchedule(schedule.New()),
 		timer:    timerView.New(),
 		worklog:  worklog.New(),
-		config:   configView.New(),
+		config:   ptrConfig(configView.New()),
 		spinner:  s,
 	}
 }
@@ -656,8 +657,30 @@ func (m model) updateTimeline(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if e := m.timeline.SelectedEvent(); e != nil && !e.IsCalendarEvent && e.TaskKey != "" {
 			return m, doneTaskCmd(m.cb, e.TaskKey)
 		}
+	case key.Matches(mssg, keys.Delete):
+		if e := m.timeline.SelectedEvent(); e != nil && !e.IsCalendarEvent && e.TaskKey != "" {
+			m.confirm = components.NewConfirm(fmt.Sprintf("Delete %s?", e.TaskKey))
+			m.confirmType = confirmDeleteTask
+			m.confirmKey = e.TaskKey
+		}
+	case key.Matches(mssg, keys.Add):
+		m.formKind = formAddTaskPending
+		return m, loadFormOptionsCmd(m.cb)
+	case key.Matches(mssg, keys.Snooze):
+		if e := m.timeline.SelectedEvent(); e != nil && !e.IsCalendarEvent && e.TaskKey != "" {
+			m.form = components.NewForm(fmt.Sprintf("Snooze %s", e.TaskKey), []components.FormFieldDef{
+				{Label: "Duration", Placeholder: "e.g. 3d, 1w, Monday"},
+			})
+			m.formKind = formSnoozeTask
+			m.formTaskKey = e.TaskKey
+		}
+	case key.Matches(mssg, keys.ViewTask):
+		if e := m.timeline.SelectedEvent(); e != nil && !e.IsCalendarEvent && e.TaskKey != "" {
+			return m, viewTaskCmd(m.cb, e.TaskKey)
+		}
 	case key.Matches(mssg, keys.Sync):
-		return m, syncApplyCmd(m.cb, false)
+		m.confirm = components.NewConfirm("Apply sync to calendar?")
+		m.confirmType = confirmSyncApply
 	case key.Matches(mssg, keys.Report):
 		return m, loadReportCmd(m.cb, 1)
 	}
@@ -712,6 +735,8 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if t := m.tasks.SelectedTask(); t != nil {
 			return m, viewTaskCmd(m.cb, t.Key)
 		}
+	case key.Matches(mssg, keys.Report):
+		return m, loadReportCmd(m.cb, 1)
 	}
 	return m, nil
 }
@@ -793,7 +818,7 @@ func (m model) updateWorklog(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(mssg, keys.Edit):
 		if e := m.worklog.SelectedEntry(); e != nil {
 			m.form = components.NewForm(fmt.Sprintf("Edit Worklog — %s", e.IssueKey), []components.FormFieldDef{
-				{Label: "Duration", Placeholder: "e.g. 1h30m, 45m", Value: formatDurationShort(e.TimeSpent)},
+				{Label: "Duration", Placeholder: "e.g. 1h30m, 45m", Value: styles.FormatDuration(e.TimeSpent)},
 				{Label: "Description", Placeholder: "What did you work on?", Value: e.Description},
 				{Label: "Started", Placeholder: "e.g. 09:00, 2006-01-02T15:04", Value: e.Started.Format("15:04")},
 			})
@@ -808,6 +833,8 @@ func (m model) updateWorklog(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.confirmKey = e.ID
 			m.formWorklogKey = e.IssueKey
 		}
+	case key.Matches(mssg, keys.Report):
+		return m, loadReportCmd(m.cb, 1)
 	}
 	return m, nil
 }
@@ -1415,11 +1442,12 @@ func (m model) renderViewDetail() string {
 	var b strings.Builder
 	b.WriteString(bold.Render(fmt.Sprintf("Task %s", v.Key)) + "\n\n")
 	b.WriteString(fmt.Sprintf("  Summary:    %s\n", v.Summary))
-	if name, ok := priorityLevelNames[v.Priority]; ok {
+	if v.Priority >= 1 && v.Priority <= 5 {
+		name := styles.PriorityName(v.Priority)
 		b.WriteString(fmt.Sprintf("  Priority:   %s\n", name))
 	}
 	if v.Estimate > 0 {
-		b.WriteString(fmt.Sprintf("  Estimate:   %s\n", formatDurationShort(v.Estimate)))
+		b.WriteString(fmt.Sprintf("  Estimate:   %s\n", styles.FormatDuration(v.Estimate)))
 	} else {
 		b.WriteString("  Estimate:   none\n")
 	}
@@ -1462,8 +1490,8 @@ func (m model) renderReport() string {
 			r.Start.Format("Mon Jan 2"), r.End.Format("Mon Jan 2, 2006"))) + "\n\n")
 	}
 	b.WriteString(fmt.Sprintf("  Tasks completed:  %d\n", r.TasksDone))
-	b.WriteString(fmt.Sprintf("  Time on tasks:    %s\n", formatDurationShort(r.TaskTime)))
-	b.WriteString(fmt.Sprintf("  Meeting time:     %s\n", formatDurationShort(r.MeetingTime)))
+	b.WriteString(fmt.Sprintf("  Time on tasks:    %s\n", styles.FormatDuration(r.TaskTime)))
+	b.WriteString(fmt.Sprintf("  Meeting time:     %s\n", styles.FormatDuration(r.MeetingTime)))
 	b.WriteString(fmt.Sprintf("  Total events:     %d\n", r.TotalEvents))
 	b.WriteString("\n")
 	b.WriteString(hint.Render("Press any key to close"))
@@ -1477,32 +1505,8 @@ func (m model) renderReport() string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 }
 
-func formatDurationShort(d time.Duration) string {
-	h := int(d.Hours())
-	m := int(d.Minutes()) % 60
-	if h > 0 && m > 0 {
-		return fmt.Sprintf("%dh%dm", h, m)
-	}
-	if h > 0 {
-		return fmt.Sprintf("%dh", h)
-	}
-	return fmt.Sprintf("%dm", m)
-}
-
-var priorityLevelNames = map[int]string{
-	1: "Highest",
-	2: "High",
-	3: "Medium",
-	4: "Low",
-	5: "Lowest",
-}
-
-func priorityName(level int) string {
-	if name, ok := priorityLevelNames[level]; ok {
-		return name
-	}
-	return "Medium"
-}
+func ptrSchedule(m schedule.Model) *schedule.Model { return &m }
+func ptrConfig(m configView.Model) *configView.Model { return &m }
 
 var jiraKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d+$`)
 
@@ -1527,7 +1531,7 @@ func buildPendingEditData(t *msg.ScoredTask) pendingEditData {
 	if t.DueDate != nil {
 		ed.dueDate = t.DueDate.Format("2006-01-02")
 	}
-	ed.priority = priorityName(t.Priority)
+	ed.priority = styles.PriorityName(t.Priority)
 	ed.notBefore = t.NotBeforeRaw
 	if ed.notBefore == "" && t.NotBefore != nil {
 		ed.notBefore = t.NotBefore.Format("2006-01-02")
@@ -1585,7 +1589,7 @@ func buildAddForm(provider string, opts *msg.FormOptionsMsg) components.Form {
 	fields = append(fields,
 		components.FormFieldDef{Label: "Description", Placeholder: "Description"},
 		components.FormFieldDef{Label: "Estimate", Placeholder: "e.g. 2h, 30m"},
-		components.FormFieldDef{Label: "Due Date", Placeholder: "e.g. 2025-03-01"},
+		components.FormFieldDef{Label: "Due Date", Placeholder: "e.g. YYYY-MM-DD"},
 		components.FormFieldDef{Label: "Priority", Kind: components.FieldSelect, Options: []string{"Highest", "High", "Medium", "Low", "Lowest"}, Value: "Medium"},
 	)
 	if provider == "jira" {
@@ -1641,7 +1645,7 @@ func buildEditForm(taskKey string, ed pendingEditData, epics []msg.EpicOption, s
 	fields := []components.FormFieldDef{
 		{Label: "Summary", Placeholder: "Task summary", Value: ed.summary},
 		{Label: "Estimate", Placeholder: "e.g. 2h, 30m", Value: ed.estimate},
-		{Label: "Due Date", Placeholder: "e.g. 2025-03-01", Value: ed.dueDate},
+		{Label: "Due Date", Placeholder: "e.g. YYYY-MM-DD", Value: ed.dueDate},
 		{Label: "Priority", Kind: components.FieldSelect, Options: []string{"None", "Highest", "High", "Medium", "Low", "Lowest"}, Value: ed.priority},
 	}
 	if epics != nil {
