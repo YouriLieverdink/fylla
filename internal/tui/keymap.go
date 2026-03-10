@@ -3,34 +3,36 @@ package tui
 import "github.com/charmbracelet/bubbles/key"
 
 type globalKeyMap struct {
-	Tab1     key.Binding
-	Tab2     key.Binding
-	Tab3     key.Binding
-	Tab4     key.Binding
-	Tab5     key.Binding
-	NextTab  key.Binding
-	PrevTab  key.Binding
-	Quit     key.Binding
-	Help     key.Binding
-	Escape   key.Binding
-	Refresh  key.Binding
-	Up       key.Binding
-	Down     key.Binding
-	Enter    key.Binding
-	Done     key.Binding
-	Delete   key.Binding
-	Timer    key.Binding
-	Add      key.Binding
-	Edit     key.Binding
-	Sync     key.Binding
-	Search   key.Binding
-	Force    key.Binding
-	Clear    key.Binding
-	Stop     key.Binding
-	Abort    key.Binding
-	Snooze   key.Binding
-	ViewTask key.Binding
-	Report   key.Binding
+	Tab1       key.Binding
+	Tab2       key.Binding
+	Tab3       key.Binding
+	Tab4       key.Binding
+	Tab5       key.Binding
+	Tab6       key.Binding
+	NextTab    key.Binding
+	PrevTab    key.Binding
+	Quit       key.Binding
+	Help       key.Binding
+	Escape     key.Binding
+	Refresh    key.Binding
+	Up         key.Binding
+	Down       key.Binding
+	Enter      key.Binding
+	Done       key.Binding
+	Delete     key.Binding
+	Timer      key.Binding
+	Add        key.Binding
+	Edit       key.Binding
+	Sync       key.Binding
+	Search     key.Binding
+	Force      key.Binding
+	Clear      key.Binding
+	Stop       key.Binding
+	Abort      key.Binding
+	Snooze     key.Binding
+	ViewTask   key.Binding
+	Report     key.Binding
+	WeekToggle key.Binding
 }
 
 var keys = globalKeyMap{
@@ -38,7 +40,8 @@ var keys = globalKeyMap{
 	Tab2:     key.NewBinding(key.WithKeys("2"), key.WithHelp("2", "Tasks")),
 	Tab3:     key.NewBinding(key.WithKeys("3"), key.WithHelp("3", "Schedule")),
 	Tab4:     key.NewBinding(key.WithKeys("4"), key.WithHelp("4", "Timer")),
-	Tab5:     key.NewBinding(key.WithKeys("5"), key.WithHelp("5", "Config")),
+	Tab5:       key.NewBinding(key.WithKeys("5"), key.WithHelp("5", "Worklog")),
+	Tab6:       key.NewBinding(key.WithKeys("6"), key.WithHelp("6", "Config")),
 	NextTab:  key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next tab")),
 	PrevTab:  key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "prev tab")),
 	Quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
@@ -61,5 +64,6 @@ var keys = globalKeyMap{
 	Abort:    key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "abort")),
 	Snooze:   key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "snooze")),
 	ViewTask: key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "view")),
-	Report:   key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "report")),
+	Report:     key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "report")),
+	WeekToggle: key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "toggle week")),
 }

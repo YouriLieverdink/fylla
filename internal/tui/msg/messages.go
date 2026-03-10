@@ -164,5 +164,26 @@ type SectionsLoadedMsg struct {
 	Err      error
 }
 
+// WorklogsLoadedMsg carries the result of loading worklogs.
+type WorklogsLoadedMsg struct {
+	Entries []WorklogEntry
+	Err     error
+}
+
+// WorklogUpdatedMsg is sent after updating a worklog.
+type WorklogUpdatedMsg struct {
+	Err error
+}
+
+// WorklogDeletedMsg is sent after deleting a worklog.
+type WorklogDeletedMsg struct {
+	Err error
+}
+
+// WorklogAddedMsg is sent after adding a worklog.
+type WorklogAddedMsg struct {
+	Err error
+}
+
 // AutoRefreshMsg triggers an auto-refresh of the current view.
 type AutoRefreshMsg struct{}

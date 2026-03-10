@@ -89,6 +89,16 @@ type EpicOption struct {
 	Label string // "KEY — Summary"
 }
 
+// WorklogEntry represents a worklog entry for TUI display.
+type WorklogEntry struct {
+	ID           string
+	IssueKey     string
+	IssueSummary string
+	Description  string
+	Started      time.Time
+	TimeSpent    time.Duration
+}
+
 // ReportResult holds summary stats for the report overlay.
 type ReportResult struct {
 	Start       time.Time

@@ -57,6 +57,21 @@ var (
 	_ TaskSource = (*local.Client)(nil)
 )
 
+// WorklogFetcher fetches worklogs from a provider.
+type WorklogFetcher interface {
+	FetchWorklogs(ctx context.Context, since, until time.Time) ([]jira.WorklogEntry, error)
+}
+
+// WorklogUpdater updates a worklog entry.
+type WorklogUpdater interface {
+	UpdateWorklog(ctx context.Context, issueKey, worklogID string, timeSpent time.Duration, description string, started time.Time) error
+}
+
+// WorklogDeleter deletes a worklog entry.
+type WorklogDeleter interface {
+	DeleteWorklog(ctx context.Context, issueKey, worklogID string) error
+}
+
 // EpicLister lists open epics from a provider, optionally scoped to a project.
 type EpicLister interface {
 	ListEpics(ctx context.Context, project string) ([]jira.Epic, error)

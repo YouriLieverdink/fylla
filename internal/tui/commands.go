@@ -50,9 +50,13 @@ type Callbacks struct {
 	GetParent    func(taskKey string) (string, error)
 	Provider     func() string
 	Providers    func() []string
-	SnoozeTask   func(taskKey, target string) error
-	ViewTask     func(taskKey string) (*msg.ViewResult, error)
-	LoadReport   func(days int) (*msg.ReportResult, error)
+	SnoozeTask     func(taskKey, target string) error
+	ViewTask       func(taskKey string) (*msg.ViewResult, error)
+	LoadReport     func(days int) (*msg.ReportResult, error)
+	LoadWorklogs   func(weekView bool) ([]msg.WorklogEntry, error)
+	UpdateWorklog  func(issueKey, worklogID string, timeSpent time.Duration, description string, started time.Time) error
+	DeleteWorklog  func(issueKey, worklogID string) error
+	AddWorklog     func(issueKey string, timeSpent time.Duration, description string, started time.Time) error
 }
 
 func loadTodayCmd(cb Callbacks) tea.Cmd {
@@ -300,6 +304,34 @@ func loadReportCmd(cb Callbacks, days int) tea.Cmd {
 	return func() tea.Msg {
 		result, err := cb.LoadReport(days)
 		return msg.ReportLoadedMsg{Result: result, Err: err}
+	}
+}
+
+func loadWorklogsCmd(cb Callbacks, weekView bool) tea.Cmd {
+	return func() tea.Msg {
+		entries, err := cb.LoadWorklogs(weekView)
+		return msg.WorklogsLoadedMsg{Entries: entries, Err: err}
+	}
+}
+
+func updateWorklogCmd(cb Callbacks, issueKey, worklogID string, timeSpent time.Duration, description string, started time.Time) tea.Cmd {
+	return func() tea.Msg {
+		err := cb.UpdateWorklog(issueKey, worklogID, timeSpent, description, started)
+		return msg.WorklogUpdatedMsg{Err: err}
+	}
+}
+
+func deleteWorklogCmd(cb Callbacks, issueKey, worklogID string) tea.Cmd {
+	return func() tea.Msg {
+		err := cb.DeleteWorklog(issueKey, worklogID)
+		return msg.WorklogDeletedMsg{Err: err}
+	}
+}
+
+func addWorklogCmd(cb Callbacks, issueKey string, timeSpent time.Duration, description string, started time.Time) tea.Cmd {
+	return func() tea.Msg {
+		err := cb.AddWorklog(issueKey, timeSpent, description, started)
+		return msg.WorklogAddedMsg{Err: err}
 	}
 }
 

@@ -841,6 +841,200 @@ func (c *Client) GetParent(ctx context.Context, issueKey string) (string, error)
 	return result.Fields.Parent.Key, nil
 }
 
+// WorklogEntry represents a single worklog entry from Jira.
+type WorklogEntry struct {
+	ID           string
+	IssueKey     string
+	IssueSummary string
+	Description  string
+	Started      time.Time
+	TimeSpent    time.Duration
+}
+
+// FetchWorklogs retrieves the current user's worklogs in the given date range.
+func (c *Client) FetchWorklogs(ctx context.Context, since, until time.Time) ([]WorklogEntry, error) {
+	if err := c.fetchAccountID(ctx); err != nil {
+		return nil, fmt.Errorf("fetch worklogs: %w", err)
+	}
+
+	jql := fmt.Sprintf(
+		`worklogDate >= "%s" AND worklogDate <= "%s" AND worklogAuthor = currentUser()`,
+		since.Format("2006-01-02"), until.Format("2006-01-02"),
+	)
+
+	payload := map[string]interface{}{
+		"jql":    jql,
+		"fields": []string{"summary"},
+	}
+
+	resp, err := c.do(ctx, http.MethodPost, "/rest/api/3/search/jql", payload)
+	if err != nil {
+		return nil, fmt.Errorf("fetch worklogs search: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, fmt.Errorf("jira worklog search: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result searchResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		resp.Body.Close()
+		return nil, fmt.Errorf("decode worklog search: %w", err)
+	}
+	resp.Body.Close()
+
+	var entries []WorklogEntry
+	for _, issue := range result.Issues {
+		issueWorklogs, err := c.fetchIssueWorklogs(ctx, issue.Key, issue.Fields.Summary, since, until)
+		if err != nil {
+			continue // skip issues with worklog fetch errors
+		}
+		entries = append(entries, issueWorklogs...)
+	}
+	return entries, nil
+}
+
+func (c *Client) fetchIssueWorklogs(ctx context.Context, issueKey, issueSummary string, since, until time.Time) ([]WorklogEntry, error) {
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/rest/api/3/issue/%s/worklog", issueKey), nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Worklogs []struct {
+			ID      string `json:"id"`
+			Author  struct {
+				AccountID string `json:"accountId"`
+			} `json:"author"`
+			Started          string `json:"started"`
+			TimeSpentSeconds int    `json:"timeSpentSeconds"`
+			Comment          interface{} `json:"comment"`
+		} `json:"worklogs"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	sinceDate := time.Date(since.Year(), since.Month(), since.Day(), 0, 0, 0, 0, since.Location())
+	untilDate := time.Date(until.Year(), until.Month(), until.Day(), 23, 59, 59, 0, until.Location())
+
+	var entries []WorklogEntry
+	for _, wl := range result.Worklogs {
+		if wl.Author.AccountID != c.AccountID {
+			continue
+		}
+		started, err := time.Parse("2006-01-02T15:04:05.000-0700", wl.Started)
+		if err != nil {
+			continue
+		}
+		if started.Before(sinceDate) || started.After(untilDate) {
+			continue
+		}
+		entries = append(entries, WorklogEntry{
+			ID:           wl.ID,
+			IssueKey:     issueKey,
+			IssueSummary: issueSummary,
+			Description:  extractADFText(wl.Comment),
+			Started:      started,
+			TimeSpent:    time.Duration(wl.TimeSpentSeconds) * time.Second,
+		})
+	}
+	return entries, nil
+}
+
+// extractADFText walks an ADF document and extracts plain text.
+func extractADFText(comment interface{}) string {
+	if comment == nil {
+		return ""
+	}
+	doc, ok := comment.(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	content, ok := doc["content"].([]interface{})
+	if !ok {
+		return ""
+	}
+	var parts []string
+	for _, block := range content {
+		blockMap, ok := block.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		innerContent, ok := blockMap["content"].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, node := range innerContent {
+			nodeMap, ok := node.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if text, ok := nodeMap["text"].(string); ok {
+				parts = append(parts, text)
+			}
+		}
+	}
+	return strings.Join(parts, "")
+}
+
+// UpdateWorklog updates an existing worklog entry.
+func (c *Client) UpdateWorklog(ctx context.Context, issueKey, worklogID string, timeSpent time.Duration, description string, started time.Time) error {
+	payload := map[string]interface{}{
+		"timeSpentSeconds": int(timeSpent.Seconds()),
+		"started":          started.Format("2006-01-02T15:04:05.000-0700"),
+		"comment": map[string]interface{}{
+			"type":    "doc",
+			"version": 1,
+			"content": []interface{}{
+				map[string]interface{}{
+					"type": "paragraph",
+					"content": []interface{}{
+						map[string]interface{}{
+							"type": "text",
+							"text": description,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	resp, err := c.do(ctx, http.MethodPut, fmt.Sprintf("/rest/api/3/issue/%s/worklog/%s", issueKey, worklogID), payload)
+	if err != nil {
+		return fmt.Errorf("update worklog: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("jira update worklog: status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+// DeleteWorklog deletes a worklog entry.
+func (c *Client) DeleteWorklog(ctx context.Context, issueKey, worklogID string) error {
+	resp, err := c.do(ctx, http.MethodDelete, fmt.Sprintf("/rest/api/3/issue/%s/worklog/%s", issueKey, worklogID), nil)
+	if err != nil {
+		return fmt.Errorf("delete worklog: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("jira delete worklog: status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
 // formatDuration converts a time.Duration to Jira duration string (e.g. "4h", "2h 30m").
 func formatDuration(d time.Duration) string {
 	h := int(d.Hours())

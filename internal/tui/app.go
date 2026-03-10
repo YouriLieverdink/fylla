@@ -17,6 +17,7 @@ import (
 	"github.com/iruoy/fylla/internal/tui/views/tasks"
 	"github.com/iruoy/fylla/internal/tui/views/timeline"
 	timerView "github.com/iruoy/fylla/internal/tui/views/timer"
+	"github.com/iruoy/fylla/internal/tui/views/worklog"
 )
 
 const (
@@ -24,6 +25,7 @@ const (
 	tabTasks
 	tabSchedule
 	tabTimer
+	tabWorklog
 	tabConfig
 	tabCount
 )
@@ -42,6 +44,7 @@ const (
 	confirmSyncForce
 	confirmClearEvents
 	confirmAbortTimer
+	confirmDeleteWorklog
 )
 
 type formKind int
@@ -55,6 +58,9 @@ const (
 	formEditTaskPending // waiting for epic options to load for edit form
 	formSnoozeTask
 	formStopTimer
+	formAddWorklog
+	formAddWorklogPending // waiting for tasks to load for picker
+	formEditWorklog
 )
 
 type pendingEditData struct {
@@ -78,6 +84,7 @@ type model struct {
 	tasks        tasks.Model
 	schedule     schedule.Model
 	timer        timerView.Model
+	worklog      worklog.Model
 	config       configView.Model
 	timerKey     string
 	timerSummary string
@@ -92,8 +99,11 @@ type model struct {
 	confirmType  confirmAction
 	confirmKey   string
 	form         components.Form
+	picker       components.Picker
 	formKind      formKind
-	formTaskKey   string
+	formTaskKey     string
+	formWorklogID   string
+	formWorklogKey  string
 	formOptions   *msg.FormOptionsMsg
 	pendingEdit   *pendingEditData
 	viewDetail    *msg.ViewResult
@@ -112,6 +122,7 @@ func initialModel(deps Deps) model {
 		tasks:    tasks.New(),
 		schedule: schedule.New(),
 		timer:    timerView.New(),
+		worklog:  worklog.New(),
 		config:   configView.New(),
 		spinner:  s,
 	}
@@ -143,6 +154,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		m.tasks.SetSize(m.width, contentHeight)
 		m.schedule.SetSize(m.width, contentHeight)
 		m.timer.SetSize(m.width, contentHeight)
+		m.worklog.SetSize(m.width, contentHeight)
 		m.config.SetSize(m.width, contentHeight)
 		m.ready = true
 		return m, nil
@@ -155,6 +167,17 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 				m.pendingEdit = nil
 			}
 			return m, nil
+		}
+		if m.formKind == formAddWorklogPending {
+			if key.Matches(mssg, keys.Escape) {
+				m.formKind = formAddWorklog // return to form
+			}
+			return m, nil
+		}
+
+		// Picker overlay takes priority
+		if m.picker.Active {
+			return m.updatePicker(mssg)
 		}
 
 		// Form overlay takes priority
@@ -216,6 +239,8 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(mssg, keys.Tab4):
 			return m.switchTab(tabTimer)
 		case key.Matches(mssg, keys.Tab5):
+			return m.switchTab(tabWorklog)
+		case key.Matches(mssg, keys.Tab6):
 			return m.switchTab(tabConfig)
 		case key.Matches(mssg, keys.NextTab):
 			return m.switchTab((m.activeTab + 1) % tabCount)
@@ -233,6 +258,8 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateSchedule(mssg)
 		case tabTimer:
 			return m.updateTimer(mssg)
+		case tabWorklog:
+			return m.updateWorklog(mssg)
 		case tabConfig:
 			return m.updateConfig(mssg)
 		}
@@ -247,6 +274,24 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case msg.TasksLoadedMsg:
+		if m.formKind == formAddWorklogPending {
+			if mssg.Err != nil {
+				m.formKind = formAddWorklog // go back to form
+				m.setToast(fmt.Sprintf("Failed to load tasks: %v", mssg.Err), true)
+				cmds = append(cmds, clearToastCmd())
+				return m, tea.Batch(cmds...)
+			}
+			items := make([]components.PickerItem, len(mssg.Tasks))
+			for i, t := range mssg.Tasks {
+				items[i] = components.PickerItem{
+					Key:   t.Key,
+					Label: fmt.Sprintf("%-10s  %s", t.Key, t.Summary),
+				}
+			}
+			m.picker = components.NewPicker("Search Tasks (Enter to select, Esc to cancel)", items)
+			m.formKind = formAddWorklog
+			return m, nil
+		}
 		m.tasks.Loading = false
 		if mssg.Err != nil {
 			m.tasks.Err = mssg.Err
@@ -543,6 +588,49 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case msg.WorklogsLoadedMsg:
+		m.worklog.Loading = false
+		if mssg.Err != nil {
+			m.worklog.Err = mssg.Err
+		} else {
+			m.worklog.Entries = mssg.Entries
+			m.worklog.Err = nil
+		}
+		return m, nil
+
+	case msg.WorklogUpdatedMsg:
+		m.saving = ""
+		if mssg.Err != nil {
+			m.setToast(fmt.Sprintf("Worklog update error: %v", mssg.Err), true)
+		} else {
+			m.setToast("Worklog updated", false)
+			cmds = append(cmds, loadWorklogsCmd(m.cb, m.worklog.WeekView))
+		}
+		cmds = append(cmds, clearToastCmd())
+		return m, tea.Batch(cmds...)
+
+	case msg.WorklogDeletedMsg:
+		m.saving = ""
+		if mssg.Err != nil {
+			m.setToast(fmt.Sprintf("Worklog delete error: %v", mssg.Err), true)
+		} else {
+			m.setToast("Worklog deleted", false)
+			cmds = append(cmds, loadWorklogsCmd(m.cb, m.worklog.WeekView))
+		}
+		cmds = append(cmds, clearToastCmd())
+		return m, tea.Batch(cmds...)
+
+	case msg.WorklogAddedMsg:
+		m.saving = ""
+		if mssg.Err != nil {
+			m.setToast(fmt.Sprintf("Worklog add error: %v", mssg.Err), true)
+		} else {
+			m.setToast("Worklog added", false)
+			cmds = append(cmds, loadWorklogsCmd(m.cb, m.worklog.WeekView))
+		}
+		cmds = append(cmds, clearToastCmd())
+		return m, tea.Batch(cmds...)
+
 	case msg.AutoRefreshMsg:
 		cmds = append(cmds, m.refreshActiveView(), autoRefreshCmd())
 		return m, tea.Batch(cmds...)
@@ -671,9 +759,55 @@ func (m model) updateConfirm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case confirmAbortTimer:
 				m.confirmType = confirmNone
 				return m, abortTimerCmd(m.cb)
+			case confirmDeleteWorklog:
+				m.confirmType = confirmNone
+				return m, deleteWorklogCmd(m.cb, m.formWorklogKey, m.confirmKey)
 			}
 		}
 		m.confirmType = confirmNone
+	}
+	return m, nil
+}
+
+func (m model) updateWorklog(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(mssg, keys.Up):
+		m.worklog.CursorUp()
+	case key.Matches(mssg, keys.Down):
+		m.worklog.CursorDown()
+	case key.Matches(mssg, keys.Refresh):
+		m.worklog.Loading = true
+		return m, loadWorklogsCmd(m.cb, m.worklog.WeekView)
+	case key.Matches(mssg, keys.WeekToggle):
+		m.worklog.ToggleWeekView()
+		m.worklog.Loading = true
+		return m, loadWorklogsCmd(m.cb, m.worklog.WeekView)
+	case key.Matches(mssg, keys.Add):
+		m.form = components.NewForm("Add Worklog", []components.FormFieldDef{
+			{Label: "Issue Key", Placeholder: "e.g. PROJ-123 (/ to search)"},
+			{Label: "Duration", Placeholder: "e.g. 1h30m, 45m"},
+			{Label: "Description", Placeholder: "What did you work on?"},
+			{Label: "Started", Placeholder: "e.g. 09:00, 2006-01-02T15:04", Value: time.Now().Format("15:04")},
+		})
+		m.formKind = formAddWorklog
+	case key.Matches(mssg, keys.Edit):
+		if e := m.worklog.SelectedEntry(); e != nil {
+			m.form = components.NewForm(fmt.Sprintf("Edit Worklog — %s", e.IssueKey), []components.FormFieldDef{
+				{Label: "Duration", Placeholder: "e.g. 1h30m, 45m", Value: formatDurationShort(e.TimeSpent)},
+				{Label: "Description", Placeholder: "What did you work on?", Value: e.Description},
+				{Label: "Started", Placeholder: "e.g. 09:00, 2006-01-02T15:04", Value: e.Started.Format("15:04")},
+			})
+			m.formKind = formEditWorklog
+			m.formWorklogID = e.ID
+			m.formWorklogKey = e.IssueKey
+		}
+	case key.Matches(mssg, keys.Delete):
+		if e := m.worklog.SelectedEntry(); e != nil {
+			m.confirm = components.NewConfirm(fmt.Sprintf("Delete worklog on %s?", e.IssueKey))
+			m.confirmType = confirmDeleteWorklog
+			m.confirmKey = e.ID
+			m.formWorklogKey = e.IssueKey
+		}
 	}
 	return m, nil
 }
@@ -743,7 +877,41 @@ func (m model) updateSchedule(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) updatePicker(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(mssg, keys.Escape):
+		m.picker.Active = false
+		// Return to the form underneath
+		return m, nil
+	case key.Matches(mssg, keys.Up):
+		m.picker.CursorUp()
+		return m, nil
+	case key.Matches(mssg, keys.Down):
+		m.picker.CursorDown()
+		return m, nil
+	case key.Matches(mssg, keys.Enter):
+		selected := m.picker.Selected()
+		m.picker.Active = false
+		if selected != nil {
+			m.form.SetValueByLabel("Issue Key", selected.Key)
+		}
+		// Return to the form underneath
+		return m, nil
+	default:
+		var cmd tea.Cmd
+		m.picker.Filter, cmd = m.picker.Filter.Update(mssg)
+		m.picker.ResetCursor()
+		return m, cmd
+	}
+}
+
 func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// "/" on Issue Key field in add worklog form opens the task picker
+	if m.formKind == formAddWorklog && m.form.FocusedLabel() == "Issue Key" && key.Matches(mssg, keys.Search) {
+		m.formKind = formAddWorklogPending
+		return m, loadTasksCmd(m.cb)
+	}
+
 	switch {
 	case key.Matches(mssg, keys.Escape):
 		m.form.Active = false
@@ -944,6 +1112,33 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.formKind = formNone
 			m.saving = "Stopping timer"
 			return m, stopTimerCmd(m.cb, comment, done)
+		case formAddWorklog:
+			issueKey := m.form.ValueByLabel("Issue Key")
+			durationStr := m.form.ValueByLabel("Duration")
+			description := m.form.ValueByLabel("Description")
+			startedStr := m.form.ValueByLabel("Started")
+			if issueKey == "" || durationStr == "" {
+				m.formKind = formNone
+				return m, nil
+			}
+			dur := parseDurationInput(durationStr)
+			started := parseStartedInput(startedStr)
+			m.formKind = formNone
+			m.saving = "Adding worklog"
+			return m, addWorklogCmd(m.cb, issueKey, dur, description, started)
+		case formEditWorklog:
+			durationStr := m.form.ValueByLabel("Duration")
+			description := m.form.ValueByLabel("Description")
+			startedStr := m.form.ValueByLabel("Started")
+			if durationStr == "" {
+				m.formKind = formNone
+				return m, nil
+			}
+			dur := parseDurationInput(durationStr)
+			started := parseStartedInput(startedStr)
+			m.formKind = formNone
+			m.saving = "Updating worklog"
+			return m, updateWorklogCmd(m.cb, m.formWorklogKey, m.formWorklogID, dur, description, started)
 		case formSetConfig:
 			cfgKey := vals[0]
 			cfgVal := vals[1]
@@ -983,6 +1178,8 @@ func (m model) refreshActiveView() tea.Cmd {
 		return syncPreviewCmd(m.cb)
 	case tabTimer:
 		return timerStatusCmd(m.cb)
+	case tabWorklog:
+		return loadWorklogsCmd(m.cb, m.worklog.WeekView)
 	case tabConfig:
 		return loadConfigCmd(m.cb)
 	}
@@ -1012,12 +1209,16 @@ func (m model) isLoading() bool {
 		if m.timer.Loading {
 			return true
 		}
+	case tabWorklog:
+		if m.worklog.Loading {
+			return true
+		}
 	case tabConfig:
 		if m.config.Loading {
 			return true
 		}
 	}
-	return m.formKind == formAddTaskPending || m.formKind == formEditTaskPending
+	return m.formKind == formAddTaskPending || m.formKind == formEditTaskPending || m.formKind == formAddWorklogPending
 }
 
 func (m model) loadingLabel() string {
@@ -1038,6 +1239,10 @@ func (m model) loadingLabel() string {
 		if m.timer.Loading {
 			return "Loading timer"
 		}
+	case tabWorklog:
+		if m.worklog.Loading {
+			return "Loading worklogs"
+		}
 	case tabConfig:
 		if m.config.Loading {
 			return "Loading config"
@@ -1049,6 +1254,9 @@ func (m model) loadingLabel() string {
 	if m.formKind == formEditTaskPending {
 		return "Loading edit options"
 	}
+	if m.formKind == formAddWorklogPending {
+		return "Loading tasks"
+	}
 	if m.saving != "" {
 		return m.saving
 	}
@@ -1058,6 +1266,11 @@ func (m model) loadingLabel() string {
 func (m model) View() string {
 	if !m.ready {
 		return "Initializing..."
+	}
+
+	// Picker overlay
+	if m.picker.Active {
+		return m.picker.View(m.width, m.height)
 	}
 
 	// Form overlay
@@ -1095,6 +1308,8 @@ func (m model) View() string {
 		content = m.schedule.View()
 	case tabTimer:
 		content = m.timer.View()
+	case tabWorklog:
+		content = m.worklog.View()
 	case tabConfig:
 		content = m.config.View()
 	}
@@ -1105,7 +1320,7 @@ func (m model) View() string {
 		Width(m.width).
 		Render(content)
 
-	hints := "1-5:tabs  ?:help  q:quit"
+	hints := "1-6:tabs  ?:help  q:quit"
 	var loadingText string
 	if label := m.loadingLabel(); label != "" {
 		loadingText = m.spinner.View() + " " + label
@@ -1137,7 +1352,7 @@ func (m model) renderHelp() string {
 	b.WriteString(bold.Render("Keyboard Shortcuts") + "\n\n")
 
 	b.WriteString(bold.Render("Global") + "\n")
-	b.WriteString("  1-5           Switch tabs\n")
+	b.WriteString("  1-6           Switch tabs\n")
 	b.WriteString("  Tab           Next tab\n")
 	b.WriteString("  Shift+Tab     Previous tab\n")
 	b.WriteString("  q/Ctrl+C      Quit\n")
@@ -1173,6 +1388,12 @@ func (m model) renderHelp() string {
 	b.WriteString(bold.Render("Timer") + "\n")
 	b.WriteString("  s             Stop timer\n")
 	b.WriteString("  x             Abort timer\n\n")
+
+	b.WriteString(bold.Render("Worklog") + "\n")
+	b.WriteString("  a             Add worklog\n")
+	b.WriteString("  e             Edit worklog\n")
+	b.WriteString("  D             Delete worklog\n")
+	b.WriteString("  w             Toggle week view\n\n")
 
 	b.WriteString(bold.Render("Config") + "\n")
 	b.WriteString("  e             Edit value\n\n")
@@ -1478,6 +1699,35 @@ func stripConstraints(summary string) string {
 	s = regexp.MustCompile(`(?i)\bnot before \S+`).ReplaceAllString(s, "")
 	s = strings.TrimSpace(regexp.MustCompile(`\s{2,}`).ReplaceAllString(s, " "))
 	return s
+}
+
+func parseDurationInput(s string) time.Duration {
+	s = strings.TrimSpace(s)
+	// Try standard Go duration first (e.g. "1h30m", "45m")
+	if d, err := time.ParseDuration(s); err == nil {
+		return d
+	}
+	// Try "Xh Ym" format with space
+	s = strings.ReplaceAll(s, " ", "")
+	if d, err := time.ParseDuration(s); err == nil {
+		return d
+	}
+	return 0
+}
+
+func parseStartedInput(s string) time.Time {
+	s = strings.TrimSpace(s)
+	now := time.Now()
+
+	// Try full datetime
+	if t, err := time.ParseInLocation("2006-01-02T15:04", s, now.Location()); err == nil {
+		return t
+	}
+	// Try time only (HH:MM) — use today's date
+	if t, err := time.Parse("15:04", s); err == nil {
+		return time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, now.Location())
+	}
+	return now
 }
 
 // Run starts the TUI application.

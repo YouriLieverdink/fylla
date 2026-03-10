@@ -420,6 +420,83 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				NoSplit:   result.NoSplit,
 			}, nil
 		},
+		LoadWorklogs: func(weekView bool) ([]msg.WorklogEntry, error) {
+			now := time.Now()
+			var since, until time.Time
+			if weekView {
+				weekday := int(now.Weekday())
+				if weekday == 0 {
+					weekday = 7
+				}
+				since = time.Date(now.Year(), now.Month(), now.Day()-weekday+1, 0, 0, 0, 0, now.Location())
+				until = since.AddDate(0, 0, 6)
+			} else {
+				since = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+				until = since
+			}
+			var wf WorklogFetcher
+			if f, ok := source.(WorklogFetcher); ok {
+				wf = f
+			} else if ms, ok := source.(*MultiTaskSource); ok {
+				if jiraSrc, ok := ms.sources["jira"]; ok {
+					if f, ok := jiraSrc.(WorklogFetcher); ok {
+						wf = f
+					}
+				}
+			}
+			if wf == nil {
+				return nil, fmt.Errorf("no worklog provider available")
+			}
+			jiraEntries, err := wf.FetchWorklogs(ctx, since, until)
+			if err != nil {
+				return nil, err
+			}
+			entries := make([]msg.WorklogEntry, len(jiraEntries))
+			for i, e := range jiraEntries {
+				entries[i] = msg.WorklogEntry{
+					ID:           e.ID,
+					IssueKey:     e.IssueKey,
+					IssueSummary: e.IssueSummary,
+					Description:  e.Description,
+					Started:      e.Started,
+					TimeSpent:    e.TimeSpent,
+				}
+			}
+			return entries, nil
+		},
+		UpdateWorklog: func(issueKey, worklogID string, timeSpent time.Duration, description string, started time.Time) error {
+			var wu WorklogUpdater
+			if u, ok := source.(WorklogUpdater); ok {
+				wu = u
+			} else if ms, ok := source.(*MultiTaskSource); ok {
+				routed := ms.routeTo(issueKey)
+				if u, ok := routed.(WorklogUpdater); ok {
+					wu = u
+				}
+			}
+			if wu == nil {
+				return fmt.Errorf("no worklog updater available")
+			}
+			return wu.UpdateWorklog(ctx, issueKey, worklogID, timeSpent, description, started)
+		},
+		DeleteWorklog: func(issueKey, worklogID string) error {
+			var wd WorklogDeleter
+			if d, ok := source.(WorklogDeleter); ok {
+				wd = d
+			} else if ms, ok := source.(*MultiTaskSource); ok {
+				routed := ms.routeTo(issueKey)
+				if d, ok := routed.(WorklogDeleter); ok {
+					wd = d
+				}
+			}
+			if wd == nil {
+				return fmt.Errorf("no worklog deleter available")
+			}
+			return wd.DeleteWorklog(ctx, issueKey, worklogID)
+		},
+		AddWorklog: func(issueKey string, timeSpent time.Duration, description string, started time.Time) error {
+			return source.PostWorklog(ctx, issueKey, timeSpent, description, started)
+		},
 		LoadReport: func(days int) (*msg.ReportResult, error) {
 			result, err := RunReport(ctx, ReportParams{
 				Cal:  cal,
