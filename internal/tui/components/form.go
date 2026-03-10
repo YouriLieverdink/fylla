@@ -334,6 +334,15 @@ func (f Form) View(width, height int) string {
 		return ""
 	}
 
+	formWidth := width - 4
+	if formWidth > 80 {
+		formWidth = 80
+	}
+	inputWidth := formWidth - 21
+	if inputWidth < 20 {
+		inputWidth = 20
+	}
+
 	var b strings.Builder
 	b.WriteString(formTitleStyle.Render(f.Title))
 	b.WriteString("\n\n")
@@ -344,7 +353,9 @@ func (f Form) View(width, height int) string {
 
 		switch f.kinds[i] {
 		case FieldText:
-			b.WriteString(label + " " + f.texts[f.textIdx[i]].View() + "\n")
+			ti := f.texts[f.textIdx[i]]
+			ti.Width = inputWidth
+			b.WriteString(label + " " + ti.View() + "\n")
 
 		case FieldSelect:
 			s := f.selects[f.selIdx[i]]
@@ -373,6 +384,6 @@ func (f Form) View(width, height int) string {
 	b.WriteString("\n")
 	b.WriteString(formHintStyle.Render("Tab:next  \u2190/\u2192:select  Space:toggle  Enter:submit  Esc:cancel"))
 
-	box := formBorder.Render(b.String())
+	box := formBorder.Width(formWidth - 6).Render(b.String())
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
 }
