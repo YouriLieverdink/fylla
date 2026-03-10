@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/iruoy/fylla/internal/task"
@@ -23,6 +24,11 @@ type Client struct {
 	projects   map[string]string          // id → name cache
 	sections   map[string]string          // id → name cache
 	sectionsByProject map[string][]string // project_id → []section names
+
+	projectsOnce sync.Once
+	projectsErr  error
+	sectionsOnce sync.Once
+	sectionsErr  error
 }
 
 // NewClient creates a Todoist client with the given API token.
@@ -138,31 +144,32 @@ func levelToAPIPriority(level int) int {
 }
 
 func (c *Client) loadProjects(ctx context.Context) error {
-	if c.projects != nil {
-		return nil
-	}
+	c.projectsOnce.Do(func() {
+		resp, err := c.do(ctx, http.MethodGet, "/projects", nil)
+		if err != nil {
+			c.projectsErr = fmt.Errorf("fetch projects: %w", err)
+			return
+		}
+		defer resp.Body.Close()
 
-	resp, err := c.do(ctx, http.MethodGet, "/projects", nil)
-	if err != nil {
-		return fmt.Errorf("fetch projects: %w", err)
-	}
-	defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			c.projectsErr = fmt.Errorf("todoist projects: status %d: %s", resp.StatusCode, string(body))
+			return
+		}
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("todoist projects: status %d: %s", resp.StatusCode, string(body))
-	}
+		var page paginatedResults[todoistProject]
+		if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+			c.projectsErr = fmt.Errorf("decode projects: %w", err)
+			return
+		}
 
-	var page paginatedResults[todoistProject]
-	if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
-		return fmt.Errorf("decode projects: %w", err)
-	}
-
-	c.projects = make(map[string]string, len(page.Results))
-	for _, p := range page.Results {
-		c.projects[p.ID] = p.Name
-	}
-	return nil
+		c.projects = make(map[string]string, len(page.Results))
+		for _, p := range page.Results {
+			c.projects[p.ID] = p.Name
+		}
+	})
+	return c.projectsErr
 }
 
 // ListProjects returns the names of all projects.
@@ -178,33 +185,34 @@ func (c *Client) ListProjects(ctx context.Context) ([]string, error) {
 }
 
 func (c *Client) loadSections(ctx context.Context) error {
-	if c.sections != nil {
-		return nil
-	}
+	c.sectionsOnce.Do(func() {
+		resp, err := c.do(ctx, http.MethodGet, "/sections", nil)
+		if err != nil {
+			c.sectionsErr = fmt.Errorf("fetch sections: %w", err)
+			return
+		}
+		defer resp.Body.Close()
 
-	resp, err := c.do(ctx, http.MethodGet, "/sections", nil)
-	if err != nil {
-		return fmt.Errorf("fetch sections: %w", err)
-	}
-	defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			c.sectionsErr = fmt.Errorf("todoist sections: status %d: %s", resp.StatusCode, string(body))
+			return
+		}
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("todoist sections: status %d: %s", resp.StatusCode, string(body))
-	}
+		var page paginatedResults[todoistSection]
+		if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+			c.sectionsErr = fmt.Errorf("decode sections: %w", err)
+			return
+		}
 
-	var page paginatedResults[todoistSection]
-	if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
-		return fmt.Errorf("decode sections: %w", err)
-	}
-
-	c.sections = make(map[string]string, len(page.Results))
-	c.sectionsByProject = make(map[string][]string)
-	for _, s := range page.Results {
-		c.sections[s.ID] = s.Name
-		c.sectionsByProject[s.ProjectID] = append(c.sectionsByProject[s.ProjectID], s.Name)
-	}
-	return nil
+		c.sections = make(map[string]string, len(page.Results))
+		c.sectionsByProject = make(map[string][]string)
+		for _, s := range page.Results {
+			c.sections[s.ID] = s.Name
+			c.sectionsByProject[s.ProjectID] = append(c.sectionsByProject[s.ProjectID], s.Name)
+		}
+	})
+	return c.sectionsErr
 }
 
 // ListSections returns available section names, optionally filtered by project.
