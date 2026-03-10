@@ -964,7 +964,7 @@ const pickerThreshold = 5
 
 func (m *model) openTaskPicker(tasks []msg.ScoredTask, returnKind formKind) {
 	var items []components.PickerItem
-	if returnKind == formStopTimer {
+	if returnKind == formStopTimer || returnKind == formAddWorklog {
 		for _, fb := range m.cachedFallback {
 			label := fb.Key
 			if fb.Summary != "" {
@@ -977,7 +977,7 @@ func (m *model) openTaskPicker(tasks []msg.ScoredTask, returnKind formKind) {
 		}
 	}
 	for _, t := range tasks {
-		if returnKind == formStopTimer && !isJiraKeyPattern(t.Key) {
+		if (returnKind == formStopTimer || returnKind == formAddWorklog) && !isJiraKeyPattern(t.Key) {
 			continue
 		}
 		items = append(items, components.PickerItem{
