@@ -683,11 +683,12 @@ func parseTodoistRecurrence(s string) *task.Recurrence {
 
 // UpdateSection moves a Todoist task to a different section (or removes it).
 func (c *Client) UpdateSection(ctx context.Context, taskID, section string) error {
-	var sectionID string
+	payload := map[string]interface{}{}
 	if section != "" {
 		if err := c.loadSections(ctx); err != nil {
 			return err
 		}
+		var sectionID string
 		for id, name := range c.sections {
 			if strings.EqualFold(name, section) {
 				sectionID = id
@@ -697,17 +698,21 @@ func (c *Client) UpdateSection(ctx context.Context, taskID, section string) erro
 		if sectionID == "" {
 			return fmt.Errorf("section %q not found", section)
 		}
+		payload["section_id"] = sectionID
+	} else {
+		t, err := c.fetchTask(ctx, taskID)
+		if err != nil {
+			return fmt.Errorf("fetch task for move: %w", err)
+		}
+		payload["project_id"] = t.ProjectID
 	}
 
-	payload := map[string]interface{}{
-		"section_id": sectionID,
-	}
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal update: %w", err)
 	}
 
-	resp, err := c.do(ctx, http.MethodPost, "/tasks/"+taskID, strings.NewReader(string(data)))
+	resp, err := c.do(ctx, http.MethodPost, "/tasks/"+taskID+"/move", strings.NewReader(string(data)))
 	if err != nil {
 		return fmt.Errorf("update section: %w", err)
 	}
