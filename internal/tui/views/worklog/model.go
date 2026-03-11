@@ -241,6 +241,7 @@ func (m Model) renderWeekView(b *strings.Builder, sorted []msg.WorklogEntry) {
 
 func formatEntryLine(e msg.WorklogEntry) string {
 	timeStr := e.Started.Format("15:04")
+	endStr := e.Started.Add(e.TimeSpent).Format("15:04")
 	dur := styles.FormatDuration(e.TimeSpent)
 	desc := e.Description
 	if desc == "" {
@@ -249,5 +250,5 @@ func formatEntryLine(e msg.WorklogEntry) string {
 	if len(desc) > 40 {
 		desc = desc[:37] + "..."
 	}
-	return fmt.Sprintf("%s  %-10s  %6s  %s", timeStr, e.IssueKey, dur, desc)
+	return fmt.Sprintf("%s–%s  %-10s  %6s  %s", timeStr, endStr, e.IssueKey, dur, desc)
 }
