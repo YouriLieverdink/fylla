@@ -422,18 +422,17 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				NoSplit:   result.NoSplit,
 			}, nil
 		},
-		LoadWorklogs: func(weekView bool) ([]msg.WorklogEntry, error) {
-			now := time.Now()
+		LoadWorklogs: func(weekView bool, date time.Time) ([]msg.WorklogEntry, error) {
 			var since, until time.Time
 			if weekView {
-				weekday := int(now.Weekday())
+				weekday := int(date.Weekday())
 				if weekday == 0 {
 					weekday = 7
 				}
-				since = time.Date(now.Year(), now.Month(), now.Day()-weekday+1, 0, 0, 0, 0, now.Location())
+				since = time.Date(date.Year(), date.Month(), date.Day()-weekday+1, 0, 0, 0, 0, date.Location())
 				until = since.AddDate(0, 0, 6)
 			} else {
-				since = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+				since = time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
 				until = since
 			}
 			var wf WorklogFetcher

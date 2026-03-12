@@ -625,7 +625,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setToast(fmt.Sprintf("Worklog update error: %v", mssg.Err), true)
 		} else {
 			m.setToast("Worklog updated", false)
-			cmds = append(cmds, loadWorklogsCmd(m.cb, m.worklog.WeekView))
+			cmds = append(cmds, loadWorklogsCmd(m.cb, m.worklog.WeekView, m.worklog.Date))
 		}
 		cmds = append(cmds, clearToastCmd())
 		return m, tea.Batch(cmds...)
@@ -636,7 +636,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setToast(fmt.Sprintf("Worklog delete error: %v", mssg.Err), true)
 		} else {
 			m.setToast("Worklog deleted", false)
-			cmds = append(cmds, loadWorklogsCmd(m.cb, m.worklog.WeekView))
+			cmds = append(cmds, loadWorklogsCmd(m.cb, m.worklog.WeekView, m.worklog.Date))
 		}
 		cmds = append(cmds, clearToastCmd())
 		return m, tea.Batch(cmds...)
@@ -647,7 +647,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setToast(fmt.Sprintf("Worklog add error: %v", mssg.Err), true)
 		} else {
 			m.setToast("Worklog added", false)
-			cmds = append(cmds, loadWorklogsCmd(m.cb, m.worklog.WeekView))
+			cmds = append(cmds, loadWorklogsCmd(m.cb, m.worklog.WeekView, m.worklog.Date))
 		}
 		cmds = append(cmds, clearToastCmd())
 		return m, tea.Batch(cmds...)
@@ -838,17 +838,33 @@ func (m model) updateWorklog(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.worklog.CursorDown()
 	case key.Matches(mssg, keys.Refresh):
 		m.worklog.Loading = true
-		return m, loadWorklogsCmd(m.cb, m.worklog.WeekView)
+		return m, loadWorklogsCmd(m.cb, m.worklog.WeekView, m.worklog.Date)
 	case key.Matches(mssg, keys.WeekToggle):
 		m.worklog.ToggleWeekView()
 		m.worklog.Loading = true
-		return m, loadWorklogsCmd(m.cb, m.worklog.WeekView)
+		return m, loadWorklogsCmd(m.cb, m.worklog.WeekView, m.worklog.Date)
+	case key.Matches(mssg, keys.DatePrev):
+		m.worklog.PrevDate()
+		m.worklog.Loading = true
+		return m, loadWorklogsCmd(m.cb, m.worklog.WeekView, m.worklog.Date)
+	case key.Matches(mssg, keys.DateNext):
+		m.worklog.NextDate()
+		m.worklog.Loading = true
+		return m, loadWorklogsCmd(m.cb, m.worklog.WeekView, m.worklog.Date)
+	case key.Matches(mssg, keys.GoToday):
+		m.worklog.GoToToday()
+		m.worklog.Loading = true
+		return m, loadWorklogsCmd(m.cb, m.worklog.WeekView, m.worklog.Date)
 	case key.Matches(mssg, keys.Add):
+		startedDefault := time.Now().Format("15:04")
+		if !m.worklog.IsToday() {
+			startedDefault = m.worklog.Date.Format("2006-01-02T") + "09:00"
+		}
 		m.form = components.NewForm("Add Worklog", []components.FormFieldDef{
 			{Label: "Issue Key", Placeholder: "e.g. PROJ-123 (/ to search)"},
 			{Label: "Duration", Placeholder: "e.g. 1h30m, 45m"},
 			{Label: "Description", Placeholder: "What did you work on?"},
-			{Label: "Started", Placeholder: "e.g. 09:00, 2006-01-02T15:04", Value: time.Now().Format("15:04")},
+			{Label: "Started", Placeholder: "e.g. 09:00, 2006-01-02T15:04", Value: startedDefault},
 		})
 		m.formKind = formAddWorklog
 	case key.Matches(mssg, keys.Edit):
@@ -1293,7 +1309,7 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			dur := parseDurationInput(durationStr)
-			started := parseStartedInput(startedStr)
+			started := parseStartedInput(startedStr, m.worklog.Date)
 			m.formKind = formNone
 			m.saving = "Adding worklog"
 			return m, addWorklogCmd(m.cb, issueKey, dur, description, started)
@@ -1306,7 +1322,7 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			dur := parseDurationInput(durationStr)
-			started := parseStartedInput(startedStr)
+			started := parseStartedInput(startedStr, m.worklog.Date)
 			m.formKind = formNone
 			m.saving = "Updating worklog"
 			return m, updateWorklogCmd(m.cb, m.formWorklogKey, m.formWorklogID, dur, description, started)
@@ -1357,7 +1373,7 @@ func (m model) refreshActiveView() tea.Cmd {
 	case tabTimer:
 		return timerStatusCmd(m.cb)
 	case tabWorklog:
-		return loadWorklogsCmd(m.cb, m.worklog.WeekView)
+		return loadWorklogsCmd(m.cb, m.worklog.WeekView, m.worklog.Date)
 	case tabConfig:
 		return loadConfigCmd(m.cb)
 	}
@@ -1881,7 +1897,7 @@ func parseDurationInput(s string) time.Duration {
 	return 0
 }
 
-func parseStartedInput(s string) time.Time {
+func parseStartedInput(s string, refDate time.Time) time.Time {
 	s = strings.TrimSpace(s)
 	now := time.Now()
 
@@ -1889,9 +1905,9 @@ func parseStartedInput(s string) time.Time {
 	if t, err := time.ParseInLocation("2006-01-02T15:04", s, now.Location()); err == nil {
 		return t
 	}
-	// Try time only (HH:MM) — use today's date
+	// Try time only (HH:MM) — use reference date
 	if t, err := time.Parse("15:04", s); err == nil {
-		return time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, now.Location())
+		return time.Date(refDate.Year(), refDate.Month(), refDate.Day(), t.Hour(), t.Minute(), 0, 0, now.Location())
 	}
 	return now
 }

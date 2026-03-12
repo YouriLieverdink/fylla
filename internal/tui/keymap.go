@@ -33,6 +33,9 @@ type globalKeyMap struct {
 	ViewTask   key.Binding
 	Report     key.Binding
 	WeekToggle key.Binding
+	DatePrev   key.Binding
+	DateNext   key.Binding
+	GoToday    key.Binding
 }
 
 var keys = globalKeyMap{
@@ -66,4 +69,7 @@ var keys = globalKeyMap{
 	ViewTask: key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "view")),
 	Report:     key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "report")),
 	WeekToggle: key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "toggle week")),
+	DatePrev:   key.NewBinding(key.WithKeys("h", "left"), key.WithHelp("h/left", "prev date")),
+	DateNext:   key.NewBinding(key.WithKeys("l", "right"), key.WithHelp("l/right", "next date")),
+	GoToday:    key.NewBinding(key.WithKeys("T"), key.WithHelp("T", "go to today")),
 }

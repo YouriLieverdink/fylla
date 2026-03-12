@@ -59,7 +59,7 @@ type Callbacks struct {
 	SnoozeTask     func(taskKey, target string) error
 	ViewTask       func(taskKey string) (*msg.ViewResult, error)
 	LoadReport     func(days int) (*msg.ReportResult, error)
-	LoadWorklogs   func(weekView bool) ([]msg.WorklogEntry, error)
+	LoadWorklogs   func(weekView bool, date time.Time) ([]msg.WorklogEntry, error)
 	UpdateWorklog  func(issueKey, worklogID string, timeSpent time.Duration, description string, started time.Time) error
 	DeleteWorklog  func(issueKey, worklogID string) error
 	AddWorklog     func(issueKey string, timeSpent time.Duration, description string, started time.Time) error
@@ -314,9 +314,9 @@ func loadReportCmd(cb Callbacks, days int) tea.Cmd {
 	}
 }
 
-func loadWorklogsCmd(cb Callbacks, weekView bool) tea.Cmd {
+func loadWorklogsCmd(cb Callbacks, weekView bool, date time.Time) tea.Cmd {
 	return func() tea.Msg {
-		entries, err := cb.LoadWorklogs(weekView)
+		entries, err := cb.LoadWorklogs(weekView, date)
 		return msg.WorklogsLoadedMsg{Entries: entries, Err: err}
 	}
 }

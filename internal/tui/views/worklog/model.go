@@ -19,11 +19,59 @@ type Model struct {
 	Width    int
 	Height   int
 	WeekView bool
+	Date     time.Time
 }
 
 // New creates a new worklog model.
 func New() Model {
-	return Model{Loading: true}
+	return Model{Loading: true, Date: today()}
+}
+
+func today() time.Time {
+	now := time.Now()
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+}
+
+// PrevDate moves the date backward by 1 day (day view) or 7 days (week view).
+func (m *Model) PrevDate() {
+	if m.WeekView {
+		m.Date = m.Date.AddDate(0, 0, -7)
+	} else {
+		m.Date = m.Date.AddDate(0, 0, -1)
+	}
+	m.Cursor = 0
+}
+
+// NextDate moves the date forward by 1 day or 7 days, clamped to today.
+func (m *Model) NextDate() {
+	t := today()
+	if m.WeekView {
+		next := m.Date.AddDate(0, 0, 7)
+		if !next.After(t) {
+			m.Date = next
+		} else {
+			m.Date = t
+		}
+	} else {
+		next := m.Date.AddDate(0, 0, 1)
+		if !next.After(t) {
+			m.Date = next
+		} else {
+			m.Date = t
+		}
+	}
+	m.Cursor = 0
+}
+
+// GoToToday resets the date to today.
+func (m *Model) GoToToday() {
+	m.Date = today()
+	m.Cursor = 0
+}
+
+// IsToday reports whether the selected date is today.
+func (m *Model) IsToday() bool {
+	return m.Date.Equal(today())
 }
 
 // SetSize updates the view dimensions.
@@ -94,9 +142,19 @@ func (m Model) View() string {
 	sorted := m.sortedEntries()
 	var b strings.Builder
 
-	viewLabel := "Today"
-	if m.WeekView {
-		viewLabel = "This Week"
+	var viewLabel string
+	if m.IsToday() {
+		if m.WeekView {
+			viewLabel = "This Week"
+		} else {
+			viewLabel = "Today"
+		}
+	} else {
+		if m.WeekView {
+			viewLabel = "Week of " + m.Date.Format("Mon Jan 2, 2006")
+		} else {
+			viewLabel = m.Date.Format("Mon Jan 2, 2006")
+		}
 	}
 	total := totalTime(sorted)
 	title := fmt.Sprintf("Worklogs — %s (%d entries, %s)", viewLabel, len(sorted), styles.FormatDuration(total))
@@ -112,7 +170,7 @@ func (m Model) View() string {
 	}
 
 	b.WriteString("\n")
-	hints := "j/k:navigate  a:add  e:edit  D:delete  w:toggle week  R:report  r:refresh"
+	hints := "j/k:navigate  h/l:prev/next day  T:today  a:add  e:edit  D:delete  w:toggle week  R:report  r:refresh"
 	b.WriteString(styles.HintStyle.Render("  " + hints))
 
 	return b.String()
