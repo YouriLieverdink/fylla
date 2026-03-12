@@ -165,6 +165,7 @@ projectRules:
       workDays: [1, 2, 3, 4, 5]
 
 worklog:
+  provider: ""                    # set to "jira" to route all worklogs to Jira
   fallbackIssues: []              # Jira issues for non-task time (meetings, admin)
 
 weights:
@@ -350,6 +351,7 @@ fylla worklog --date 2025-02-18  # past date
 
 ```yaml
 worklog:
+  provider: jira                  # route all worklogs to Jira
   fallbackIssues:
     - ADMIN-1    # general admin
     - MEET-1     # meetings
@@ -357,6 +359,18 @@ worklog:
 
 The daily target is computed from `businessHours`. For example, two windows
 `09:00-12:00` + `13:00-17:00` on workdays yield a 7h daily target.
+
+### Worklog provider routing
+
+When using multiple task providers, worklogs are normally routed to the provider
+that owns the task key. This means stopping a timer on a Todoist task posts a
+comment to Todoist — not a real Jira worklog. GitHub's worklog support returns an
+error outright.
+
+Set `worklog.provider: jira` to route **all** worklogs to Jira. Non-Jira task
+keys (Todoist, GitHub, local) are resolved to a Jira fallback issue before
+posting. GitHub PRs and local tasks already had this resolution; the `provider`
+setting extends it to Todoist tasks as well.
 
 ## Sync Behavior
 
