@@ -19,6 +19,7 @@ type Config struct {
 	ProjectRules  map[string][]BusinessHoursConfig `yaml:"projectRules"`
 	Weights       WeightsConfig                    `yaml:"weights"`
 	Worklog       WorklogConfig                    `yaml:"worklog"`
+	Efficiency    EfficiencyConfig                 `yaml:"efficiency"`
 }
 
 // ActiveProviders returns the list of configured providers.
@@ -100,6 +101,13 @@ type WorklogConfig struct {
 	FallbackIssues []string `yaml:"fallbackIssues"`
 }
 
+// EfficiencyConfig holds efficiency tracking settings.
+type EfficiencyConfig struct {
+	WeeklyHours float64 `yaml:"weeklyHours"`
+	DailyHours  float64 `yaml:"dailyHours"`
+	Target      float64 `yaml:"target"` // 0.0–1.0, e.g. 0.7 = 70%
+}
+
 // WeightsConfig holds sorting algorithm weights.
 type WeightsConfig struct {
 	Priority float64 `yaml:"priority"`
@@ -149,6 +157,20 @@ func (c *Config) Validate() error {
 			if err := validateBusinessHours(bh, fmt.Sprintf("projectRules.%s[%d]", name, i)); err != nil {
 				return err
 			}
+		}
+	}
+
+	// Efficiency
+	e := c.Efficiency
+	if e.WeeklyHours != 0 || e.DailyHours != 0 || e.Target != 0 {
+		if e.WeeklyHours < 0 {
+			return fmt.Errorf("efficiency.weeklyHours must be positive")
+		}
+		if e.DailyHours < 0 {
+			return fmt.Errorf("efficiency.dailyHours must be positive")
+		}
+		if e.Target < 0 || e.Target > 1 {
+			return fmt.Errorf("efficiency.target must be between 0.0 and 1.0")
 		}
 	}
 

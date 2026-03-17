@@ -58,6 +58,11 @@ worklog:
   provider: ""
   fallbackIssues: []
 
+efficiency:
+  weeklyHours: 40
+  dailyHours: 8
+  target: 0.7
+
 weights:
   priority: 0.45
   dueDate: 0.30

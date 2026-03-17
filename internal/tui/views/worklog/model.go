@@ -6,25 +6,29 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/iruoy/fylla/internal/tui/msg"
 	"github.com/iruoy/fylla/internal/tui/styles"
 )
 
 // Model is the worklog view model.
 type Model struct {
-	Entries  []msg.WorklogEntry
-	Cursor   int
-	Loading  bool
-	Err      error
-	Width    int
-	Height   int
-	WeekView bool
-	Date     time.Time
+	Entries          []msg.WorklogEntry
+	Cursor           int
+	Loading          bool
+	Err              error
+	Width            int
+	Height           int
+	WeekView         bool
+	Date             time.Time
+	DailyHours       float64
+	WeeklyHours      float64
+	EfficiencyTarget float64
 }
 
 // New creates a new worklog model.
-func New() Model {
-	return Model{Loading: true, Date: today()}
+func New(dailyHours, weeklyHours, efficiencyTarget float64) Model {
+	return Model{Loading: true, Date: today(), DailyHours: dailyHours, WeeklyHours: weeklyHours, EfficiencyTarget: efficiencyTarget}
 }
 
 func today() time.Time {
@@ -159,7 +163,12 @@ func (m Model) View() string {
 	total := totalTime(sorted)
 	title := fmt.Sprintf("Worklogs — %s (%d entries, %s)", viewLabel, len(sorted), styles.FormatDuration(total))
 	b.WriteString(styles.HeaderFmt.Render(title))
-	b.WriteString("\n\n")
+	b.WriteString("\n")
+
+	if line := m.efficiencyLine(total); line != "" {
+		b.WriteString(line)
+	}
+	b.WriteString("\n")
 
 	if len(sorted) == 0 {
 		b.WriteString("  No worklogs found.\n")
@@ -174,6 +183,58 @@ func (m Model) View() string {
 	b.WriteString(styles.HintStyle.Render("  " + hints))
 
 	return b.String()
+}
+
+func (m Model) dailyTarget() time.Duration {
+	if m.DailyHours <= 0 {
+		return 0
+	}
+	return time.Duration(m.DailyHours * float64(time.Hour))
+}
+
+func (m Model) weeklyTarget() time.Duration {
+	if m.WeeklyHours <= 0 {
+		return 0
+	}
+	return time.Duration(m.WeeklyHours * float64(time.Hour))
+}
+
+func (m Model) efficiencyLine(total time.Duration) string {
+	var target time.Duration
+	if m.WeekView {
+		target = m.weeklyTarget()
+	} else {
+		target = m.dailyTarget()
+	}
+	if target <= 0 {
+		return ""
+	}
+
+	return fmt.Sprintf("  Efficiency: %s  Target: %.0f%%\n",
+		m.formatEfficiency(total, target),
+		m.EfficiencyTarget*100,
+	)
+}
+
+func (m Model) formatEfficiency(logged, target time.Duration) string {
+	efficiency := float64(logged) / float64(target)
+	pct := fmt.Sprintf("%.1f%%", efficiency*100)
+
+	var style lipgloss.Style
+	switch {
+	case efficiency >= m.EfficiencyTarget:
+		style = styles.CurrentStyle
+	case efficiency >= m.EfficiencyTarget-0.1:
+		style = styles.WarnStyle
+	default:
+		style = styles.ErrStyle
+	}
+
+	return fmt.Sprintf("%s (%s / %s)",
+		style.Render(pct),
+		styles.FormatDuration(logged),
+		styles.FormatDuration(target),
+	)
 }
 
 func (m Model) renderDayView(b *strings.Builder, sorted []msg.WorklogEntry) {
@@ -240,7 +301,11 @@ func (m Model) renderWeekView(b *strings.Builder, sorted []msg.WorklogEntry) {
 		g := groups[day]
 		t, _ := time.Parse("2006-01-02", g.date)
 		dayTotal := totalTime(g.entries)
-		lines = append(lines, displayLine{entryIdx: -1, header: fmt.Sprintf("%s  %s", t.Format("Mon Jan 2"), styles.FormatDuration(dayTotal))})
+		header := fmt.Sprintf("%s  %s", t.Format("Mon Jan 2"), styles.FormatDuration(dayTotal))
+		if dt := m.dailyTarget(); dt > 0 {
+			header += "  " + m.formatEfficiency(dayTotal, dt)
+		}
+		lines = append(lines, displayLine{entryIdx: -1, header: header})
 		for _, e := range g.entries {
 			entryToFlat[flatIdx] = len(lines)
 			lines = append(lines, displayLine{entryIdx: flatIdx})

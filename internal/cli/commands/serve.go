@@ -61,7 +61,10 @@ func newServeCmd() *cobra.Command {
 			query := serveDefaultQuery(cfg)
 
 			return tui.Run(tui.Deps{
-				CB: buildCallbacks(ctx, cal, fetcher, source, cfg, cfgPath, query),
+				CB:               buildCallbacks(ctx, cal, fetcher, source, cfg, cfgPath, query),
+				DailyHours:       cfg.Efficiency.DailyHours,
+				WeeklyHours:      cfg.Efficiency.WeeklyHours,
+				EfficiencyTarget: cfg.Efficiency.Target,
 			})
 		},
 	}

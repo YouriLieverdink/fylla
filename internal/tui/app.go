@@ -33,7 +33,10 @@ const (
 
 // Deps holds the dependencies needed by the TUI.
 type Deps struct {
-	CB Callbacks
+	CB               Callbacks
+	DailyHours       float64
+	WeeklyHours      float64
+	EfficiencyTarget float64
 }
 
 type confirmAction int
@@ -130,7 +133,7 @@ func initialModel(deps Deps) model {
 		tasks:    tasks.New(),
 		schedule: ptrSchedule(schedule.New()),
 		timer:    timerView.New(),
-		worklog:  worklog.New(),
+		worklog:  worklog.New(deps.DailyHours, deps.WeeklyHours, deps.EfficiencyTarget),
 		config:   ptrConfig(configView.New()),
 		spinner:  s,
 	}

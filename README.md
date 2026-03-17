@@ -186,6 +186,11 @@ worklog:
   provider: ""                    # set to "jira" to route all worklogs to Jira
   fallbackIssues: []              # Jira issues for non-task time (meetings, admin)
 
+efficiency:
+  weeklyHours: 40                 # weekly hour target
+  dailyHours: 8                   # daily hour target
+  target: 0.7                     # target efficiency (0.0–1.0, 70% = 0.7)
+
 weights:
   priority: 0.45
   dueDate: 0.30
@@ -378,6 +383,24 @@ worklog:
 
 The daily target is computed from `businessHours`. For example, two windows
 `09:00-12:00` + `13:00-17:00` on workdays yield a 7h daily target.
+
+### Efficiency tracking
+
+The worklog TUI view shows an efficiency percentage — how much of your
+target hours you've logged. Configure `dailyHours` and `weeklyHours`
+separately from `businessHours` so you can account for lunch breaks.
+
+```yaml
+efficiency:
+  weeklyHours: 40   # used in week view header
+  dailyHours: 7     # used in day view header (e.g. 8h minus 1h lunch)
+  target: 0.7       # 70% target
+```
+
+Efficiency is calculated as `posted worklogs / target hours`. The percentage
+is color-coded: green when at or above target, yellow when within 10% of
+target, red when below. In the week view, per-day efficiency is shown in each
+day header.
 
 ### Worklog provider routing
 
