@@ -210,9 +210,26 @@ func (m Model) efficiencyLine(total time.Duration) string {
 		return ""
 	}
 
-	return fmt.Sprintf("  Efficiency: %s  Target: %.0f%%\n",
+	remaining := time.Duration(float64(target)*m.EfficiencyTarget) - total
+	var remainingStr string
+	if remaining <= 0 {
+		remainingStr = styles.CurrentStyle.Render("✓ Target reached")
+	} else {
+		var style lipgloss.Style
+		efficiency := float64(total) / float64(target)
+		switch {
+		case efficiency >= m.EfficiencyTarget-0.1:
+			style = styles.WarnStyle
+		default:
+			style = styles.ErrStyle
+		}
+		remainingStr = style.Render(styles.FormatDuration(remaining)+" to target")
+	}
+
+	return fmt.Sprintf("  Efficiency: %s  Target: %.0f%%  %s\n",
 		m.formatEfficiency(total, target),
 		m.EfficiencyTarget*100,
+		remainingStr,
 	)
 }
 
