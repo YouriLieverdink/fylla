@@ -398,7 +398,7 @@ func (f Form) View(width, height int) string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(formHintStyle.Render("Tab:next  \u2190/\u2192:select  Space:toggle  Enter:submit  Esc:cancel"))
+	b.WriteString(formHintStyle.Render("Tab:next  \u2190/\u2192:select  /:search  Space:toggle  Enter:submit  Esc:cancel"))
 
 	box := formBorder.Width(formWidth - 6).Render(b.String())
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)

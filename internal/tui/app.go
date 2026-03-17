@@ -1100,10 +1100,6 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case mssg.Type == tea.KeyLeft:
 		if m.form.IsSelectField() {
-			if m.form.FocusedSelectOptionCount() > pickerThreshold {
-				m.openPickerForSelect()
-				return m, nil
-			}
 			m.form.CycleSelectLeft()
 			if m.form.FocusedLabel() == "Provider" && m.formKind == formAddTask && m.formOptions != nil {
 				return m, m.rebuildAddFormForProvider()
@@ -1130,10 +1126,6 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case mssg.Type == tea.KeyRight:
 		if m.form.IsSelectField() {
-			if m.form.FocusedSelectOptionCount() > pickerThreshold {
-				m.openPickerForSelect()
-				return m, nil
-			}
 			m.form.CycleSelectRight()
 			if m.form.FocusedLabel() == "Provider" && m.formKind == formAddTask && m.formOptions != nil {
 				return m, m.rebuildAddFormForProvider()
@@ -1170,10 +1162,6 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case key.Matches(mssg, keys.Enter):
-		if m.form.IsSelectField() && m.form.FocusedSelectOptionCount() > pickerThreshold {
-			m.openPickerForSelect()
-			return m, nil
-		}
 		m.form.Active = false
 		vals := m.form.Values()
 		switch m.formKind {
