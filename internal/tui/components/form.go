@@ -241,7 +241,14 @@ func (f *Form) SetValueByLabel(label, value string) {
 				for j, opt := range f.selects[idx].options {
 					if strings.EqualFold(opt, value) {
 						f.selects[idx].selected = j
-						break
+						return
+					}
+				}
+				// Fallback: match key prefix (options formatted as "KEY  Summary")
+				for j, opt := range f.selects[idx].options {
+					if before, _, ok := strings.Cut(opt, "  "); ok && strings.EqualFold(before, value) {
+						f.selects[idx].selected = j
+						return
 					}
 				}
 			case FieldToggle:

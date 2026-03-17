@@ -863,8 +863,24 @@ func (m model) updateWorklog(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.worklog.IsToday() {
 			startedDefault = m.worklog.Date.Format("2006-01-02T") + "09:00"
 		}
+		issueField := components.FormFieldDef{
+			Label:       "Issue Key",
+			Placeholder: "e.g. PROJ-123 (/ to search)",
+		}
+		if len(m.cachedFallback) > 0 {
+			options := make([]string, len(m.cachedFallback))
+			for i, fb := range m.cachedFallback {
+				if fb.Summary != "" {
+					options[i] = fb.Key + "  " + fb.Summary
+				} else {
+					options[i] = fb.Key
+				}
+			}
+			issueField.Kind = components.FieldSelect
+			issueField.Options = options
+		}
 		m.form = components.NewForm("Add Worklog", []components.FormFieldDef{
-			{Label: "Issue Key", Placeholder: "e.g. PROJ-123 (/ to search)"},
+			issueField,
 			{Label: "Duration", Placeholder: "e.g. 1h30m, 45m"},
 			{Label: "Description", Placeholder: "What did you work on?"},
 			{Label: "Started", Placeholder: "e.g. 09:00, 2006-01-02T15:04", Value: startedDefault},
@@ -1291,7 +1307,7 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.saving = "Stopping timer"
 			return m, stopTimerCmd(m.cb, comment, done, fallbackIssue)
 		case formAddWorklog:
-			issueKey := m.form.ValueByLabel("Issue Key")
+			issueKey := extractIssueKey(m.form.ValueByLabel("Issue Key"))
 			durationStr := m.form.ValueByLabel("Duration")
 			description := m.form.ValueByLabel("Description")
 			startedStr := m.form.ValueByLabel("Started")
