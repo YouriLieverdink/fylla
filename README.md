@@ -1,6 +1,6 @@
 # Fylla
 
-Fylla is a Go CLI that pulls tasks from Jira, Todoist, and/or GitHub,
+Fylla is a Go CLI that pulls tasks from Jira, Todoist, GitHub, and/or Kendo,
 scores and sorts them by configurable priority rules, finds free time in Google
 Calendar, and schedules tasks into those slots. Multiple task providers can be
 used simultaneously — tasks from all sources are pooled and merged into a single
@@ -28,6 +28,7 @@ schedule.
   - Jira Cloud instance + API token
   - Todoist account + API token
   - GitHub account + personal access token
+  - Kendo instance + API token
   - Any combination can be used simultaneously
 - A Google Cloud OAuth client for Calendar API access
 
@@ -61,6 +62,9 @@ fylla auth todoist --token YOUR_API_TOKEN
 # GitHub
 fylla auth github --token YOUR_GITHUB_PAT
 
+# Kendo
+fylla auth kendo --url https://yourapp.kendo.dev --token YOUR_API_TOKEN
+
 # Google Calendar (required for scheduling)
 fylla auth google --client-credentials path/to/client_credentials.json
 ```
@@ -92,6 +96,12 @@ Create a [personal access token](https://github.com/settings/tokens). Either tok
 
 Fylla uses the Search API (`review-requested:@me`) and fetches PR detail for diff stats.
 
+#### Kendo
+
+Create an API token in your Kendo instance settings. The token grants access
+to your projects and issues. Kendo hosts apps on subdomains of `kendo.dev`
+(e.g. `https://yourapp.kendo.dev`) — use your app's URL as the `--url` value.
+
 #### Google Calendar
 
 Create OAuth 2.0 credentials in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials).
@@ -111,6 +121,7 @@ Per-provider credential files (created by `fylla auth`):
 - `~/.config/fylla/jira_credentials.json`
 - `~/.config/fylla/todoist_credentials.json`
 - `~/.config/fylla/github_credentials.json`
+- `~/.config/fylla/kendo_credentials.json`
 
 Other data files:
 
@@ -120,7 +131,7 @@ Other data files:
 ### Multi-provider config example
 
 ```yaml
-providers: [jira, todoist, github]
+providers: [jira, todoist, github, kendo]
 
 jira:
   credentials: ~/.config/fylla/jira_credentials.json  # set by fylla auth jira
@@ -139,6 +150,13 @@ github:
   credentials: ~/.config/fylla/github_credentials.json  # set by fylla auth github
   defaultQuery: "is:pr state:open review-requested:@me"  # customize search query
   repos: []                                              # optional: limit to specific repos
+
+kendo:
+  credentials: ~/.config/fylla/kendo_credentials.json  # set by fylla auth kendo
+  url: https://yourapp.kendo.dev
+  defaultFilter: ""                                    # project name/prefix to filter by
+  defaultProject: ""                                   # default project for task creation
+  doneLane: done                                       # lane name for completing tasks
 
 calendar:
   credentials: ~/.config/fylla/google_credentials.json  # set by fylla auth google
@@ -247,6 +265,7 @@ fylla timer stop -d "worked on feature"  # stop + log + update calendar + show r
 fylla timer log TASK-KEY 2h "description" # manual worklog
 # Multi-provider: task key format routes to correct provider
 # PROJ-123 → Jira, 12345 → Todoist, owner/repo#42 → GitHub
+# Kendo keys also use PROJ-123 format — provider is tracked explicitly
 
 # Bulk worklog posting
 fylla worklog                            # review & post worklogs from today's calendar
@@ -270,7 +289,7 @@ fylla serve --port 3000                  # custom port
 # Configuration
 fylla config show                        # display current config
 fylla config edit                        # open config in editor
-fylla config set providers "[jira, todoist, github]"  # set providers
+fylla config set providers "[jira, todoist, github, kendo]"  # set providers
 ```
 
 ## Inline Task Syntax
@@ -370,7 +389,9 @@ error outright.
 Set `worklog.provider: jira` to route **all** worklogs to Jira. Non-Jira task
 keys (Todoist, GitHub, local) are resolved to a Jira fallback issue before
 posting. GitHub PRs and local tasks already had this resolution; the `provider`
-setting extends it to Todoist tasks as well.
+setting extends it to Todoist tasks as well. Kendo tasks have native worklog
+support via time entries, so Kendo worklogs are posted directly to Kendo
+regardless of the `worklog.provider` setting.
 
 ## Sync Behavior
 
@@ -415,6 +436,41 @@ Enable in config:
 scheduling:
   autoResync: true
 ```
+
+## Kendo Integration
+
+When `kendo` is added to `providers`, issues from your Kendo instance appear
+alongside tasks from other providers in `fylla task list` and `fylla sync`.
+
+Kendo is a full-featured provider — you can create, complete, delete, and edit
+tasks, post worklogs (time entries), and manage estimates, due dates, and
+priorities.
+
+### Key format
+
+**Kendo:** `PREFIX-number` (e.g. `WEB-42`)
+
+Kendo uses the same `PROJ-123` key format as Jira. To disambiguate, Fylla
+tracks the provider explicitly on each task and calendar event (via the
+`fylla:kendo` marker in event descriptions).
+
+### Configuration
+
+```yaml
+providers: [kendo]
+
+kendo:
+  credentials: ~/.config/fylla/kendo_credentials.json
+  url: https://yourapp.kendo.dev
+  defaultFilter: ""       # project name/prefix to filter issues
+  defaultProject: WEB     # default project for fylla task add
+  doneLane: done          # lane to move issues to on fylla task done
+```
+
+### Task completion
+
+`fylla task done` moves the issue to the configured `doneLane` (defaults to
+`"done"`). Configure `kendo.doneLane` to match your board's done column name.
 
 ## Pull Request Reviews
 

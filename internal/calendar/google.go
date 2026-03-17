@@ -17,6 +17,7 @@ type GoogleClient struct {
 	SourceCalendars []string
 	FyllaCalendar   string
 	JiraBaseURL     string
+	KendoBaseURL    string
 }
 
 // NewGoogleClient creates a GoogleClient using the given OAuth2 token.
@@ -221,24 +222,55 @@ func BuildDoneTitle(title string) string {
 	return DoneMarker + title
 }
 
+// DescriptionParams holds the parameters for building a calendar event description.
+type DescriptionParams struct {
+	TaskKey    string
+	Project    string
+	Provider   string
+	JiraURL    string
+	KendoURL   string
+}
+
 // BuildDescription constructs the calendar event description for a Fylla task.
 // It infers the source from the task key prefix: GH# for GitHub,
 // numeric for Todoist, otherwise Jira. The project field is used for
 // GitHub URLs since the key only contains the repo name (not the owner).
 func BuildDescription(taskKey, project, jiraBaseURL string) string {
-	if strings.Contains(taskKey, "#") {
-		number := parseGitHubNumber(taskKey)
-		if project != "" && number != "" {
-			return fmt.Sprintf("%s %s\nhttps://github.com/%s/pull/%s", fyllaMarker, taskKey, project, number)
+	return BuildDescriptionWithProvider(DescriptionParams{
+		TaskKey: taskKey,
+		Project: project,
+		JiraURL: jiraBaseURL,
+	})
+}
+
+// BuildDescriptionWithProvider constructs the calendar event description
+// with explicit provider info embedded in the marker.
+func BuildDescriptionWithProvider(p DescriptionParams) string {
+	marker := fyllaMarker
+	if p.Provider != "" && p.Provider != "jira" {
+		marker = "fylla:" + p.Provider
+	}
+
+	if strings.Contains(p.TaskKey, "#") {
+		number := parseGitHubNumber(p.TaskKey)
+		if p.Project != "" && number != "" {
+			return fmt.Sprintf("%s %s\nhttps://github.com/%s/pull/%s", marker, p.TaskKey, p.Project, number)
 		}
 	}
-	if isLocalKey(taskKey) {
-		return fmt.Sprintf("%s %s", fyllaMarker, taskKey)
+	if isLocalKey(p.TaskKey) {
+		return fmt.Sprintf("%s %s", marker, p.TaskKey)
 	}
-	if isNumericKey(taskKey) {
-		return fmt.Sprintf("%s %s\nhttps://todoist.com/app/task/%s", fyllaMarker, taskKey, taskKey)
+	if isNumericKey(p.TaskKey) {
+		return fmt.Sprintf("%s %s\nhttps://todoist.com/app/task/%s", marker, p.TaskKey, p.TaskKey)
 	}
-	return fmt.Sprintf("%s %s\n%s/browse/%s", fyllaMarker, taskKey, jiraBaseURL, taskKey)
+	if p.Provider == "kendo" && p.KendoURL != "" {
+		return fmt.Sprintf("%s %s\n%s", marker, p.TaskKey, kendoIssueURL(p.KendoURL, p.TaskKey))
+	}
+	return fmt.Sprintf("%s %s\n%s/browse/%s", marker, p.TaskKey, p.JiraURL, p.TaskKey)
+}
+
+func kendoIssueURL(baseURL, taskKey string) string {
+	return fmt.Sprintf("%s/issues/%s", strings.TrimRight(baseURL, "/"), taskKey)
 }
 
 // isLocalKey returns true if key matches the local task key format (e.g. L-1).
@@ -283,29 +315,49 @@ func isNumericKey(key string) bool {
 // TaskKeyFromDescription extracts the task key from a Fylla event description.
 // Returns "" if the description does not contain the Fylla marker.
 func TaskKeyFromDescription(description string) string {
-	// Description format: "fylla: KEY\n..."
-	if !containsStr(description, fyllaMarker) {
-		return ""
+	key, _ := TaskKeyAndProviderFromDescription(description)
+	return key
+}
+
+// TaskKeyAndProviderFromDescription extracts the task key and provider from a
+// Fylla event description. The provider is "" for legacy "fylla:" markers
+// (inferred from key pattern) or the explicit provider name for "fylla:kendo" etc.
+func TaskKeyAndProviderFromDescription(description string) (string, string) {
+	// Look for "fylla:" prefix
+	const prefix = "fylla:"
+	idx := strings.Index(description, prefix)
+	if idx < 0 {
+		return "", ""
 	}
-	// Find the marker and extract the key after it
-	for i := 0; i <= len(description)-len(fyllaMarker); i++ {
-		if description[i:i+len(fyllaMarker)] == fyllaMarker {
-			rest := description[i+len(fyllaMarker):]
-			// Skip whitespace
-			start := 0
-			for start < len(rest) && rest[start] == ' ' {
-				start++
-			}
-			rest = rest[start:]
-			// Read until newline or end
-			end := 0
-			for end < len(rest) && rest[end] != '\n' {
-				end++
-			}
-			return rest[:end]
+
+	rest := description[idx+len(prefix):]
+
+	// Check if there's a provider name before the space (e.g., "fylla:kendo KEY")
+	provider := ""
+	if len(rest) > 0 && rest[0] != ' ' {
+		// Read provider name until space
+		end := 0
+		for end < len(rest) && rest[end] != ' ' && rest[end] != '\n' {
+			end++
 		}
+		provider = rest[:end]
+		rest = rest[end:]
 	}
-	return ""
+
+	// Skip whitespace
+	start := 0
+	for start < len(rest) && rest[start] == ' ' {
+		start++
+	}
+	rest = rest[start:]
+
+	// Read until newline or end
+	end := 0
+	for end < len(rest) && rest[end] != '\n' {
+		end++
+	}
+
+	return rest[:end], provider
 }
 
 // FetchFyllaEvents retrieves only Fylla-managed events from the fylla calendar.
@@ -351,7 +403,13 @@ func buildEventTitle(input CreateEventInput) string {
 // UpdateEvent updates an existing event on the fylla calendar.
 func (c *GoogleClient) UpdateEvent(ctx context.Context, eventID string, input CreateEventInput) error {
 	title := buildEventTitle(input)
-	description := BuildDescription(input.TaskKey, input.Project, c.JiraBaseURL)
+	description := BuildDescriptionWithProvider(DescriptionParams{
+		TaskKey:  input.TaskKey,
+		Project:  input.Project,
+		Provider: input.Provider,
+		JiraURL:  c.JiraBaseURL,
+		KendoURL: c.KendoBaseURL,
+	})
 
 	event := &googlecalendar.Event{
 		Summary:     title,
@@ -388,12 +446,19 @@ type CreateEventInput struct {
 	End      time.Time
 	AtRisk   bool
 	Done     bool
+	Provider string
 }
 
 // CreateEvent creates a new event on the fylla calendar.
 func (c *GoogleClient) CreateEvent(ctx context.Context, input CreateEventInput) error {
 	title := buildEventTitle(input)
-	description := BuildDescription(input.TaskKey, input.Project, c.JiraBaseURL)
+	description := BuildDescriptionWithProvider(DescriptionParams{
+		TaskKey:  input.TaskKey,
+		Project:  input.Project,
+		Provider: input.Provider,
+		JiraURL:  c.JiraBaseURL,
+		KendoURL: c.KendoBaseURL,
+	})
 
 	event := &googlecalendar.Event{
 		Summary:     title,

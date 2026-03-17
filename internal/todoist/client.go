@@ -267,6 +267,7 @@ func (c *Client) projectName(id string) string {
 func (c *Client) parseTask(t todoistTask) task.Task {
 	result := task.Task{
 		Key:      t.ID,
+		Provider: "todoist",
 		Summary:  t.Content,
 		Priority: apiPriorityToLevel(t.Priority),
 	}

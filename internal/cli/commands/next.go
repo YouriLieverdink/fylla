@@ -19,6 +19,7 @@ type NextParams struct {
 // FyllaEvent represents a scheduled Fylla task event or a calendar event.
 type FyllaEvent struct {
 	TaskKey         string
+	Provider        string
 	Project         string
 	Section         string
 	Summary         string

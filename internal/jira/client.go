@@ -129,6 +129,7 @@ var priorityLevelToName = map[int]string{
 func parseIssue(issue issueJSON) task.Task {
 	t := task.Task{
 		Key:       issue.Key,
+		Provider:  "jira",
 		Summary:   issue.Fields.Summary,
 		Priority:  3, // default Medium
 		IssueType: issue.Fields.IssueType.Name,

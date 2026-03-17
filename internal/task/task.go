@@ -11,6 +11,7 @@ type Recurrence struct {
 // Task represents a schedulable task from any source (Jira, Todoist, etc.).
 type Task struct {
 	Key               string
+	Provider          string
 	Summary           string
 	Priority          int // 1 (Highest) to 5 (Lowest)
 	DueDate           *time.Time

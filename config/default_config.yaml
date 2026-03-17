@@ -23,6 +23,13 @@ local:
   defaultFilter: ""
   defaultProject: ""
 
+kendo:
+  credentials: ""
+  url: ""
+  defaultFilter: ""
+  defaultProject: ""
+  doneLane: ""
+
 calendar:
   credentials: ""
   sourceCalendars: [primary]

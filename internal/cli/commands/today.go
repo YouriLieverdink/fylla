@@ -37,14 +37,16 @@ func readTodayEvents(ctx context.Context, cal CalendarClient, now time.Time) ([]
 	var events []FyllaEvent
 	for _, e := range fyllaEvents {
 		parsed := calendar.ParseTitle(e.Title)
+		taskKey, provider := calendar.TaskKeyAndProviderFromDescription(e.Description)
 		events = append(events, FyllaEvent{
-			TaskKey: calendar.TaskKeyFromDescription(e.Description),
-			Project: parsed.Project,
-			Section: parsed.Section,
-			Summary: parsed.Summary,
-			Start:   e.Start,
-			End:     e.End,
-			AtRisk:  parsed.AtRisk,
+			TaskKey:  taskKey,
+			Provider: provider,
+			Project:  parsed.Project,
+			Section:  parsed.Section,
+			Summary:  parsed.Summary,
+			Start:    e.Start,
+			End:      e.End,
+			AtRisk:   parsed.AtRisk,
 		})
 	}
 

@@ -414,13 +414,14 @@ func progressClear(w io.Writer) {
 
 // desiredEvent represents a calendar event that the scheduler wants to exist.
 type desiredEvent struct {
-	TaskKey string
-	Project string
-	Section string
-	Summary string
-	Start   time.Time
-	End     time.Time
-	AtRisk  bool
+	TaskKey  string
+	Provider string
+	Project  string
+	Section  string
+	Summary  string
+	Start    time.Time
+	End      time.Time
+	AtRisk   bool
 }
 
 // RunSync executes the full sync process:
@@ -508,13 +509,14 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 			progress(p.Progress, "Creating %d calendar events...", len(allocations))
 			for _, alloc := range allocations {
 				if err := p.Cal.CreateEvent(ctx, calendar.CreateEventInput{
-					TaskKey: alloc.Task.Key,
-					Project: alloc.Task.Project,
-					Section: alloc.Task.Section,
-					Summary: alloc.Task.Summary,
-					Start:   alloc.Start,
-					End:     alloc.End,
-					AtRisk:  alloc.AtRisk,
+					TaskKey:  alloc.Task.Key,
+					Provider: alloc.Task.Provider,
+					Project:  alloc.Task.Project,
+					Section:  alloc.Task.Section,
+					Summary:  alloc.Task.Summary,
+					Start:    alloc.Start,
+					End:      alloc.End,
+					AtRisk:   alloc.AtRisk,
 				}); err != nil {
 					return nil, fmt.Errorf("create event for %s: %w", alloc.Task.Key, err)
 				}
@@ -531,13 +533,14 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 			desired := make([]desiredEvent, len(allocations))
 			for i, alloc := range allocations {
 				desired[i] = desiredEvent{
-					TaskKey: alloc.Task.Key,
-					Project: alloc.Task.Project,
-					Section: alloc.Task.Section,
-					Summary: alloc.Task.Summary,
-					Start:   alloc.Start,
-					End:     alloc.End,
-					AtRisk:  alloc.AtRisk,
+					TaskKey:  alloc.Task.Key,
+					Provider: alloc.Task.Provider,
+					Project:  alloc.Task.Project,
+					Section:  alloc.Task.Section,
+					Summary:  alloc.Task.Summary,
+					Start:    alloc.Start,
+					End:      alloc.End,
+					AtRisk:   alloc.AtRisk,
 				}
 			}
 
@@ -612,13 +615,14 @@ func reconcile(ctx context.Context, cal CalendarClient, existing []calendar.Even
 				ev := eList[i]
 				matchedExisting[ev.ID] = true
 				input := calendar.CreateEventInput{
-					TaskKey: d.event.TaskKey,
-					Project: d.event.Project,
-					Section: d.event.Section,
-					Summary: d.event.Summary,
-					Start:   d.event.Start,
-					End:     d.event.End,
-					AtRisk:  d.event.AtRisk,
+					TaskKey:  d.event.TaskKey,
+					Provider: d.event.Provider,
+					Project:  d.event.Project,
+					Section:  d.event.Section,
+					Summary:  d.event.Summary,
+					Start:    d.event.Start,
+					End:      d.event.End,
+					AtRisk:   d.event.AtRisk,
 				}
 				if eventsMatch(ev, d.event) {
 					unchanged++
@@ -631,13 +635,14 @@ func reconcile(ctx context.Context, cal CalendarClient, existing []calendar.Even
 			} else {
 				// New event — no existing match.
 				if err := cal.CreateEvent(ctx, calendar.CreateEventInput{
-					TaskKey: d.event.TaskKey,
-					Project: d.event.Project,
-					Section: d.event.Section,
-					Summary: d.event.Summary,
-					Start:   d.event.Start,
-					End:     d.event.End,
-					AtRisk:  d.event.AtRisk,
+					TaskKey:  d.event.TaskKey,
+					Provider: d.event.Provider,
+					Project:  d.event.Project,
+					Section:  d.event.Section,
+					Summary:  d.event.Summary,
+					Start:    d.event.Start,
+					End:      d.event.End,
+					AtRisk:   d.event.AtRisk,
 				}); err != nil {
 					return created, updated, deleted, unchanged, fmt.Errorf("create event for %s: %w", d.event.TaskKey, err)
 				}

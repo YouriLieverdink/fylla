@@ -111,6 +111,7 @@ func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, err
 		key := fmt.Sprintf("%s#%d", info.repo, info.number)
 		t := task.Task{
 			Key:               key,
+			Provider:          "github",
 			Summary:           info.issue.GetTitle(),
 			Priority:          2,
 			Created:           info.issue.GetCreatedAt().Time,

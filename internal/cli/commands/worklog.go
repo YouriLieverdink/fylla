@@ -138,7 +138,7 @@ func RunWorklog(ctx context.Context, p WorklogParams) (*WorklogResult, error) {
 				}
 				taskKey = resolved
 			}
-			if !isJiraKey(taskKey) && p.Cfg.Worklog.Provider == "jira" {
+			if !isJiraKey(taskKey) && p.Cfg.Worklog.Provider == "jira" && fe.Provider != "kendo" {
 				resolved, err := resolveToFallbackIssue(p.Survey, p.Cfg)
 				if err != nil {
 					return nil, fmt.Errorf("resolve worklog target for %s: %w", fe.TaskKey, err)

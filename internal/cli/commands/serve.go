@@ -20,6 +20,8 @@ func serveDefaultQuery(cfg *config.Config) string {
 	switch providers[0] {
 	case "todoist":
 		return cfg.Todoist.DefaultFilter
+	case "kendo":
+		return cfg.Kendo.DefaultFilter
 	default:
 		return cfg.Jira.DefaultJQL
 	}
@@ -439,9 +441,12 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			if f, ok := source.(WorklogFetcher); ok {
 				wf = f
 			} else if ms, ok := source.(*MultiTaskSource); ok {
-				if jiraSrc, ok := ms.sources["jira"]; ok {
-					if f, ok := jiraSrc.(WorklogFetcher); ok {
-						wf = f
+				for _, name := range []string{"jira", "kendo"} {
+					if src, ok := ms.sources[name]; ok {
+						if f, ok := src.(WorklogFetcher); ok {
+							wf = f
+							break
+						}
 					}
 				}
 			}

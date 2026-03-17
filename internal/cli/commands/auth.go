@@ -175,6 +175,39 @@ func RunAuthGitHub(p AuthGitHubParams) error {
 	return nil
 }
 
+// AuthKendoParams holds inputs for the Kendo auth operation.
+type AuthKendoParams struct {
+	URL        string
+	Token      string
+	ConfigPath string
+}
+
+// RunAuthKendo stores Kendo credentials: url in config, token in per-provider file.
+func RunAuthKendo(p AuthKendoParams) error {
+	cfg, err := config.LoadFrom(p.ConfigPath)
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	credPath := cfg.Kendo.Credentials
+	if credPath == "" {
+		credPath = filepath.Join(filepath.Dir(p.ConfigPath), "kendo_credentials.json")
+	}
+
+	if _, err := config.SetMultiIn(p.ConfigPath, map[string]string{
+		"kendo.url":         p.URL,
+		"kendo.credentials": credPath,
+	}); err != nil {
+		return fmt.Errorf("save config: %w", err)
+	}
+
+	if err := config.SaveProviderCredentials(&config.ProviderCredentials{Token: p.Token}, credPath); err != nil {
+		return fmt.Errorf("save credentials: %w", err)
+	}
+
+	return nil
+}
+
 func newAuthCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
@@ -185,6 +218,7 @@ func newAuthCmd() *cobra.Command {
 	cmd.AddCommand(newAuthGoogleCmd())
 	cmd.AddCommand(newAuthTodoistCmd())
 	cmd.AddCommand(newAuthGitHubCmd())
+	cmd.AddCommand(newAuthKendoCmd())
 
 	return cmd
 }
@@ -352,6 +386,56 @@ func newAuthGitHubCmd() *cobra.Command {
 	}
 
 	cmd.Flags().String("token", "", "GitHub personal access token")
+
+	return cmd
+}
+
+func newAuthKendoCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "kendo",
+		Short: "Configure Kendo authentication",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			url, _ := cmd.Flags().GetString("url")
+			token, _ := cmd.Flags().GetString("token")
+
+			cfgPath, err := config.DefaultPath()
+			if err != nil {
+				return err
+			}
+
+			// Fall back to existing config value for url
+			if url == "" {
+				cfg, err := config.LoadFrom(cfgPath)
+				if err != nil {
+					return fmt.Errorf("load config: %w", err)
+				}
+				if url == "" {
+					url = cfg.Kendo.URL
+				}
+			}
+
+			if url == "" {
+				return fmt.Errorf("--url is required (no existing value in config)")
+			}
+			if token == "" {
+				return fmt.Errorf("--token is required")
+			}
+
+			if err := RunAuthKendo(AuthKendoParams{
+				URL:        url,
+				Token:      token,
+				ConfigPath: cfgPath,
+			}); err != nil {
+				return err
+			}
+
+			fmt.Fprintln(cmd.OutOrStdout(), "Kendo credentials stored successfully.")
+			return nil
+		},
+	}
+
+	cmd.Flags().String("url", "", "Kendo instance URL")
+	cmd.Flags().String("token", "", "Kendo API token")
 
 	return cmd
 }

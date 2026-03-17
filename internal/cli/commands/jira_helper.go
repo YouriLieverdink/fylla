@@ -11,6 +11,7 @@ import (
 	"github.com/iruoy/fylla/internal/config"
 	"github.com/iruoy/fylla/internal/github"
 	"github.com/iruoy/fylla/internal/jira"
+	"github.com/iruoy/fylla/internal/kendo"
 	"github.com/iruoy/fylla/internal/local"
 	"github.com/iruoy/fylla/internal/task"
 	"github.com/iruoy/fylla/internal/todoist"
@@ -55,6 +56,7 @@ var (
 	_ TaskSource = (*todoist.Client)(nil)
 	_ TaskSource = (*github.Client)(nil)
 	_ TaskSource = (*local.Client)(nil)
+	_ TaskSource = (*kendo.Client)(nil)
 )
 
 // WorklogFetcher fetches worklogs from a provider.
@@ -146,6 +148,12 @@ func NewMultiTaskSource(sources map[string]TaskSource, order []string) *MultiTas
 	return &MultiTaskSource{sources: sources, order: order}
 }
 
+// RouteToProvider routes to a specific named provider.
+func (m *MultiTaskSource) RouteToProvider(provider string) (TaskSource, bool) {
+	src, ok := m.sources[provider]
+	return src, ok
+}
+
 func (m *MultiTaskSource) routeTo(taskKey string) TaskSource {
 	name := providerForKey(taskKey)
 	if src, ok := m.sources[name]; ok {
@@ -153,6 +161,15 @@ func (m *MultiTaskSource) routeTo(taskKey string) TaskSource {
 	}
 	// Fall back to first configured provider
 	return m.sources[m.order[0]]
+}
+
+func (m *MultiTaskSource) routeToWithProvider(taskKey, provider string) TaskSource {
+	if provider != "" {
+		if src, ok := m.sources[provider]; ok {
+			return src
+		}
+	}
+	return m.routeTo(taskKey)
 }
 
 func (m *MultiTaskSource) FetchTasks(ctx context.Context, query string) ([]task.Task, error) {
@@ -297,6 +314,12 @@ func buildProviderQueries(cfg *config.Config, jqlFlag, filterFlag string) map[st
 			queries["github"] = cfg.GitHub.DefaultQuery
 		case "local":
 			queries["local"] = cfg.Local.DefaultFilter
+		case "kendo":
+			q := filterFlag
+			if q == "" {
+				q = cfg.Kendo.DefaultFilter
+			}
+			queries["kendo"] = q
 		}
 	}
 	return queries
@@ -356,6 +379,20 @@ func loadTaskSource() (TaskSource, *config.Config, error) {
 			client := local.NewClient(storePath)
 			client.DefaultProject = cfg.Local.DefaultProject
 			sources["local"] = client
+		case "kendo":
+			if cfg.Kendo.Credentials == "" {
+				return nil, nil, fmt.Errorf("kendo not configured: run 'fylla auth kendo'")
+			}
+			creds, err := config.LoadProviderCredentials(cfg.Kendo.Credentials)
+			if err != nil {
+				return nil, nil, fmt.Errorf("load kendo credentials: %w", err)
+			}
+			if creds.Token == "" {
+				return nil, nil, fmt.Errorf("kendo token not set: run 'fylla auth kendo --url URL --token TOKEN'")
+			}
+			client := kendo.NewClient(cfg.Kendo.URL, creds.Token)
+			client.DoneLane = cfg.Kendo.DoneLane
+			sources["kendo"] = client
 		}
 	}
 

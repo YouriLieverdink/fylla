@@ -12,6 +12,7 @@ type Config struct {
 	Todoist       TodoistConfig                    `yaml:"todoist"`
 	GitHub        GitHubConfig                     `yaml:"github"`
 	Local         LocalConfig                      `yaml:"local"`
+	Kendo         KendoConfig                      `yaml:"kendo"`
 	Calendar      CalendarConfig                   `yaml:"calendar"`
 	Scheduling    SchedulingConfig                 `yaml:"scheduling"`
 	BusinessHours []BusinessHoursConfig            `yaml:"businessHours"`
@@ -51,6 +52,15 @@ type GitHubConfig struct {
 	Credentials  string   `yaml:"credentials"`
 	DefaultQuery string   `yaml:"defaultQuery"`
 	Repos        []string `yaml:"repos"`
+}
+
+// KendoConfig holds Kendo connection settings.
+type KendoConfig struct {
+	Credentials    string `yaml:"credentials"`
+	URL            string `yaml:"url"`
+	DefaultFilter  string `yaml:"defaultFilter"`
+	DefaultProject string `yaml:"defaultProject"`
+	DoneLane       string `yaml:"doneLane"`
 }
 
 // LocalConfig holds local task provider settings.
@@ -106,9 +116,9 @@ func (c *Config) Validate() error {
 		seen := make(map[string]bool)
 		for _, p := range c.Providers {
 			switch p {
-			case "jira", "todoist", "github", "local":
+			case "jira", "todoist", "github", "local", "kendo":
 			default:
-				return fmt.Errorf("unknown provider %q (must be 'jira', 'todoist', or 'github')", p)
+				return fmt.Errorf("unknown provider %q (must be 'jira', 'todoist', 'github', 'local', or 'kendo')", p)
 			}
 			if seen[p] {
 				return fmt.Errorf("duplicate provider %q", p)

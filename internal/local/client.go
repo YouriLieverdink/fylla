@@ -62,6 +62,7 @@ func formatLocalKey(id int) string {
 func toTask(lt localTask) task.Task {
 	t := task.Task{
 		Key:      formatLocalKey(lt.ID),
+		Provider: "local",
 		Summary:  lt.Summary,
 		Priority: lt.Priority,
 		Project:  lt.Project,
