@@ -41,6 +41,12 @@ func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, err
 		query = "is:pr state:open review-requested:@me"
 	}
 
+	// Look up the authenticated user so we can detect prior reviews.
+	var myLogin string
+	if me, _, err := c.client.Users.Get(ctx, ""); err == nil {
+		myLogin = me.GetLogin()
+	}
+
 	// When repos are configured, add repo: qualifiers to narrow the search.
 	if len(c.Repos) > 0 {
 		for _, r := range c.Repos {
@@ -101,7 +107,14 @@ func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, err
 				results[idx] = prResult{idx: idx, estimate: 30 * time.Minute}
 				return
 			}
-			results[idx] = prResult{idx: idx, estimate: prutil.EstimateFromLines(pr.GetAdditions(), pr.GetDeletions())}
+
+			est := prutil.EstimateFromLines(pr.GetAdditions(), pr.GetDeletions())
+			if myLogin != "" {
+				if delta, ok := c.deltaEstimate(ctx, owner, repo, number, pr.GetHead().GetSHA(), myLogin); ok {
+					est = delta
+				}
+			}
+			results[idx] = prResult{idx: idx, estimate: est}
 		}(i, info.owner, info.repo, info.number)
 	}
 	wg.Wait()
@@ -124,6 +137,63 @@ func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, err
 	}
 
 	return tasks, nil
+}
+
+func (c *Client) deltaEstimate(ctx context.Context, owner, repo string, number int, headSHA, myLogin string) (time.Duration, bool) {
+	reviews, _, err := c.client.PullRequests.ListReviews(ctx, owner, repo, number, nil)
+	if err != nil {
+		return 0, false
+	}
+
+	var latest *gh.PullRequestReview
+	for _, r := range reviews {
+		if r.GetUser().GetLogin() != myLogin {
+			continue
+		}
+		if latest == nil || r.GetSubmittedAt().After(latest.GetSubmittedAt().Time) {
+			latest = r
+		}
+	}
+	if latest == nil {
+		return 0, false
+	}
+
+	if latest.GetCommitID() == headSHA {
+		return 15 * time.Minute, true
+	}
+
+	// Build set of files that belong to the PR itself.
+	prFiles := make(map[string]bool)
+	opts := &gh.ListOptions{PerPage: 100}
+	for {
+		files, resp, err := c.client.PullRequests.ListFiles(ctx, owner, repo, number, opts)
+		if err != nil {
+			return 0, false
+		}
+		for _, f := range files {
+			prFiles[f.GetFilename()] = true
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	// Compare commits since review, but only count lines in PR files.
+	// This filters out noise from rebases or merges of the base branch.
+	comparison, _, err := c.client.Repositories.CompareCommits(ctx, owner, repo, latest.GetCommitID(), headSHA, nil)
+	if err != nil {
+		return 0, false
+	}
+
+	var added, removed int
+	for _, f := range comparison.Files {
+		if prFiles[f.GetFilename()] {
+			added += f.GetAdditions()
+			removed += f.GetDeletions()
+		}
+	}
+	return prutil.EstimateFromLines(added, removed), true
 }
 
 func parseIssue(issue *gh.Issue) (owner, repo string, number int, err error) {
