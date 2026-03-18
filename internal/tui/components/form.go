@@ -45,6 +45,7 @@ type FormFieldDef struct {
 	Value       string
 	Kind        FieldKind
 	Options     []string // for FieldSelect
+	Disabled    bool
 }
 
 type selectField struct {
@@ -67,6 +68,7 @@ type Form struct {
 	textIdx  []int // maps field index → texts slice index (-1 if not text)
 	selIdx   []int // maps field index → selects slice index (-1 if not select)
 	togIdx   []int // maps field index → toggles slice index (-1 if not toggle)
+	disabled []bool
 	Focus    int
 	Active   bool
 	Error    string
@@ -75,21 +77,28 @@ type Form struct {
 // NewForm creates a new form with the given title and field definitions.
 func NewForm(title string, fields []FormFieldDef) Form {
 	f := Form{
-		Title:   title,
-		kinds:   make([]FieldKind, len(fields)),
-		Labels:  make([]string, len(fields)),
-		textIdx: make([]int, len(fields)),
-		selIdx:  make([]int, len(fields)),
-		togIdx:  make([]int, len(fields)),
-		Active:  true,
+		Title:    title,
+		kinds:    make([]FieldKind, len(fields)),
+		Labels:   make([]string, len(fields)),
+		textIdx:  make([]int, len(fields)),
+		selIdx:   make([]int, len(fields)),
+		togIdx:   make([]int, len(fields)),
+		disabled: make([]bool, len(fields)),
+		Active:   true,
 	}
 
+	firstFocusable := -1
 	for i, fd := range fields {
 		f.kinds[i] = fd.Kind
 		f.Labels[i] = fd.Label
 		f.textIdx[i] = -1
 		f.selIdx[i] = -1
 		f.togIdx[i] = -1
+		f.disabled[i] = fd.Disabled
+
+		if !fd.Disabled && firstFocusable == -1 {
+			firstFocusable = i
+		}
 
 		switch fd.Kind {
 		case FieldText:
@@ -98,7 +107,7 @@ func NewForm(title string, fields []FormFieldDef) Form {
 			ti.PlaceholderStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.AdaptiveColor{Light: "#BBBBBB", Dark: "#555555"})
 			ti.SetValue(fd.Value)
-			if i == 0 {
+			if !fd.Disabled && i == firstFocusable {
 				ti.Focus()
 			}
 			f.textIdx[i] = len(f.texts)
@@ -121,20 +130,34 @@ func NewForm(title string, fields []FormFieldDef) Form {
 		}
 	}
 
+	if firstFocusable >= 0 {
+		f.Focus = firstFocusable
+	}
+
 	return f
 }
 
-// FocusNext moves focus to the next field.
+// FocusNext moves focus to the next field, skipping disabled fields.
 func (f *Form) FocusNext() {
 	f.blurCurrent()
-	f.Focus = (f.Focus + 1) % len(f.kinds)
+	for range len(f.kinds) {
+		f.Focus = (f.Focus + 1) % len(f.kinds)
+		if !f.disabled[f.Focus] {
+			break
+		}
+	}
 	f.focusCurrent()
 }
 
-// FocusPrev moves focus to the previous field.
+// FocusPrev moves focus to the previous field, skipping disabled fields.
 func (f *Form) FocusPrev() {
 	f.blurCurrent()
-	f.Focus = (f.Focus + len(f.kinds) - 1) % len(f.kinds)
+	for range len(f.kinds) {
+		f.Focus = (f.Focus + len(f.kinds) - 1) % len(f.kinds)
+		if !f.disabled[f.Focus] {
+			break
+		}
+	}
 	f.focusCurrent()
 }
 
@@ -377,9 +400,33 @@ func (f Form) View(width, height int) string {
 	}
 	b.WriteString("\n")
 
+	dimStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
+
 	for i := range f.kinds {
 		label := formLabelStyle.Render(f.Labels[i] + ":")
 		focused := i == f.Focus
+
+		if f.disabled[i] {
+			val := ""
+			switch f.kinds[i] {
+			case FieldText:
+				val = f.texts[f.textIdx[i]].Value()
+			case FieldSelect:
+				s := f.selects[f.selIdx[i]]
+				if len(s.options) > 0 {
+					val = s.options[s.selected]
+				}
+			case FieldToggle:
+				if f.toggles[f.togIdx[i]].value {
+					val = "[x]"
+				} else {
+					val = "[ ]"
+				}
+			}
+			b.WriteString(label + " " + dimStyle.Render(val) + "\n")
+			continue
+		}
 
 		switch f.kinds[i] {
 		case FieldText:

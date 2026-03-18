@@ -66,6 +66,7 @@ const (
 	formAddWorklog
 	formAddWorklogPending // waiting for tasks to load for picker
 	formEditWorklog
+	formMoveTaskPending // waiting for transitions to load
 )
 
 type pendingEditData struct {
@@ -102,7 +103,8 @@ type model struct {
 	ready        bool
 	confirm      components.ConfirmDialog
 	confirmType  confirmAction
-	confirmKey   string
+	confirmKey      string
+	confirmProvider string
 	form         components.Form
 	picker       components.Picker
 	formKind         formKind
@@ -114,9 +116,8 @@ type model struct {
 	formOptions      *msg.FormOptionsMsg
 	pickerFieldLabel string
 	pendingEdit      *pendingEditData
-	viewDetail    *msg.ViewResult
-	reportResult *msg.ReportResult
-	spinner      spinner.Model
+	viewDetail *msg.ViewResult
+	spinner    spinner.Model
 	saving       string // non-empty shows spinner in status bar with this label
 
 	// Background prefetch cache
@@ -196,6 +197,12 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if m.formKind == formMoveTaskPending {
+			if key.Matches(mssg, keys.Escape) {
+				m.formKind = formNone
+			}
+			return m, nil
+		}
 
 		// Picker overlay takes priority
 		if m.picker.Active {
@@ -228,14 +235,6 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.viewDetail != nil {
 			if key.Matches(mssg, keys.Escape) || mssg.Type == tea.KeyRunes {
 				m.viewDetail = nil
-			}
-			return m, nil
-		}
-
-		// Report overlay
-		if m.reportResult != nil {
-			if key.Matches(mssg, keys.Escape) || mssg.Type == tea.KeyRunes {
-				m.reportResult = nil
 			}
 			return m, nil
 		}
@@ -375,6 +374,41 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setToast(fmt.Sprintf("Timer started for %s", label), false)
 			m.tickGen++
 			cmds = append(cmds, timerTickCmd(m.tickGen))
+		}
+		cmds = append(cmds, clearToastCmd())
+		return m, tea.Batch(cmds...)
+
+	case msg.TransitionsLoadedMsg:
+		if m.formKind != formMoveTaskPending {
+			return m, nil
+		}
+		if mssg.Err != nil {
+			m.formKind = formNone
+			m.setToast(fmt.Sprintf("Transitions error: %v", mssg.Err), true)
+			cmds = append(cmds, clearToastCmd())
+			return m, tea.Batch(cmds...)
+		}
+		if len(mssg.Transitions) == 0 {
+			m.formKind = formNone
+			m.setToast("No transitions available", true)
+			cmds = append(cmds, clearToastCmd())
+			return m, tea.Batch(cmds...)
+		}
+		items := make([]components.PickerItem, len(mssg.Transitions))
+		for i, t := range mssg.Transitions {
+			items[i] = components.PickerItem{Key: t, Label: t}
+		}
+		m.picker = components.NewPicker(fmt.Sprintf("Move %s to:", m.formTaskKey), items)
+		m.pickerFieldLabel = "move"
+		m.formKind = formNone
+		return m, nil
+
+	case msg.TaskMovedMsg:
+		if mssg.Err != nil {
+			m.setToast(fmt.Sprintf("Move error: %v", mssg.Err), true)
+		} else {
+			m.setToast(fmt.Sprintf("Moved %s to %s", mssg.TaskKey, mssg.Target), false)
+			cmds = append(cmds, m.refreshActiveView())
 		}
 		cmds = append(cmds, clearToastCmd())
 		return m, tea.Batch(cmds...)
@@ -547,7 +581,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 	case msg.FormOptionsMsg:
 		if m.formKind == formEditTaskPending && m.pendingEdit != nil {
 			m.pendingEdit.parentKey = mssg.ParentKey
-			m.form = buildEditForm(m.formTaskKey, *m.pendingEdit, mssg.Epics, mssg.Sections)
+			m.form = buildEditForm(m.formTaskKey, m.formTaskProvider, *m.pendingEdit, mssg.Epics, mssg.Sections)
 			m.formKind = formEditTask
 			return m, nil
 		}
@@ -579,15 +613,6 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, clearToastCmd())
 		} else {
 			m.viewDetail = mssg.Result
-		}
-		return m, tea.Batch(cmds...)
-
-	case msg.ReportLoadedMsg:
-		if mssg.Err != nil {
-			m.setToast(fmt.Sprintf("Report error: %v", mssg.Err), true)
-			cmds = append(cmds, clearToastCmd())
-		} else {
-			m.reportResult = mssg.Result
 		}
 		return m, tea.Batch(cmds...)
 
@@ -713,13 +738,14 @@ func (m model) updateTimeline(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case key.Matches(mssg, keys.Done):
 		if e := m.timeline.SelectedEvent(); e != nil && !e.IsCalendarEvent && e.TaskKey != "" {
-			return m, doneTaskCmd(m.cb, e.TaskKey)
+			return m, doneTaskCmd(m.cb, e.TaskKey, e.Provider)
 		}
 	case key.Matches(mssg, keys.Delete):
 		if e := m.timeline.SelectedEvent(); e != nil && !e.IsCalendarEvent && e.TaskKey != "" {
 			m.confirm = components.NewConfirm(fmt.Sprintf("Delete %s?", e.TaskKey))
 			m.confirmType = confirmDeleteTask
 			m.confirmKey = e.TaskKey
+			m.confirmProvider = e.Provider
 		}
 	case key.Matches(mssg, keys.Add):
 		if m.cachedFormOptions != nil {
@@ -738,6 +764,13 @@ func (m model) updateTimeline(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.formKind = formSnoozeTask
 			m.formTaskKey = e.TaskKey
 			m.formTaskProvider = e.Provider
+		}
+	case key.Matches(mssg, keys.Move):
+		if e := m.timeline.SelectedEvent(); e != nil && !e.IsCalendarEvent && e.TaskKey != "" {
+			m.formKind = formMoveTaskPending
+			m.formTaskKey = e.TaskKey
+			m.formTaskProvider = e.Provider
+			return m, listTransitionsCmd(m.cb, e.TaskKey, e.Provider)
 		}
 	case key.Matches(mssg, keys.ViewTask):
 		if e := m.timeline.SelectedEvent(); e != nil && !e.IsCalendarEvent && e.TaskKey != "" {
@@ -767,13 +800,14 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case key.Matches(mssg, keys.Done):
 		if t := m.tasks.SelectedTask(); t != nil {
-			return m, doneTaskCmd(m.cb, t.Key)
+			return m, doneTaskCmd(m.cb, t.Key, t.Provider)
 		}
 	case key.Matches(mssg, keys.Delete):
 		if t := m.tasks.SelectedTask(); t != nil {
 			m.confirm = components.NewConfirm(fmt.Sprintf("Delete %s?", t.Key))
 			m.confirmType = confirmDeleteTask
 			m.confirmKey = t.Key
+			m.confirmProvider = t.Provider
 		}
 	case key.Matches(mssg, keys.Search):
 		m.tasks.ToggleFilter()
@@ -794,6 +828,13 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.pendingEdit = &ed
 			m.formKind = formEditTaskPending
 			return m, loadEditFormOptionsCmd(m.cb, t.Project, t.Key)
+		}
+	case key.Matches(mssg, keys.Move):
+		if t := m.tasks.SelectedTask(); t != nil {
+			m.formKind = formMoveTaskPending
+			m.formTaskKey = t.Key
+			m.formTaskProvider = t.Provider
+			return m, listTransitionsCmd(m.cb, t.Key, t.Provider)
 		}
 	case key.Matches(mssg, keys.Snooze):
 		if t := m.tasks.SelectedTask(); t != nil {
@@ -843,7 +884,7 @@ func (m model) updateConfirm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			switch m.confirmType {
 			case confirmDeleteTask:
 				m.confirmType = confirmNone
-				return m, deleteTaskCmd(m.cb, m.confirmKey)
+				return m, deleteTaskCmd(m.cb, m.confirmKey, m.confirmProvider)
 			case confirmSyncApply:
 				m.confirmType = confirmNone
 				return m, syncApplyCmd(m.cb, false)
@@ -1101,6 +1142,9 @@ func (m model) updatePicker(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(mssg, keys.Enter):
 		selected := m.picker.Selected()
 		m.picker.Active = false
+		if selected != nil && m.pickerFieldLabel == "move" {
+			return m, moveTaskCmd(m.cb, m.formTaskKey, m.formTaskProvider, selected.Key)
+		}
 		if selected != nil {
 			m.form.SetValueByLabel(m.pickerFieldLabel, selected.Key)
 		}
@@ -1472,7 +1516,7 @@ func (m model) isLoading() bool {
 			return true
 		}
 	}
-	return m.formKind == formAddTaskPending || m.formKind == formEditTaskPending || m.formKind == formAddWorklogPending || m.formKind == formStopTimerPending
+	return m.formKind == formAddTaskPending || m.formKind == formEditTaskPending || m.formKind == formAddWorklogPending || m.formKind == formStopTimerPending || m.formKind == formMoveTaskPending
 }
 
 func (m model) loadingLabel() string {
@@ -1510,6 +1554,9 @@ func (m model) loadingLabel() string {
 	}
 	if m.formKind == formAddWorklogPending || m.formKind == formStopTimerPending {
 		return "Loading tasks"
+	}
+	if m.formKind == formMoveTaskPending {
+		return "Loading transitions"
 	}
 	if m.saving != "" {
 		return m.saving
@@ -1889,8 +1936,9 @@ func (m *model) rebuildAddFormForProvider() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func buildEditForm(taskKey string, ed pendingEditData, epics []msg.EpicOption, sections []string) components.Form {
+func buildEditForm(taskKey, provider string, ed pendingEditData, epics []msg.EpicOption, sections []string) components.Form {
 	fields := []components.FormFieldDef{
+		{Label: "Provider", Value: provider, Disabled: true},
 		{Label: "Summary", Placeholder: "Task summary", Value: ed.summary},
 		{Label: "Estimate", Placeholder: "e.g. 2h, 30m", Value: ed.estimate},
 		{Label: "Due Date", Placeholder: "e.g. YYYY-MM-DD", Value: ed.dueDate},
