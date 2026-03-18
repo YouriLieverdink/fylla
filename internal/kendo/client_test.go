@@ -73,6 +73,45 @@ func TestFetchTasks(t *testing.T) {
 		}
 	})
 
+	t.Run("excludes issues in done lane", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/api/projects":
+				w.Write(projectsResponse())
+			case "/api/projects/1/lanes":
+				json.NewEncoder(w).Encode([]laneJSON{
+					{ID: 10, Title: "To Do"},
+					{ID: 11, Title: "In Progress"},
+					{ID: 12, Title: "Done"},
+				})
+			case "/api/projects/1/issues":
+				est := 60
+				json.NewEncoder(w).Encode([]issueJSON{
+					{ID: 1, Key: "IRUOY-0001", Title: "Active task", LaneID: 10, EstimatedMinutes: &est, CreatedAt: "2025-01-20T09:00:00Z", ProjectID: 1},
+					{ID: 2, Key: "IRUOY-0002", Title: "Done task", LaneID: 12, EstimatedMinutes: &est, CreatedAt: "2025-01-20T09:00:00Z", ProjectID: 1},
+					{ID: 3, Key: "IRUOY-0003", Title: "Another active", LaneID: 11, EstimatedMinutes: &est, CreatedAt: "2025-01-20T09:00:00Z", ProjectID: 1},
+				})
+			default:
+				json.NewEncoder(w).Encode([]issueJSON{})
+			}
+		}))
+		defer server.Close()
+
+		client := NewClient(server.URL, "test-token")
+		tasks, err := client.FetchTasks(context.Background(), "IRUOY")
+		if err != nil {
+			t.Fatalf("FetchTasks: %v", err)
+		}
+		if len(tasks) != 2 {
+			t.Fatalf("got %d tasks, want 2 (done task should be excluded)", len(tasks))
+		}
+		for _, tk := range tasks {
+			if tk.Key == "IRUOY-0002" {
+				t.Errorf("done task IRUOY-0002 should have been excluded")
+			}
+		}
+	})
+
 	t.Run("error on non-200 response", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/api/projects" {
@@ -282,5 +321,136 @@ func TestSplitKey(t *testing.T) {
 				t.Errorf("num = %q, want %q", num, tt.wantNum)
 			}
 		})
+	}
+}
+
+func TestListTransitions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/projects":
+			w.Write(projectsResponse())
+		case "/api/projects/1/lanes":
+			json.NewEncoder(w).Encode([]laneJSON{
+				{ID: 10, Title: "To Do"},
+				{ID: 11, Title: "In Progress"},
+				{ID: 12, Title: "Done"},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-token")
+	names, err := client.ListTransitions(context.Background(), "IRUOY-0001")
+	if err != nil {
+		t.Fatalf("ListTransitions: %v", err)
+	}
+	if len(names) != 3 {
+		t.Fatalf("expected 3 lanes, got %d", len(names))
+	}
+	if names[0] != "To Do" || names[1] != "In Progress" || names[2] != "Done" {
+		t.Errorf("unexpected lanes: %v", names)
+	}
+}
+
+func TestTransitionTask(t *testing.T) {
+	t.Run("moves issue to target lane", func(t *testing.T) {
+		var updatedLaneID int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/api/projects":
+				w.Write(projectsResponse())
+			case "/api/projects/1/lanes":
+				json.NewEncoder(w).Encode([]laneJSON{
+					{ID: 10, Title: "To Do"},
+					{ID: 11, Title: "In Progress"},
+					{ID: 12, Title: "Done"},
+				})
+			case "/api/projects/1/issues/IRUOY-0001":
+				if r.Method == http.MethodGet {
+					json.NewEncoder(w).Encode(issueJSON{
+						ID: 1, Key: "IRUOY-0001", Title: "Test", Priority: 2, LaneID: 10, ProjectID: 1,
+					})
+					return
+				}
+				if r.Method == http.MethodPut {
+					var payload map[string]interface{}
+					json.NewDecoder(r.Body).Decode(&payload)
+					if lid, ok := payload["lane_id"].(float64); ok {
+						updatedLaneID = int(lid)
+					}
+					w.WriteHeader(http.StatusOK)
+					return
+				}
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		client := NewClient(server.URL, "test-token")
+		err := client.TransitionTask(context.Background(), "IRUOY-0001", "In Progress")
+		if err != nil {
+			t.Fatalf("TransitionTask: %v", err)
+		}
+		if updatedLaneID != 11 {
+			t.Errorf("updated lane_id = %d, want 11", updatedLaneID)
+		}
+	})
+
+	t.Run("returns error for unknown lane", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/api/projects":
+				w.Write(projectsResponse())
+			case "/api/projects/1/lanes":
+				json.NewEncoder(w).Encode([]laneJSON{
+					{ID: 10, Title: "To Do"},
+				})
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		client := NewClient(server.URL, "test-token")
+		err := client.TransitionTask(context.Background(), "IRUOY-0001", "Nonexistent")
+		if err == nil {
+			t.Fatal("expected error for unknown lane")
+		}
+	})
+}
+
+func TestFetchTasksPopulatesStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/projects":
+			w.Write(projectsResponse())
+		case "/api/projects/1/lanes":
+			json.NewEncoder(w).Encode([]laneJSON{
+				{ID: 10, Title: "To Do"},
+				{ID: 11, Title: "In Progress"},
+			})
+		case "/api/projects/1/issues":
+			json.NewEncoder(w).Encode([]issueJSON{
+				{ID: 1, Key: "IRUOY-0001", Title: "Task A", Priority: 2, LaneID: 11, ProjectID: 1},
+			})
+		default:
+			json.NewEncoder(w).Encode([]interface{}{})
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-token")
+	tasks, err := client.FetchTasks(context.Background(), "IRUOY")
+	if err != nil {
+		t.Fatalf("FetchTasks: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(tasks))
+	}
+	if tasks[0].Status != "In Progress" {
+		t.Errorf("Status = %q, want In Progress", tasks[0].Status)
 	}
 }

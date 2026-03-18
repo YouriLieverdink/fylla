@@ -99,6 +99,16 @@ type SectionUpdater interface {
 	UpdateSection(ctx context.Context, taskKey, section string) error
 }
 
+// TransitionLister lists available transitions/lanes for a task.
+type TransitionLister interface {
+	ListTransitions(ctx context.Context, taskKey string) ([]string, error)
+}
+
+// Transitioner transitions a task to a target status/lane.
+type Transitioner interface {
+	TransitionTask(ctx context.Context, taskKey, target string) error
+}
+
 // JiraKeyResolver resolves a non-Jira task key (e.g. GitHub PR) to a Jira issue key.
 type JiraKeyResolver interface {
 	ResolveJiraKey(ctx context.Context, taskKey string) (string, error)
@@ -206,6 +216,11 @@ func (m *MultiTaskSource) CompleteTask(ctx context.Context, taskKey string) erro
 
 func (m *MultiTaskSource) DeleteTask(ctx context.Context, taskKey string) error {
 	return m.routeTo(taskKey).DeleteTask(ctx, taskKey)
+}
+
+// DeleteTaskOn deletes a task using an explicit provider name.
+func (m *MultiTaskSource) DeleteTaskOn(ctx context.Context, taskKey, provider string) error {
+	return m.routeToWithProvider(taskKey, provider).DeleteTask(ctx, taskKey)
 }
 
 // PostWorklogOn posts a worklog using an explicit provider name.

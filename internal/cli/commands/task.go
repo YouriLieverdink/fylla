@@ -15,6 +15,7 @@ func newTaskCmd() *cobra.Command {
 	cmd.AddCommand(newEditCmd())
 	cmd.AddCommand(newSnoozeCmd())
 	cmd.AddCommand(newViewCmd())
+	cmd.AddCommand(newMoveCmd())
 
 	return cmd
 }

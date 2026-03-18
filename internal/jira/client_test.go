@@ -739,3 +739,100 @@ func TestFormatDuration(t *testing.T) {
 		})
 	}
 }
+
+func TestListTransitions(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(transitionsResponse{
+			Transitions: []transition{
+				{ID: "11", Name: "In Progress"},
+				{ID: "21", Name: "In Review"},
+				{ID: "31", Name: "Done"},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "user@test.com", "token123")
+	names, err := client.ListTransitions(context.Background(), "PROJ-123")
+	if err != nil {
+		t.Fatalf("ListTransitions: %v", err)
+	}
+	if len(names) != 3 {
+		t.Fatalf("expected 3 transitions, got %d", len(names))
+	}
+	if names[0] != "In Progress" || names[1] != "In Review" || names[2] != "Done" {
+		t.Errorf("unexpected transitions: %v", names)
+	}
+}
+
+func TestTransitionTask(t *testing.T) {
+	t.Run("transitions to named target", func(t *testing.T) {
+		var postedID string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				json.NewEncoder(w).Encode(transitionsResponse{
+					Transitions: []transition{
+						{ID: "11", Name: "In Progress"},
+						{ID: "31", Name: "Done"},
+					},
+				})
+				return
+			}
+			if r.Method == http.MethodPost {
+				body, _ := io.ReadAll(r.Body)
+				var payload map[string]interface{}
+				json.Unmarshal(body, &payload)
+				tr := payload["transition"].(map[string]interface{})
+				postedID = tr["id"].(string)
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}))
+		defer srv.Close()
+
+		client := NewClient(srv.URL, "user@test.com", "token123")
+		err := client.TransitionTask(context.Background(), "PROJ-123", "In Progress")
+		if err != nil {
+			t.Fatalf("TransitionTask: %v", err)
+		}
+		if postedID != "11" {
+			t.Errorf("posted transition ID = %q, want 11", postedID)
+		}
+	})
+
+	t.Run("returns error for unknown target", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			json.NewEncoder(w).Encode(transitionsResponse{
+				Transitions: []transition{
+					{ID: "11", Name: "In Progress"},
+				},
+			})
+		}))
+		defer srv.Close()
+
+		client := NewClient(srv.URL, "user@test.com", "token123")
+		err := client.TransitionTask(context.Background(), "PROJ-123", "Nonexistent")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "Nonexistent") {
+			t.Errorf("error = %q, want to contain 'Nonexistent'", err.Error())
+		}
+	})
+
+	t.Run("parseIssue populates Status from status field", func(t *testing.T) {
+		issue := issueJSON{
+			Key: "PROJ-1",
+			Fields: fieldsJSON{
+				Summary:   "Test task",
+				IssueType: issueTypeJSON{Name: "Task"},
+				Project:   projectJSON{Key: "PROJ"},
+				Status:    &statusJSON{Name: "In Progress"},
+			},
+		}
+		parsed := parseIssue(issue)
+		if parsed.Status != "In Progress" {
+			t.Errorf("Status = %q, want In Progress", parsed.Status)
+		}
+	})
+}

@@ -779,8 +779,6 @@ func (m model) updateTimeline(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(mssg, keys.Sync):
 		m.confirm = components.NewConfirm("Apply sync to calendar?")
 		m.confirmType = confirmSyncApply
-	case key.Matches(mssg, keys.Report):
-		return m, loadReportCmd(m.cb, 1)
 	}
 	return m, nil
 }
@@ -848,8 +846,6 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if t := m.tasks.SelectedTask(); t != nil {
 			return m, viewTaskCmd(m.cb, t.Key)
 		}
-	case key.Matches(mssg, keys.Report):
-		return m, loadReportCmd(m.cb, 1)
 	}
 	return m, nil
 }
@@ -980,8 +976,6 @@ func (m model) updateWorklog(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.formWorklogKey = e.IssueKey
 			m.formWorklogProvider = e.Provider
 		}
-	case key.Matches(mssg, keys.Report):
-		return m, loadReportCmd(m.cb, 1)
 	}
 	return m, nil
 }
@@ -1588,10 +1582,6 @@ func (m model) View() string {
 		return m.renderViewDetail()
 	}
 
-	if m.reportResult != nil {
-		return m.renderReport()
-	}
-
 	if m.showHelp {
 		return m.renderHelp()
 	}
@@ -1669,7 +1659,6 @@ func (m model) renderHelp() string {
 	b.WriteString("  t/Enter       Start timer\n")
 	b.WriteString("  d             Mark done\n")
 	b.WriteString("  s             Sync\n")
-	b.WriteString("  R             Report\n\n")
 
 	b.WriteString(bold.Render("Tasks") + "\n")
 	b.WriteString("  a             Add task\n")
@@ -1739,34 +1728,6 @@ func (m model) renderViewDetail() string {
 	if v.NoSplit {
 		b.WriteString("  No Split:   yes\n")
 	}
-	b.WriteString("\n")
-	b.WriteString(hint.Render("Press any key to close"))
-
-	content := lipgloss.NewStyle().Padding(1, 3).Render(b.String())
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}).
-		Padding(1, 2).
-		Render(content)
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
-}
-
-func (m model) renderReport() string {
-	bold := lipgloss.NewStyle().Bold(true)
-	hint := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
-
-	r := m.reportResult
-	var b strings.Builder
-	if r.Start.Format("2006-01-02") == r.End.Format("2006-01-02") {
-		b.WriteString(bold.Render(fmt.Sprintf("Report for %s", r.Start.Format("Mon Jan 2, 2006"))) + "\n\n")
-	} else {
-		b.WriteString(bold.Render(fmt.Sprintf("Report for %s — %s",
-			r.Start.Format("Mon Jan 2"), r.End.Format("Mon Jan 2, 2006"))) + "\n\n")
-	}
-	b.WriteString(fmt.Sprintf("  Tasks completed:  %d\n", r.TasksDone))
-	b.WriteString(fmt.Sprintf("  Time on tasks:    %s\n", styles.FormatDuration(r.TaskTime)))
-	b.WriteString(fmt.Sprintf("  Meeting time:     %s\n", styles.FormatDuration(r.MeetingTime)))
-	b.WriteString(fmt.Sprintf("  Total events:     %d\n", r.TotalEvents))
 	b.WriteString("\n")
 	b.WriteString(hint.Render("Press any key to close"))
 

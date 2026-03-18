@@ -96,6 +96,9 @@ func (m Model) View() string {
 			}
 			taskLabel := styles.FormatPrefix(e.Project, e.Section) + e.Summary
 			label = fmt.Sprintf("%s  %s%s  %s", timeRange, prefix, taskLabel, durStr)
+			if e.Status != "" {
+				label += styles.HintStyle.Render(fmt.Sprintf(" [%s]", e.Status))
+			}
 			switch {
 			case isSelected:
 				label = styles.SelectedStyle.Render(label)
@@ -122,7 +125,7 @@ func (m Model) View() string {
 	}
 
 	b.WriteString("\n")
-	hints := "j/k:navigate  enter/t:timer  d:done  D:delete  a:add  S:snooze  v:view  s:sync  R:report  r:refresh"
+	hints := "j/k:navigate  enter/t:timer  d:done  D:delete  m:move  a:add  S:snooze  v:view  s:sync  r:refresh"
 	b.WriteString(styles.HintStyle.Render("  " + hints))
 
 	return b.String()

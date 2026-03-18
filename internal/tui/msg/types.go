@@ -12,6 +12,7 @@ type FyllaEvent struct {
 	Start           time.Time
 	End             time.Time
 	AtRisk          bool
+	Status          string
 	IsCalendarEvent bool
 }
 
@@ -27,6 +28,7 @@ type ScoredTask struct {
 	Score     float64
 	Project   string
 	Section   string
+	Status       string
 	UpNext       bool
 	NoSplit      bool
 	NotBefore    *time.Time
@@ -102,12 +104,3 @@ type WorklogEntry struct {
 	TimeSpent    time.Duration
 }
 
-// ReportResult holds summary stats for the report overlay.
-type ReportResult struct {
-	Start       time.Time
-	End         time.Time
-	TasksDone   int
-	TaskTime    time.Duration
-	MeetingTime time.Duration
-	TotalEvents int
-}

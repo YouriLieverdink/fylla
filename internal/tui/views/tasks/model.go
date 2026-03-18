@@ -102,7 +102,8 @@ func (m *Model) filteredTasks() []msg.ScoredTask {
 			if strings.Contains(strings.ToLower(t.Summary), lower) ||
 				strings.Contains(strings.ToLower(t.Key), lower) ||
 				strings.Contains(strings.ToLower(t.Project), lower) ||
-				strings.Contains(strings.ToLower(t.Section), lower) {
+				strings.Contains(strings.ToLower(t.Section), lower) ||
+				strings.Contains(strings.ToLower(t.Status), lower) {
 				source = append(source, t)
 			}
 		}
@@ -226,6 +227,9 @@ func (m Model) View() string {
 			label := styles.FormatPrefix(t.Project, t.Section) + styles.Truncate(t.Summary, 50)
 			line := fmt.Sprintf("%s %s  %s  %s", rank, label, est, score)
 
+			if t.Status != "" {
+				line += styles.HintStyle.Render(fmt.Sprintf(" [%s]", t.Status))
+			}
 			if t.UpNext {
 				line += styles.UpNextStyle.Render(" [UP NEXT]")
 			}
@@ -254,7 +258,7 @@ func (m Model) View() string {
 	if m.filterMode {
 		b.WriteString(styles.HintStyle.Render("  Type to filter, Esc to clear"))
 	} else {
-		hints := "j/k:navigate  t/enter:timer  d:done  D:delete  a:add  e:edit  /:filter  R:report  r:refresh"
+		hints := "j/k:navigate  t/enter:timer  d:done  D:delete  m:move  a:add  e:edit  S:snooze  /:filter  r:refresh"
 		b.WriteString(styles.HintStyle.Render("  " + hints))
 	}
 

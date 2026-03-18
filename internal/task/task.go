@@ -26,6 +26,7 @@ type Task struct {
 	UpNext            bool
 	NoSplit           bool
 	Recurrence        *Recurrence
+	Status            string
 }
 
 // CreateInput holds the fields for creating a new task.

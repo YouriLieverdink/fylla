@@ -141,12 +141,6 @@ type TaskViewedMsg struct {
 	Err    error
 }
 
-// ReportLoadedMsg carries the result of loading a report.
-type ReportLoadedMsg struct {
-	Result *ReportResult
-	Err    error
-}
-
 // EpicsLoadedMsg carries the result of loading epics for a project.
 type EpicsLoadedMsg struct {
 	Epics []EpicOption
@@ -201,6 +195,21 @@ type FallbackLoadedMsg struct {
 type FallbackIssue struct {
 	Key     string
 	Summary string
+}
+
+// TaskMovedMsg is sent after moving a task to a new status/lane.
+type TaskMovedMsg struct {
+	TaskKey string
+	Target  string
+	Err     error
+}
+
+// TransitionsLoadedMsg carries available transitions for a task.
+type TransitionsLoadedMsg struct {
+	TaskKey     string
+	Provider    string
+	Transitions []string
+	Err         error
 }
 
 // AutoRefreshMsg triggers an auto-refresh of the current view.

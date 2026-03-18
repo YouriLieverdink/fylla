@@ -116,6 +116,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 					Score:     st.Score,
 					Project:   st.Task.Project,
 					Section:   st.Task.Section,
+					Status:       st.Task.Status,
 					UpNext:       st.Task.UpNext,
 					NoSplit:      st.Task.NoSplit,
 					NotBefore:    st.Task.NotBefore,
@@ -124,12 +125,12 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			}
 			return tasks, nil
 		},
-		DoneTask: func(taskKey string) error {
-			_, err := RunDone(ctx, DoneParams{TaskKey: taskKey, Completer: source})
+		DoneTask: func(taskKey, provider string) error {
+			_, err := RunDone(ctx, DoneParams{TaskKey: taskKey, Provider: provider, Completer: source})
 			return err
 		},
-		DeleteTask: func(taskKey string) error {
-			_, err := RunDelete(ctx, DeleteParams{TaskKey: taskKey, Deleter: source})
+		DeleteTask: func(taskKey, provider string) error {
+			_, err := RunDelete(ctx, DeleteParams{TaskKey: taskKey, Provider: provider, Deleter: source})
 			return err
 		},
 		StartTimer: func(taskKey, project, section string) error {
@@ -549,24 +550,57 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			wg.Wait()
 			return issues
 		},
-		LoadReport: func(days int) (*msg.ReportResult, error) {
-			result, err := RunReport(ctx, ReportParams{
-				Cal:  cal,
-				Cfg:  cfg,
-				Now:  time.Now(),
-				Days: days,
-			})
-			if err != nil {
-				return nil, err
+		ListTransitions: func(taskKey, provider string) ([]string, error) {
+			var tl TransitionLister
+			if provider != "" {
+				if ms, ok := source.(*MultiTaskSource); ok {
+					if src, ok := ms.sources[provider]; ok {
+						if l, ok := src.(TransitionLister); ok {
+							tl = l
+						}
+					}
+				}
 			}
-			return &msg.ReportResult{
-				Start:       result.Start,
-				End:         result.End,
-				TasksDone:   result.TasksDone,
-				TaskTime:    result.TaskTime,
-				MeetingTime: result.MeetingTime,
-				TotalEvents: result.TotalEvents,
-			}, nil
+			if tl == nil {
+				if l, ok := source.(TransitionLister); ok {
+					tl = l
+				} else if ms, ok := source.(*MultiTaskSource); ok {
+					routed := ms.routeToWithProvider(taskKey, provider)
+					if l, ok := routed.(TransitionLister); ok {
+						tl = l
+					}
+				}
+			}
+			if tl == nil {
+				return nil, fmt.Errorf("provider does not support transitions")
+			}
+			return tl.ListTransitions(ctx, taskKey)
+		},
+		MoveTask: func(taskKey, provider, target string) error {
+			var tr Transitioner
+			if provider != "" {
+				if ms, ok := source.(*MultiTaskSource); ok {
+					if src, ok := ms.sources[provider]; ok {
+						if t, ok := src.(Transitioner); ok {
+							tr = t
+						}
+					}
+				}
+			}
+			if tr == nil {
+				if t, ok := source.(Transitioner); ok {
+					tr = t
+				} else if ms, ok := source.(*MultiTaskSource); ok {
+					routed := ms.routeToWithProvider(taskKey, provider)
+					if t, ok := routed.(Transitioner); ok {
+						tr = t
+					}
+				}
+			}
+			if tr == nil {
+				return fmt.Errorf("provider does not support transitions")
+			}
+			return tr.TransitionTask(ctx, taskKey, target)
 		},
 	}
 }

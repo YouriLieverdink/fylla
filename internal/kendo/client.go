@@ -261,13 +261,14 @@ func (c *Client) projectCodeByID(projectID int) string {
 	return ""
 }
 
-func parseIssue(issue issueJSON, projectCode string) task.Task {
+func parseIssue(issue issueJSON, projectCode, laneName string) task.Task {
 	t := task.Task{
 		Key:      issue.Key,
 		Provider: "kendo",
 		Summary:  issue.Title,
 		Priority: kendoPriorityToFylla(issue.Priority),
 		Project:  projectCode,
+		Status:   laneName,
 	}
 
 	if issue.CreatedAt != "" {
@@ -430,6 +431,12 @@ func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, err
 
 	var allTasks []task.Task
 	for _, pid := range projectIDs {
+		// Fetch lanes for this project to map laneID → name
+		laneMap, err := c.fetchLaneMap(ctx, pid)
+		if err != nil {
+			return nil, err
+		}
+
 		resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/issues", pid), nil)
 		if err != nil {
 			return nil, fmt.Errorf("fetch issues: %w", err)
@@ -448,12 +455,17 @@ func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, err
 		}
 		resp.Body.Close()
 
+		doneLaneID := c.doneLaneIDFromMap(laneMap)
+
 		code := c.projectCodeByID(pid)
 		for _, issue := range issues {
+			if issue.LaneID == doneLaneID {
+				continue
+			}
 			if !filter.empty() && !filter.matches(issue) {
 				continue
 			}
-			allTasks = append(allTasks, parseIssue(issue, code))
+			allTasks = append(allTasks, parseIssue(issue, code, laneMap[issue.LaneID]))
 		}
 	}
 
@@ -572,6 +584,19 @@ func (c *Client) findDoneLaneID(ctx context.Context, projectID int) (int, error)
 	return 0, fmt.Errorf("no done lane found for project %d", projectID)
 }
 
+func (c *Client) doneLaneIDFromMap(laneMap map[int]string) int {
+	target := c.DoneLane
+	if target == "" {
+		target = "done"
+	}
+	for id, title := range laneMap {
+		if strings.EqualFold(title, target) {
+			return id
+		}
+	}
+	return -1
+}
+
 // ListLanes returns lane names for a Kendo project.
 func (c *Client) ListLanes(ctx context.Context, project string) ([]string, error) {
 	pid, err := c.projectIDForName(ctx, project)
@@ -642,6 +667,30 @@ func (c *Client) projectIDForName(ctx context.Context, project string) (int, err
 	return 0, fmt.Errorf("no kendo project found for %q", project)
 }
 
+func (c *Client) fetchLaneMap(ctx context.Context, projectID int) (map[int]string, error) {
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/lanes", projectID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("fetch lanes: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("kendo fetch lanes: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var lanes []laneJSON
+	if err := json.NewDecoder(resp.Body).Decode(&lanes); err != nil {
+		return nil, fmt.Errorf("decode lanes: %w", err)
+	}
+
+	m := make(map[int]string, len(lanes))
+	for _, l := range lanes {
+		m[l.ID] = l.Title
+	}
+	return m, nil
+}
+
 func (c *Client) findLaneID(ctx context.Context, projectID int, laneName string) (int, error) {
 	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/lanes", projectID), nil)
 	if err != nil {
@@ -664,10 +713,33 @@ func (c *Client) findLaneID(ctx context.Context, projectID int, laneName string)
 			return l.ID, nil
 		}
 	}
-	if len(lanes) > 0 {
-		return lanes[0].ID, nil
-	}
 	return 0, fmt.Errorf("no lane found for %q", laneName)
+}
+
+// ListTransitions returns the available lane names for the project that owns the given task key.
+func (c *Client) ListTransitions(ctx context.Context, taskKey string) ([]string, error) {
+	pid, err := c.projectIDForKey(ctx, taskKey)
+	if err != nil {
+		return nil, err
+	}
+	return c.ListLanes(ctx, c.projectCodeByID(pid))
+}
+
+// TransitionTask moves a Kendo issue to the named lane.
+func (c *Client) TransitionTask(ctx context.Context, taskKey, target string) error {
+	pid, err := c.projectIDForKey(ctx, taskKey)
+	if err != nil {
+		return err
+	}
+
+	laneID, err := c.findLaneID(ctx, pid, target)
+	if err != nil {
+		return err
+	}
+
+	return c.putIssue(ctx, pid, taskKey, map[string]interface{}{
+		"lane_id": laneID,
+	})
 }
 
 func (c *Client) resolveEpicID(ctx context.Context, projectID int, epicKey string) (int, error) {

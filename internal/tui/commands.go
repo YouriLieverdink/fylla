@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -38,8 +39,8 @@ type FallbackIssue struct {
 type Callbacks struct {
 	LoadToday   func() ([]msg.FyllaEvent, error)
 	LoadTasks   func() ([]msg.ScoredTask, error)
-	DoneTask    func(taskKey string) error
-	DeleteTask  func(taskKey string) error
+	DoneTask    func(taskKey, provider string) error
+	DeleteTask  func(taskKey, provider string) error
 	StartTimer  func(taskKey, project, section string) error
 	TimerStatus func() (taskKey, summary, project, section string, elapsed time.Duration, running bool, err error)
 	SyncPreview func() (*msg.SyncResult, error)
@@ -58,14 +59,15 @@ type Callbacks struct {
 	GetParent    func(taskKey string) (string, error)
 	Provider     func() string
 	Providers    func() []string
-	SnoozeTask     func(taskKey, target string) error
-	ViewTask       func(taskKey string) (*msg.ViewResult, error)
-	LoadReport     func(days int) (*msg.ReportResult, error)
-	LoadWorklogs   func(weekView bool, date time.Time) ([]msg.WorklogEntry, error)
+	SnoozeTask   func(taskKey, target string) error
+	ViewTask     func(taskKey string) (*msg.ViewResult, error)
+	LoadWorklogs func(weekView bool, date time.Time) ([]msg.WorklogEntry, error)
 	UpdateWorklog  func(issueKey, worklogID, provider string, timeSpent time.Duration, description string, started time.Time) error
 	DeleteWorklog  func(issueKey, worklogID, provider string) error
 	AddWorklog     func(issueKey, provider string, timeSpent time.Duration, description string, started time.Time) error
-	FallbackIssues func() []FallbackIssue
+	FallbackIssues   func() []FallbackIssue
+	ListTransitions  func(taskKey, provider string) ([]string, error)
+	MoveTask         func(taskKey, provider, target string) error
 }
 
 func loadTodayCmd(cb Callbacks) tea.Cmd {
@@ -82,16 +84,16 @@ func loadTasksCmd(cb Callbacks) tea.Cmd {
 	}
 }
 
-func doneTaskCmd(cb Callbacks, taskKey string) tea.Cmd {
+func doneTaskCmd(cb Callbacks, taskKey, provider string) tea.Cmd {
 	return func() tea.Msg {
-		err := cb.DoneTask(taskKey)
+		err := cb.DoneTask(taskKey, provider)
 		return msg.TaskDoneMsg{TaskKey: taskKey, Err: err}
 	}
 }
 
-func deleteTaskCmd(cb Callbacks, taskKey string) tea.Cmd {
+func deleteTaskCmd(cb Callbacks, taskKey, provider string) tea.Cmd {
 	return func() tea.Msg {
-		err := cb.DeleteTask(taskKey)
+		err := cb.DeleteTask(taskKey, provider)
 		return msg.TaskDeletedMsg{TaskKey: taskKey, Err: err}
 	}
 }
@@ -330,13 +332,6 @@ func viewTaskCmd(cb Callbacks, taskKey string) tea.Cmd {
 	}
 }
 
-func loadReportCmd(cb Callbacks, days int) tea.Cmd {
-	return func() tea.Msg {
-		result, err := cb.LoadReport(days)
-		return msg.ReportLoadedMsg{Result: result, Err: err}
-	}
-}
-
 func loadWorklogsCmd(cb Callbacks, weekView bool, date time.Time) tea.Cmd {
 	return func() tea.Msg {
 		entries, err := cb.LoadWorklogs(weekView, date)
@@ -376,6 +371,23 @@ func prefetchFallbackCmd(cb Callbacks) tea.Cmd {
 			result[i] = msg.FallbackIssue{Key: fb.Key, Summary: fb.Summary}
 		}
 		return msg.FallbackLoadedMsg{Issues: result}
+	}
+}
+
+func listTransitionsCmd(cb Callbacks, taskKey, provider string) tea.Cmd {
+	return func() tea.Msg {
+		if cb.ListTransitions == nil {
+			return msg.TransitionsLoadedMsg{TaskKey: taskKey, Provider: provider, Err: fmt.Errorf("transitions not supported")}
+		}
+		transitions, err := cb.ListTransitions(taskKey, provider)
+		return msg.TransitionsLoadedMsg{TaskKey: taskKey, Provider: provider, Transitions: transitions, Err: err}
+	}
+}
+
+func moveTaskCmd(cb Callbacks, taskKey, provider, target string) tea.Cmd {
+	return func() tea.Msg {
+		err := cb.MoveTask(taskKey, provider, target)
+		return msg.TaskMovedMsg{TaskKey: taskKey, Target: target, Err: err}
 	}
 }
 

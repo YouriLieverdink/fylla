@@ -79,6 +79,11 @@ type fieldsJSON struct {
 	Project      projectJSON       `json:"project"`
 	TimeTracking *timeTrackingJSON `json:"timetracking"`
 	Parent       *parentJSON       `json:"parent"`
+	Status       *statusJSON       `json:"status"`
+}
+
+type statusJSON struct {
+	Name string `json:"name"`
 }
 
 type parentJSON struct {
@@ -134,6 +139,10 @@ func parseIssue(issue issueJSON) task.Task {
 		Priority:  3, // default Medium
 		IssueType: issue.Fields.IssueType.Name,
 		Project:   issue.Fields.Project.Key,
+	}
+
+	if issue.Fields.Status != nil {
+		t.Status = issue.Fields.Status.Name
 	}
 
 	if issue.Fields.Parent != nil && issue.Fields.Parent.Fields.Summary != "" {
@@ -204,7 +213,7 @@ func (c *Client) FetchTasks(ctx context.Context, jql string) ([]task.Task, error
 	for {
 		payload := map[string]interface{}{
 			"jql":    jql,
-			"fields": []string{"summary", "priority", "duedate", "issuetype", "created", "project", "timetracking", "parent"},
+			"fields": []string{"summary", "priority", "duedate", "issuetype", "created", "project", "timetracking", "parent", "status"},
 		}
 		if nextPageToken != "" {
 			payload["nextPageToken"] = nextPageToken
@@ -666,11 +675,33 @@ func (c *Client) doneTransitionName(issueKey string) string {
 	return "Done"
 }
 
-// CompleteTask transitions a Jira issue to "Done" status.
-// It fetches available transitions, finds one matching the configured done
-// transition name (case-insensitive), and posts the transition. If no matching
-// transition is found, it returns an error listing the available transition names.
-func (c *Client) CompleteTask(ctx context.Context, issueKey string) error {
+// ListTransitions returns the names of available transitions for a Jira issue.
+func (c *Client) ListTransitions(ctx context.Context, issueKey string) ([]string, error) {
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/rest/api/3/issue/%s/transitions", issueKey), nil)
+	if err != nil {
+		return nil, fmt.Errorf("get transitions: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("jira transitions: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result transitionsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode transitions: %w", err)
+	}
+
+	names := make([]string, len(result.Transitions))
+	for i, t := range result.Transitions {
+		names[i] = t.Name
+	}
+	return names, nil
+}
+
+// TransitionTask transitions a Jira issue to the named target status.
+func (c *Client) TransitionTask(ctx context.Context, issueKey, target string) error {
 	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/rest/api/3/issue/%s/transitions", issueKey), nil)
 	if err != nil {
 		return fmt.Errorf("get transitions: %w", err)
@@ -687,19 +718,18 @@ func (c *Client) CompleteTask(ctx context.Context, issueKey string) error {
 		return fmt.Errorf("decode transitions: %w", err)
 	}
 
-	targetName := c.doneTransitionName(issueKey)
 	var transitionID string
 	var names []string
 	for _, t := range result.Transitions {
 		names = append(names, t.Name)
-		if strings.EqualFold(t.Name, targetName) {
+		if strings.EqualFold(t.Name, target) {
 			transitionID = t.ID
 			break
 		}
 	}
 
 	if transitionID == "" {
-		return fmt.Errorf("no %q transition available for %s (available: %s)", targetName, issueKey, strings.Join(names, ", "))
+		return fmt.Errorf("no %q transition available for %s (available: %s)", target, issueKey, strings.Join(names, ", "))
 	}
 
 	payload := map[string]interface{}{
@@ -718,6 +748,11 @@ func (c *Client) CompleteTask(ctx context.Context, issueKey string) error {
 	}
 
 	return nil
+}
+
+// CompleteTask transitions a Jira issue to "Done" status.
+func (c *Client) CompleteTask(ctx context.Context, issueKey string) error {
+	return c.TransitionTask(ctx, issueKey, c.doneTransitionName(issueKey))
 }
 
 // ListProjects returns the keys of all accessible Jira projects.
