@@ -55,6 +55,7 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 	}
 
 	worklogKey := sr.TaskKey
+	worklogProvider := sr.Provider
 
 	// Resolve GitHub PR keys to Jira issue keys for worklog posting.
 	if isGitHubKey(sr.TaskKey) {
@@ -90,8 +91,9 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 		}
 	}
 
-	// Resolve non-Jira keys (e.g. Todoist) when worklog provider is jira.
-	if !isJiraKey(worklogKey) && p.Cfg.Worklog.Provider == "jira" {
+	// Resolve non-Jira keys (e.g. Todoist) when worklog provider is jira,
+	// but allow Kendo tasks to post worklogs directly to Kendo.
+	if !isJiraKey(worklogKey) && p.Cfg.Worklog.Provider == "jira" && worklogProvider != "kendo" {
 		if p.FallbackIssue != "" {
 			worklogKey = p.FallbackIssue
 		} else {
@@ -103,8 +105,15 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 		}
 	}
 
-	if err := p.Jira.PostWorklog(ctx, worklogKey, sr.Rounded, p.Description, sr.StartTime); err != nil {
-		return nil, fmt.Errorf("post worklog: %w", err)
+	// Use provider-aware posting when available (e.g. Kendo tasks).
+	if multi, ok := p.Jira.(*MultiTaskSource); ok && worklogProvider != "" {
+		if err := multi.PostWorklogOn(ctx, worklogKey, sr.Rounded, p.Description, sr.StartTime, worklogProvider); err != nil {
+			return nil, fmt.Errorf("post worklog: %w", err)
+		}
+	} else {
+		if err := p.Jira.PostWorklog(ctx, worklogKey, sr.Rounded, p.Description, sr.StartTime); err != nil {
+			return nil, fmt.Errorf("post worklog: %w", err)
+		}
 	}
 
 	result := &StopResult{
@@ -124,20 +133,34 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 
 	// Check remaining estimate if available
 	if p.Estimate != nil {
-		remaining, err := p.Estimate.GetEstimate(ctx, sr.TaskKey)
-		if err == nil {
-			result.RemainingEstimate = remaining
-			result.HasRemaining = true
+		if multi, ok := p.Estimate.(*MultiTaskSource); ok && worklogProvider != "" {
+			remaining, err := multi.GetEstimateOn(ctx, sr.TaskKey, worklogProvider)
+			if err == nil {
+				result.RemainingEstimate = remaining
+				result.HasRemaining = true
+			}
+		} else {
+			remaining, err := p.Estimate.GetEstimate(ctx, sr.TaskKey)
+			if err == nil {
+				result.RemainingEstimate = remaining
+				result.HasRemaining = true
+			}
 		}
 	}
 
 	// Mark task as done if requested
 	if p.Done && p.Completer != nil {
-		if _, err := RunDone(ctx, DoneParams{
-			TaskKey:   sr.TaskKey,
-			Completer: p.Completer,
-		}); err != nil {
-			return nil, fmt.Errorf("mark done: %w", err)
+		if multi, ok := p.Completer.(*MultiTaskSource); ok && worklogProvider != "" {
+			if err := multi.CompleteTaskOn(ctx, sr.TaskKey, worklogProvider); err != nil {
+				return nil, fmt.Errorf("mark done: %w", err)
+			}
+		} else {
+			if _, err := RunDone(ctx, DoneParams{
+				TaskKey:   sr.TaskKey,
+				Completer: p.Completer,
+			}); err != nil {
+				return nil, fmt.Errorf("mark done: %w", err)
+			}
 		}
 		result.Done = true
 	}
@@ -189,7 +212,7 @@ func updateCalendarEvent(ctx context.Context, cal CalendarClient, taskKey string
 	}
 
 	for _, ev := range events {
-		key := calendar.TaskKeyFromDescription(ev.Description)
+		key, provider := calendar.TaskKeyAndProviderFromDescription(ev.Description)
 		if key != taskKey {
 			continue
 		}
@@ -202,14 +225,15 @@ func updateCalendarEvent(ctx context.Context, cal CalendarClient, taskKey string
 		newEnd := startTime.Add(rounded)
 
 		if err := cal.UpdateEvent(ctx, ev.ID, calendar.CreateEventInput{
-			TaskKey: taskKey,
-			Project: parsed.Project,
-			Section: parsed.Section,
-			Summary: parsed.Summary,
-			Start:   ev.Start,
-			End:     newEnd,
-			AtRisk:  parsed.AtRisk,
-			Done:    true,
+			TaskKey:  taskKey,
+			Project:  parsed.Project,
+			Section:  parsed.Section,
+			Summary:  parsed.Summary,
+			Start:    ev.Start,
+			End:      newEnd,
+			AtRisk:   parsed.AtRisk,
+			Done:     true,
+			Provider: provider,
 		}); err != nil {
 			return false, err
 		}

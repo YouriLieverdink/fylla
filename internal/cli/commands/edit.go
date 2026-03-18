@@ -20,6 +20,7 @@ var (
 // EditParams holds inputs for the edit command.
 type EditParams struct {
 	TaskKey     string
+	Provider    string
 	Summary     string
 	Estimate    string
 	Due         string
@@ -64,6 +65,17 @@ type EditResult struct {
 
 // RunEdit applies one or more edits to a task.
 func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
+	// Resolve to the correct provider-specific source when provider is known.
+	source := p.Source
+	if p.Provider != "" {
+		if ms, ok := source.(*MultiTaskSource); ok {
+			if src, ok := ms.RouteToProvider(p.Provider); ok {
+				source = src
+			}
+		}
+	}
+	p.Source = source
+
 	result := &EditResult{TaskKey: p.TaskKey}
 
 	if p.Estimate != "" {

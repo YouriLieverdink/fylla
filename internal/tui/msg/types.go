@@ -5,6 +5,7 @@ import "time"
 // FyllaEvent represents a scheduled Fylla task event or a calendar event.
 type FyllaEvent struct {
 	TaskKey         string
+	Provider        string
 	Project         string
 	Section         string
 	Summary         string
@@ -17,6 +18,7 @@ type FyllaEvent struct {
 // ScoredTask holds a task with its computed score for display.
 type ScoredTask struct {
 	Key       string
+	Provider  string
 	Summary   string
 	Priority  int
 	DueDate   *time.Time
@@ -93,6 +95,7 @@ type EpicOption struct {
 type WorklogEntry struct {
 	ID           string
 	IssueKey     string
+	Provider     string
 	IssueSummary string
 	Description  string
 	Started      time.Time

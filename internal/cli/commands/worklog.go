@@ -24,6 +24,7 @@ type WorklogParams struct {
 // WorklogEntry represents a single worklog to be posted.
 type WorklogEntry struct {
 	TaskKey     string
+	Provider    string
 	Duration    time.Duration
 	Description string
 	Started     time.Time
@@ -148,6 +149,7 @@ func RunWorklog(ctx context.Context, p WorklogParams) (*WorklogResult, error) {
 
 			entries = append(entries, WorklogEntry{
 				TaskKey:     taskKey,
+				Provider:    fe.Provider,
 				Duration:    dur,
 				Description: fe.Summary,
 				Started:     fe.Start,
@@ -232,8 +234,14 @@ func RunWorklog(ctx context.Context, p WorklogParams) (*WorklogResult, error) {
 
 	// Post worklogs
 	for _, e := range entries {
-		if err := p.Jira.PostWorklog(ctx, e.TaskKey, e.Duration, e.Description, e.Started); err != nil {
-			fmt.Fprintf(p.W, "  Failed to post %s: %v\n", e.TaskKey, err)
+		var postErr error
+		if multi, ok := p.Jira.(*MultiTaskSource); ok && e.Provider != "" {
+			postErr = multi.PostWorklogOn(ctx, e.TaskKey, e.Duration, e.Description, e.Started, e.Provider)
+		} else {
+			postErr = p.Jira.PostWorklog(ctx, e.TaskKey, e.Duration, e.Description, e.Started)
+		}
+		if postErr != nil {
+			fmt.Fprintf(p.W, "  Failed to post %s: %v\n", e.TaskKey, postErr)
 			result.Errors++
 			continue
 		}

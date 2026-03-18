@@ -10,6 +10,7 @@ import (
 // EditTaskParams holds all parameters for editing a task from the TUI.
 type EditTaskParams struct {
 	TaskKey   string
+	Provider  string
 	Summary   string
 	Estimate  string
 	Due       string
@@ -52,6 +53,7 @@ type Callbacks struct {
 	AbortTimer   func() (taskKey string, err error)
 	ListProjects func(provider string) ([]string, error)
 	ListSections func(provider, project string) ([]string, error)
+	ListLanes    func(provider, project string) ([]string, error)
 	ListEpics    func(project string) ([]msg.EpicOption, error)
 	GetParent    func(taskKey string) (string, error)
 	Provider     func() string
@@ -60,9 +62,9 @@ type Callbacks struct {
 	ViewTask       func(taskKey string) (*msg.ViewResult, error)
 	LoadReport     func(days int) (*msg.ReportResult, error)
 	LoadWorklogs   func(weekView bool, date time.Time) ([]msg.WorklogEntry, error)
-	UpdateWorklog  func(issueKey, worklogID string, timeSpent time.Duration, description string, started time.Time) error
-	DeleteWorklog  func(issueKey, worklogID string) error
-	AddWorklog     func(issueKey string, timeSpent time.Duration, description string, started time.Time) error
+	UpdateWorklog  func(issueKey, worklogID, provider string, timeSpent time.Duration, description string, started time.Time) error
+	DeleteWorklog  func(issueKey, worklogID, provider string) error
+	AddWorklog     func(issueKey, provider string, timeSpent time.Duration, description string, started time.Time) error
 	FallbackIssues func() []FallbackIssue
 }
 
@@ -214,7 +216,7 @@ func loadFormOptionsCmd(cb Callbacks) tea.Cmd {
 			}
 		}
 		var epics []msg.EpicOption
-		if cb.ListEpics != nil && provider == "jira" {
+		if cb.ListEpics != nil && (provider == "jira" || provider == "kendo") {
 			project := ""
 			if len(projects) > 0 {
 				project = projects[0]
@@ -226,7 +228,18 @@ func loadFormOptionsCmd(cb Callbacks) tea.Cmd {
 				epics = []msg.EpicOption{}
 			}
 		}
-		return msg.FormOptionsMsg{Projects: projects, Sections: sections, Provider: provider, Providers: providers, Epics: epics}
+		var lanes []string
+		if cb.ListLanes != nil {
+			project := ""
+			if len(projects) > 0 {
+				project = projects[0]
+			}
+			l, err := cb.ListLanes(provider, project)
+			if err == nil {
+				lanes = l
+			}
+		}
+		return msg.FormOptionsMsg{Projects: projects, Sections: sections, Lanes: lanes, Provider: provider, Providers: providers, Epics: epics}
 	}
 }
 
@@ -283,6 +296,16 @@ func loadSectionsCmd(cb Callbacks, provider, project string) tea.Cmd {
 	}
 }
 
+func loadLanesCmd(cb Callbacks, provider, project string) tea.Cmd {
+	return func() tea.Msg {
+		if cb.ListLanes == nil {
+			return msg.LanesLoadedMsg{}
+		}
+		lanes, err := cb.ListLanes(provider, project)
+		return msg.LanesLoadedMsg{Lanes: lanes, Err: err}
+	}
+}
+
 func loadEpicsCmd(cb Callbacks, project string) tea.Cmd {
 	return func() tea.Msg {
 		if cb.ListEpics == nil {
@@ -321,23 +344,23 @@ func loadWorklogsCmd(cb Callbacks, weekView bool, date time.Time) tea.Cmd {
 	}
 }
 
-func updateWorklogCmd(cb Callbacks, issueKey, worklogID string, timeSpent time.Duration, description string, started time.Time) tea.Cmd {
+func updateWorklogCmd(cb Callbacks, issueKey, worklogID, provider string, timeSpent time.Duration, description string, started time.Time) tea.Cmd {
 	return func() tea.Msg {
-		err := cb.UpdateWorklog(issueKey, worklogID, timeSpent, description, started)
+		err := cb.UpdateWorklog(issueKey, worklogID, provider, timeSpent, description, started)
 		return msg.WorklogUpdatedMsg{Err: err}
 	}
 }
 
-func deleteWorklogCmd(cb Callbacks, issueKey, worklogID string) tea.Cmd {
+func deleteWorklogCmd(cb Callbacks, issueKey, worklogID, provider string) tea.Cmd {
 	return func() tea.Msg {
-		err := cb.DeleteWorklog(issueKey, worklogID)
+		err := cb.DeleteWorklog(issueKey, worklogID, provider)
 		return msg.WorklogDeletedMsg{Err: err}
 	}
 }
 
-func addWorklogCmd(cb Callbacks, issueKey string, timeSpent time.Duration, description string, started time.Time) tea.Cmd {
+func addWorklogCmd(cb Callbacks, issueKey, provider string, timeSpent time.Duration, description string, started time.Time) tea.Cmd {
 	return func() tea.Msg {
-		err := cb.AddWorklog(issueKey, timeSpent, description, started)
+		err := cb.AddWorklog(issueKey, provider, timeSpent, description, started)
 		return msg.WorklogAddedMsg{Err: err}
 	}
 }

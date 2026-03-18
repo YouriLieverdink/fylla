@@ -69,6 +69,7 @@ type Form struct {
 	togIdx   []int // maps field index → toggles slice index (-1 if not toggle)
 	Focus    int
 	Active   bool
+	Error    string
 }
 
 // NewForm creates a new form with the given title and field definitions.
@@ -368,7 +369,13 @@ func (f Form) View(width, height int) string {
 
 	var b strings.Builder
 	b.WriteString(formTitleStyle.Render(f.Title))
-	b.WriteString("\n\n")
+	b.WriteString("\n")
+	if f.Error != "" {
+		errStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))
+		b.WriteString(errStyle.Render(f.Error))
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
 
 	for i := range f.kinds {
 		label := formLabelStyle.Render(f.Labels[i] + ":")

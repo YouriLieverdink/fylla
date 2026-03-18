@@ -847,6 +847,7 @@ func (c *Client) GetParent(ctx context.Context, issueKey string) (string, error)
 type WorklogEntry struct {
 	ID           string
 	IssueKey     string
+	Provider     string
 	IssueSummary string
 	Description  string
 	Started      time.Time
@@ -958,6 +959,7 @@ func (c *Client) fetchIssueWorklogs(ctx context.Context, issueKey, issueSummary 
 		entries = append(entries, WorklogEntry{
 			ID:           wl.ID,
 			IssueKey:     issueKey,
+			Provider:     "jira",
 			IssueSummary: issueSummary,
 			Description:  extractADFText(wl.Comment),
 			Started:      started,

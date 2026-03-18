@@ -121,6 +121,7 @@ type ClearToastMsg struct{}
 type FormOptionsMsg struct {
 	Projects  []string
 	Sections  []string
+	Lanes     []string // lane names (Kendo issue type / board column)
 	Provider  string   // primary provider name (e.g. "jira", "todoist")
 	Providers []string // all active provider names
 	Epics     []EpicOption
@@ -162,6 +163,12 @@ type ProjectsLoadedMsg struct {
 type SectionsLoadedMsg struct {
 	Sections []string
 	Err      error
+}
+
+// LanesLoadedMsg carries the result of loading lanes for a specific project.
+type LanesLoadedMsg struct {
+	Lanes []string
+	Err   error
 }
 
 // WorklogsLoadedMsg carries the result of loading worklogs.

@@ -105,10 +105,12 @@ type model struct {
 	confirmKey   string
 	form         components.Form
 	picker       components.Picker
-	formKind      formKind
-	formTaskKey     string
-	formWorklogID   string
-	formWorklogKey  string
+	formKind         formKind
+	formTaskKey      string
+	formTaskProvider string
+	formWorklogID       string
+	formWorklogKey      string
+	formWorklogProvider string
 	formOptions      *msg.FormOptionsMsg
 	pickerFieldLabel string
 	pendingEdit      *pendingEditData
@@ -400,8 +402,15 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 	case msg.TaskAddedMsg:
 		m.saving = ""
 		if mssg.Err != nil {
+			if m.formKind == formAddTask {
+				m.form.Error = fmt.Sprintf("Add error: %v", mssg.Err)
+				return m, nil
+			}
 			m.setToast(fmt.Sprintf("Add error: %v", mssg.Err), true)
 		} else {
+			m.form.Active = false
+			m.formKind = formNone
+			m.formOptions = nil
 			m.setToast(fmt.Sprintf("Added %s: %s", mssg.Key, mssg.Summary), false)
 			cmds = append(cmds, m.refreshActiveView())
 		}
@@ -411,8 +420,15 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 	case msg.TaskEditedMsg:
 		m.saving = ""
 		if mssg.Err != nil {
+			if m.formKind == formEditTask {
+				m.form.Error = fmt.Sprintf("Edit error: %v", mssg.Err)
+				return m, nil
+			}
 			m.setToast(fmt.Sprintf("Edit error: %v", mssg.Err), true)
 		} else {
+			m.form.Active = false
+			m.formKind = formNone
+			m.pendingEdit = nil
 			m.setToast(fmt.Sprintf("Edited %s", mssg.TaskKey), false)
 			cmds = append(cmds, m.refreshActiveView())
 		}
@@ -602,6 +618,21 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case msg.LanesLoadedMsg:
+		if m.form.Active && (m.formKind == formAddTask || m.formKind == formEditTask) {
+			if len(mssg.Lanes) > 0 {
+				current := m.form.ValueByLabel("Issue Type")
+				if current == "" {
+					current = mssg.Lanes[0]
+				}
+				m.form.UpdateSelectByLabel("Issue Type", mssg.Lanes, current)
+			}
+			if m.formOptions != nil {
+				m.formOptions.Lanes = mssg.Lanes
+			}
+		}
+		return m, nil
+
 	case msg.EpicsLoadedMsg:
 		if m.form.Active && (m.formKind == formAddTask || m.formKind == formEditTask) {
 			epicOptions := []string{"None"}
@@ -706,6 +737,7 @@ func (m model) updateTimeline(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			})
 			m.formKind = formSnoozeTask
 			m.formTaskKey = e.TaskKey
+			m.formTaskProvider = e.Provider
 		}
 	case key.Matches(mssg, keys.ViewTask):
 		if e := m.timeline.SelectedEvent(); e != nil && !e.IsCalendarEvent && e.TaskKey != "" {
@@ -758,6 +790,7 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if t := m.tasks.SelectedTask(); t != nil {
 			ed := buildPendingEditData(t)
 			m.formTaskKey = t.Key
+			m.formTaskProvider = t.Provider
 			m.pendingEdit = &ed
 			m.formKind = formEditTaskPending
 			return m, loadEditFormOptionsCmd(m.cb, t.Project, t.Key)
@@ -825,7 +858,7 @@ func (m model) updateConfirm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, abortTimerCmd(m.cb)
 			case confirmDeleteWorklog:
 				m.confirmType = confirmNone
-				return m, deleteWorklogCmd(m.cb, m.formWorklogKey, m.confirmKey)
+				return m, deleteWorklogCmd(m.cb, m.formWorklogKey, m.confirmKey, m.formWorklogProvider)
 			}
 		}
 		m.confirmType = confirmNone
@@ -896,6 +929,7 @@ func (m model) updateWorklog(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.formKind = formEditWorklog
 			m.formWorklogID = e.ID
 			m.formWorklogKey = e.IssueKey
+			m.formWorklogProvider = e.Provider
 		}
 	case key.Matches(mssg, keys.Delete):
 		if e := m.worklog.SelectedEntry(); e != nil {
@@ -903,6 +937,7 @@ func (m model) updateWorklog(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.confirmType = confirmDeleteWorklog
 			m.confirmKey = e.ID
 			m.formWorklogKey = e.IssueKey
+			m.formWorklogProvider = e.Provider
 		}
 	case key.Matches(mssg, keys.Report):
 		return m, loadReportCmd(m.cb, 1)
@@ -995,8 +1030,6 @@ func (m model) updateSchedule(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-const pickerThreshold = 5
-
 func (m *model) openTaskPicker(tasks []msg.ScoredTask, returnKind formKind) {
 	var items []components.PickerItem
 	if returnKind == formStopTimer || returnKind == formAddWorklog {
@@ -1081,6 +1114,11 @@ func (m model) updatePicker(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.saving != "" {
+		return m, nil
+	}
+	m.form.Error = ""
+
 	// "/" on Issue Key field opens the task picker
 	if (m.formKind == formAddWorklog || m.formKind == formStopTimer) && m.form.FocusedLabel() == "Issue Key" && key.Matches(mssg, keys.Search) {
 		returnKind := formAddWorklog
@@ -1100,7 +1138,7 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// "/" on any select field with many options opens the picker
-	if key.Matches(mssg, keys.Search) && m.form.IsSelectField() && m.form.FocusedSelectOptionCount() > pickerThreshold {
+	if key.Matches(mssg, keys.Search) && m.form.IsSelectField() {
 		m.openPickerForSelect()
 		return m, nil
 	}
@@ -1129,7 +1167,11 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if provider == "" && m.formOptions != nil {
 					provider = m.formOptions.Provider
 				}
-				return m, tea.Batch(loadEpicsCmd(m.cb, project), loadSectionsCmd(m.cb, provider, project))
+				cmds := []tea.Cmd{loadEpicsCmd(m.cb, project), loadSectionsCmd(m.cb, provider, project)}
+				if provider == "kendo" {
+					cmds = append(cmds, loadLanesCmd(m.cb, provider, project))
+				}
+				return m, tea.Batch(cmds...)
 			}
 			return m, nil
 		}
@@ -1155,7 +1197,11 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if provider == "" && m.formOptions != nil {
 					provider = m.formOptions.Provider
 				}
-				return m, tea.Batch(loadEpicsCmd(m.cb, project), loadSectionsCmd(m.cb, provider, project))
+				cmds := []tea.Cmd{loadEpicsCmd(m.cb, project), loadSectionsCmd(m.cb, provider, project)}
+				if provider == "kendo" {
+					cmds = append(cmds, loadLanesCmd(m.cb, provider, project))
+				}
+				return m, tea.Batch(cmds...)
 			}
 			return m, nil
 		}
@@ -1181,12 +1227,12 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case key.Matches(mssg, keys.Enter):
-		m.form.Active = false
 		vals := m.form.Values()
 		switch m.formKind {
 		case formAddTask:
 			summary := m.form.ValueByLabel("Summary")
 			if summary == "" {
+				m.form.Active = false
 				m.formKind = formNone
 				return m, nil
 			}
@@ -1216,8 +1262,6 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if section == "None" {
 				section = ""
 			}
-			m.formKind = formNone
-			m.formOptions = nil
 			m.saving = "Adding task"
 			return m, addTaskCmd(m.cb, provider, summary,
 				m.form.ValueByLabel("Project"), section,
@@ -1229,7 +1273,6 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				parent,
 			)
 		case formEditTask:
-			m.formKind = formNone
 			upNextVal := m.form.ValueByLabel("Up Next")
 			var upNext *bool
 			if upNextVal == "true" {
@@ -1270,10 +1313,10 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if priority == "None" {
 				priority = ""
 			}
-			m.pendingEdit = nil
 			m.saving = "Saving task"
 			return m, editTaskCmd(m.cb, EditTaskParams{
 				TaskKey:      m.formTaskKey,
+				Provider:     m.formTaskProvider,
 				Summary:      m.form.ValueByLabel("Summary"),
 				Estimate:     m.form.ValueByLabel("Estimate"),
 				Due:          m.form.ValueByLabel("Due Date"),
@@ -1293,9 +1336,11 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case formSnoozeTask:
 			duration := m.form.ValueByLabel("Duration")
 			if duration == "" {
+				m.form.Active = false
 				m.formKind = formNone
 				return m, nil
 			}
+			m.form.Active = false
 			m.formKind = formNone
 			m.saving = "Snoozing task"
 			return m, snoozeTaskCmd(m.cb, m.formTaskKey, duration)
@@ -1303,6 +1348,7 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			comment := m.form.ValueByLabel("Comment")
 			done := m.form.ValueByLabel("Mark done") == "true"
 			fallbackIssue := extractIssueKey(m.form.ValueByLabel("Issue Key"))
+			m.form.Active = false
 			m.formKind = formNone
 			m.saving = "Stopping timer"
 			return m, stopTimerCmd(m.cb, comment, done, fallbackIssue)
@@ -1312,38 +1358,45 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			description := m.form.ValueByLabel("Description")
 			startedStr := m.form.ValueByLabel("Started")
 			if issueKey == "" || durationStr == "" {
+				m.form.Active = false
 				m.formKind = formNone
 				return m, nil
 			}
 			dur := parseDurationInput(durationStr)
 			started := parseStartedInput(startedStr, m.worklog.Date)
+			m.form.Active = false
 			m.formKind = formNone
 			m.saving = "Adding worklog"
-			return m, addWorklogCmd(m.cb, issueKey, dur, description, started)
+			return m, addWorklogCmd(m.cb, issueKey, "", dur, description, started)
 		case formEditWorklog:
 			durationStr := m.form.ValueByLabel("Duration")
 			description := m.form.ValueByLabel("Description")
 			startedStr := m.form.ValueByLabel("Started")
 			if durationStr == "" {
+				m.form.Active = false
 				m.formKind = formNone
 				return m, nil
 			}
 			dur := parseDurationInput(durationStr)
 			started := parseStartedInput(startedStr, m.worklog.Date)
+			m.form.Active = false
 			m.formKind = formNone
 			m.saving = "Updating worklog"
-			return m, updateWorklogCmd(m.cb, m.formWorklogKey, m.formWorklogID, dur, description, started)
+			return m, updateWorklogCmd(m.cb, m.formWorklogKey, m.formWorklogID, m.formWorklogProvider, dur, description, started)
 		case formSetConfig:
 			cfgKey := vals[0]
 			cfgVal := vals[1]
 			if cfgKey == "" {
+				m.form.Active = false
 				m.formKind = formNone
 				return m, nil
 			}
+			m.form.Active = false
 			m.formKind = formNone
 			m.saving = "Saving config"
 			return m, setConfigCmd(m.cb, cfgKey, cfgVal)
 		}
+		m.form.Active = false
 		m.formKind = formNone
 		return m, nil
 	default:
@@ -1759,8 +1812,15 @@ func buildAddForm(provider string, opts *msg.FormOptionsMsg) components.Form {
 			Label: "Issue Type", Kind: components.FieldSelect,
 			Options: []string{"Task", "Bug", "Story", "Epic"}, Value: "Task",
 		})
+	} else if provider == "kendo" {
+		if len(opts.Lanes) > 0 {
+			fields = append(fields, components.FormFieldDef{
+				Label: "Issue Type", Kind: components.FieldSelect,
+				Options: opts.Lanes, Value: opts.Lanes[0],
+			})
+		}
 	}
-	if provider != "jira" && provider != "github" {
+	if provider != "jira" && provider != "kendo" && provider != "github" {
 		if len(opts.Sections) > 0 {
 			sectionOptions := append([]string{"None"}, opts.Sections...)
 			fields = append(fields, components.FormFieldDef{
@@ -1777,7 +1837,7 @@ func buildAddForm(provider string, opts *msg.FormOptionsMsg) components.Form {
 		components.FormFieldDef{Label: "Due Date", Placeholder: "e.g. YYYY-MM-DD"},
 		components.FormFieldDef{Label: "Priority", Kind: components.FieldSelect, Options: []string{"Highest", "High", "Medium", "Low", "Lowest"}, Value: "Medium"},
 	)
-	if provider == "jira" {
+	if provider == "jira" || provider == "kendo" {
 		epicOptions := []string{"None"}
 		for _, e := range opts.Epics {
 			epicOptions = append(epicOptions, e.Label)
@@ -1819,8 +1879,11 @@ func (m *model) rebuildAddFormForProvider() tea.Cmd {
 	m.form.FocusByLabel("Provider")
 	var cmds []tea.Cmd
 	cmds = append(cmds, loadProjectsCmd(m.cb, newProvider))
-	if newProvider == "jira" {
+	if newProvider == "jira" || newProvider == "kendo" {
 		cmds = append(cmds, loadEpicsCmd(m.cb, m.form.ValueByLabel("Project")))
+	}
+	if newProvider == "kendo" {
+		cmds = append(cmds, loadLanesCmd(m.cb, newProvider, m.form.ValueByLabel("Project")))
 	}
 	cmds = append(cmds, loadSectionsCmd(m.cb, newProvider, m.form.ValueByLabel("Project")))
 	return tea.Batch(cmds...)

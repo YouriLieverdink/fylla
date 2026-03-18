@@ -79,6 +79,11 @@ type EpicLister interface {
 	ListEpics(ctx context.Context, project string) ([]jira.Epic, error)
 }
 
+// LaneLister lists lane names from a provider, optionally scoped to a project.
+type LaneLister interface {
+	ListLanes(ctx context.Context, project string) ([]string, error)
+}
+
 // ParentUpdater updates the parent of a task.
 type ParentUpdater interface {
 	UpdateParent(ctx context.Context, issueKey, parentKey string) error
@@ -190,6 +195,11 @@ func (m *MultiTaskSource) CreateTaskOn(ctx context.Context, provider string, inp
 	return "", fmt.Errorf("unknown provider %q", provider)
 }
 
+// CompleteTaskOn completes a task using an explicit provider name.
+func (m *MultiTaskSource) CompleteTaskOn(ctx context.Context, taskKey, provider string) error {
+	return m.routeToWithProvider(taskKey, provider).CompleteTask(ctx, taskKey)
+}
+
 func (m *MultiTaskSource) CompleteTask(ctx context.Context, taskKey string) error {
 	return m.routeTo(taskKey).CompleteTask(ctx, taskKey)
 }
@@ -198,8 +208,18 @@ func (m *MultiTaskSource) DeleteTask(ctx context.Context, taskKey string) error 
 	return m.routeTo(taskKey).DeleteTask(ctx, taskKey)
 }
 
+// PostWorklogOn posts a worklog using an explicit provider name.
+func (m *MultiTaskSource) PostWorklogOn(ctx context.Context, issueKey string, timeSpent time.Duration, description string, started time.Time, provider string) error {
+	return m.routeToWithProvider(issueKey, provider).PostWorklog(ctx, issueKey, timeSpent, description, started)
+}
+
 func (m *MultiTaskSource) PostWorklog(ctx context.Context, issueKey string, timeSpent time.Duration, description string, started time.Time) error {
 	return m.routeTo(issueKey).PostWorklog(ctx, issueKey, timeSpent, description, started)
+}
+
+// GetEstimateOn fetches the estimate using an explicit provider name.
+func (m *MultiTaskSource) GetEstimateOn(ctx context.Context, issueKey, provider string) (time.Duration, error) {
+	return m.routeToWithProvider(issueKey, provider).GetEstimate(ctx, issueKey)
 }
 
 func (m *MultiTaskSource) GetEstimate(ctx context.Context, issueKey string) (time.Duration, error) {
