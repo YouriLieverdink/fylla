@@ -339,6 +339,8 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.timer.Err = mssg.Err
 		}
+		m.worklog.TimerRunning = m.timerRunning
+		m.worklog.TimerElapsed = m.timerElapsed
 		if m.timerRunning {
 			m.tickGen++
 			cmds = append(cmds, timerTickCmd(m.tickGen))
@@ -349,6 +351,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.timerRunning && mssg.Gen == m.tickGen {
 			m.timerElapsed += time.Second
 			m.timer.Elapsed = m.timerElapsed
+			m.worklog.TimerElapsed = m.timerElapsed
 			cmds = append(cmds, timerTickCmd(m.tickGen))
 		}
 		return m, tea.Batch(cmds...)
@@ -367,6 +370,8 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.timer.Section = mssg.Section
 			m.timer.Elapsed = 0
 			m.timer.Running = true
+			m.worklog.TimerRunning = true
+			m.worklog.TimerElapsed = 0
 			label := mssg.Summary
 			if label == "" {
 				label = mssg.TaskKey
@@ -488,6 +493,8 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.timer.Project = ""
 			m.timer.Section = ""
 			m.timer.Elapsed = 0
+			m.worklog.TimerRunning = false
+			m.worklog.TimerElapsed = 0
 			m.setToast(fmt.Sprintf("Timer stopped for %s", stoppedLabel), false)
 		}
 		cmds = append(cmds, clearToastCmd())
@@ -511,6 +518,8 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.timer.Project = ""
 			m.timer.Section = ""
 			m.timer.Elapsed = 0
+			m.worklog.TimerRunning = false
+			m.worklog.TimerElapsed = 0
 			m.setToast(fmt.Sprintf("Timer aborted for %s", stoppedLabel), false)
 		}
 		cmds = append(cmds, clearToastCmd())

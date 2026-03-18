@@ -24,6 +24,8 @@ type Model struct {
 	DailyHours       float64
 	WeeklyHours      float64
 	EfficiencyTarget float64
+	TimerRunning     bool
+	TimerElapsed     time.Duration
 }
 
 // New creates a new worklog model.
@@ -161,11 +163,15 @@ func (m Model) View() string {
 		}
 	}
 	total := totalTime(sorted)
+	effTotal := total
+	if m.TimerRunning && m.timerAppliesToView() {
+		effTotal += m.TimerElapsed
+	}
 	title := fmt.Sprintf("Worklogs — %s (%d entries, %s)", viewLabel, len(sorted), styles.FormatDuration(total))
 	b.WriteString(styles.HeaderFmt.Render(title))
 	b.WriteString("\n")
 
-	if line := m.efficiencyLine(total); line != "" {
+	if line := m.efficiencyLine(effTotal); line != "" {
 		b.WriteString(line)
 	}
 	b.WriteString("\n")
@@ -183,6 +189,16 @@ func (m Model) View() string {
 	b.WriteString(styles.HintStyle.Render("  " + hints))
 
 	return b.String()
+}
+
+func (m Model) timerAppliesToView() bool {
+	if !m.WeekView {
+		return m.IsToday()
+	}
+	t := today()
+	weekStart := m.Date.AddDate(0, 0, -int(m.Date.Weekday()-time.Monday+7)%7)
+	weekEnd := weekStart.AddDate(0, 0, 7)
+	return !t.Before(weekStart) && t.Before(weekEnd)
 }
 
 func (m Model) dailyTarget() time.Duration {
@@ -314,13 +330,18 @@ func (m Model) renderWeekView(b *strings.Builder, sorted []msg.WorklogEntry) {
 	flatIdx := 0
 	entryToFlat := make(map[int]int) // sorted index -> flat index
 
+	todayStr := today().Format("2006-01-02")
 	for _, day := range dayOrder {
 		g := groups[day]
 		t, _ := time.Parse("2006-01-02", g.date)
 		dayTotal := totalTime(g.entries)
+		dayEffTotal := dayTotal
+		if m.TimerRunning && day == todayStr {
+			dayEffTotal += m.TimerElapsed
+		}
 		header := fmt.Sprintf("%s  %s", t.Format("Mon Jan 2"), styles.FormatDuration(dayTotal))
 		if dt := m.dailyTarget(); dt > 0 {
-			header += "  " + m.formatEfficiency(dayTotal, dt)
+			header += "  " + m.formatEfficiency(dayEffTotal, dt)
 		}
 		lines = append(lines, displayLine{entryIdx: -1, header: header})
 		for _, e := range g.entries {
