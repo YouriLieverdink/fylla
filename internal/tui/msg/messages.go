@@ -45,9 +45,15 @@ type TimerStatusMsg struct {
 	Summary string
 	Project string
 	Section string
+	Comment string
 	Elapsed time.Duration
 	Running bool
 	Err     error
+}
+
+// TimerCommentSavedMsg is sent after saving a comment to the running timer.
+type TimerCommentSavedMsg struct {
+	Err error
 }
 
 // TimerStartedMsg is sent after starting a timer.

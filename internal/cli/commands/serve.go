@@ -141,17 +141,17 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			_, err = RunStart(StartParams{TaskKey: taskKey, Project: project, Section: section, TimerPath: path, Now: time.Now()})
 			return err
 		},
-		TimerStatus: func() (string, string, string, string, time.Duration, bool, error) {
+		TimerStatus: func() (string, string, string, string, string, time.Duration, bool, error) {
 			path, err := timer.DefaultPath()
 			if err != nil {
-				return "", "", "", "", 0, false, err
+				return "", "", "", "", "", 0, false, err
 			}
 			result, err := RunStatus(StatusParams{TimerPath: path, Now: time.Now()})
 			if err != nil {
-				return "", "", "", "", 0, false, err
+				return "", "", "", "", "", 0, false, err
 			}
 			if result == nil {
-				return "", "", "", "", 0, false, nil
+				return "", "", "", "", "", 0, false, nil
 			}
 			summary, _ := source.GetSummary(ctx, result.TaskKey)
 			project, section := result.Project, result.Section
@@ -166,7 +166,14 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 					}
 				}
 			}
-			return result.TaskKey, summary, project, section, result.Elapsed, true, nil
+			return result.TaskKey, summary, project, section, result.Comment, result.Elapsed, true, nil
+		},
+		SaveTimerComment: func(comment string) error {
+			path, err := timer.DefaultPath()
+			if err != nil {
+				return err
+			}
+			return timer.SetComment(comment, path)
 		},
 		SyncPreview: func() (*msg.SyncResult, error) {
 			now := time.Now()

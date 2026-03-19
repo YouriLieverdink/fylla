@@ -272,6 +272,69 @@ func TestTIMER005_TimeRoundedToNearest5Minutes(t *testing.T) {
 	})
 }
 
+func TestSetComment(t *testing.T) {
+	t.Run("set comment persists", func(t *testing.T) {
+		path := tmpPath(t)
+		now := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
+
+		if _, err := Start("PROJ-123", "", "", "", now, path); err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+		if err := SetComment("working on X", path); err != nil {
+			t.Fatalf("SetComment: %v", err)
+		}
+		loaded, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if loaded.Comment != "working on X" {
+			t.Errorf("Comment = %q, want %q", loaded.Comment, "working on X")
+		}
+	})
+
+	t.Run("error when no timer running", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "timer.json")
+		err := SetComment("some comment", path)
+		if err == nil {
+			t.Error("expected error when no timer running")
+		}
+	})
+}
+
+func TestStop_IncludesComment(t *testing.T) {
+	path := tmpPath(t)
+	start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
+
+	if _, err := Start("PROJ-123", "", "", "", start, path); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := SetComment("did stuff", path); err != nil {
+		t.Fatalf("SetComment: %v", err)
+	}
+	result, err := Stop(start.Add(10*time.Minute), 5, path)
+	if err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if result.Comment != "did stuff" {
+		t.Errorf("Comment = %q, want %q", result.Comment, "did stuff")
+	}
+}
+
+func TestBackwardCompat_NoCommentField(t *testing.T) {
+	path := tmpPath(t)
+	data := []byte(`{"taskKey":"PROJ-1","startTime":"2025-06-15T10:00:00Z"}`)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.Comment != "" {
+		t.Errorf("Comment = %q, want empty", loaded.Comment)
+	}
+}
+
 func TestTIMER006_StatusShowsRunningTaskAndElapsed(t *testing.T) {
 	t.Run("shows task key and elapsed time", func(t *testing.T) {
 		path := tmpPath(t)

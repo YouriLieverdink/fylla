@@ -66,7 +66,8 @@ const (
 	formAddWorklog
 	formAddWorklogPending // waiting for tasks to load for picker
 	formEditWorklog
-	formMoveTaskPending // waiting for transitions to load
+	formMoveTaskPending  // waiting for transitions to load
+	formTimerComment
 )
 
 type pendingEditData struct {
@@ -94,6 +95,7 @@ type model struct {
 	config       *configView.Model
 	timerKey     string
 	timerSummary string
+	timerComment string
 	timerElapsed time.Duration
 	timerRunning bool
 	tickGen      int
@@ -327,6 +329,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		if mssg.Err == nil {
 			m.timerKey = mssg.TaskKey
 			m.timerSummary = mssg.Summary
+			m.timerComment = mssg.Comment
 			m.timerElapsed = mssg.Elapsed
 			m.timerRunning = mssg.Running
 			m.timer.TaskKey = mssg.TaskKey
@@ -486,6 +489,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.timerRunning = false
 			m.timerKey = ""
 			m.timerSummary = ""
+			m.timerComment = ""
 			m.timerElapsed = 0
 			m.timer.Running = false
 			m.timer.TaskKey = ""
@@ -496,6 +500,16 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.worklog.TimerRunning = false
 			m.worklog.TimerElapsed = 0
 			m.setToast(fmt.Sprintf("Timer stopped for %s", stoppedLabel), false)
+		}
+		cmds = append(cmds, clearToastCmd())
+		return m, tea.Batch(cmds...)
+
+	case msg.TimerCommentSavedMsg:
+		m.saving = ""
+		if mssg.Err != nil {
+			m.setToast(fmt.Sprintf("Comment error: %v", mssg.Err), true)
+		} else {
+			m.setToast("Comment saved", false)
 		}
 		cmds = append(cmds, clearToastCmd())
 		return m, tea.Batch(cmds...)
@@ -1013,10 +1027,19 @@ func (m model) updateTimer(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(mssg, keys.Refresh):
 		m.timer.Loading = true
 		return m, timerStatusCmd(m.cb)
+	case key.Matches(mssg, keys.Comment):
+		if m.timerRunning {
+			fields := []components.FormFieldDef{
+				{Label: "Comment", Placeholder: "What are you working on?", Value: m.timerComment},
+			}
+			m.form = components.NewForm("Timer Comment", fields)
+			m.formKind = formTimerComment
+			return m, nil
+		}
 	case key.Matches(mssg, keys.Stop):
 		if m.timerRunning {
 			fields := []components.FormFieldDef{
-				{Label: "Comment", Placeholder: "What did you work on?"},
+				{Label: "Comment", Placeholder: "What did you work on?", Value: m.timerComment},
 				{Label: "Mark done", Kind: components.FieldToggle},
 			}
 			if needsWorklogIssue(m.timerKey) {
@@ -1035,6 +1058,13 @@ func (m model) updateTimer(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					}
 					issueField.Kind = components.FieldSelect
 					issueField.Options = options
+				}
+				fields = append([]components.FormFieldDef{issueField}, fields...)
+			} else {
+				issueField := components.FormFieldDef{
+					Label:       "Issue Key",
+					Placeholder: "PROJ-123 (/ to search)",
+					Value:       m.timerKey,
 				}
 				fields = append([]components.FormFieldDef{issueField}, fields...)
 			}
@@ -1391,6 +1421,13 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.formKind = formNone
 			m.saving = "Snoozing task"
 			return m, snoozeTaskCmd(m.cb, m.formTaskKey, duration)
+		case formTimerComment:
+			comment := m.form.ValueByLabel("Comment")
+			m.timerComment = comment
+			m.form.Active = false
+			m.formKind = formNone
+			m.saving = "Saving comment"
+			return m, saveTimerCommentCmd(m.cb, comment)
 		case formStopTimer:
 			comment := m.form.ValueByLabel("Comment")
 			done := m.form.ValueByLabel("Mark done") == "true"

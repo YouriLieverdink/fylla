@@ -67,7 +67,7 @@ func (m Model) View() string {
 	b.WriteString(styles.TimerBig.Render(elapsed))
 	b.WriteString("\n\n")
 
-	hints := "s:stop  x:abort  r:refresh"
+	hints := "s:stop  c:comment  x:abort  r:refresh"
 	b.WriteString(styles.HintStyle.Render("  " + hints))
 
 	return b.String()

@@ -105,6 +105,11 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 		}
 	}
 
+	// Allow overriding the worklog key for Jira tasks via FallbackIssue.
+	if p.FallbackIssue != "" && p.FallbackIssue != sr.TaskKey && isJiraKey(p.FallbackIssue) && isJiraKey(sr.TaskKey) {
+		worklogKey = p.FallbackIssue
+	}
+
 	// Use provider-aware posting when available (e.g. Kendo tasks).
 	if multi, ok := p.Jira.(*MultiTaskSource); ok && worklogProvider != "" {
 		if err := multi.PostWorklogOn(ctx, worklogKey, sr.Rounded, p.Description, sr.StartTime, worklogProvider); err != nil {
@@ -284,16 +289,22 @@ func newStopCmd() *cobra.Command {
 
 			description, _ := cmd.Flags().GetString("description")
 			done, _ := cmd.Flags().GetBool("done")
-			if description == "" {
-				prompt := &survey.Input{Message: "Work description:"}
-				if err := survey.AskOne(prompt, &description); err != nil {
-					return fmt.Errorf("prompt description: %w", err)
-				}
-			}
 
 			timerPath, err := timer.DefaultPath()
 			if err != nil {
 				return fmt.Errorf("timer path: %w", err)
+			}
+
+			if description == "" {
+				// Pre-fill from timer comment if available
+				var defaultDesc string
+				if state, loadErr := timer.Load(timerPath); loadErr == nil && state != nil {
+					defaultDesc = state.Comment
+				}
+				prompt := &survey.Input{Message: "Work description:", Default: defaultDesc}
+				if err := survey.AskOne(prompt, &description); err != nil {
+					return fmt.Errorf("prompt description: %w", err)
+				}
 			}
 
 			// Load calendar client (optional)

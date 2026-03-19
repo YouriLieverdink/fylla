@@ -21,6 +21,7 @@ type StatusResult struct {
 	Project string
 	Section string
 	Elapsed time.Duration
+	Comment string
 }
 
 // RunStatus returns the current timer state, or nil if no timer is running.
@@ -37,6 +38,7 @@ func RunStatus(p StatusParams) (*StatusResult, error) {
 		Project: state.Project,
 		Section: state.Section,
 		Elapsed: elapsed,
+		Comment: state.Comment,
 	}, nil
 }
 

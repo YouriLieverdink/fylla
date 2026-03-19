@@ -42,7 +42,8 @@ type Callbacks struct {
 	DoneTask    func(taskKey, provider string) error
 	DeleteTask  func(taskKey, provider string) error
 	StartTimer  func(taskKey, project, section string) error
-	TimerStatus func() (taskKey, summary, project, section string, elapsed time.Duration, running bool, err error)
+	TimerStatus    func() (taskKey, summary, project, section, comment string, elapsed time.Duration, running bool, err error)
+	SaveTimerComment func(comment string) error
 	SyncPreview func() (*msg.SyncResult, error)
 	SyncApply   func(force bool) (*msg.SyncResult, error)
 	ClearEvents func() (int, error)
@@ -107,16 +108,24 @@ func startTimerCmd(cb Callbacks, taskKey, summary, project, section string) tea.
 
 func timerStatusCmd(cb Callbacks) tea.Cmd {
 	return func() tea.Msg {
-		taskKey, summary, project, section, elapsed, running, err := cb.TimerStatus()
+		taskKey, summary, project, section, comment, elapsed, running, err := cb.TimerStatus()
 		return msg.TimerStatusMsg{
 			TaskKey: taskKey,
 			Summary: summary,
 			Project: project,
 			Section: section,
+			Comment: comment,
 			Elapsed: elapsed,
 			Running: running,
 			Err:     err,
 		}
+	}
+}
+
+func saveTimerCommentCmd(cb Callbacks, comment string) tea.Cmd {
+	return func() tea.Msg {
+		err := cb.SaveTimerComment(comment)
+		return msg.TimerCommentSavedMsg{Err: err}
 	}
 }
 

@@ -36,6 +36,7 @@ type globalKeyMap struct {
 	DateNext   key.Binding
 	GoToday    key.Binding
 	Move       key.Binding
+	Comment    key.Binding
 }
 
 var keys = globalKeyMap{
@@ -72,4 +73,5 @@ var keys = globalKeyMap{
 	DateNext:   key.NewBinding(key.WithKeys("l", "right"), key.WithHelp("l/right", "next date")),
 	GoToday:    key.NewBinding(key.WithKeys("T"), key.WithHelp("T", "go to today")),
 	Move:       key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "move")),
+	Comment:    key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "comment")),
 }

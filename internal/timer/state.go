@@ -16,6 +16,7 @@ type State struct {
 	Project   string    `json:"project,omitempty"`
 	Section   string    `json:"section,omitempty"`
 	Provider  string    `json:"provider,omitempty"`
+	Comment   string    `json:"comment,omitempty"`
 }
 
 // StopResult holds the computed values when a timer is stopped.
@@ -25,6 +26,7 @@ type StopResult struct {
 	StartTime time.Time
 	Elapsed   time.Duration
 	Rounded   time.Duration
+	Comment   string
 }
 
 // DefaultPath returns the default timer state file path (~/.config/fylla/timer.json).
@@ -91,6 +93,7 @@ func Stop(now time.Time, roundMinutes int, path string) (*StopResult, error) {
 		StartTime: s.StartTime,
 		Elapsed:   elapsed,
 		Rounded:   rounded,
+		Comment:   s.Comment,
 	}, nil
 }
 
@@ -139,6 +142,19 @@ func RoundDuration(d time.Duration, roundMinutes int) time.Duration {
 		rounded = unit
 	}
 	return rounded
+}
+
+// SetComment sets the comment on a running timer.
+func SetComment(comment, path string) error {
+	s, err := Load(path)
+	if err != nil {
+		return err
+	}
+	if s == nil {
+		return fmt.Errorf("no timer running")
+	}
+	s.Comment = comment
+	return save(s, path)
 }
 
 func save(s *State, path string) error {

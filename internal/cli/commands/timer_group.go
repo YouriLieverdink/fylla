@@ -13,6 +13,7 @@ func newTimerCmd() *cobra.Command {
 	cmd.AddCommand(newAbortCmd())
 	cmd.AddCommand(newStatusCmd())
 	cmd.AddCommand(newLogCmd())
+	cmd.AddCommand(newCommentCmd())
 
 	return cmd
 }
