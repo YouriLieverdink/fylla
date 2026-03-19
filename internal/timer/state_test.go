@@ -18,15 +18,18 @@ func TestTIMER001_StartTimerStoresTaskKeyAndStartTime(t *testing.T) {
 		path := tmpPath(t)
 		now := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		s, err := Start("PROJ-123", "", "", "", now, path)
-		if err != nil {
+		if err := Start("PROJ-123", "", "", "", now, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
-		if s.TaskKey != "PROJ-123" {
-			t.Errorf("TaskKey = %q, want PROJ-123", s.TaskKey)
+		ss, err := loadStack(path)
+		if err != nil {
+			t.Fatalf("loadStack: %v", err)
 		}
-		if !s.StartTime.Equal(now) {
-			t.Errorf("StartTime = %v, want %v", s.StartTime, now)
+		if ss.Stack[0].TaskKey != "PROJ-123" {
+			t.Errorf("TaskKey = %q, want PROJ-123", ss.Stack[0].TaskKey)
+		}
+		if !ss.Stack[0].StartTime.Equal(now) {
+			t.Errorf("StartTime = %v, want %v", ss.Stack[0].StartTime, now)
 		}
 	})
 
@@ -34,12 +37,15 @@ func TestTIMER001_StartTimerStoresTaskKeyAndStartTime(t *testing.T) {
 		path := tmpPath(t)
 		now := time.Date(2025, 6, 15, 14, 30, 0, 0, time.UTC)
 
-		s, err := Start("ADMIN-42", "", "", "", now, path)
-		if err != nil {
+		if err := Start("ADMIN-42", "", "", "", now, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
-		if s.TaskKey != "ADMIN-42" {
-			t.Errorf("TaskKey = %q, want ADMIN-42", s.TaskKey)
+		ss, err := loadStack(path)
+		if err != nil {
+			t.Fatalf("loadStack: %v", err)
+		}
+		if ss.Stack[0].TaskKey != "ADMIN-42" {
+			t.Errorf("TaskKey = %q, want ADMIN-42", ss.Stack[0].TaskKey)
 		}
 	})
 }
@@ -49,7 +55,7 @@ func TestTIMER002_TimerStatePersisted(t *testing.T) {
 		path := tmpPath(t)
 		now := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if _, err := Start("PROJ-123", "", "", "", now, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", now, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		if _, err := os.Stat(path); err != nil {
@@ -61,7 +67,7 @@ func TestTIMER002_TimerStatePersisted(t *testing.T) {
 		path := tmpPath(t)
 		now := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if _, err := Start("PROJ-123", "", "", "", now, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", now, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 
@@ -73,11 +79,16 @@ func TestTIMER002_TimerStatePersisted(t *testing.T) {
 		if err := json.Unmarshal(data, &raw); err != nil {
 			t.Fatalf("Unmarshal: %v", err)
 		}
-		if raw["taskKey"] != "PROJ-123" {
-			t.Errorf("taskKey = %v, want PROJ-123", raw["taskKey"])
+		stack, ok := raw["stack"].([]interface{})
+		if !ok || len(stack) == 0 {
+			t.Fatal("expected stack array with entries")
 		}
-		if _, ok := raw["startTime"]; !ok {
-			t.Error("startTime field missing from timer.json")
+		entry := stack[0].(map[string]interface{})
+		if entry["taskKey"] != "PROJ-123" {
+			t.Errorf("taskKey = %v, want PROJ-123", entry["taskKey"])
+		}
+		if _, ok := entry["startTime"]; !ok {
+			t.Error("startTime field missing from timer entry")
 		}
 	})
 
@@ -98,28 +109,28 @@ func TestTIMER002_TimerStatePersisted(t *testing.T) {
 		path := tmpPath(t)
 		now := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if _, err := Start("PROJ-123", "", "", "", now, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", now, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
-		loaded, err := Load(path)
+		ss, err := loadStack(path)
 		if err != nil {
-			t.Fatalf("Load: %v", err)
+			t.Fatalf("loadStack: %v", err)
 		}
-		if loaded.TaskKey != "PROJ-123" {
-			t.Errorf("TaskKey = %q, want PROJ-123", loaded.TaskKey)
+		if ss.Stack[0].TaskKey != "PROJ-123" {
+			t.Errorf("TaskKey = %q, want PROJ-123", ss.Stack[0].TaskKey)
 		}
-		if !loaded.StartTime.Equal(now) {
-			t.Errorf("StartTime = %v, want %v", loaded.StartTime, now)
+		if !ss.Stack[0].StartTime.Equal(now) {
+			t.Errorf("StartTime = %v, want %v", ss.Stack[0].StartTime, now)
 		}
 	})
 
 	t.Run("load returns nil when no file exists", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "nonexistent.json")
-		s, err := Load(path)
+		ss, err := loadStack(path)
 		if err != nil {
-			t.Fatalf("Load: %v", err)
+			t.Fatalf("loadStack: %v", err)
 		}
-		if s != nil {
+		if ss != nil {
 			t.Error("expected nil state for missing file")
 		}
 	})
@@ -131,15 +142,16 @@ func TestTIMER003_StopTimerCalculatesElapsed(t *testing.T) {
 		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 		stop := start.Add(5 * time.Minute)
 
-		if _, err := Start("PROJ-123", "", "", "", start, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", start, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
-		result, err := Stop(stop, 5, path)
+		result, err := Stop(stop, path)
 		if err != nil {
 			t.Fatalf("Stop: %v", err)
 		}
-		if result.Elapsed != 5*time.Minute {
-			t.Errorf("Elapsed = %v, want 5m", result.Elapsed)
+		elapsed := result.Segments[0].EndTime.Sub(result.Segments[0].StartTime)
+		if elapsed != 5*time.Minute {
+			t.Errorf("Elapsed = %v, want 5m", elapsed)
 		}
 	})
 
@@ -147,10 +159,10 @@ func TestTIMER003_StopTimerCalculatesElapsed(t *testing.T) {
 		path := tmpPath(t)
 		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if _, err := Start("PROJ-123", "", "", "", start, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", start, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
-		if _, err := Stop(start.Add(10*time.Minute), 5, path); err != nil {
+		if _, err := Stop(start.Add(10*time.Minute), path); err != nil {
 			t.Fatalf("Stop: %v", err)
 		}
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -160,7 +172,7 @@ func TestTIMER003_StopTimerCalculatesElapsed(t *testing.T) {
 
 	t.Run("stop with no timer returns error", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "timer.json")
-		_, err := Stop(time.Now(), 5, path)
+		_, err := Stop(time.Now(), path)
 		if err == nil {
 			t.Error("expected error when no timer running")
 		}
@@ -170,10 +182,10 @@ func TestTIMER003_StopTimerCalculatesElapsed(t *testing.T) {
 		path := tmpPath(t)
 		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if _, err := Start("PROJ-456", "", "", "", start, path); err != nil {
+		if err := Start("PROJ-456", "", "", "", start, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
-		result, err := Stop(start.Add(30*time.Minute), 5, path)
+		result, err := Stop(start.Add(30*time.Minute), path)
 		if err != nil {
 			t.Fatalf("Stop: %v", err)
 		}
@@ -184,46 +196,40 @@ func TestTIMER003_StopTimerCalculatesElapsed(t *testing.T) {
 }
 
 func TestTIMER004_StopPromptForDescription(t *testing.T) {
-	// TIMER-004 requires that the CLI stop command prompts for description
-	// when not provided. The timer package exposes StopResult which the CLI
-	// layer uses to decide whether to prompt. We verify the result contains
-	// the data needed for the CLI to act on.
-
 	t.Run("stop result provides task key for prompt context", func(t *testing.T) {
 		path := tmpPath(t)
 		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if _, err := Start("PROJ-123", "", "", "", start, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", start, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
-		result, err := Stop(start.Add(15*time.Minute), 5, path)
+		result, err := Stop(start.Add(15*time.Minute), path)
 		if err != nil {
 			t.Fatalf("Stop: %v", err)
 		}
 		if result.TaskKey == "" {
 			t.Error("TaskKey should be set so CLI can prompt with context")
 		}
-		if result.Rounded == 0 {
-			t.Error("Rounded duration should be set for worklog submission")
+		if len(result.Segments) == 0 {
+			t.Error("expected at least one segment")
 		}
 	})
 
-	t.Run("stop result has both elapsed and rounded for display", func(t *testing.T) {
+	t.Run("stop result has segment with correct times", func(t *testing.T) {
 		path := tmpPath(t)
 		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if _, err := Start("PROJ-123", "", "", "", start, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", start, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
-		result, err := Stop(start.Add(7*time.Minute), 5, path)
+		result, err := Stop(start.Add(7*time.Minute), path)
 		if err != nil {
 			t.Fatalf("Stop: %v", err)
 		}
-		if result.Elapsed != 7*time.Minute {
-			t.Errorf("Elapsed = %v, want 7m", result.Elapsed)
-		}
-		if result.Rounded != 5*time.Minute {
-			t.Errorf("Rounded = %v, want 5m", result.Rounded)
+		seg := result.Segments[0]
+		elapsed := seg.EndTime.Sub(seg.StartTime)
+		if elapsed != 7*time.Minute {
+			t.Errorf("Elapsed = %v, want 7m", elapsed)
 		}
 	})
 }
@@ -254,22 +260,6 @@ func TestTIMER005_TimeRoundedToNearest5Minutes(t *testing.T) {
 			}
 		})
 	}
-
-	t.Run("rounding configurable via roundMinutes parameter", func(t *testing.T) {
-		path := tmpPath(t)
-		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
-
-		if _, err := Start("PROJ-123", "", "", "", start, path); err != nil {
-			t.Fatalf("Start: %v", err)
-		}
-		result, err := Stop(start.Add(7*time.Minute), 10, path)
-		if err != nil {
-			t.Fatalf("Stop: %v", err)
-		}
-		if result.Rounded != 10*time.Minute {
-			t.Errorf("Rounded = %v, want 10m (10-min rounding)", result.Rounded)
-		}
-	})
 }
 
 func TestSetComment(t *testing.T) {
@@ -277,18 +267,18 @@ func TestSetComment(t *testing.T) {
 		path := tmpPath(t)
 		now := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if _, err := Start("PROJ-123", "", "", "", now, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", now, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		if err := SetComment("working on X", path); err != nil {
 			t.Fatalf("SetComment: %v", err)
 		}
-		loaded, err := Load(path)
+		ss, err := loadStack(path)
 		if err != nil {
-			t.Fatalf("Load: %v", err)
+			t.Fatalf("loadStack: %v", err)
 		}
-		if loaded.Comment != "working on X" {
-			t.Errorf("Comment = %q, want %q", loaded.Comment, "working on X")
+		if ss.Stack[0].Comment != "working on X" {
+			t.Errorf("Comment = %q, want %q", ss.Stack[0].Comment, "working on X")
 		}
 	})
 
@@ -305,33 +295,39 @@ func TestStop_IncludesComment(t *testing.T) {
 	path := tmpPath(t)
 	start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-	if _, err := Start("PROJ-123", "", "", "", start, path); err != nil {
+	if err := Start("PROJ-123", "", "", "", start, path); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	if err := SetComment("did stuff", path); err != nil {
 		t.Fatalf("SetComment: %v", err)
 	}
-	result, err := Stop(start.Add(10*time.Minute), 5, path)
+	result, err := Stop(start.Add(10*time.Minute), path)
 	if err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
-	if result.Comment != "did stuff" {
-		t.Errorf("Comment = %q, want %q", result.Comment, "did stuff")
+	if result.Segments[0].Comment != "did stuff" {
+		t.Errorf("Comment = %q, want %q", result.Segments[0].Comment, "did stuff")
 	}
 }
 
-func TestBackwardCompat_NoCommentField(t *testing.T) {
+func TestBackwardCompat_LegacyFormat(t *testing.T) {
 	path := tmpPath(t)
 	data := []byte(`{"taskKey":"PROJ-1","startTime":"2025-06-15T10:00:00Z"}`)
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	loaded, err := Load(path)
+	ss, err := loadStack(path)
 	if err != nil {
-		t.Fatalf("Load: %v", err)
+		t.Fatalf("loadStack: %v", err)
 	}
-	if loaded.Comment != "" {
-		t.Errorf("Comment = %q, want empty", loaded.Comment)
+	if len(ss.Stack) != 1 {
+		t.Fatalf("expected 1 stack entry, got %d", len(ss.Stack))
+	}
+	if ss.Stack[0].TaskKey != "PROJ-1" {
+		t.Errorf("TaskKey = %q, want PROJ-1", ss.Stack[0].TaskKey)
+	}
+	if ss.Stack[0].Comment != "" {
+		t.Errorf("Comment = %q, want empty", ss.Stack[0].Comment)
 	}
 }
 
@@ -341,35 +337,32 @@ func TestTIMER006_StatusShowsRunningTaskAndElapsed(t *testing.T) {
 		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 		now := start.Add(83 * time.Minute) // 1h 23m
 
-		if _, err := Start("PROJ-123", "", "", "", start, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", start, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
-		state, elapsed, err := Status(now, path)
+		sr, err := Status(now, path)
 		if err != nil {
 			t.Fatalf("Status: %v", err)
 		}
-		if state == nil {
-			t.Fatal("expected non-nil state")
+		if sr == nil {
+			t.Fatal("expected non-nil status")
 		}
-		if state.TaskKey != "PROJ-123" {
-			t.Errorf("TaskKey = %q, want PROJ-123", state.TaskKey)
+		if sr.TaskKey != "PROJ-123" {
+			t.Errorf("TaskKey = %q, want PROJ-123", sr.TaskKey)
 		}
-		if elapsed != 83*time.Minute {
-			t.Errorf("Elapsed = %v, want 1h23m", elapsed)
+		if sr.Elapsed != 83*time.Minute {
+			t.Errorf("Elapsed = %v, want 1h23m", sr.Elapsed)
 		}
 	})
 
-	t.Run("no timer returns nil state", func(t *testing.T) {
+	t.Run("no timer returns nil status", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "timer.json")
-		state, elapsed, err := Status(time.Now(), path)
+		sr, err := Status(time.Now(), path)
 		if err != nil {
 			t.Fatalf("Status: %v", err)
 		}
-		if state != nil {
-			t.Error("expected nil state when no timer running")
-		}
-		if elapsed != 0 {
-			t.Error("expected zero elapsed when no timer running")
+		if sr != nil {
+			t.Error("expected nil status when no timer running")
 		}
 	})
 
@@ -377,18 +370,390 @@ func TestTIMER006_StatusShowsRunningTaskAndElapsed(t *testing.T) {
 		path := tmpPath(t)
 		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if _, err := Start("PROJ-123", "", "", "", start, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", start, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 
-		_, elapsed1, _ := Status(start.Add(5*time.Minute), path)
-		_, elapsed2, _ := Status(start.Add(10*time.Minute), path)
+		sr1, _ := Status(start.Add(5*time.Minute), path)
+		sr2, _ := Status(start.Add(10*time.Minute), path)
 
-		if elapsed1 != 5*time.Minute {
-			t.Errorf("elapsed1 = %v, want 5m", elapsed1)
+		if sr1.Elapsed != 5*time.Minute {
+			t.Errorf("elapsed1 = %v, want 5m", sr1.Elapsed)
 		}
-		if elapsed2 != 10*time.Minute {
-			t.Errorf("elapsed2 = %v, want 10m", elapsed2)
+		if sr2.Elapsed != 10*time.Minute {
+			t.Errorf("elapsed2 = %v, want 10m", sr2.Elapsed)
 		}
 	})
+}
+
+// Stack operation tests
+
+func TestInterrupt_SavesSegmentAndStartsAnonymous(t *testing.T) {
+	path := tmpPath(t)
+	start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
+	interruptTime := start.Add(30 * time.Minute)
+
+	if err := Start("PROJ-123", "MyProject", "", "", start, path); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := SetComment("working on feature", path); err != nil {
+		t.Fatalf("SetComment: %v", err)
+	}
+	if err := Interrupt(interruptTime, path); err != nil {
+		t.Fatalf("Interrupt: %v", err)
+	}
+
+	ss, err := loadStack(path)
+	if err != nil {
+		t.Fatalf("loadStack: %v", err)
+	}
+	if len(ss.Stack) != 2 {
+		t.Fatalf("expected 2 stack entries, got %d", len(ss.Stack))
+	}
+
+	// Active entry should be anonymous with startTime = interruptTime
+	active := ss.Stack[0]
+	if active.TaskKey != "" {
+		t.Errorf("active TaskKey = %q, want empty (anonymous)", active.TaskKey)
+	}
+	if !active.StartTime.Equal(interruptTime) {
+		t.Errorf("active StartTime = %v, want %v", active.StartTime, interruptTime)
+	}
+
+	// Paused entry should have segment and no startTime
+	paused := ss.Stack[1]
+	if paused.TaskKey != "PROJ-123" {
+		t.Errorf("paused TaskKey = %q, want PROJ-123", paused.TaskKey)
+	}
+	if !paused.StartTime.IsZero() {
+		t.Error("paused entry should have zero StartTime")
+	}
+	if len(paused.Segments) != 1 {
+		t.Fatalf("expected 1 segment, got %d", len(paused.Segments))
+	}
+	seg := paused.Segments[0]
+	if !seg.StartTime.Equal(start) {
+		t.Errorf("segment StartTime = %v, want %v", seg.StartTime, start)
+	}
+	if !seg.EndTime.Equal(interruptTime) {
+		t.Errorf("segment EndTime = %v, want %v", seg.EndTime, interruptTime)
+	}
+	if seg.Comment != "working on feature" {
+		t.Errorf("segment Comment = %q, want %q", seg.Comment, "working on feature")
+	}
+	if paused.Comment != "" {
+		t.Error("paused entry comment should be cleared after interrupt")
+	}
+}
+
+func TestStop_WithSegments_ReturnsAllSegments(t *testing.T) {
+	path := tmpPath(t)
+	t0 := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
+	t1 := t0.Add(30 * time.Minute)
+	t2 := t1.Add(15 * time.Minute)
+
+	// Start PROJ-123, interrupt, then stop anonymous
+	if err := Start("PROJ-123", "", "", "", t0, path); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := Interrupt(t1, path); err != nil {
+		t.Fatalf("Interrupt: %v", err)
+	}
+	// Stop the anonymous timer
+	result, err := Stop(t2, path)
+	if err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	// Anonymous timer had 1 segment (t1→t2)
+	if len(result.Segments) != 1 {
+		t.Fatalf("expected 1 segment, got %d", len(result.Segments))
+	}
+	if result.TaskKey != "" {
+		t.Errorf("TaskKey = %q, want empty (anonymous)", result.TaskKey)
+	}
+
+	// Should resume PROJ-123
+	if result.Resumed == nil {
+		t.Fatal("expected resumed info")
+	}
+	if result.Resumed.TaskKey != "PROJ-123" {
+		t.Errorf("Resumed.TaskKey = %q, want PROJ-123", result.Resumed.TaskKey)
+	}
+
+	// Now stop the resumed PROJ-123
+	t3 := t2.Add(20 * time.Minute)
+	result2, err := Stop(t3, path)
+	if err != nil {
+		t.Fatalf("Stop resumed: %v", err)
+	}
+	// PROJ-123 has 2 segments: original (t0→t1) + resumed (t2→t3)
+	if len(result2.Segments) != 2 {
+		t.Fatalf("expected 2 segments, got %d", len(result2.Segments))
+	}
+	if result2.TaskKey != "PROJ-123" {
+		t.Errorf("TaskKey = %q, want PROJ-123", result2.TaskKey)
+	}
+	if !result2.Segments[0].StartTime.Equal(t0) {
+		t.Errorf("seg[0].Start = %v, want %v", result2.Segments[0].StartTime, t0)
+	}
+	if !result2.Segments[0].EndTime.Equal(t1) {
+		t.Errorf("seg[0].End = %v, want %v", result2.Segments[0].EndTime, t1)
+	}
+	if !result2.Segments[1].StartTime.Equal(t2) {
+		t.Errorf("seg[1].Start = %v, want %v", result2.Segments[1].StartTime, t2)
+	}
+	if !result2.Segments[1].EndTime.Equal(t3) {
+		t.Errorf("seg[1].End = %v, want %v", result2.Segments[1].EndTime, t3)
+	}
+	if result2.Resumed != nil {
+		t.Error("expected no resumed info after final stop")
+	}
+}
+
+func TestStop_ResumesPausedTimerWithFreshStartTime(t *testing.T) {
+	path := tmpPath(t)
+	t0 := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
+	t1 := t0.Add(30 * time.Minute)
+	t2 := t1.Add(15 * time.Minute)
+
+	if err := Start("PROJ-123", "", "", "", t0, path); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := Interrupt(t1, path); err != nil {
+		t.Fatalf("Interrupt: %v", err)
+	}
+	if _, err := Stop(t2, path); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	// Verify resumed timer has startTime = t2
+	ss, err := loadStack(path)
+	if err != nil {
+		t.Fatalf("loadStack: %v", err)
+	}
+	if len(ss.Stack) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(ss.Stack))
+	}
+	if !ss.Stack[0].StartTime.Equal(t2) {
+		t.Errorf("resumed StartTime = %v, want %v", ss.Stack[0].StartTime, t2)
+	}
+}
+
+func TestDoubleInterrupt_CreatesStackDepth3(t *testing.T) {
+	path := tmpPath(t)
+	t0 := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
+	t1 := t0.Add(30 * time.Minute)
+	t2 := t1.Add(15 * time.Minute)
+
+	if err := Start("PROJ-123", "", "", "", t0, path); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := Interrupt(t1, path); err != nil {
+		t.Fatalf("Interrupt 1: %v", err)
+	}
+	if err := Interrupt(t2, path); err != nil {
+		t.Fatalf("Interrupt 2: %v", err)
+	}
+
+	ss, err := loadStack(path)
+	if err != nil {
+		t.Fatalf("loadStack: %v", err)
+	}
+	if len(ss.Stack) != 3 {
+		t.Fatalf("expected 3 stack entries, got %d", len(ss.Stack))
+	}
+	// Top is anonymous (from 2nd interrupt)
+	if ss.Stack[0].TaskKey != "" {
+		t.Errorf("stack[0] TaskKey = %q, want empty", ss.Stack[0].TaskKey)
+	}
+	// Middle is anonymous (from 1st interrupt, now paused)
+	if ss.Stack[1].TaskKey != "" {
+		t.Errorf("stack[1] TaskKey = %q, want empty", ss.Stack[1].TaskKey)
+	}
+	// Bottom is PROJ-123
+	if ss.Stack[2].TaskKey != "PROJ-123" {
+		t.Errorf("stack[2] TaskKey = %q, want PROJ-123", ss.Stack[2].TaskKey)
+	}
+}
+
+func TestAbort_DiscardsCurrentResumesPrevious(t *testing.T) {
+	path := tmpPath(t)
+	t0 := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
+	t1 := t0.Add(30 * time.Minute)
+	t2 := t1.Add(15 * time.Minute)
+
+	if err := Start("PROJ-123", "MyProject", "", "", t0, path); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := Interrupt(t1, path); err != nil {
+		t.Fatalf("Interrupt: %v", err)
+	}
+
+	result, err := Abort(t2, path)
+	if err != nil {
+		t.Fatalf("Abort: %v", err)
+	}
+	if result.TaskKey != "" {
+		t.Errorf("aborted TaskKey = %q, want empty (anonymous)", result.TaskKey)
+	}
+	if result.Resumed == nil {
+		t.Fatal("expected resumed info")
+	}
+	if result.Resumed.TaskKey != "PROJ-123" {
+		t.Errorf("Resumed.TaskKey = %q, want PROJ-123", result.Resumed.TaskKey)
+	}
+
+	// Verify resumed timer has fresh startTime
+	ss, err := loadStack(path)
+	if err != nil {
+		t.Fatalf("loadStack: %v", err)
+	}
+	if len(ss.Stack) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(ss.Stack))
+	}
+	if !ss.Stack[0].StartTime.Equal(t2) {
+		t.Errorf("resumed StartTime = %v, want %v", ss.Stack[0].StartTime, t2)
+	}
+}
+
+func TestAbort_AtStackBottom_ClearsEverything(t *testing.T) {
+	path := tmpPath(t)
+	t0 := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
+	t1 := t0.Add(30 * time.Minute)
+
+	if err := Start("PROJ-123", "", "", "", t0, path); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	result, err := Abort(t1, path)
+	if err != nil {
+		t.Fatalf("Abort: %v", err)
+	}
+	if result.TaskKey != "PROJ-123" {
+		t.Errorf("aborted TaskKey = %q, want PROJ-123", result.TaskKey)
+	}
+	if result.Resumed != nil {
+		t.Error("expected no resumed info")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("timer.json should be removed after abort at bottom")
+	}
+}
+
+func TestStop_EmptyStack_ReturnsError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "timer.json")
+	_, err := Stop(time.Now(), path)
+	if err == nil {
+		t.Error("expected error when no timer running")
+	}
+}
+
+func TestInterrupt_EmptyStack_ReturnsError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "timer.json")
+	err := Interrupt(time.Now(), path)
+	if err == nil {
+		t.Error("expected error when no timer running")
+	}
+}
+
+func TestSetComment_OnStack_SetsTopEntry(t *testing.T) {
+	path := tmpPath(t)
+	t0 := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
+	t1 := t0.Add(30 * time.Minute)
+
+	if err := Start("PROJ-123", "", "", "", t0, path); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := Interrupt(t1, path); err != nil {
+		t.Fatalf("Interrupt: %v", err)
+	}
+	if err := SetComment("interrupt work", path); err != nil {
+		t.Fatalf("SetComment: %v", err)
+	}
+
+	ss, err := loadStack(path)
+	if err != nil {
+		t.Fatalf("loadStack: %v", err)
+	}
+	if ss.Stack[0].Comment != "interrupt work" {
+		t.Errorf("active Comment = %q, want %q", ss.Stack[0].Comment, "interrupt work")
+	}
+}
+
+func TestSegmentComment_PreservedThroughInterrupt(t *testing.T) {
+	path := tmpPath(t)
+	t0 := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
+	t1 := t0.Add(30 * time.Minute)
+
+	if err := Start("PROJ-123", "", "", "", t0, path); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := SetComment("doing feature X", path); err != nil {
+		t.Fatalf("SetComment: %v", err)
+	}
+	if err := Interrupt(t1, path); err != nil {
+		t.Fatalf("Interrupt: %v", err)
+	}
+
+	ss, err := loadStack(path)
+	if err != nil {
+		t.Fatalf("loadStack: %v", err)
+	}
+	// The paused entry's segment should have the comment
+	if len(ss.Stack[1].Segments) != 1 {
+		t.Fatalf("expected 1 segment, got %d", len(ss.Stack[1].Segments))
+	}
+	if ss.Stack[1].Segments[0].Comment != "doing feature X" {
+		t.Errorf("segment comment = %q, want %q", ss.Stack[1].Segments[0].Comment, "doing feature X")
+	}
+}
+
+func TestStatus_ReturnsPausedInfo(t *testing.T) {
+	path := tmpPath(t)
+	t0 := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
+	t1 := t0.Add(30 * time.Minute)
+	t2 := t1.Add(15 * time.Minute)
+
+	if err := Start("PROJ-123", "MyProject", "Sprint 1", "", t0, path); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := Interrupt(t1, path); err != nil {
+		t.Fatalf("Interrupt: %v", err)
+	}
+
+	sr, err := Status(t2, path)
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if sr.TaskKey != "" {
+		t.Errorf("active TaskKey = %q, want empty (anonymous)", sr.TaskKey)
+	}
+	if sr.Elapsed != 15*time.Minute {
+		t.Errorf("Elapsed = %v, want 15m", sr.Elapsed)
+	}
+	if len(sr.Paused) != 1 {
+		t.Fatalf("expected 1 paused entry, got %d", len(sr.Paused))
+	}
+	if sr.Paused[0].TaskKey != "PROJ-123" {
+		t.Errorf("paused TaskKey = %q, want PROJ-123", sr.Paused[0].TaskKey)
+	}
+	if sr.Paused[0].Project != "MyProject" {
+		t.Errorf("paused Project = %q, want MyProject", sr.Paused[0].Project)
+	}
+	if sr.Paused[0].SegmentCount != 1 {
+		t.Errorf("paused SegmentCount = %d, want 1", sr.Paused[0].SegmentCount)
+	}
+}
+
+func TestStart_ErrorsWhenTimerAlreadyRunning(t *testing.T) {
+	path := tmpPath(t)
+	t0 := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
+
+	if err := Start("PROJ-123", "", "", "", t0, path); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	err := Start("PROJ-456", "", "", "", t0.Add(5*time.Minute), path)
+	if err == nil {
+		t.Error("expected error when timer already running")
+	}
 }

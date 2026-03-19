@@ -131,20 +131,26 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			if err != nil {
 				return err
 			}
-			_, err = RunStart(StartParams{TaskKey: taskKey, Project: project, Section: section, TimerPath: path, Now: time.Now()})
-			return err
+			return RunStart(StartParams{TaskKey: taskKey, Project: project, Section: section, TimerPath: path, Now: time.Now()})
 		},
-		TimerStatus: func() (string, string, string, string, string, time.Duration, bool, error) {
+		InterruptTimer: func() error {
 			path, err := timer.DefaultPath()
 			if err != nil {
-				return "", "", "", "", "", 0, false, err
+				return err
+			}
+			return timer.Interrupt(time.Now(), path)
+		},
+		TimerStatus: func() (*tui.TimerStatusInfo, error) {
+			path, err := timer.DefaultPath()
+			if err != nil {
+				return nil, err
 			}
 			result, err := RunStatus(StatusParams{TimerPath: path, Now: time.Now()})
 			if err != nil {
-				return "", "", "", "", "", 0, false, err
+				return nil, err
 			}
 			if result == nil {
-				return "", "", "", "", "", 0, false, nil
+				return nil, nil
 			}
 			summary, _ := source.GetSummary(ctx, result.TaskKey)
 			project, section := result.Project, result.Section
@@ -159,7 +165,27 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 					}
 				}
 			}
-			return result.TaskKey, summary, project, section, result.Comment, result.Elapsed, true, nil
+			info := &tui.TimerStatusInfo{
+				TaskKey:      result.TaskKey,
+				Summary:      summary,
+				Project:      project,
+				Section:      section,
+				Comment:      result.Comment,
+				Elapsed:      result.Elapsed,
+				TotalElapsed: result.TotalElapsed,
+				Running:      true,
+			}
+			for _, s := range result.Segments {
+				info.Segments = append(info.Segments, tui.TimerSegmentInfo{Duration: s.Duration, Comment: s.Comment})
+			}
+			for _, p := range result.Paused {
+				info.Paused = append(info.Paused, tui.PausedTimerInfo{
+					TaskKey:      p.TaskKey,
+					Project:      p.Project,
+					SegmentCount: p.SegmentCount,
+				})
+			}
+			return info, nil
 		},
 		SaveTimerComment: func(comment string) error {
 			path, err := timer.DefaultPath()
@@ -285,21 +311,21 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			_, err := RunEdit(ctx, ep)
 			return err
 		},
-		AbortTimer: func() (string, error) {
+		AbortTimer: func() (string, string, error) {
 			path, err := timer.DefaultPath()
 			if err != nil {
-				return "", err
+				return "", "", err
 			}
-			result, err := RunAbort(AbortParams{TimerPath: path})
+			result, err := RunAbort(AbortParams{TimerPath: path, Now: time.Now()})
 			if err != nil {
-				return "", err
+				return "", "", err
 			}
-			return result.TaskKey, nil
+			return result.TaskKey, result.ResumedKey, nil
 		},
-		StopTimer: func(description string, done bool, fallbackIssue string) (string, time.Duration, error) {
+		StopTimer: func(description string, done bool, fallbackIssue string) (string, time.Duration, string, error) {
 			path, err := timer.DefaultPath()
 			if err != nil {
-				return "", 0, err
+				return "", 0, "", err
 			}
 			var resolver JiraKeyResolver
 			if r, ok := source.(JiraKeyResolver); ok {
@@ -320,9 +346,9 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				FallbackIssue: fallbackIssue,
 			})
 			if err != nil {
-				return "", 0, err
+				return "", 0, "", err
 			}
-			return result.TaskKey, result.Elapsed, nil
+			return result.TaskKey, result.TotalElapsed, result.ResumedKey, nil
 		},
 		ListSections: func(provider, project string) ([]string, error) {
 			if provider != "" {

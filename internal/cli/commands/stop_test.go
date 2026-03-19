@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/iruoy/fylla/internal/calendar"
 	"github.com/iruoy/fylla/internal/config"
 	"github.com/iruoy/fylla/internal/timer"
 )
@@ -107,27 +106,16 @@ func (m *mockJiraKeyResolver) ResolveJiraKey(_ context.Context, _ string) (strin
 	return m.key, m.err
 }
 
-func TestStop_CalendarEventUpdated(t *testing.T) {
+func TestStop_CalendarEventCreated(t *testing.T) {
 	now := time.Date(2025, 1, 20, 10, 30, 0, 0, time.UTC)
 	startTime := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
 
 	timerPath := filepath.Join(t.TempDir(), "timer.json")
-	_, err := timer.Start("PROJ-1", "", "", "", startTime, timerPath)
-	if err != nil {
+	if err := timer.Start("PROJ-1", "", "", "", startTime, timerPath); err != nil {
 		t.Fatalf("timer.Start: %v", err)
 	}
 
-	cal := &mockCalendar{
-		fyllaEvents: []calendar.Event{
-			{
-				ID:          "evt-1",
-				Title:       "[PROJ] Fix bug",
-				Description: "fylla: PROJ-1\nhttps://test.atlassian.net/browse/PROJ-1",
-				Start:       time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC),
-				End:         time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
-			},
-		},
-	}
+	cal := &mockCalendar{}
 	jira := &mockWorklogPoster{}
 
 	result, err := RunStop(context.Background(), StopParams{
@@ -143,14 +131,11 @@ func TestStop_CalendarEventUpdated(t *testing.T) {
 		t.Fatalf("RunStop: %v", err)
 	}
 
-	if !result.CalendarUpdated {
-		t.Error("expected CalendarUpdated to be true")
+	if result.CalendarEvents != 1 {
+		t.Errorf("expected 1 calendar event, got %d", result.CalendarEvents)
 	}
-	if len(cal.updated) != 1 {
-		t.Fatalf("expected 1 calendar update, got %d", len(cal.updated))
-	}
-	if cal.updated[0].input.Done != true {
-		t.Error("expected updated event to have Done=true")
+	if len(cal.created) != 1 {
+		t.Fatalf("expected 1 calendar create, got %d", len(cal.created))
 	}
 	if result.TaskKey != "PROJ-1" {
 		t.Errorf("TaskKey = %q, want PROJ-1", result.TaskKey)
@@ -162,8 +147,7 @@ func TestStop_NoCalendarGracefullySkipped(t *testing.T) {
 	startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
 	timerPath := filepath.Join(t.TempDir(), "timer.json")
-	_, err := timer.Start("PROJ-2", "", "", "", startTime, timerPath)
-	if err != nil {
+	if err := timer.Start("PROJ-2", "", "", "", startTime, timerPath); err != nil {
 		t.Fatalf("timer.Start: %v", err)
 	}
 
@@ -182,8 +166,8 @@ func TestStop_NoCalendarGracefullySkipped(t *testing.T) {
 		t.Fatalf("RunStop: %v", err)
 	}
 
-	if result.CalendarUpdated {
-		t.Error("expected CalendarUpdated to be false when Cal is nil")
+	if result.CalendarEvents != 0 {
+		t.Errorf("expected 0 calendar events, got %d", result.CalendarEvents)
 	}
 	if result.TaskKey != "PROJ-2" {
 		t.Errorf("TaskKey = %q, want PROJ-2", result.TaskKey)
@@ -199,8 +183,7 @@ func TestStop_RemainingEstimateMessages(t *testing.T) {
 		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
 		timerPath := filepath.Join(t.TempDir(), "timer.json")
-		_, err := timer.Start("PROJ-3", "", "", "", startTime, timerPath)
-		if err != nil {
+		if err := timer.Start("PROJ-3", "", "", "", startTime, timerPath); err != nil {
 			t.Fatalf("timer.Start: %v", err)
 		}
 
@@ -243,8 +226,7 @@ func TestStop_RemainingEstimateMessages(t *testing.T) {
 		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
 		timerPath := filepath.Join(t.TempDir(), "timer.json")
-		_, err := timer.Start("PROJ-4", "", "", "", startTime, timerPath)
-		if err != nil {
+		if err := timer.Start("PROJ-4", "", "", "", startTime, timerPath); err != nil {
 			t.Fatalf("timer.Start: %v", err)
 		}
 
@@ -289,8 +271,7 @@ func TestStop_GitHubKeyResolvesToJira(t *testing.T) {
 		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
 		timerPath := filepath.Join(t.TempDir(), "timer.json")
-		_, err := timer.Start("fylla#42", "", "", "", startTime, timerPath)
-		if err != nil {
+		if err := timer.Start("fylla#42", "", "", "", startTime, timerPath); err != nil {
 			t.Fatalf("timer.Start: %v", err)
 		}
 
@@ -329,8 +310,7 @@ func TestStop_GitHubKeyResolvesToJira(t *testing.T) {
 		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
 		timerPath := filepath.Join(t.TempDir(), "timer.json")
-		_, err := timer.Start("fylla#99", "", "", "", startTime, timerPath)
-		if err != nil {
+		if err := timer.Start("fylla#99", "", "", "", startTime, timerPath); err != nil {
 			t.Fatalf("timer.Start: %v", err)
 		}
 
@@ -363,8 +343,7 @@ func TestStop_GitHubKeyResolvesToJira(t *testing.T) {
 		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
 		timerPath := filepath.Join(t.TempDir(), "timer.json")
-		_, err := timer.Start("fylla#99", "", "", "", startTime, timerPath)
-		if err != nil {
+		if err := timer.Start("fylla#99", "", "", "", startTime, timerPath); err != nil {
 			t.Fatalf("timer.Start: %v", err)
 		}
 
@@ -397,8 +376,7 @@ func TestStop_GitHubKeyResolvesToJira(t *testing.T) {
 		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
 		timerPath := filepath.Join(t.TempDir(), "timer.json")
-		_, err := timer.Start("fylla#42", "", "", "", startTime, timerPath)
-		if err != nil {
+		if err := timer.Start("fylla#42", "", "", "", startTime, timerPath); err != nil {
 			t.Fatalf("timer.Start: %v", err)
 		}
 
@@ -438,8 +416,7 @@ func TestStop_TodoistKeyResolvesToJiraFallback(t *testing.T) {
 	startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
 	timerPath := filepath.Join(t.TempDir(), "timer.json")
-	_, err := timer.Start("12345", "", "", "", startTime, timerPath)
-	if err != nil {
+	if err := timer.Start("12345", "", "", "", startTime, timerPath); err != nil {
 		t.Fatalf("timer.Start: %v", err)
 	}
 
@@ -472,5 +449,203 @@ func TestStop_TodoistKeyResolvesToJiraFallback(t *testing.T) {
 	}
 	if jira.calls[0].issueKey != "ADMIN-1" {
 		t.Errorf("worklog posted to %q, want ADMIN-1", jira.calls[0].issueKey)
+	}
+}
+
+func TestStop_MultiSegmentWorklogPosting(t *testing.T) {
+	t0 := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
+	t1 := t0.Add(30 * time.Minute)
+	t2 := t1.Add(15 * time.Minute)
+	t3 := t2.Add(20 * time.Minute)
+	t4 := t3.Add(10 * time.Minute)
+	t5 := t4.Add(25 * time.Minute)
+
+	timerPath := filepath.Join(t.TempDir(), "timer.json")
+
+	// Start PROJ-1, set comment, interrupt, interrupt again, stop anonymous, stop anonymous, stop PROJ-1
+	if err := timer.Start("PROJ-1", "", "", "", t0, timerPath); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := timer.SetComment("segment 1 work", timerPath); err != nil {
+		t.Fatalf("SetComment: %v", err)
+	}
+	if err := timer.Interrupt(t1, timerPath); err != nil {
+		t.Fatalf("Interrupt 1: %v", err)
+	}
+	// Stop first anonymous
+	if _, err := timer.Stop(t2, timerPath); err != nil {
+		t.Fatalf("Stop anonymous 1: %v", err)
+	}
+	// Interrupt PROJ-1 again
+	if err := timer.Interrupt(t3, timerPath); err != nil {
+		t.Fatalf("Interrupt 2: %v", err)
+	}
+	// Stop second anonymous
+	if _, err := timer.Stop(t4, timerPath); err != nil {
+		t.Fatalf("Stop anonymous 2: %v", err)
+	}
+
+	// Now stop PROJ-1 via RunStop — it should have 3 segments
+	jira := &mockWorklogPoster{}
+	cal := &mockCalendar{}
+
+	result, err := RunStop(context.Background(), StopParams{
+		TimerPath:    timerPath,
+		RoundMinutes: 5,
+		Now:          t5,
+		Description:  "form description",
+		Jira:         jira,
+		Cal:          cal,
+		Cfg:          testConfig(),
+	})
+	if err != nil {
+		t.Fatalf("RunStop: %v", err)
+	}
+
+	if result.SegmentCount != 3 {
+		t.Errorf("SegmentCount = %d, want 3", result.SegmentCount)
+	}
+	if len(jira.calls) != 3 {
+		t.Fatalf("expected 3 worklog calls, got %d", len(jira.calls))
+	}
+
+	// Verify (i/N) numbering
+	if jira.calls[0].description != "(1/3) segment 1 work" {
+		t.Errorf("call[0] description = %q, want %q", jira.calls[0].description, "(1/3) segment 1 work")
+	}
+	if jira.calls[1].description != "(2/3) form description" {
+		t.Errorf("call[1] description = %q, want %q", jira.calls[1].description, "(2/3) form description")
+	}
+	if jira.calls[2].description != "(3/3) form description" {
+		t.Errorf("call[2] description = %q, want %q", jira.calls[2].description, "(3/3) form description")
+	}
+
+	// Verify calendar events created per segment
+	if result.CalendarEvents != 3 {
+		t.Errorf("CalendarEvents = %d, want 3", result.CalendarEvents)
+	}
+	if len(cal.created) != 3 {
+		t.Fatalf("expected 3 calendar creates, got %d", len(cal.created))
+	}
+}
+
+func TestStop_SingleSegment_NoNumbering(t *testing.T) {
+	startTime := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
+	now := startTime.Add(30 * time.Minute)
+
+	timerPath := filepath.Join(t.TempDir(), "timer.json")
+	if err := timer.Start("PROJ-1", "", "", "", startTime, timerPath); err != nil {
+		t.Fatalf("timer.Start: %v", err)
+	}
+
+	jira := &mockWorklogPoster{}
+
+	result, err := RunStop(context.Background(), StopParams{
+		TimerPath:    timerPath,
+		RoundMinutes: 5,
+		Now:          now,
+		Description:  "just work",
+		Jira:         jira,
+		Cfg:          testConfig(),
+	})
+	if err != nil {
+		t.Fatalf("RunStop: %v", err)
+	}
+
+	if result.SegmentCount != 1 {
+		t.Errorf("SegmentCount = %d, want 1", result.SegmentCount)
+	}
+	if len(jira.calls) != 1 {
+		t.Fatalf("expected 1 worklog call, got %d", len(jira.calls))
+	}
+	// No (1/1) prefix for single segment
+	if jira.calls[0].description != "just work" {
+		t.Errorf("description = %q, want %q", jira.calls[0].description, "just work")
+	}
+}
+
+func TestStop_AnonymousTimerWithFallbackIssue(t *testing.T) {
+	startTime := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
+	now := startTime.Add(30 * time.Minute)
+
+	timerPath := filepath.Join(t.TempDir(), "timer.json")
+	// Start anonymous timer (empty key)
+	if err := timer.Start("", "", "", "", startTime, timerPath); err != nil {
+		t.Fatalf("timer.Start: %v", err)
+	}
+
+	jira := &mockWorklogPoster{}
+
+	result, err := RunStop(context.Background(), StopParams{
+		TimerPath:     timerPath,
+		RoundMinutes:  5,
+		Now:           now,
+		Description:   "anonymous work",
+		Jira:          jira,
+		Cfg:           testConfig(),
+		FallbackIssue: "ADMIN-1",
+	})
+	if err != nil {
+		t.Fatalf("RunStop: %v", err)
+	}
+
+	if result.TaskKey != "ADMIN-1" {
+		t.Errorf("TaskKey = %q, want ADMIN-1", result.TaskKey)
+	}
+	if len(jira.calls) != 1 {
+		t.Fatalf("expected 1 worklog call, got %d", len(jira.calls))
+	}
+	if jira.calls[0].issueKey != "ADMIN-1" {
+		t.Errorf("worklog posted to %q, want ADMIN-1", jira.calls[0].issueKey)
+	}
+}
+
+func TestStop_SegmentCommentUsedAsDescription(t *testing.T) {
+	t0 := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
+	t1 := t0.Add(30 * time.Minute)
+	t2 := t1.Add(15 * time.Minute)
+
+	timerPath := filepath.Join(t.TempDir(), "timer.json")
+	if err := timer.Start("PROJ-1", "", "", "", t0, timerPath); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := timer.SetComment("first segment comment", timerPath); err != nil {
+		t.Fatalf("SetComment: %v", err)
+	}
+	if err := timer.Interrupt(t1, timerPath); err != nil {
+		t.Fatalf("Interrupt: %v", err)
+	}
+	// Stop anonymous to resume PROJ-1
+	if _, err := timer.Stop(t1.Add(5*time.Minute), timerPath); err != nil {
+		t.Fatalf("Stop anonymous: %v", err)
+	}
+
+	jira := &mockWorklogPoster{}
+
+	result, err := RunStop(context.Background(), StopParams{
+		TimerPath:    timerPath,
+		RoundMinutes: 5,
+		Now:          t2,
+		Description:  "form description",
+		Jira:         jira,
+		Cfg:          testConfig(),
+	})
+	if err != nil {
+		t.Fatalf("RunStop: %v", err)
+	}
+
+	if result.SegmentCount != 2 {
+		t.Fatalf("SegmentCount = %d, want 2", result.SegmentCount)
+	}
+	if len(jira.calls) != 2 {
+		t.Fatalf("expected 2 worklog calls, got %d", len(jira.calls))
+	}
+	// First segment uses its own comment
+	if jira.calls[0].description != "(1/2) first segment comment" {
+		t.Errorf("call[0] description = %q, want %q", jira.calls[0].description, "(1/2) first segment comment")
+	}
+	// Second segment uses form description as fallback
+	if jira.calls[1].description != "(2/2) form description" {
+		t.Errorf("call[1] description = %q, want %q", jira.calls[1].description, "(2/2) form description")
 	}
 }

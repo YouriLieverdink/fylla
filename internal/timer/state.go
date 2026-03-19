@@ -9,24 +9,75 @@ import (
 	"time"
 )
 
-// State represents a running timer persisted to disk.
-type State struct {
-	TaskKey   string    `json:"taskKey"`
+// Segment represents a completed time segment within a timer stack entry.
+type Segment struct {
 	StartTime time.Time `json:"startTime"`
+	EndTime   time.Time `json:"endTime"`
+	Comment   string    `json:"comment,omitempty"`
+}
+
+// StackEntry represents a timer on the stack — either active (top) or paused.
+type StackEntry struct {
+	TaskKey   string    `json:"taskKey"`
+	StartTime time.Time `json:"startTime,omitempty"`
 	Project   string    `json:"project,omitempty"`
 	Section   string    `json:"section,omitempty"`
 	Provider  string    `json:"provider,omitempty"`
 	Comment   string    `json:"comment,omitempty"`
+	Segments  []Segment `json:"segments,omitempty"`
+}
+
+// StackState holds the full timer stack. Index 0 is active, 1+ are paused.
+type StackState struct {
+	Stack []StackEntry `json:"stack"`
+}
+
+// ResumedInfo describes a timer that was auto-resumed after stop/abort.
+type ResumedInfo struct {
+	TaskKey string
+	Project string
 }
 
 // StopResult holds the computed values when a timer is stopped.
 type StopResult struct {
-	TaskKey   string
-	Provider  string
-	StartTime time.Time
-	Elapsed   time.Duration
-	Rounded   time.Duration
-	Comment   string
+	TaskKey  string
+	Provider string
+	Project  string
+	Section  string
+	Segments []Segment
+	Resumed  *ResumedInfo
+}
+
+// AbortResult holds the result of aborting a timer.
+type AbortResult struct {
+	TaskKey string
+	Resumed *ResumedInfo
+}
+
+// SegmentInfo describes a completed segment in the status output.
+type SegmentInfo struct {
+	Duration time.Duration
+	Comment  string
+}
+
+// StatusResult holds the current timer status.
+type StatusResult struct {
+	TaskKey      string
+	Project      string
+	Section      string
+	Comment      string
+	Elapsed      time.Duration // current segment elapsed
+	TotalElapsed time.Duration // all segments + current segment
+	Segments     []SegmentInfo // prior completed segments
+	Paused       []PausedInfo
+}
+
+// PausedInfo describes a paused timer on the stack.
+type PausedInfo struct {
+	TaskKey      string
+	Project      string
+	Section      string
+	SegmentCount int
 }
 
 // DefaultPath returns the default timer state file path (~/.config/fylla/timer.json).
@@ -38,18 +89,7 @@ func DefaultPath() (string, error) {
 	return filepath.Join(dir, "fylla", "timer.json"), nil
 }
 
-// Start creates a new timer state and persists it to the given path.
-func Start(taskKey, project, section, provider string, now time.Time, path string) (*State, error) {
-	s := &State{TaskKey: taskKey, StartTime: now, Project: project, Section: section, Provider: provider}
-	if err := save(s, path); err != nil {
-		return nil, fmt.Errorf("start timer: %w", err)
-	}
-	return s, nil
-}
-
-// Load reads the timer state from the given path.
-// Returns nil and no error if the file does not exist.
-func Load(path string) (*State, error) {
+func loadStack(path string) (*StackState, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -57,78 +97,241 @@ func Load(path string) (*State, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read timer state: %w", err)
 	}
-	var s State
-	if err := json.Unmarshal(data, &s); err != nil {
+
+	// Try stack format first
+	var ss StackState
+	if err := json.Unmarshal(data, &ss); err == nil && len(ss.Stack) > 0 {
+		return &ss, nil
+	}
+
+	// Fall back to legacy single-state format for backward compatibility
+	var legacy struct {
+		TaskKey   string    `json:"taskKey"`
+		StartTime time.Time `json:"startTime"`
+		Project   string    `json:"project,omitempty"`
+		Section   string    `json:"section,omitempty"`
+		Provider  string    `json:"provider,omitempty"`
+		Comment   string    `json:"comment,omitempty"`
+	}
+	if err := json.Unmarshal(data, &legacy); err != nil {
 		return nil, fmt.Errorf("parse timer state: %w", err)
 	}
-	return &s, nil
-}
-
-// Stop loads the running timer, computes elapsed time, rounds it, removes the
-// state file, and returns the result. roundMinutes controls rounding granularity
-// (e.g. 5 rounds to the nearest 5 minutes, minimum 5 minutes).
-func Stop(now time.Time, roundMinutes int, path string) (*StopResult, error) {
-	s, err := Load(path)
-	if err != nil {
-		return nil, err
-	}
-	if s == nil {
-		return nil, fmt.Errorf("no timer running")
-	}
-
-	elapsed := now.Sub(s.StartTime)
-	if elapsed < 0 {
-		elapsed = 0
-	}
-
-	rounded := RoundDuration(elapsed, roundMinutes)
-
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return nil, fmt.Errorf("remove timer state: %w", err)
-	}
-
-	return &StopResult{
-		TaskKey:   s.TaskKey,
-		Provider:  s.Provider,
-		StartTime: s.StartTime,
-		Elapsed:   elapsed,
-		Rounded:   rounded,
-		Comment:   s.Comment,
+	return &StackState{
+		Stack: []StackEntry{{
+			TaskKey:   legacy.TaskKey,
+			StartTime: legacy.StartTime,
+			Project:   legacy.Project,
+			Section:   legacy.Section,
+			Provider:  legacy.Provider,
+			Comment:   legacy.Comment,
+		}},
 	}, nil
 }
 
-// Status returns the current timer state and elapsed time, or nil if no timer is running.
-func Status(now time.Time, path string) (*State, time.Duration, error) {
-	s, err := Load(path)
+func saveStack(ss *StackState, path string) error {
+	if ss == nil || len(ss.Stack) == 0 {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove timer state: %w", err)
+		}
+		return nil
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create timer dir: %w", err)
+	}
+	data, err := json.MarshalIndent(ss, "", "  ")
 	if err != nil {
-		return nil, 0, err
+		return fmt.Errorf("marshal timer state: %w", err)
 	}
-	if s == nil {
-		return nil, 0, nil
-	}
-	elapsed := now.Sub(s.StartTime)
-	if elapsed < 0 {
-		elapsed = 0
-	}
-	return s, elapsed, nil
+	return os.WriteFile(path, data, 0600)
 }
 
-// Abort loads the running timer, removes the state file without logging work,
-// and returns the state so callers can report the task key.
-func Abort(path string) (*State, error) {
-	s, err := Load(path)
+// Start creates a new timer. Errors if a timer is already running.
+func Start(taskKey, project, section, provider string, now time.Time, path string) error {
+	ss, err := loadStack(path)
+	if err != nil {
+		return err
+	}
+	if ss != nil && len(ss.Stack) > 0 {
+		return fmt.Errorf("timer already running, use interrupt to pause it")
+	}
+	ss = &StackState{
+		Stack: []StackEntry{{
+			TaskKey:   taskKey,
+			StartTime: now,
+			Project:   project,
+			Section:   section,
+			Provider:  provider,
+		}},
+	}
+	return saveStack(ss, path)
+}
+
+// Interrupt pauses the current timer and starts a new anonymous timer.
+func Interrupt(now time.Time, path string) error {
+	ss, err := loadStack(path)
+	if err != nil {
+		return err
+	}
+	if ss == nil || len(ss.Stack) == 0 {
+		return fmt.Errorf("no timer running")
+	}
+
+	active := &ss.Stack[0]
+	// Save current run as a segment
+	seg := Segment{
+		StartTime: active.StartTime,
+		EndTime:   now,
+		Comment:   active.Comment,
+	}
+	active.Segments = append(active.Segments, seg)
+	active.StartTime = time.Time{} // clear — paused
+	active.Comment = ""
+
+	// Push new anonymous entry at front
+	ss.Stack = append([]StackEntry{{StartTime: now}}, ss.Stack...)
+	return saveStack(ss, path)
+}
+
+// Stop stops the active timer, returns all segments, and resumes the next timer if present.
+func Stop(now time.Time, path string) (*StopResult, error) {
+	ss, err := loadStack(path)
 	if err != nil {
 		return nil, err
 	}
-	if s == nil {
+	if ss == nil || len(ss.Stack) == 0 {
 		return nil, fmt.Errorf("no timer running")
 	}
 
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return nil, fmt.Errorf("remove timer state: %w", err)
+	active := ss.Stack[0]
+
+	// Create final segment from current run
+	finalSeg := Segment{
+		StartTime: active.StartTime,
+		EndTime:   now,
+		Comment:   active.Comment,
+	}
+	segments := append(active.Segments, finalSeg)
+
+	result := &StopResult{
+		TaskKey:  active.TaskKey,
+		Provider: active.Provider,
+		Project:  active.Project,
+		Section:  active.Section,
+		Segments: segments,
 	}
 
-	return s, nil
+	// Remove active entry
+	ss.Stack = ss.Stack[1:]
+
+	// Resume next if present
+	if len(ss.Stack) > 0 {
+		ss.Stack[0].StartTime = now
+		result.Resumed = &ResumedInfo{
+			TaskKey: ss.Stack[0].TaskKey,
+			Project: ss.Stack[0].Project,
+		}
+	}
+
+	if err := saveStack(ss, path); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// Status returns the current timer status, or nil if no timer is running.
+func Status(now time.Time, path string) (*StatusResult, error) {
+	ss, err := loadStack(path)
+	if err != nil {
+		return nil, err
+	}
+	if ss == nil || len(ss.Stack) == 0 {
+		return nil, nil
+	}
+
+	active := ss.Stack[0]
+	elapsed := now.Sub(active.StartTime)
+	if elapsed < 0 {
+		elapsed = 0
+	}
+
+	// Sum prior segments for total elapsed
+	var priorElapsed time.Duration
+	var segments []SegmentInfo
+	for _, seg := range active.Segments {
+		d := seg.EndTime.Sub(seg.StartTime)
+		if d < 0 {
+			d = 0
+		}
+		priorElapsed += d
+		segments = append(segments, SegmentInfo{Duration: d, Comment: seg.Comment})
+	}
+
+	result := &StatusResult{
+		TaskKey:      active.TaskKey,
+		Project:      active.Project,
+		Section:      active.Section,
+		Comment:      active.Comment,
+		Elapsed:      elapsed,
+		TotalElapsed: priorElapsed + elapsed,
+		Segments:     segments,
+	}
+
+	for _, entry := range ss.Stack[1:] {
+		result.Paused = append(result.Paused, PausedInfo{
+			TaskKey:      entry.TaskKey,
+			Project:      entry.Project,
+			Section:      entry.Section,
+			SegmentCount: len(entry.Segments),
+		})
+	}
+
+	return result, nil
+}
+
+// Abort discards the current timer and resumes the next if present.
+func Abort(now time.Time, path string) (*AbortResult, error) {
+	ss, err := loadStack(path)
+	if err != nil {
+		return nil, err
+	}
+	if ss == nil || len(ss.Stack) == 0 {
+		return nil, fmt.Errorf("no timer running")
+	}
+
+	result := &AbortResult{
+		TaskKey: ss.Stack[0].TaskKey,
+	}
+
+	// Remove active entry
+	ss.Stack = ss.Stack[1:]
+
+	// Resume next if present
+	if len(ss.Stack) > 0 {
+		ss.Stack[0].StartTime = now
+		result.Resumed = &ResumedInfo{
+			TaskKey: ss.Stack[0].TaskKey,
+			Project: ss.Stack[0].Project,
+		}
+	}
+
+	if err := saveStack(ss, path); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// SetComment sets the comment on the active timer.
+func SetComment(comment, path string) error {
+	ss, err := loadStack(path)
+	if err != nil {
+		return err
+	}
+	if ss == nil || len(ss.Stack) == 0 {
+		return fmt.Errorf("no timer running")
+	}
+	ss.Stack[0].Comment = comment
+	return saveStack(ss, path)
 }
 
 // RoundDuration rounds d to the nearest roundMinutes, with a minimum of roundMinutes.
@@ -142,29 +345,4 @@ func RoundDuration(d time.Duration, roundMinutes int) time.Duration {
 		rounded = unit
 	}
 	return rounded
-}
-
-// SetComment sets the comment on a running timer.
-func SetComment(comment, path string) error {
-	s, err := Load(path)
-	if err != nil {
-		return err
-	}
-	if s == nil {
-		return fmt.Errorf("no timer running")
-	}
-	s.Comment = comment
-	return save(s, path)
-}
-
-func save(s *State, path string) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("create timer dir: %w", err)
-	}
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal timer state: %w", err)
-	}
-	return os.WriteFile(path, data, 0600)
 }

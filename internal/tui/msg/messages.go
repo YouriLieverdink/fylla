@@ -39,16 +39,32 @@ type TaskEditedMsg struct {
 	Err     error
 }
 
+// PausedTimerInfo describes a paused timer in the stack.
+type PausedTimerInfo struct {
+	TaskKey      string
+	Project      string
+	SegmentCount int
+}
+
+// TimerSegmentInfo describes a completed segment in the timer status.
+type TimerSegmentInfo struct {
+	Duration time.Duration
+	Comment  string
+}
+
 // TimerStatusMsg carries the current timer status.
 type TimerStatusMsg struct {
-	TaskKey string
-	Summary string
-	Project string
-	Section string
-	Comment string
-	Elapsed time.Duration
-	Running bool
-	Err     error
+	TaskKey      string
+	Summary      string
+	Project      string
+	Section      string
+	Comment      string
+	Elapsed      time.Duration
+	TotalElapsed time.Duration
+	Segments     []TimerSegmentInfo
+	Running      bool
+	Paused       []PausedTimerInfo
+	Err          error
 }
 
 // TimerCommentSavedMsg is sent after saving a comment to the running timer.
@@ -67,15 +83,22 @@ type TimerStartedMsg struct {
 
 // TimerStoppedMsg is sent after stopping a timer.
 type TimerStoppedMsg struct {
-	TaskKey string
-	Elapsed time.Duration
-	Err     error
+	TaskKey    string
+	Elapsed    time.Duration
+	ResumedKey string
+	Err        error
 }
 
 // TimerAbortedMsg is sent after aborting a timer.
 type TimerAbortedMsg struct {
-	TaskKey string
-	Err     error
+	TaskKey    string
+	ResumedKey string
+	Err        error
+}
+
+// TimerInterruptedMsg is sent after interrupting a timer.
+type TimerInterruptedMsg struct {
+	Err error
 }
 
 // TimerTickMsg triggers timer display updates.

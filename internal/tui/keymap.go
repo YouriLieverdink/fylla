@@ -37,6 +37,7 @@ type globalKeyMap struct {
 	GoToday    key.Binding
 	Move       key.Binding
 	Comment    key.Binding
+	Interrupt  key.Binding
 }
 
 var keys = globalKeyMap{
@@ -74,4 +75,5 @@ var keys = globalKeyMap{
 	GoToday:    key.NewBinding(key.WithKeys("T"), key.WithHelp("T", "go to today")),
 	Move:       key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "move")),
 	Comment:    key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "comment")),
+	Interrupt:  key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "interrupt")),
 }

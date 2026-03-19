@@ -8,6 +8,33 @@ import (
 	"github.com/iruoy/fylla/internal/tui/msg"
 )
 
+// TimerSegmentInfo describes a completed segment.
+type TimerSegmentInfo struct {
+	Duration time.Duration
+	Comment  string
+}
+
+// TimerStatusInfo holds all timer status fields returned by the TimerStatus callback.
+type TimerStatusInfo struct {
+	TaskKey      string
+	Summary      string
+	Project      string
+	Section      string
+	Comment      string
+	Elapsed      time.Duration
+	TotalElapsed time.Duration
+	Segments     []TimerSegmentInfo
+	Running      bool
+	Paused       []PausedTimerInfo
+}
+
+// PausedTimerInfo describes a paused timer in the stack.
+type PausedTimerInfo struct {
+	TaskKey      string
+	Project      string
+	SegmentCount int
+}
+
 // EditTaskParams holds all parameters for editing a task from the TUI.
 type EditTaskParams struct {
 	TaskKey   string
@@ -41,8 +68,9 @@ type Callbacks struct {
 	LoadTasks   func() ([]msg.ScoredTask, error)
 	DoneTask    func(taskKey, provider string) error
 	DeleteTask  func(taskKey, provider string) error
-	StartTimer  func(taskKey, project, section string) error
-	TimerStatus    func() (taskKey, summary, project, section, comment string, elapsed time.Duration, running bool, err error)
+	StartTimer     func(taskKey, project, section string) error
+	InterruptTimer func() error
+	TimerStatus    func() (*TimerStatusInfo, error)
 	SaveTimerComment func(comment string) error
 	SyncPreview func() (*msg.SyncResult, error)
 	SyncApply   func(force bool) (*msg.SyncResult, error)
@@ -51,8 +79,8 @@ type Callbacks struct {
 	SetConfig   func(key, value string) error
 	AddTask      func(provider, summary, project, section, issueType, description, estimate, dueDate, priority, parent string) (key, summaryOut string, err error)
 	EditTask     func(params EditTaskParams) error
-	StopTimer    func(description string, done bool, fallbackIssue string) (taskKey string, elapsed time.Duration, err error)
-	AbortTimer   func() (taskKey string, err error)
+	StopTimer    func(description string, done bool, fallbackIssue string) (taskKey string, elapsed time.Duration, resumedKey string, err error)
+	AbortTimer   func() (taskKey string, resumedKey string, err error)
 	ListProjects func(provider string) ([]string, error)
 	ListSections func(provider, project string) ([]string, error)
 	ListLanes    func(provider, project string) ([]string, error)
@@ -108,17 +136,34 @@ func startTimerCmd(cb Callbacks, taskKey, summary, project, section string) tea.
 
 func timerStatusCmd(cb Callbacks) tea.Cmd {
 	return func() tea.Msg {
-		taskKey, summary, project, section, comment, elapsed, running, err := cb.TimerStatus()
-		return msg.TimerStatusMsg{
-			TaskKey: taskKey,
-			Summary: summary,
-			Project: project,
-			Section: section,
-			Comment: comment,
-			Elapsed: elapsed,
-			Running: running,
-			Err:     err,
+		info, err := cb.TimerStatus()
+		if err != nil {
+			return msg.TimerStatusMsg{Err: err}
 		}
+		if info == nil {
+			return msg.TimerStatusMsg{}
+		}
+		m := msg.TimerStatusMsg{
+			TaskKey:      info.TaskKey,
+			Summary:      info.Summary,
+			Project:      info.Project,
+			Section:      info.Section,
+			Comment:      info.Comment,
+			Elapsed:      info.Elapsed,
+			TotalElapsed: info.TotalElapsed,
+			Running:      info.Running,
+		}
+		for _, s := range info.Segments {
+			m.Segments = append(m.Segments, msg.TimerSegmentInfo{Duration: s.Duration, Comment: s.Comment})
+		}
+		for _, p := range info.Paused {
+			m.Paused = append(m.Paused, msg.PausedTimerInfo{
+				TaskKey:      p.TaskKey,
+				Project:      p.Project,
+				SegmentCount: p.SegmentCount,
+			})
+		}
+		return m
 	}
 }
 
@@ -186,15 +231,22 @@ func editTaskCmd(cb Callbacks, params EditTaskParams) tea.Cmd {
 
 func stopTimerCmd(cb Callbacks, description string, done bool, fallbackIssue string) tea.Cmd {
 	return func() tea.Msg {
-		taskKey, elapsed, err := cb.StopTimer(description, done, fallbackIssue)
-		return msg.TimerStoppedMsg{TaskKey: taskKey, Elapsed: elapsed, Err: err}
+		taskKey, elapsed, resumedKey, err := cb.StopTimer(description, done, fallbackIssue)
+		return msg.TimerStoppedMsg{TaskKey: taskKey, Elapsed: elapsed, ResumedKey: resumedKey, Err: err}
 	}
 }
 
 func abortTimerCmd(cb Callbacks) tea.Cmd {
 	return func() tea.Msg {
-		taskKey, err := cb.AbortTimer()
-		return msg.TimerAbortedMsg{TaskKey: taskKey, Err: err}
+		taskKey, resumedKey, err := cb.AbortTimer()
+		return msg.TimerAbortedMsg{TaskKey: taskKey, ResumedKey: resumedKey, Err: err}
+	}
+}
+
+func interruptTimerCmd(cb Callbacks) tea.Cmd {
+	return func() tea.Msg {
+		err := cb.InterruptTimer()
+		return msg.TimerInterruptedMsg{Err: err}
 	}
 }
 

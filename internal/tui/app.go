@@ -336,9 +336,23 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.timer.Summary = mssg.Summary
 			m.timer.Project = mssg.Project
 			m.timer.Section = mssg.Section
+			m.timer.Comment = mssg.Comment
 			m.timer.Elapsed = mssg.Elapsed
+			m.timer.TotalElapsed = mssg.TotalElapsed
+			m.timer.Segments = nil
+			for _, s := range mssg.Segments {
+				m.timer.Segments = append(m.timer.Segments, timerView.SegmentInfo{Duration: s.Duration, Comment: s.Comment})
+			}
 			m.timer.Running = mssg.Running
 			m.timer.Err = nil
+			m.timer.Paused = nil
+			for _, p := range mssg.Paused {
+				m.timer.Paused = append(m.timer.Paused, timerView.PausedInfo{
+					TaskKey:      p.TaskKey,
+					Project:      p.Project,
+					SegmentCount: p.SegmentCount,
+				})
+			}
 		} else {
 			m.timer.Err = mssg.Err
 		}
@@ -354,6 +368,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.timerRunning && mssg.Gen == m.tickGen {
 			m.timerElapsed += time.Second
 			m.timer.Elapsed = m.timerElapsed
+			m.timer.TotalElapsed += time.Second
 			m.worklog.TimerElapsed = m.timerElapsed
 			cmds = append(cmds, timerTickCmd(m.tickGen))
 		}
@@ -372,6 +387,8 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.timer.Project = mssg.Project
 			m.timer.Section = mssg.Section
 			m.timer.Elapsed = 0
+			m.timer.TotalElapsed = 0
+			m.timer.Segments = nil
 			m.timer.Running = true
 			m.worklog.TimerRunning = true
 			m.worklog.TimerElapsed = 0
@@ -486,20 +503,31 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			if stoppedLabel == "" {
 				stoppedLabel = mssg.TaskKey
 			}
-			m.timerRunning = false
-			m.timerKey = ""
-			m.timerSummary = ""
-			m.timerComment = ""
-			m.timerElapsed = 0
-			m.timer.Running = false
-			m.timer.TaskKey = ""
-			m.timer.Summary = ""
-			m.timer.Project = ""
-			m.timer.Section = ""
-			m.timer.Elapsed = 0
-			m.worklog.TimerRunning = false
-			m.worklog.TimerElapsed = 0
-			m.setToast(fmt.Sprintf("Timer stopped for %s", stoppedLabel), false)
+			if stoppedLabel == "" {
+				stoppedLabel = "(anonymous)"
+			}
+			elapsed := styles.FormatDuration(mssg.Elapsed)
+			if mssg.ResumedKey != "" {
+				m.setToast(fmt.Sprintf("Stopped %s (%s), resumed %s", stoppedLabel, elapsed, mssg.ResumedKey), false)
+				// Refresh timer status to pick up resumed timer
+				cmds = append(cmds, timerStatusCmd(m.cb))
+			} else {
+				m.timerRunning = false
+				m.timerKey = ""
+				m.timerSummary = ""
+				m.timerComment = ""
+				m.timerElapsed = 0
+				m.timer.Running = false
+				m.timer.TaskKey = ""
+				m.timer.Summary = ""
+				m.timer.Project = ""
+				m.timer.Section = ""
+				m.timer.Elapsed = 0
+				m.timer.Paused = nil
+				m.worklog.TimerRunning = false
+				m.worklog.TimerElapsed = 0
+				m.setToast(fmt.Sprintf("Stopped %s (%s)", stoppedLabel, elapsed), false)
+			}
 		}
 		cmds = append(cmds, clearToastCmd())
 		return m, tea.Batch(cmds...)
@@ -522,19 +550,36 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			if stoppedLabel == "" {
 				stoppedLabel = mssg.TaskKey
 			}
-			m.timerRunning = false
-			m.timerKey = ""
-			m.timerSummary = ""
-			m.timerElapsed = 0
-			m.timer.Running = false
-			m.timer.TaskKey = ""
-			m.timer.Summary = ""
-			m.timer.Project = ""
-			m.timer.Section = ""
-			m.timer.Elapsed = 0
-			m.worklog.TimerRunning = false
-			m.worklog.TimerElapsed = 0
-			m.setToast(fmt.Sprintf("Timer aborted for %s", stoppedLabel), false)
+			if mssg.ResumedKey != "" {
+				toastMsg := fmt.Sprintf("Aborted %s, resumed %s", stoppedLabel, mssg.ResumedKey)
+				m.setToast(toastMsg, false)
+				cmds = append(cmds, timerStatusCmd(m.cb))
+			} else {
+				m.timerRunning = false
+				m.timerKey = ""
+				m.timerSummary = ""
+				m.timerElapsed = 0
+				m.timer.Running = false
+				m.timer.TaskKey = ""
+				m.timer.Summary = ""
+				m.timer.Project = ""
+				m.timer.Section = ""
+				m.timer.Elapsed = 0
+				m.timer.Paused = nil
+				m.worklog.TimerRunning = false
+				m.worklog.TimerElapsed = 0
+				m.setToast(fmt.Sprintf("Timer aborted for %s", stoppedLabel), false)
+			}
+		}
+		cmds = append(cmds, clearToastCmd())
+		return m, tea.Batch(cmds...)
+
+	case msg.TimerInterruptedMsg:
+		if mssg.Err != nil {
+			m.setToast(fmt.Sprintf("Interrupt error: %v", mssg.Err), true)
+		} else {
+			m.setToast("Interrupted, anonymous timer started", false)
+			cmds = append(cmds, timerStatusCmd(m.cb))
 		}
 		cmds = append(cmds, clearToastCmd())
 		return m, tea.Batch(cmds...)
@@ -1027,6 +1072,10 @@ func (m model) updateTimer(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(mssg, keys.Refresh):
 		m.timer.Loading = true
 		return m, timerStatusCmd(m.cb)
+	case key.Matches(mssg, keys.Interrupt):
+		if m.timerRunning {
+			return m, interruptTimerCmd(m.cb)
+		}
 	case key.Matches(mssg, keys.Comment):
 		if m.timerRunning {
 			fields := []components.FormFieldDef{
@@ -1038,6 +1087,16 @@ func (m model) updateTimer(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case key.Matches(mssg, keys.Stop):
 		if m.timerRunning {
+			// Build form title with task info and elapsed time
+			titleLabel := m.timerSummary
+			if titleLabel == "" && m.timerKey != "" {
+				titleLabel = m.timerKey
+			}
+			if titleLabel == "" {
+				titleLabel = "(anonymous)"
+			}
+			formTitle := fmt.Sprintf("Stop Timer — %s (%s)", titleLabel, styles.FormatDuration(m.timerElapsed))
+
 			fields := []components.FormFieldDef{
 				{Label: "Comment", Placeholder: "What did you work on?", Value: m.timerComment},
 				{Label: "Mark done", Kind: components.FieldToggle},
@@ -1068,10 +1127,12 @@ func (m model) updateTimer(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				fields = append([]components.FormFieldDef{issueField}, fields...)
 			}
-			m.form = components.NewForm("Stop Timer", fields)
+			m.form = components.NewForm(formTitle, fields)
 			m.formKind = formStopTimer
 			return m, nil
 		}
+		// No timer running — start anonymous timer
+		return m, startTimerCmd(m.cb, "", "", "", "")
 	case key.Matches(mssg, keys.Abort):
 		if m.timerRunning {
 			m.confirm = components.NewConfirm("Abort timer? Work will not be logged.")
@@ -1424,6 +1485,7 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case formTimerComment:
 			comment := m.form.ValueByLabel("Comment")
 			m.timerComment = comment
+			m.timer.Comment = comment
 			m.form.Active = false
 			m.formKind = formNone
 			m.saving = "Saving comment"
@@ -1665,7 +1727,7 @@ func (m model) View() string {
 	statusBar := components.StatusBar{
 		TimerKey:     m.timerKey,
 		TimerSummary: m.timerSummary,
-		TimerElapsed: m.timerElapsed,
+		TimerElapsed: m.timer.TotalElapsed,
 		TimerRunning: m.timerRunning,
 		Toast:        m.toast,
 		ToastIsError: m.toastIsError,
@@ -1722,8 +1784,10 @@ func (m model) renderHelp() string {
 	b.WriteString("  c             Clear events\n\n")
 
 	b.WriteString(bold.Render("Timer") + "\n")
-	b.WriteString("  s             Stop timer\n")
-	b.WriteString("  x             Abort timer\n\n")
+	b.WriteString("  s             Stop timer / start anonymous\n")
+	b.WriteString("  x             Abort timer\n")
+	b.WriteString("  i             Interrupt (pause + new timer)\n")
+	b.WriteString("  c             Set comment\n\n")
 
 	b.WriteString(bold.Render("Worklog") + "\n")
 	b.WriteString("  a             Add worklog\n")
@@ -1796,7 +1860,7 @@ func isJiraKeyPattern(key string) bool {
 }
 
 func needsWorklogIssue(key string) bool {
-	return key != "" && !isJiraKeyPattern(key)
+	return key == "" || !isJiraKeyPattern(key)
 }
 
 func extractIssueKey(val string) string {

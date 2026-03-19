@@ -36,18 +36,19 @@ type StopParams struct {
 // StopResult holds the output of a stop operation.
 type StopResult struct {
 	TaskKey           string
-	Elapsed           time.Duration
-	Rounded           time.Duration
+	TotalElapsed      time.Duration
 	Description       string
-	CalendarUpdated   bool
+	SegmentCount      int
+	CalendarEvents    int
 	RemainingEstimate time.Duration
 	HasRemaining      bool
 	Done              bool
+	ResumedKey        string
 }
 
-// RunStop stops the timer, posts the worklog to Jira, and returns the result.
+// RunStop stops the timer, posts worklogs for all segments, and returns the result.
 func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
-	sr, err := timer.Stop(p.Now, p.RoundMinutes, p.TimerPath)
+	sr, err := timer.Stop(p.Now, p.TimerPath)
 	if err != nil {
 		return nil, err
 	}
@@ -89,6 +90,19 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 		}
 	}
 
+	// Resolve anonymous timers (empty key) to a fallback issue.
+	if sr.TaskKey == "" {
+		if p.FallbackIssue != "" {
+			worklogKey = p.FallbackIssue
+		} else {
+			resolved, err := resolveToFallbackIssue(p.Survey, p.Cfg)
+			if err != nil {
+				return nil, fmt.Errorf("resolve worklog target: %w", err)
+			}
+			worklogKey = resolved
+		}
+	}
+
 	// Resolve non-Jira keys (e.g. Todoist) when worklog provider is jira,
 	// but allow Kendo tasks to post worklogs directly to Kendo.
 	if !isJiraKey(worklogKey) && p.Cfg.Worklog.Provider == "jira" && worklogProvider != "kendo" {
@@ -108,30 +122,66 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 		worklogKey = p.FallbackIssue
 	}
 
-	// Use provider-aware posting when available (e.g. Kendo tasks).
-	if multi, ok := p.Jira.(*MultiTaskSource); ok && worklogProvider != "" {
-		if err := multi.PostWorklogOn(ctx, worklogKey, sr.Rounded, p.Description, sr.StartTime, worklogProvider); err != nil {
-			return nil, fmt.Errorf("post worklog: %w", err)
+	var totalElapsed time.Duration
+	calEvents := 0
+
+	// Post worklog and create calendar event for each segment
+	for i, seg := range sr.Segments {
+		elapsed := seg.EndTime.Sub(seg.StartTime)
+		if elapsed < 0 {
+			elapsed = 0
 		}
-	} else {
-		if err := p.Jira.PostWorklog(ctx, worklogKey, sr.Rounded, p.Description, sr.StartTime); err != nil {
-			return nil, fmt.Errorf("post worklog: %w", err)
+		rounded := timer.RoundDuration(elapsed, p.RoundMinutes)
+		totalElapsed += elapsed
+
+		// Build description for this segment
+		desc := seg.Comment
+		if desc == "" {
+			desc = p.Description
+		}
+		if len(sr.Segments) > 1 {
+			desc = fmt.Sprintf("(%d/%d) %s", i+1, len(sr.Segments), desc)
+		}
+
+		// Post worklog
+		if multi, ok := p.Jira.(*MultiTaskSource); ok && worklogProvider != "" {
+			if err := multi.PostWorklogOn(ctx, worklogKey, rounded, desc, seg.StartTime, worklogProvider); err != nil {
+				return nil, fmt.Errorf("post worklog: %w", err)
+			}
+		} else {
+			if err := p.Jira.PostWorklog(ctx, worklogKey, rounded, desc, seg.StartTime); err != nil {
+				return nil, fmt.Errorf("post worklog: %w", err)
+			}
+		}
+
+		// Create calendar event per segment
+		if p.Cal != nil {
+			isLast := i == len(sr.Segments)-1
+			if err := p.Cal.CreateEvent(ctx, calendar.CreateEventInput{
+				TaskKey:  worklogKey,
+				Project:  sr.Project,
+				Section:  sr.Section,
+				Start:    seg.StartTime,
+				End:      seg.EndTime,
+				Done:     isLast && p.Done,
+				Provider: worklogProvider,
+			}); err == nil {
+				calEvents++
+			}
+			// Gracefully ignore calendar errors
 		}
 	}
 
 	result := &StopResult{
-		TaskKey:     worklogKey,
-		Elapsed:     sr.Elapsed,
-		Rounded:     sr.Rounded,
-		Description: p.Description,
+		TaskKey:        worklogKey,
+		TotalElapsed:   totalElapsed,
+		Description:    p.Description,
+		SegmentCount:   len(sr.Segments),
+		CalendarEvents: calEvents,
 	}
 
-	// Update calendar event if calendar is available
-	if p.Cal != nil {
-		if updated, err := updateCalendarEvent(ctx, p.Cal, sr.TaskKey, sr.StartTime, sr.Rounded); err == nil {
-			result.CalendarUpdated = updated
-		}
-		// Gracefully ignore calendar errors
+	if sr.Resumed != nil {
+		result.ResumedKey = sr.Resumed.TaskKey
 	}
 
 	// Check remaining estimate if available
@@ -142,7 +192,7 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 				result.RemainingEstimate = remaining
 				result.HasRemaining = true
 			}
-		} else {
+		} else if sr.TaskKey != "" {
 			remaining, err := p.Estimate.GetEstimate(ctx, sr.TaskKey)
 			if err == nil {
 				result.RemainingEstimate = remaining
@@ -152,7 +202,7 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 	}
 
 	// Mark task as done if requested
-	if p.Done && p.Completer != nil {
+	if p.Done && p.Completer != nil && sr.TaskKey != "" {
 		if multi, ok := p.Completer.(*MultiTaskSource); ok && worklogProvider != "" {
 			if err := multi.CompleteTaskOn(ctx, sr.TaskKey, worklogProvider); err != nil {
 				return nil, fmt.Errorf("mark done: %w", err)
@@ -203,55 +253,15 @@ func resolveGitHubToJira(ctx context.Context, resolver JiraKeyResolver, survey S
 	return promptFallbackIssue(survey, fallbacks)
 }
 
-// updateCalendarEvent finds the calendar event for the task on the timer's start date
-// and updates its end time + marks it as done.
-func updateCalendarEvent(ctx context.Context, cal CalendarClient, taskKey string, startTime time.Time, rounded time.Duration) (bool, error) {
-	startOfDay := time.Date(startTime.Year(), startTime.Month(), startTime.Day(), 0, 0, 0, 0, startTime.Location())
-	endOfDay := startOfDay.Add(24*time.Hour - time.Nanosecond)
-
-	events, err := cal.FetchFyllaEvents(ctx, startOfDay, endOfDay)
-	if err != nil {
-		return false, err
-	}
-
-	for _, ev := range events {
-		key, provider := calendar.TaskKeyAndProviderFromDescription(ev.Description)
-		if key != taskKey {
-			continue
-		}
-		// Check overlap: event overlaps with timer start
-		if ev.Start.After(startTime) || ev.End.Before(startTime) {
-			continue
-		}
-
-		parsed := calendar.ParseTitle(ev.Title)
-		newEnd := startTime.Add(rounded)
-
-		if err := cal.UpdateEvent(ctx, ev.ID, calendar.CreateEventInput{
-			TaskKey:  taskKey,
-			Project:  parsed.Project,
-			Section:  parsed.Section,
-			Summary:  parsed.Summary,
-			Start:    ev.Start,
-			End:      newEnd,
-			AtRisk:   parsed.AtRisk,
-			Done:     true,
-			Provider: provider,
-		}); err != nil {
-			return false, err
-		}
-		return true, nil
-	}
-
-	return false, nil
-}
-
 // PrintStopResult writes the stop result to the given writer.
 func PrintStopResult(w io.Writer, result *StopResult) {
-	fmt.Fprintf(w, "Timer stopped: %s\n", formatElapsed(result.Rounded))
+	fmt.Fprintf(w, "Timer stopped: %s\n", formatElapsed(result.TotalElapsed))
 	fmt.Fprintf(w, "Worklog added to %s\n", result.TaskKey)
-	if result.CalendarUpdated {
-		fmt.Fprintf(w, "Calendar event updated\n")
+	if result.SegmentCount > 1 {
+		fmt.Fprintf(w, "%d segments posted\n", result.SegmentCount)
+	}
+	if result.CalendarEvents > 0 {
+		fmt.Fprintf(w, "%d calendar events created\n", result.CalendarEvents)
 	}
 	if result.Done {
 		fmt.Fprintf(w, "Marked %s as done\n", result.TaskKey)
@@ -264,6 +274,9 @@ func PrintStopResult(w io.Writer, result *StopResult) {
 			fmt.Fprintf(w, "  Use 'fylla task done %s' to complete, or 'fylla task estimate %s' to add time.\n",
 				result.TaskKey, result.TaskKey)
 		}
+	}
+	if result.ResumedKey != "" {
+		fmt.Fprintf(w, "Resumed timer for %s\n", result.ResumedKey)
 	}
 }
 

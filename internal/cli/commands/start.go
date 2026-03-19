@@ -19,11 +19,11 @@ type StartParams struct {
 }
 
 // RunStart begins a timer for the specified task.
-func RunStart(p StartParams) (*timer.State, error) {
+func RunStart(p StartParams) error {
 	return timer.Start(p.TaskKey, p.Project, p.Section, p.Provider, p.Now, p.TimerPath)
 }
 
 // PrintStartResult writes the start confirmation to the given writer.
-func PrintStartResult(w io.Writer, state *timer.State) {
-	fmt.Fprintf(w, "Started timer for %s\n", state.TaskKey)
+func PrintStartResult(w io.Writer, taskKey string) {
+	fmt.Fprintf(w, "Started timer for %s\n", taskKey)
 }
