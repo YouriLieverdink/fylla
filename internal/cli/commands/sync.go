@@ -15,7 +15,6 @@ import (
 	"github.com/iruoy/fylla/internal/config"
 	"github.com/iruoy/fylla/internal/scheduler"
 	"github.com/iruoy/fylla/internal/task"
-	"github.com/spf13/cobra"
 )
 
 const (
@@ -677,85 +676,4 @@ func eventsMatch(existing calendar.Event, desired desiredEvent) bool {
 	return existing.Start.Equal(desired.Start) && existing.End.Equal(desired.End) &&
 		calendar.BuildTitleWithSection(desired.Project, desired.Section, desired.Summary, desired.AtRisk) == existing.Title &&
 		calendar.TaskKeyFromDescription(existing.Description) == desired.TaskKey
-}
-
-func newSyncCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "sync",
-		Short: "Schedule tasks into Google Calendar",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			source, cfg, err := loadTaskSource()
-			if err != nil {
-				return err
-			}
-
-			cal, err := loadCalendarClient(cmd.Context(), cfg)
-			if err != nil {
-				return err
-			}
-
-			now := time.Now()
-			dryRun, _ := cmd.Flags().GetBool("dry-run")
-			force, _ := cmd.Flags().GetBool("force")
-			jql, _ := cmd.Flags().GetString("jql")
-			filter, _ := cmd.Flags().GetString("filter")
-			days, _ := cmd.Flags().GetInt("days")
-			from, _ := cmd.Flags().GetString("from")
-			to, _ := cmd.Flags().GetString("to")
-
-			query, start, end, dryRun, err := BuildSyncParams(SyncFlags{
-				DryRun: dryRun,
-				JQL:    jql,
-				Filter: filter,
-				Days:   days,
-				From:   from,
-				To:     to,
-			}, cfg, now)
-			if err != nil {
-				return err
-			}
-
-			// Use multiFetcher for multi-provider, or the source directly
-			var fetcher TaskFetcher
-			if ms, ok := source.(*MultiTaskSource); ok {
-				fetcher = &multiFetcher{
-					queries: buildProviderQueries(cfg, jql, filter),
-					sources: ms.sources,
-				}
-			} else {
-				fetcher = source
-			}
-
-			result, err := RunSync(cmd.Context(), SyncParams{
-				Cal:      cal,
-				Tasks:    fetcher,
-				Cfg:      cfg,
-				Query:    query,
-				Now:      now,
-				Start:    start,
-				End:      end,
-				DryRun:   dryRun,
-				Force:    force,
-				Progress: cmd.ErrOrStderr(),
-			})
-			if err != nil {
-				return err
-			}
-
-			verbose, _ := cmd.Flags().GetBool("verbose")
-			PrintSyncResult(cmd.OutOrStdout(), result, dryRun, verbose)
-			return nil
-		},
-	}
-
-	cmd.Flags().Bool("dry-run", false, "Preview schedule without creating events")
-	cmd.Flags().Bool("force", false, "Delete all events and recreate (skip incremental sync)")
-	cmd.Flags().BoolP("verbose", "v", false, "Show project and section in task labels")
-	cmd.Flags().String("jql", "", "Custom JQL query override (Jira source)")
-	cmd.Flags().String("filter", "", "Custom filter override (Todoist source)")
-	cmd.Flags().Int("days", 0, "Number of days to schedule (1 = today only)")
-	cmd.Flags().String("from", "", "Start date (YYYY-MM-DD)")
-	cmd.Flags().String("to", "", "End date (YYYY-MM-DD)")
-
-	return cmd
 }

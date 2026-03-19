@@ -4,9 +4,32 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
+
+var durationRe = regexp.MustCompile(`^(?:(\d+)h)?(?:(\d+)m)?$`)
+
+// ParseDuration parses a human-friendly duration string like "2h", "30m", or "1h30m".
+func ParseDuration(s string) (time.Duration, error) {
+	matches := durationRe.FindStringSubmatch(s)
+	if matches == nil || (matches[1] == "" && matches[2] == "") {
+		return 0, fmt.Errorf("invalid duration %q (expected format: 2h, 30m, 1h30m)", s)
+	}
+
+	var d time.Duration
+	if matches[1] != "" {
+		h, _ := strconv.Atoi(matches[1])
+		d += time.Duration(h) * time.Hour
+	}
+	if matches[2] != "" {
+		m, _ := strconv.Atoi(matches[2])
+		d += time.Duration(m) * time.Minute
+	}
+	return d, nil
+}
 
 // EstimateGetter abstracts fetching the current remaining estimate from Jira.
 type EstimateGetter interface {

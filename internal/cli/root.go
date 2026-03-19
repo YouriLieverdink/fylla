@@ -7,13 +7,11 @@ import (
 
 // NewRootCmd creates the root cobra command for fylla.
 func NewRootCmd() *cobra.Command {
-	rootCmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "fylla",
 		Short: "Fylla - Fill your calendar with what matters",
-		Long:  "A CLI tool that pulls Jira tasks, sorts them by priority rules, and schedules them into free slots on Google Calendar.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return commands.RunServe(cmd.Context())
+		},
 	}
-
-	commands.Register(rootCmd)
-
-	return rootCmd
 }

@@ -10,7 +10,6 @@ import (
 	"github.com/iruoy/fylla/internal/config"
 	"github.com/iruoy/fylla/internal/scheduler"
 	"github.com/mattn/go-runewidth"
-	"github.com/spf13/cobra"
 )
 
 // displayWidth returns the display width of a string. It uses
@@ -165,70 +164,4 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dh", h)
 	}
 	return fmt.Sprintf("%dm", m)
-}
-
-func newListCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "Show sorted tasks without scheduling",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			source, cfg, err := loadTaskSource()
-			if err != nil {
-				return err
-			}
-
-			jql, _ := cmd.Flags().GetString("jql")
-			filter, _ := cmd.Flags().GetString("filter")
-
-			// Use multiFetcher for multi-provider, or the source directly
-			var fetcher TaskFetcher
-			var query string
-			if ms, ok := source.(*MultiTaskSource); ok {
-				fetcher = &multiFetcher{
-					queries: buildProviderQueries(cfg, jql, filter),
-					sources: ms.sources,
-				}
-			} else {
-				fetcher = source
-				providers := cfg.ActiveProviders()
-				switch providers[0] {
-				case "todoist":
-					query = filter
-					if query == "" {
-						query = cfg.Todoist.DefaultFilter
-					}
-				case "local":
-					query = filter
-					if query == "" {
-						query = cfg.Local.DefaultFilter
-					}
-				default:
-					query = jql
-					if query == "" {
-						query = cfg.Jira.DefaultJQL
-					}
-				}
-			}
-
-			result, err := RunList(cmd.Context(), ListParams{
-				Tasks: fetcher,
-				Cfg:   cfg,
-				Query: query,
-				Now:   time.Now(),
-			})
-			if err != nil {
-				return err
-			}
-
-			verbose, _ := cmd.Flags().GetBool("verbose")
-			PrintListResult(cmd.OutOrStdout(), result, verbose)
-			return nil
-		},
-	}
-
-	cmd.Flags().BoolP("verbose", "v", false, "Show detailed task metadata on a second line")
-	cmd.Flags().String("jql", "", "Custom JQL query override (Jira source)")
-	cmd.Flags().String("filter", "", "Custom filter override (Todoist source)")
-
-	return cmd
 }

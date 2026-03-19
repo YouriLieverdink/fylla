@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/iruoy/fylla/internal/task"
-	"github.com/spf13/cobra"
 )
 
 // ViewParams holds inputs for the view command.
@@ -95,33 +94,5 @@ func PrintViewResult(w io.Writer, result *ViewResult) {
 	}
 	if result.NoSplit {
 		fmt.Fprintf(w, "No Split:  yes\n")
-	}
-}
-
-func newViewCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "view TASK-KEY",
-		Short: "View task details",
-		Args:  cobra.ExactArgs(1),
-		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-			return nil, cobra.ShellCompDirectiveNoFileComp
-		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			source, _, err := loadTaskSource()
-			if err != nil {
-				return err
-			}
-
-			result, err := RunView(cmd.Context(), ViewParams{
-				TaskKey: args[0],
-				Source:  source,
-			})
-			if err != nil {
-				return err
-			}
-
-			PrintViewResult(cmd.OutOrStdout(), result)
-			return nil
-		},
 	}
 }

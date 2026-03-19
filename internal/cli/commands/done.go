@@ -6,7 +6,6 @@ import (
 	"io"
 
 	"github.com/iruoy/fylla/internal/task"
-	"github.com/spf13/cobra"
 )
 
 // TaskCompleter abstracts marking a task as done for testing.
@@ -56,45 +55,4 @@ func RunDone(ctx context.Context, p DoneParams) (*DoneResult, error) {
 // PrintDoneResult writes the done confirmation to the given writer.
 func PrintDoneResult(w io.Writer, result *DoneResult) {
 	fmt.Fprintf(w, "Marked %s as done\n", result.TaskKey)
-}
-
-func newDoneCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "done TASK-KEY [TASK-KEY...]",
-		Short: "Mark one or more tasks as done",
-		Args:  cobra.MinimumNArgs(1),
-		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-			return nil, cobra.ShellCompDirectiveNoFileComp
-		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			source, _, err := loadTaskSource()
-			if err != nil {
-				return err
-			}
-
-			if len(args) == 1 {
-				result, err := RunDone(cmd.Context(), DoneParams{
-					TaskKey:   args[0],
-					Completer: source,
-				})
-				if err != nil {
-					return err
-				}
-				PrintDoneResult(cmd.OutOrStdout(), result)
-			} else {
-				ctx := cmd.Context()
-				results := RunBatch(args, func(key string) error {
-					_, err := RunDone(ctx, DoneParams{
-						TaskKey:   key,
-						Completer: source,
-					})
-					return err
-				})
-				PrintBatchResults(cmd.OutOrStdout(), results, "marked as done")
-			}
-
-			maybeAutoResync(cmd.Context(), cmd.ErrOrStderr())
-			return nil
-		},
-	}
 }

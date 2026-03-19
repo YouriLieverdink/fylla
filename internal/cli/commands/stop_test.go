@@ -9,8 +9,93 @@ import (
 	"time"
 
 	"github.com/iruoy/fylla/internal/calendar"
+	"github.com/iruoy/fylla/internal/config"
 	"github.com/iruoy/fylla/internal/timer"
 )
+
+func worklogConfig() *config.Config {
+	cfg := testConfig()
+	cfg.Worklog = config.WorklogConfig{
+		FallbackIssues: []string{"ADMIN-1", "MEETING-1"},
+	}
+	return cfg
+}
+
+type mockSurveyor struct {
+	selectAnswers           []string
+	multiSelectAnswers      [][]string
+	inputAnswers            []string
+	inputWithDefaultAnswers []string
+	passwordAnswer          []string
+	selectIdx               int
+	multiSelectIdx          int
+	inputIdx                int
+	inputWithDefaultIdx     int
+	passwordIdx             int
+}
+
+func (m *mockSurveyor) Select(message string, options []string) (string, error) {
+	if m.selectIdx >= len(m.selectAnswers) {
+		return "", fmt.Errorf("unexpected Select call: %s", message)
+	}
+	answer := m.selectAnswers[m.selectIdx]
+	m.selectIdx++
+	return answer, nil
+}
+
+func (m *mockSurveyor) MultiSelect(message string, options []string) ([]string, error) {
+	if m.multiSelectIdx >= len(m.multiSelectAnswers) {
+		return nil, fmt.Errorf("unexpected MultiSelect call: %s", message)
+	}
+	answer := m.multiSelectAnswers[m.multiSelectIdx]
+	m.multiSelectIdx++
+	return answer, nil
+}
+
+func (m *mockSurveyor) Input(message string) (string, error) {
+	if m.inputIdx >= len(m.inputAnswers) {
+		return "", fmt.Errorf("unexpected Input call: %s", message)
+	}
+	answer := m.inputAnswers[m.inputIdx]
+	m.inputIdx++
+	return answer, nil
+}
+
+func (m *mockSurveyor) InputWithDefault(message, defaultVal string) (string, error) {
+	if m.inputWithDefaultIdx >= len(m.inputWithDefaultAnswers) {
+		return defaultVal, nil
+	}
+	answer := m.inputWithDefaultAnswers[m.inputWithDefaultIdx]
+	m.inputWithDefaultIdx++
+	return answer, nil
+}
+
+func (m *mockSurveyor) Password(message string) (string, error) {
+	if m.passwordIdx >= len(m.passwordAnswer) {
+		return "", fmt.Errorf("unexpected Password call: %s", message)
+	}
+	answer := m.passwordAnswer[m.passwordIdx]
+	m.passwordIdx++
+	return answer, nil
+}
+
+// mockWorklogPoster records PostWorklog calls for assertion.
+type mockWorklogPoster struct {
+	calls []worklogCall
+	err   error
+}
+
+type worklogCall struct {
+	issueKey    string
+	timeSpent   time.Duration
+	description string
+	started     time.Time
+}
+
+func (m *mockWorklogPoster) PostWorklog(_ context.Context, issueKey string, timeSpent time.Duration, description string, started time.Time) error {
+	m.calls = append(m.calls, worklogCall{issueKey, timeSpent, description, started})
+	return m.err
+}
 
 // mockJiraKeyResolver returns a predefined Jira key for testing.
 type mockJiraKeyResolver struct {

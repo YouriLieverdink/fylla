@@ -6,7 +6,6 @@ import (
 	"io"
 
 	"github.com/iruoy/fylla/internal/task"
-	"github.com/spf13/cobra"
 )
 
 // MoveParams holds inputs for the move command.
@@ -77,40 +76,4 @@ func RunMove(ctx context.Context, p MoveParams) (*MoveResult, error) {
 // PrintMoveResult writes the move confirmation to the given writer.
 func PrintMoveResult(w io.Writer, result *MoveResult) {
 	fmt.Fprintf(w, "Moved %s to %s\n", result.TaskKey, result.Target)
-}
-
-func newMoveCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "move TASK-KEY [TARGET]",
-		Short: "Move a task to a different status or lane",
-		Args:  cobra.RangeArgs(1, 2),
-		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-			return nil, cobra.ShellCompDirectiveNoFileComp
-		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			source, _, err := loadTaskSource()
-			if err != nil {
-				return err
-			}
-
-			var target string
-			if len(args) > 1 {
-				target = args[1]
-			}
-
-			result, err := RunMove(cmd.Context(), MoveParams{
-				TaskKey:  args[0],
-				Target:   target,
-				Source:   source,
-				Surveyor: &defaultSurveyor{},
-			})
-			if err != nil {
-				return err
-			}
-			PrintMoveResult(cmd.OutOrStdout(), result)
-
-			maybeAutoResync(cmd.Context(), cmd.ErrOrStderr())
-			return nil
-		},
-	}
 }

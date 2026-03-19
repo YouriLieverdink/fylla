@@ -8,9 +8,20 @@ import (
 	"time"
 
 	"github.com/iruoy/fylla/internal/calendar"
-	"github.com/iruoy/fylla/internal/config"
-	"github.com/spf13/cobra"
 )
+
+// FyllaEvent represents a scheduled Fylla task event or a calendar event.
+type FyllaEvent struct {
+	TaskKey         string
+	Provider        string
+	Project         string
+	Section         string
+	Summary         string
+	Start           time.Time
+	End             time.Time
+	AtRisk          bool
+	IsCalendarEvent bool
+}
 
 // TodayParams holds all inputs for the today command.
 type TodayParams struct {
@@ -130,38 +141,4 @@ func PrintTodayResult(w io.Writer, result *TodayResult, now time.Time, verbose b
 			suffix,
 		)
 	}
-}
-
-func newTodayCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "today",
-		Short: "Show all Fylla tasks scheduled for today",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
-			if err != nil {
-				return err
-			}
-
-			cal, err := loadCalendarClient(cmd.Context(), cfg)
-			if err != nil {
-				return err
-			}
-
-			now := time.Now()
-			result, err := RunToday(cmd.Context(), TodayParams{
-				Cal: cal,
-				Now: now,
-			})
-			if err != nil {
-				return err
-			}
-
-			verbose, _ := cmd.Flags().GetBool("verbose")
-			PrintTodayResult(cmd.OutOrStdout(), result, now, verbose)
-			return nil
-		},
-	}
-
-	cmd.Flags().BoolP("verbose", "v", false, "Show project and section in task labels")
-	return cmd
 }

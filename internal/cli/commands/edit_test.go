@@ -77,45 +77,6 @@ func (m *editMock) UpdateParent(_ context.Context, _ string, parent string) erro
 	return m.updateErr
 }
 
-func TestRunEdit_Validation(t *testing.T) {
-	cmd := newEditCmd()
-
-	t.Run("no flags error", func(t *testing.T) {
-		cmd.SetArgs([]string{"PROJ-123"})
-		err := cmd.Execute()
-		if err == nil {
-			t.Fatal("expected error when no flags provided")
-		}
-		if !strings.Contains(err.Error(), "at least one flag") {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("due and no-due mutual exclusion", func(t *testing.T) {
-		cmd := newEditCmd()
-		cmd.SetArgs([]string{"PROJ-123", "--due", "Friday", "--no-due"})
-		err := cmd.Execute()
-		if err == nil {
-			t.Fatal("expected error for --due and --no-due")
-		}
-		if !strings.Contains(err.Error(), "mutually exclusive") {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("up-next and no-up-next mutual exclusion", func(t *testing.T) {
-		cmd := newEditCmd()
-		cmd.SetArgs([]string{"PROJ-123", "--up-next", "--no-up-next"})
-		err := cmd.Execute()
-		if err == nil {
-			t.Fatal("expected error for --up-next and --no-up-next")
-		}
-		if !strings.Contains(err.Error(), "mutually exclusive") {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
-}
-
 func TestRunEdit_SingleFlags(t *testing.T) {
 	ctx := context.Background()
 
@@ -553,40 +514,3 @@ func TestRunEdit_ClearFields(t *testing.T) {
 	})
 }
 
-func TestRunEdit_ClearMutualExclusion(t *testing.T) {
-	t.Run("estimate and no-estimate", func(t *testing.T) {
-		cmd := newEditCmd()
-		cmd.SetArgs([]string{"PROJ-123", "--estimate", "4h", "--no-estimate"})
-		err := cmd.Execute()
-		if err == nil {
-			t.Fatal("expected error for --estimate and --no-estimate")
-		}
-		if !strings.Contains(err.Error(), "mutually exclusive") {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("priority and no-priority", func(t *testing.T) {
-		cmd := newEditCmd()
-		cmd.SetArgs([]string{"PROJ-123", "--priority", "High", "--no-priority"})
-		err := cmd.Execute()
-		if err == nil {
-			t.Fatal("expected error for --priority and --no-priority")
-		}
-		if !strings.Contains(err.Error(), "mutually exclusive") {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("parent and no-parent", func(t *testing.T) {
-		cmd := newEditCmd()
-		cmd.SetArgs([]string{"PROJ-123", "--parent", "EPIC-1", "--no-parent"})
-		err := cmd.Execute()
-		if err == nil {
-			t.Fatal("expected error for --parent and --no-parent")
-		}
-		if !strings.Contains(err.Error(), "mutually exclusive") {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
-}

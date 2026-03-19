@@ -6,11 +6,9 @@ import (
 	"io"
 	"time"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/iruoy/fylla/internal/calendar"
 	"github.com/iruoy/fylla/internal/config"
 	"github.com/iruoy/fylla/internal/timer"
-	"github.com/spf13/cobra"
 )
 
 // WorklogPoster abstracts Jira worklog posting for testing.
@@ -275,80 +273,4 @@ func resolveToFallbackIssue(survey Surveyor, cfg *config.Config) (string, error)
 		fallbacks = cfg.Worklog.FallbackIssues
 	}
 	return promptFallbackIssue(survey, fallbacks)
-}
-
-func newStopCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "stop",
-		Short: "Stop timer and log work",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			source, cfg, err := loadTaskSource()
-			if err != nil {
-				return err
-			}
-
-			description, _ := cmd.Flags().GetString("description")
-			done, _ := cmd.Flags().GetBool("done")
-
-			timerPath, err := timer.DefaultPath()
-			if err != nil {
-				return fmt.Errorf("timer path: %w", err)
-			}
-
-			if description == "" {
-				// Pre-fill from timer comment if available
-				var defaultDesc string
-				if state, loadErr := timer.Load(timerPath); loadErr == nil && state != nil {
-					defaultDesc = state.Comment
-				}
-				prompt := &survey.Input{Message: "Work description:", Default: defaultDesc}
-				if err := survey.AskOne(prompt, &description); err != nil {
-					return fmt.Errorf("prompt description: %w", err)
-				}
-			}
-
-			// Load calendar client (optional)
-			var cal CalendarClient
-			if cfg.Calendar.Credentials != "" {
-				c, err := loadCalendarClient(cmd.Context(), cfg)
-				if err == nil {
-					cal = c
-				}
-			}
-
-			// Resolve GitHub PR keys to Jira for worklog posting.
-			var resolver JiraKeyResolver
-			if r, ok := source.(JiraKeyResolver); ok {
-				resolver = r
-			}
-
-			now := time.Now()
-			result, err := RunStop(cmd.Context(), StopParams{
-				TimerPath:    timerPath,
-				RoundMinutes: 5,
-				Now:          now,
-				Description:  description,
-				Jira:         source,
-				Cal:          cal,
-				Estimate:     source,
-				Cfg:          cfg,
-				Resolver:     resolver,
-				Survey:       defaultSurveyor{},
-				Completer:    source,
-				Done:         done,
-			})
-			if err != nil {
-				return err
-			}
-
-			PrintStopResult(cmd.OutOrStdout(), result)
-			maybeAutoResync(cmd.Context(), cmd.ErrOrStderr())
-			return nil
-		},
-	}
-
-	cmd.Flags().StringP("description", "d", "", "Work description (skips interactive prompt)")
-	cmd.Flags().BoolP("done", "D", false, "Mark the task as done after logging work")
-
-	return cmd
 }

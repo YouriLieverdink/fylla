@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-
-	"github.com/spf13/cobra"
 )
 
 // TaskDeleter abstracts permanently deleting a task for testing.
@@ -52,45 +50,4 @@ func RunDelete(ctx context.Context, p DeleteParams) (*DeleteResult, error) {
 // PrintDeleteResult writes the delete confirmation to the given writer.
 func PrintDeleteResult(w io.Writer, result *DeleteResult) {
 	fmt.Fprintf(w, "Deleted %s\n", result.TaskKey)
-}
-
-func newDeleteCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "delete TASK-KEY [TASK-KEY...]",
-		Short: "Delete one or more tasks",
-		Args:  cobra.MinimumNArgs(1),
-		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-			return nil, cobra.ShellCompDirectiveNoFileComp
-		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			source, _, err := loadTaskSource()
-			if err != nil {
-				return err
-			}
-
-			if len(args) == 1 {
-				result, err := RunDelete(cmd.Context(), DeleteParams{
-					TaskKey: args[0],
-					Deleter: source,
-				})
-				if err != nil {
-					return err
-				}
-				PrintDeleteResult(cmd.OutOrStdout(), result)
-			} else {
-				ctx := cmd.Context()
-				results := RunBatch(args, func(key string) error {
-					_, err := RunDelete(ctx, DeleteParams{
-						TaskKey: key,
-						Deleter: source,
-					})
-					return err
-				})
-				PrintBatchResults(cmd.OutOrStdout(), results, "deleted")
-			}
-
-			maybeAutoResync(cmd.Context(), cmd.ErrOrStderr())
-			return nil
-		},
-	}
 }

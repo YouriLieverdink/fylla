@@ -12,8 +12,44 @@ import (
 	"github.com/iruoy/fylla/internal/timer"
 	"github.com/iruoy/fylla/internal/tui"
 	"github.com/iruoy/fylla/internal/tui/msg"
-	"github.com/spf13/cobra"
 )
+
+// RunServe starts the interactive TUI dashboard.
+func RunServe(ctx context.Context) error {
+	source, cfg, err := loadTaskSource()
+	if err != nil {
+		return err
+	}
+
+	cal, err := loadCalendarClient(ctx, cfg)
+	if err != nil {
+		return err
+	}
+
+	var fetcher TaskFetcher
+	if ms, ok := source.(*MultiTaskSource); ok {
+		fetcher = &multiFetcher{
+			queries: buildProviderQueries(cfg, "", ""),
+			sources: ms.sources,
+		}
+	} else {
+		fetcher = source
+	}
+
+	cfgPath, err := config.DefaultPath()
+	if err != nil {
+		return fmt.Errorf("config path: %w", err)
+	}
+
+	query := serveDefaultQuery(cfg)
+
+	return tui.Run(tui.Deps{
+		CB:               buildCallbacks(ctx, cal, fetcher, source, cfg, cfgPath, query),
+		DailyHours:       cfg.Efficiency.DailyHours,
+		WeeklyHours:      cfg.Efficiency.WeeklyHours,
+		EfficiencyTarget: cfg.Efficiency.Target,
+	})
+}
 
 func serveDefaultQuery(cfg *config.Config) string {
 	providers := cfg.ActiveProviders()
@@ -24,49 +60,6 @@ func serveDefaultQuery(cfg *config.Config) string {
 		return cfg.Kendo.DefaultFilter
 	default:
 		return cfg.Jira.DefaultJQL
-	}
-}
-
-func newServeCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "serve",
-		Short: "Start the interactive TUI dashboard",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			source, cfg, err := loadTaskSource()
-			if err != nil {
-				return err
-			}
-
-			cal, err := loadCalendarClient(cmd.Context(), cfg)
-			if err != nil {
-				return err
-			}
-
-			var fetcher TaskFetcher
-			if ms, ok := source.(*MultiTaskSource); ok {
-				fetcher = &multiFetcher{
-					queries: buildProviderQueries(cfg, "", ""),
-					sources: ms.sources,
-				}
-			} else {
-				fetcher = source
-			}
-
-			cfgPath, err := config.DefaultPath()
-			if err != nil {
-				return fmt.Errorf("config path: %w", err)
-			}
-
-			ctx := cmd.Context()
-			query := serveDefaultQuery(cfg)
-
-			return tui.Run(tui.Deps{
-				CB:               buildCallbacks(ctx, cal, fetcher, source, cfg, cfgPath, query),
-				DailyHours:       cfg.Efficiency.DailyHours,
-				WeeklyHours:      cfg.Efficiency.WeeklyHours,
-				EfficiencyTarget: cfg.Efficiency.Target,
-			})
-		},
 	}
 }
 

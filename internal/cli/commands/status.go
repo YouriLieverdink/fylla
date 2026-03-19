@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/iruoy/fylla/internal/timer"
-	"github.com/spf13/cobra"
 )
 
 // StatusParams holds inputs for the status command.
@@ -62,28 +61,4 @@ func formatElapsed(d time.Duration) string {
 		return fmt.Sprintf("%dh", h)
 	}
 	return fmt.Sprintf("%dm", m)
-}
-
-func newStatusCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "status",
-		Short: "Show currently running task and elapsed time",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			path, err := timer.DefaultPath()
-			if err != nil {
-				return fmt.Errorf("timer path: %w", err)
-			}
-
-			result, err := RunStatus(StatusParams{
-				TimerPath: path,
-				Now:       time.Now(),
-			})
-			if err != nil {
-				return err
-			}
-
-			PrintStatusResult(cmd.OutOrStdout(), result)
-			return nil
-		},
-	}
 }
