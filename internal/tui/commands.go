@@ -97,6 +97,7 @@ type Callbacks struct {
 	FallbackIssues   func() []FallbackIssue
 	ListTransitions  func(taskKey, provider string) ([]string, error)
 	MoveTask         func(taskKey, provider, target string) error
+	ListIssueTypes   func(provider, project string) ([]string, error)
 }
 
 func loadTodayCmd(cb Callbacks) tea.Cmd {
@@ -302,7 +303,18 @@ func loadFormOptionsCmd(cb Callbacks) tea.Cmd {
 				lanes = l
 			}
 		}
-		return msg.FormOptionsMsg{Projects: projects, Sections: sections, Lanes: lanes, Provider: provider, Providers: providers, Epics: epics}
+		var issueTypes []string
+		if cb.ListIssueTypes != nil && provider == "jira" {
+			project := ""
+			if len(projects) > 0 {
+				project = projects[0]
+			}
+			it, err := cb.ListIssueTypes(provider, project)
+			if err == nil {
+				issueTypes = it
+			}
+		}
+		return msg.FormOptionsMsg{Projects: projects, Sections: sections, Lanes: lanes, IssueTypes: issueTypes, Provider: provider, Providers: providers, Epics: epics}
 	}
 }
 
@@ -366,6 +378,16 @@ func loadLanesCmd(cb Callbacks, provider, project string) tea.Cmd {
 		}
 		lanes, err := cb.ListLanes(provider, project)
 		return msg.LanesLoadedMsg{Lanes: lanes, Err: err}
+	}
+}
+
+func loadIssueTypesCmd(cb Callbacks, provider, project string) tea.Cmd {
+	return func() tea.Msg {
+		if cb.ListIssueTypes == nil {
+			return msg.IssueTypesLoadedMsg{}
+		}
+		types, err := cb.ListIssueTypes(provider, project)
+		return msg.IssueTypesLoadedMsg{IssueTypes: types, Err: err}
 	}
 }
 

@@ -398,6 +398,22 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			}
 			return nil, nil
 		},
+		ListIssueTypes: func(provider, project string) ([]string, error) {
+			if provider != "" {
+				if ms, ok := source.(*MultiTaskSource); ok {
+					if src, ok := ms.sources[provider]; ok {
+						if il, ok := src.(IssueTypeLister); ok {
+							return il.ListIssueTypes(ctx, project)
+						}
+					}
+					return nil, nil
+				}
+			}
+			if il, ok := source.(IssueTypeLister); ok {
+				return il.ListIssueTypes(ctx, project)
+			}
+			return nil, nil
+		},
 		ListEpics: func(project string) ([]msg.EpicOption, error) {
 			var el EpicLister
 			if e, ok := source.(EpicLister); ok {

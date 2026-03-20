@@ -84,6 +84,11 @@ type LaneLister interface {
 	ListLanes(ctx context.Context, project string) ([]string, error)
 }
 
+// IssueTypeLister lists available issue types for a project.
+type IssueTypeLister interface {
+	ListIssueTypes(ctx context.Context, project string) ([]string, error)
+}
+
 // ParentUpdater updates the parent of a task.
 type ParentUpdater interface {
 	UpdateParent(ctx context.Context, issueKey, parentKey string) error

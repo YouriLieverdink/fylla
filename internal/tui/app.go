@@ -689,11 +689,22 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.formOptions.Projects = mssg.Projects
 			if len(mssg.Projects) > 0 {
 				m.form.UpdateSelectByLabel("Project", mssg.Projects, mssg.Projects[0])
+				project := mssg.Projects[0]
+				provider := m.form.ValueByLabel("Provider")
+				if provider == "" {
+					provider = m.formOptions.Provider
+				}
+				if provider == "kendo" {
+					cmds = append(cmds, loadLanesCmd(m.cb, provider, project))
+				}
+				if provider == "jira" {
+					cmds = append(cmds, loadIssueTypesCmd(m.cb, provider, project))
+				}
 			} else {
 				m.form.ConvertToTextByLabel("Project", "Project key")
 			}
 		}
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case msg.SectionsLoadedMsg:
 		if m.form.Active && (m.formKind == formAddTask || m.formKind == formEditTask) {
@@ -718,10 +729,27 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 				if current == "" {
 					current = mssg.Lanes[0]
 				}
+				m.form.ConvertToSelectByLabel("Issue Type", mssg.Lanes, current)
 				m.form.UpdateSelectByLabel("Issue Type", mssg.Lanes, current)
 			}
 			if m.formOptions != nil {
 				m.formOptions.Lanes = mssg.Lanes
+			}
+		}
+		return m, nil
+
+	case msg.IssueTypesLoadedMsg:
+		if m.form.Active && (m.formKind == formAddTask || m.formKind == formEditTask) {
+			if len(mssg.IssueTypes) > 0 {
+				current := m.form.ValueByLabel("Issue Type")
+				if current == "" {
+					current = mssg.IssueTypes[0]
+				}
+				m.form.ConvertToSelectByLabel("Issue Type", mssg.IssueTypes, current)
+				m.form.UpdateSelectByLabel("Issue Type", mssg.IssueTypes, current)
+			}
+			if m.formOptions != nil {
+				m.formOptions.IssueTypes = mssg.IssueTypes
 			}
 		}
 		return m, nil
@@ -1206,17 +1234,20 @@ func (m *model) openPickerForSelect() {
 
 func (m model) pickerSideEffect(label string) tea.Cmd {
 	switch label {
-	case "Provider":
-		if m.formKind == formAddTask && m.formOptions != nil {
-			return m.rebuildAddFormForProvider()
-		}
 	case "Project":
 		project := m.form.ValueByLabel("Project")
 		provider := m.form.ValueByLabel("Provider")
 		if provider == "" && m.formOptions != nil {
 			provider = m.formOptions.Provider
 		}
-		return tea.Batch(loadEpicsCmd(m.cb, project), loadSectionsCmd(m.cb, provider, project))
+		cmds := []tea.Cmd{loadEpicsCmd(m.cb, project), loadSectionsCmd(m.cb, provider, project)}
+		if provider == "kendo" {
+			cmds = append(cmds, loadLanesCmd(m.cb, provider, project))
+		}
+		if provider == "jira" {
+			cmds = append(cmds, loadIssueTypesCmd(m.cb, provider, project))
+		}
+		return tea.Batch(cmds...)
 	}
 	return nil
 }
@@ -1241,6 +1272,10 @@ func (m model) updatePicker(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if selected != nil {
 			m.form.SetValueByLabel(m.pickerFieldLabel, selected.Key)
+		}
+		if m.pickerFieldLabel == "Provider" && m.formKind == formAddTask && m.formOptions != nil {
+			cmd := m.rebuildAddFormForProvider()
+			return m, cmd
 		}
 		return m, m.pickerSideEffect(m.pickerFieldLabel)
 	default:
@@ -1309,6 +1344,9 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if provider == "kendo" {
 					cmds = append(cmds, loadLanesCmd(m.cb, provider, project))
 				}
+				if provider == "jira" {
+					cmds = append(cmds, loadIssueTypesCmd(m.cb, provider, project))
+				}
 				return m, tea.Batch(cmds...)
 			}
 			return m, nil
@@ -1338,6 +1376,9 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				cmds := []tea.Cmd{loadEpicsCmd(m.cb, project), loadSectionsCmd(m.cb, provider, project)}
 				if provider == "kendo" {
 					cmds = append(cmds, loadLanesCmd(m.cb, provider, project))
+				}
+				if provider == "jira" {
+					cmds = append(cmds, loadIssueTypesCmd(m.cb, provider, project))
 				}
 				return m, tea.Batch(cmds...)
 			}
@@ -1926,15 +1967,25 @@ func buildAddForm(provider string, opts *msg.FormOptionsMsg) components.Form {
 		projectField,
 	)
 	if provider == "jira" {
-		fields = append(fields, components.FormFieldDef{
-			Label: "Issue Type", Kind: components.FieldSelect,
-			Options: []string{"Task", "Bug", "Story", "Epic"}, Value: "Task",
-		})
+		if len(opts.IssueTypes) > 0 {
+			fields = append(fields, components.FormFieldDef{
+				Label: "Issue Type", Kind: components.FieldSelect,
+				Options: opts.IssueTypes, Value: opts.IssueTypes[0],
+			})
+		} else {
+			fields = append(fields, components.FormFieldDef{
+				Label: "Issue Type", Placeholder: "Loading issue types...",
+			})
+		}
 	} else if provider == "kendo" {
 		if len(opts.Lanes) > 0 {
 			fields = append(fields, components.FormFieldDef{
 				Label: "Issue Type", Kind: components.FieldSelect,
 				Options: opts.Lanes, Value: opts.Lanes[0],
+			})
+		} else {
+			fields = append(fields, components.FormFieldDef{
+				Label: "Issue Type", Placeholder: "Loading lanes...",
 			})
 		}
 	}
@@ -2002,6 +2053,9 @@ func (m *model) rebuildAddFormForProvider() tea.Cmd {
 	}
 	if newProvider == "kendo" {
 		cmds = append(cmds, loadLanesCmd(m.cb, newProvider, m.form.ValueByLabel("Project")))
+	}
+	if newProvider == "jira" {
+		cmds = append(cmds, loadIssueTypesCmd(m.cb, newProvider, m.form.ValueByLabel("Project")))
 	}
 	cmds = append(cmds, loadSectionsCmd(m.cb, newProvider, m.form.ValueByLabel("Project")))
 	return tea.Batch(cmds...)

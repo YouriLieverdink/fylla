@@ -1102,3 +1102,35 @@ func formatDuration(d time.Duration) string {
 	}
 	return fmt.Sprintf("%dm", m)
 }
+
+// ListIssueTypes returns the available issue type names for a project.
+func (c *Client) ListIssueTypes(ctx context.Context, project string) ([]string, error) {
+	path := fmt.Sprintf("/rest/api/3/project/%s/statuses", project)
+	resp, err := c.do(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("list issue types: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("jira list issue types: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result []struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode issue types response: %w", err)
+	}
+
+	names := make([]string, 0, len(result))
+	seen := make(map[string]bool)
+	for _, it := range result {
+		if !seen[it.Name] {
+			seen[it.Name] = true
+			names = append(names, it.Name)
+		}
+	}
+	return names, nil
+}

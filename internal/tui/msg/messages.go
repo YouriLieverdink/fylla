@@ -148,14 +148,15 @@ type ClearToastMsg struct{}
 
 // FormOptionsMsg carries project/section lists for populating add form selectors.
 type FormOptionsMsg struct {
-	Projects  []string
-	Sections  []string
-	Lanes     []string // lane names (Kendo issue type / board column)
-	Provider  string   // primary provider name (e.g. "jira", "todoist")
-	Providers []string // all active provider names
-	Epics     []EpicOption
-	ParentKey string // current parent key (for edit form pre-population)
-	Err       error
+	Projects   []string
+	Sections   []string
+	Lanes      []string // lane names (Kendo issue type / board column)
+	IssueTypes []string // Jira issue type names
+	Provider   string   // primary provider name (e.g. "jira", "todoist")
+	Providers  []string // all active provider names
+	Epics      []EpicOption
+	ParentKey  string // current parent key (for edit form pre-population)
+	Err        error
 }
 
 // TaskSnoozedMsg is sent after snoozing a task.
@@ -192,6 +193,12 @@ type SectionsLoadedMsg struct {
 type LanesLoadedMsg struct {
 	Lanes []string
 	Err   error
+}
+
+// IssueTypesLoadedMsg carries the result of loading issue types for a project.
+type IssueTypesLoadedMsg struct {
+	IssueTypes []string
+	Err        error
 }
 
 // WorklogsLoadedMsg carries the result of loading worklogs.
