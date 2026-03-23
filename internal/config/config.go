@@ -82,6 +82,7 @@ type CalendarConfig struct {
 type SchedulingConfig struct {
 	WindowDays             int   `yaml:"windowDays"`
 	MinTaskDurationMinutes int   `yaml:"minTaskDurationMinutes"`
+	MaxTaskDurationMinutes int   `yaml:"maxTaskDurationMinutes"`
 	BufferMinutes          int   `yaml:"bufferMinutes"`
 	TravelBufferMinutes    int   `yaml:"travelBufferMinutes"`
 	SnapMinutes            []int `yaml:"snapMinutes"`

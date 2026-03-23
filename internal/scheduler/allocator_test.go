@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/iruoy/fylla/internal/calendar"
+	"github.com/iruoy/fylla/internal/config"
 	"github.com/iruoy/fylla/internal/task"
 )
 
@@ -1010,5 +1011,312 @@ func Test_ALLOC_partial_scheduling_when_not_enough_time(t *testing.T) {
 	}
 	if unsched[0].Reason != "not enough time" {
 		t.Errorf("expected reason 'not enough time', got %q", unsched[0].Reason)
+	}
+}
+
+func Test_ALLOC_max_duration_interleaved_split(t *testing.T) {
+	// 8h task (score 80) + 2h task (score 60) with MaxTaskDurationMinutes=240 (4h).
+	// After first 4h chunk, BIG-1's remainder is re-scored with halved base components.
+	// With weights, the recalculated score drops well below 60, so SMALL-1 goes next.
+	now := date(2025, 1, 20, 8, 0)
+	weights := config.WeightsConfig{Priority: 0.45, DueDate: 0.30, Estimate: 0.15, Age: 0.10}
+
+	tasks := []ScoredTask{
+		{
+			Task: task.Task{
+				Key:               "BIG-1",
+				Summary:           "Big task",
+				RemainingEstimate: 8 * time.Hour,
+				Project:           "P",
+			},
+			Score: 80,
+		},
+		{
+			Task: task.Task{
+				Key:               "SMALL-1",
+				Summary:           "Small task",
+				RemainingEstimate: 2 * time.Hour,
+				Project:           "P",
+			},
+			Score: 60,
+		},
+	}
+
+	slots := map[string][]calendar.Slot{
+		"": {
+			{Start: date(2025, 1, 20, 8, 0), End: date(2025, 1, 20, 18, 0)}, // 10h
+		},
+	}
+
+	cfg := AllocateConfig{
+		MinTaskDurationMinutes: 25,
+		MaxTaskDurationMinutes: 240,
+		Weights:                weights,
+		Now:                    now,
+	}
+
+	result, unsched := Allocate(tasks, slots, cfg)
+
+	if len(unsched) != 0 {
+		t.Fatalf("expected 0 unscheduled, got %d: %v", len(unsched), unsched)
+	}
+
+	if len(result) != 3 {
+		t.Fatalf("expected 3 allocations, got %d", len(result))
+	}
+
+	// First: BIG-1 chunk 1 (4h)
+	if result[0].Task.Key != "BIG-1" {
+		t.Errorf("expected first alloc to be BIG-1, got %s", result[0].Task.Key)
+	}
+	if dur := result[0].End.Sub(result[0].Start); dur != 4*time.Hour {
+		t.Errorf("expected first chunk 4h, got %v", dur)
+	}
+
+	// Second: SMALL-1 (2h) — interleaved because its score 60 > recalculated remainder
+	if result[1].Task.Key != "SMALL-1" {
+		t.Errorf("expected second alloc to be SMALL-1, got %s", result[1].Task.Key)
+	}
+	if dur := result[1].End.Sub(result[1].Start); dur != 2*time.Hour {
+		t.Errorf("expected small task 2h, got %v", dur)
+	}
+
+	// Third: BIG-1 chunk 2 (4h)
+	if result[2].Task.Key != "BIG-1" {
+		t.Errorf("expected third alloc to be BIG-1, got %s", result[2].Task.Key)
+	}
+	if dur := result[2].End.Sub(result[2].Start); dur != 4*time.Hour {
+		t.Errorf("expected second chunk 4h, got %v", dur)
+	}
+
+	// Verify interleaving: small task starts after first chunk ends
+	if !result[1].Start.After(result[0].End) && !result[1].Start.Equal(result[0].End) {
+		t.Error("small task should start after first BIG-1 chunk")
+	}
+}
+
+func Test_ALLOC_max_duration_smaller_task_unaffected(t *testing.T) {
+	// 2h task with 4h max → single allocation, no splitting
+	tasks := []ScoredTask{
+		{
+			Task: task.Task{
+				Key:               "SMALL-1",
+				Summary:           "Small task",
+				RemainingEstimate: 2 * time.Hour,
+				Project:           "P",
+			},
+			Score: 80,
+		},
+	}
+
+	slots := map[string][]calendar.Slot{
+		"": {
+			{Start: date(2025, 1, 20, 9, 0), End: date(2025, 1, 20, 17, 0)},
+		},
+	}
+
+	cfg := AllocateConfig{
+		MinTaskDurationMinutes: 25,
+		MaxTaskDurationMinutes: 240,
+	}
+
+	result, unsched := Allocate(tasks, slots, cfg)
+
+	if len(unsched) != 0 {
+		t.Fatalf("expected 0 unscheduled, got %d", len(unsched))
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 allocation, got %d", len(result))
+	}
+	if dur := result[0].End.Sub(result[0].Start); dur != 2*time.Hour {
+		t.Errorf("expected 2h, got %v", dur)
+	}
+	// No split label
+	if result[0].Task.Summary != "Small task" {
+		t.Errorf("expected no split label, got %q", result[0].Task.Summary)
+	}
+}
+
+func Test_ALLOC_max_duration_nosplit_unscheduled(t *testing.T) {
+	// 8h NoSplit task with 4h max → unscheduled (no single slot large enough
+	// since effectiveDur is capped at 4h)
+	tasks := []ScoredTask{
+		{
+			Task: task.Task{
+				Key:               "BIG-1",
+				Summary:           "Big nosplit",
+				RemainingEstimate: 8 * time.Hour,
+				NoSplit:           true,
+				Project:           "P",
+			},
+			Score: 80,
+		},
+	}
+
+	slots := map[string][]calendar.Slot{
+		"": {
+			{Start: date(2025, 1, 20, 9, 0), End: date(2025, 1, 20, 17, 0)}, // 8h
+		},
+	}
+
+	cfg := AllocateConfig{
+		MinTaskDurationMinutes: 25,
+		MaxTaskDurationMinutes: 240,
+	}
+
+	result, unsched := Allocate(tasks, slots, cfg)
+
+	if len(result) != 0 {
+		t.Fatalf("expected 0 allocations for nosplit task exceeding max, got %d", len(result))
+	}
+	if len(unsched) != 1 {
+		t.Fatalf("expected 1 unscheduled, got %d", len(unsched))
+	}
+	if unsched[0].Reason != "no slot large enough (no-split)" {
+		t.Errorf("expected no-split reason, got %q", unsched[0].Reason)
+	}
+}
+
+func Test_ALLOC_max_duration_zero_means_unlimited(t *testing.T) {
+	// MaxTaskDurationMinutes=0 → same as today, no re-queuing
+	tasks := []ScoredTask{
+		{
+			Task: task.Task{
+				Key:               "BIG-1",
+				Summary:           "Big task",
+				RemainingEstimate: 8 * time.Hour,
+				Project:           "P",
+			},
+			Score: 80,
+		},
+	}
+
+	slots := map[string][]calendar.Slot{
+		"": {
+			{Start: date(2025, 1, 20, 9, 0), End: date(2025, 1, 20, 17, 0)},
+		},
+	}
+
+	cfg := AllocateConfig{
+		MinTaskDurationMinutes: 25,
+		MaxTaskDurationMinutes: 0,
+	}
+
+	result, unsched := Allocate(tasks, slots, cfg)
+
+	if len(unsched) != 0 {
+		t.Fatalf("expected 0 unscheduled, got %d", len(unsched))
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 allocation (no splitting), got %d", len(result))
+	}
+	if dur := result[0].End.Sub(result[0].Start); dur != 8*time.Hour {
+		t.Errorf("expected 8h, got %v", dur)
+	}
+}
+
+func Test_ALLOC_max_duration_split_labels(t *testing.T) {
+	// Verify (1/2), (2/2) labels applied correctly across interleaved allocations
+	tasks := []ScoredTask{
+		{
+			Task: task.Task{
+				Key:               "BIG-1",
+				Summary:           "Big task",
+				RemainingEstimate: 4 * time.Hour,
+				Project:           "P",
+			},
+			Score: 80,
+		},
+	}
+
+	slots := map[string][]calendar.Slot{
+		"": {
+			{Start: date(2025, 1, 20, 9, 0), End: date(2025, 1, 20, 17, 0)},
+		},
+	}
+
+	cfg := AllocateConfig{
+		MinTaskDurationMinutes: 25,
+		MaxTaskDurationMinutes: 120, // 2h max
+	}
+
+	result, _ := Allocate(tasks, slots, cfg)
+
+	if len(result) != 2 {
+		t.Fatalf("expected 2 allocations, got %d", len(result))
+	}
+
+	if result[0].Task.Summary != "Big task (1/2)" {
+		t.Errorf("expected 'Big task (1/2)', got %q", result[0].Task.Summary)
+	}
+	if result[1].Task.Summary != "Big task (2/2)" {
+		t.Errorf("expected 'Big task (2/2)', got %q", result[1].Task.Summary)
+	}
+}
+
+func Test_ALLOC_max_duration_due_date_preserved(t *testing.T) {
+	// An 8h task due tomorrow with maxDur=4h should still have all chunks
+	// scheduled before its due date, even when other tasks compete for slots.
+	// This is the "GIC" scenario: due-date urgency must survive re-scoring.
+	now := date(2025, 1, 20, 9, 0)
+	due := date(2025, 1, 21, 0, 0) // due tomorrow
+	weights := config.WeightsConfig{Priority: 0.45, DueDate: 0.30, Estimate: 0.15, Age: 0.10}
+
+	tasks := []ScoredTask{
+		{
+			Task: task.Task{
+				Key:               "URGENT-1",
+				Summary:           "Urgent task",
+				RemainingEstimate: 8 * time.Hour,
+				DueDate:           &due,
+				Priority:          3,
+				Project:           "P",
+			},
+			Score: CompositeScore(task.Task{
+				RemainingEstimate: 8 * time.Hour,
+				DueDate:           &due,
+				Priority:          3,
+			}, weights, now),
+		},
+		{
+			Task: task.Task{
+				Key:               "OTHER-1",
+				Summary:           "Other task",
+				RemainingEstimate: 2 * time.Hour,
+				Priority:          3,
+				Project:           "P",
+			},
+			Score: CompositeScore(task.Task{
+				RemainingEstimate: 2 * time.Hour,
+				Priority:          3,
+			}, weights, now),
+		},
+	}
+
+	slots := map[string][]calendar.Slot{
+		"": {
+			// Two days of 8h slots
+			{Start: date(2025, 1, 20, 9, 0), End: date(2025, 1, 20, 17, 0)},
+			{Start: date(2025, 1, 21, 9, 0), End: date(2025, 1, 21, 17, 0)},
+		},
+	}
+
+	cfg := AllocateConfig{
+		MinTaskDurationMinutes: 25,
+		MaxTaskDurationMinutes: 240,
+		Weights:                weights,
+		Now:                    now,
+	}
+
+	result, _ := Allocate(tasks, slots, cfg)
+
+	// All URGENT-1 chunks must end before the due date (end of Jan 20)
+	for _, alloc := range result {
+		if alloc.Task.Key == "URGENT-1" {
+			dueEnd := date(2025, 1, 21, 0, 0)
+			if alloc.End.After(dueEnd) {
+				t.Errorf("URGENT-1 chunk scheduled after due date: %v-%v", alloc.Start, alloc.End)
+			}
+		}
 	}
 }

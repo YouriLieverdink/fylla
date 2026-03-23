@@ -38,6 +38,7 @@ calendar:
 scheduling:
   windowDays: 5
   minTaskDurationMinutes: 25
+  maxTaskDurationMinutes: 0  # 0 = unlimited (no forced splitting)
   bufferMinutes: 15
   travelBufferMinutes: 30
   snapMinutes: [0, 15, 30, 45]

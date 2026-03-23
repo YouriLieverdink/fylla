@@ -2,9 +2,11 @@ package scheduler
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/iruoy/fylla/internal/calendar"
+	"github.com/iruoy/fylla/internal/config"
 	"github.com/iruoy/fylla/internal/task"
 )
 
@@ -31,8 +33,11 @@ type UnscheduledTask struct {
 // AllocateConfig holds parameters for the allocation algorithm.
 type AllocateConfig struct {
 	MinTaskDurationMinutes int
+	MaxTaskDurationMinutes int
 	BufferMinutes          int
 	SnapMinutes            []int
+	Weights                config.WeightsConfig
+	Now                    time.Time
 }
 
 // Allocate assigns sorted tasks to available free slots using a first-fit algorithm.
@@ -42,15 +47,29 @@ type AllocateConfig struct {
 // slotsByProject maps project keys to their available slots. The empty string key ""
 // holds default slots for projects without specific rules. When a task is allocated,
 // that time is consumed globally across all project slot lists.
+//
+// When MaxTaskDurationMinutes is set, the allocator caps each chunk to that duration
+// and re-queues the remainder with a halved score, allowing other tasks to interleave.
 func Allocate(tasks []ScoredTask, slotsByProject map[string][]calendar.Slot, cfg AllocateConfig) ([]Allocation, []UnscheduledTask) {
 	minDur := time.Duration(cfg.MinTaskDurationMinutes) * time.Minute
 	buffer := time.Duration(cfg.BufferMinutes) * time.Minute
+	var maxDur time.Duration
+	if cfg.MaxTaskDurationMinutes > 0 {
+		maxDur = time.Duration(cfg.MaxTaskDurationMinutes) * time.Minute
+	}
+
+	queue := make([]ScoredTask, len(tasks))
+	copy(queue, tasks)
 
 	var consumed []allocRange
 	var allocations []Allocation
 	var unscheduled []UnscheduledTask
+	taskAllocs := map[string][]int{} // key → indices into allocations
 
-	for _, st := range tasks {
+	for len(queue) > 0 {
+		st := queue[0]
+		queue = queue[1:]
+
 		estimate := st.Task.RemainingEstimate
 		if estimate <= 0 {
 			estimate = defaultEstimate
@@ -60,7 +79,6 @@ func Allocate(tasks []ScoredTask, slotsByProject map[string][]calendar.Slot, cfg
 		available := availableSlots(slots, consumed, 0)
 		available = snapSlotStarts(available, cfg.SnapMinutes, 0)
 
-		// Filter out slots that start before the task's not-before date
 		hadSlots := len(available) > 0
 		if st.Task.NotBefore != nil {
 			available = filterSlotsNotBefore(available, *st.Task.NotBefore)
@@ -79,92 +97,184 @@ func Allocate(tasks []ScoredTask, slotsByProject map[string][]calendar.Slot, cfg
 			continue
 		}
 
-		remaining := estimate
-		var taskAllocs []Allocation
+		if maxDur > 0 {
+			placed := false
+			for _, slot := range available {
+				slotDur := slot.End.Sub(slot.Start)
 
-		for _, slot := range available {
-			if remaining <= 0 {
-				break
-			}
-
-			slotDur := slot.End.Sub(slot.Start)
-
-			// Skip slots below minDur unless we are mid-split
-			if slotDur < minDur && remaining == estimate {
-				continue
-			}
-
-			if remaining <= slotDur {
-				// Task fits entirely in this slot
-				alloc := Allocation{
-					Task:  st.Task,
-					Start: slot.Start,
-					End:   slot.Start.Add(remaining),
+				effectiveDur := slotDur
+				if effectiveDur > maxDur {
+					effectiveDur = maxDur
 				}
-				taskAllocs = append(taskAllocs, alloc)
+
+				if effectiveDur < minDur {
+					continue
+				}
+
+				if estimate <= effectiveDur {
+					alloc := Allocation{Task: st.Task, Start: slot.Start, End: slot.Start.Add(estimate)}
+					idx := len(allocations)
+					allocations = append(allocations, alloc)
+					consumed = append(consumed, allocRange{start: alloc.Start, end: alloc.End.Add(buffer)})
+					taskAllocs[st.Task.Key] = append(taskAllocs[st.Task.Key], idx)
+					placed = true
+					break
+				}
+
+				if st.Task.NoSplit {
+					continue
+				}
+
+				alloc := Allocation{Task: st.Task, Start: slot.Start, End: slot.Start.Add(effectiveDur)}
+				idx := len(allocations)
+				allocations = append(allocations, alloc)
 				consumed = append(consumed, allocRange{start: alloc.Start, end: alloc.End.Add(buffer)})
-				remaining = 0
+				taskAllocs[st.Task.Key] = append(taskAllocs[st.Task.Key], idx)
+
+				remainder := st
+				remainder.Task.RemainingEstimate = estimate - effectiveDur
+				remainder.Score = recalcScore(remainder.Task, cfg.Weights, cfg.Now)
+				queue = insertSorted(queue, remainder)
+				placed = true
 				break
 			}
 
-			// NoSplit: task must fit in a single slot, skip if it doesn't
-			if st.Task.NoSplit {
-				continue
+			if !placed {
+				reason := "not enough time"
+				if st.Task.NoSplit {
+					reason = "no slot large enough (no-split)"
+				}
+				unscheduled = append(unscheduled, UnscheduledTask{
+					Task:      st.Task,
+					Reason:    reason,
+					Remaining: estimate,
+				})
+			}
+		} else {
+			remaining := estimate
+			var localAllocs []Allocation
+
+			for _, slot := range available {
+				if remaining <= 0 {
+					break
+				}
+
+				slotDur := slot.End.Sub(slot.Start)
+
+				if slotDur < minDur && remaining == estimate {
+					continue
+				}
+
+				if remaining <= slotDur {
+					alloc := Allocation{Task: st.Task, Start: slot.Start, End: slot.Start.Add(remaining)}
+					localAllocs = append(localAllocs, alloc)
+					consumed = append(consumed, allocRange{start: alloc.Start, end: alloc.End.Add(buffer)})
+					remaining = 0
+					break
+				}
+
+				if st.Task.NoSplit {
+					continue
+				}
+
+				alloc := Allocation{Task: st.Task, Start: slot.Start, End: slot.End}
+				localAllocs = append(localAllocs, alloc)
+				consumed = append(consumed, allocRange{start: slot.Start, end: slot.End.Add(buffer)})
+				remaining -= slotDur
 			}
 
-			// Split: use the entire slot for part of the task
-			alloc := Allocation{
-				Task:  st.Task,
-				Start: slot.Start,
-				End:   slot.End,
-			}
-			taskAllocs = append(taskAllocs, alloc)
-			consumed = append(consumed, allocRange{start: slot.Start, end: slot.End.Add(buffer)})
-			remaining -= slotDur
-		}
-
-		if remaining > 0 {
-			reason := "not enough time"
-			if st.Task.NoSplit {
-				reason = "no slot large enough (no-split)"
-			}
-			unscheduled = append(unscheduled, UnscheduledTask{
-				Task:      st.Task,
-				Reason:    reason,
-				Remaining: remaining,
-			})
-			// Keep any partial allocations so the task is still
-			// partially scheduled even when it doesn't fully fit.
-			if len(taskAllocs) == 0 {
-				continue
-			}
-		}
-
-		// Split label: annotate each part when a task is split across slots.
-		if len(taskAllocs) > 1 {
-			total := len(taskAllocs)
-			for i := range taskAllocs {
-				taskAllocs[i].Task.Summary = fmt.Sprintf("%s (%d/%d)", taskAllocs[i].Task.Summary, i+1, total)
-			}
-		}
-
-		// At-risk detection: task's last block ends after end-of-day on its due date.
-		// Due dates from providers are date-only (midnight), so compare against
-		// end-of-day to avoid false positives for tasks scheduled on their due date.
-		if st.Task.DueDate != nil && len(taskAllocs) > 0 {
-			lastEnd := taskAllocs[len(taskAllocs)-1].End
-			dueEnd := time.Date(st.Task.DueDate.Year(), st.Task.DueDate.Month(), st.Task.DueDate.Day()+1, 0, 0, 0, 0, st.Task.DueDate.Location())
-			if lastEnd.After(dueEnd) {
-				for i := range taskAllocs {
-					taskAllocs[i].AtRisk = true
+			if remaining > 0 {
+				reason := "not enough time"
+				if st.Task.NoSplit {
+					reason = "no slot large enough (no-split)"
+				}
+				unscheduled = append(unscheduled, UnscheduledTask{
+					Task:      st.Task,
+					Reason:    reason,
+					Remaining: remaining,
+				})
+				if len(localAllocs) == 0 {
+					continue
 				}
 			}
-		}
 
-		allocations = append(allocations, taskAllocs...)
+			if len(localAllocs) > 1 {
+				total := len(localAllocs)
+				for i := range localAllocs {
+					localAllocs[i].Task.Summary = fmt.Sprintf("%s (%d/%d)", localAllocs[i].Task.Summary, i+1, total)
+				}
+			}
+
+			if st.Task.DueDate != nil && len(localAllocs) > 0 {
+				lastEnd := localAllocs[len(localAllocs)-1].End
+				dueEnd := time.Date(st.Task.DueDate.Year(), st.Task.DueDate.Month(), st.Task.DueDate.Day()+1, 0, 0, 0, 0, st.Task.DueDate.Location())
+				if lastEnd.After(dueEnd) {
+					for i := range localAllocs {
+						localAllocs[i].AtRisk = true
+					}
+				}
+			}
+
+			allocations = append(allocations, localAllocs...)
+		}
+	}
+
+	// When maxDur is active, apply split labels and at-risk detection across interleaved allocations
+	if maxDur > 0 {
+		for key, indices := range taskAllocs {
+			if len(indices) > 1 {
+				for i, idx := range indices {
+					allocations[idx].Task.Summary = fmt.Sprintf("%s (%d/%d)",
+						allocations[idx].Task.Summary, i+1, len(indices))
+				}
+			}
+
+			// At-risk detection on the last allocation for this task
+			lastIdx := indices[len(indices)-1]
+			t := allocations[lastIdx].Task
+			if t.DueDate != nil {
+				lastEnd := allocations[lastIdx].End
+				dueEnd := time.Date(t.DueDate.Year(), t.DueDate.Month(), t.DueDate.Day()+1, 0, 0, 0, 0, t.DueDate.Location())
+				if lastEnd.After(dueEnd) {
+					for _, idx := range indices {
+						allocations[idx].AtRisk = true
+					}
+				}
+			}
+			_ = key
+		}
 	}
 
 	return allocations, unscheduled
+}
+
+// recalcScore recomputes the composite score for a task remainder after
+// splitting. It halves the priority and age components to encourage
+// interleaving, while preserving due-date urgency (due-date score and
+// crunch boost) at full strength so tasks aren't pushed past their deadline.
+func recalcScore(t task.Task, w config.WeightsConfig, now time.Time) float64 {
+	base := w.Priority*PriorityScore(t.Priority) + w.Age*AgeScore(t.Created, now)
+	urgent := w.DueDate*DueDateScore(t.DueDate, now) + CrunchBoost(t.DueDate, now)
+	estimate := w.Estimate * EstimateScore(t.RemainingEstimate)
+
+	score := base*0.5 + urgent + estimate
+	if t.UpNext {
+		score += w.UpNext
+	} else {
+		score *= NotBeforePenalty(t.NotBefore, now)
+	}
+	return score
+}
+
+// insertSorted inserts a ScoredTask into a queue sorted by descending score.
+func insertSorted(queue []ScoredTask, st ScoredTask) []ScoredTask {
+	i := sort.Search(len(queue), func(i int) bool {
+		return queue[i].Score < st.Score
+	})
+	queue = append(queue, ScoredTask{})
+	copy(queue[i+1:], queue[i:])
+	queue[i] = st
+	return queue
 }
 
 func projectSlots(slotsByProject map[string][]calendar.Slot, project string) []calendar.Slot {

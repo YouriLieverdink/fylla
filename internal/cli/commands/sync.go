@@ -490,8 +490,11 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 	progress(p.Progress, "Scheduling %d tasks into available slots...", len(sorted))
 	allocations, unscheduled := scheduler.Allocate(sorted, slotsByProject, scheduler.AllocateConfig{
 		MinTaskDurationMinutes: p.Cfg.Scheduling.MinTaskDurationMinutes,
+		MaxTaskDurationMinutes: p.Cfg.Scheduling.MaxTaskDurationMinutes,
 		BufferMinutes:          p.Cfg.Scheduling.BufferMinutes,
 		SnapMinutes:            p.Cfg.Scheduling.SnapMinutes,
+		Weights:                p.Cfg.Weights,
+		Now:                    p.Now,
 	})
 
 	// Step 6: Apply schedule to calendar

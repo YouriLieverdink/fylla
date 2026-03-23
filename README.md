@@ -166,6 +166,7 @@ calendar:
 scheduling:
   windowDays: 5
   minTaskDurationMinutes: 25
+  maxTaskDurationMinutes: 0       # 0 = unlimited; set e.g. 240 to cap chunks at 4h
   bufferMinutes: 15
   travelBufferMinutes: 30
   snapMinutes: [0, 15, 30, 45]
