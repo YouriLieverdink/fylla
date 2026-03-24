@@ -127,7 +127,12 @@ func (m Model) View() string {
 		sec := int(m.Elapsed.Seconds()) % 60
 		elapsed := fmt.Sprintf("  %02d:%02d:%02d", h, min, sec)
 		b.WriteString(styles.TimerBig.Render(elapsed))
-		b.WriteString("\n\n")
+		b.WriteString("\n")
+		if m.Comment != "" {
+			b.WriteString(styles.HintStyle.Render("  " + m.Comment))
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
 	}
 
 	hints := "s:stop  c:comment  x:abort  i:interrupt  r:refresh"
