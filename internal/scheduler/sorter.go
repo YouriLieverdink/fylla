@@ -41,6 +41,7 @@ func CompositeScore(t task.Task, w config.WeightsConfig, now time.Time) float64 
 		w.Age*AgeScore(t.Created, now)
 
 	score += CrunchBoost(t.DueDate, now)
+	score += TypeBonus(t.IssueType, w.TypeBonus)
 
 	if t.UpNext {
 		score += w.UpNext
@@ -119,6 +120,14 @@ func CrunchBoost(dueDate *time.Time, now time.Time) float64 {
 		return 20
 	}
 	return 20 * (1 - days/3)
+}
+
+// TypeBonus returns the configured flat bonus for the given issue type, or 0.
+func TypeBonus(issueType string, bonuses map[string]float64) float64 {
+	if len(bonuses) == 0 {
+		return 0
+	}
+	return bonuses[issueType]
 }
 
 // NotBeforePenalty returns a multiplier (0.2 to 1.0) based on how far away

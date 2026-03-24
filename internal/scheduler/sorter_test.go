@@ -419,3 +419,73 @@ func Test_SORT011_upnext_overrides_score(t *testing.T) {
 		}
 	})
 }
+
+func Test_SORT013_type_bonus(t *testing.T) {
+	now := time.Date(2025, 6, 15, 9, 0, 0, 0, time.UTC)
+	created := now.Add(-24 * time.Hour)
+
+	weightsWithBonus := config.WeightsConfig{
+		Priority:  0.45,
+		DueDate:   0.30,
+		Estimate:  0.15,
+		Age:       0.10,
+		UpNext:    50,
+		TypeBonus: map[string]float64{"Pull Request": 15, "Bug": 10},
+	}
+
+	t.Run("PR gets 15-point bonus over plain Task", func(t *testing.T) {
+		pr := task.Task{Key: "PR-1", Priority: 3, IssueType: "Pull Request", Created: created}
+		plain := task.Task{Key: "T-1", Priority: 3, IssueType: "Task", Created: created}
+
+		diff := Round(CompositeScore(pr, weightsWithBonus, now)-CompositeScore(plain, weightsWithBonus, now), 2)
+		if diff != 15.0 {
+			t.Errorf("expected 15-point difference, got %.2f", diff)
+		}
+	})
+
+	t.Run("Bug gets 10-point bonus", func(t *testing.T) {
+		bug := task.Task{Key: "B-1", Priority: 3, IssueType: "Bug", Created: created}
+		plain := task.Task{Key: "T-1", Priority: 3, IssueType: "Task", Created: created}
+
+		diff := Round(CompositeScore(bug, weightsWithBonus, now)-CompositeScore(plain, weightsWithBonus, now), 2)
+		if diff != 10.0 {
+			t.Errorf("expected 10-point difference, got %.2f", diff)
+		}
+	})
+
+	t.Run("unknown type gets no bonus", func(t *testing.T) {
+		bonus := TypeBonus("Epic", weightsWithBonus.TypeBonus)
+		if bonus != 0 {
+			t.Errorf("expected 0 for unconfigured type, got %.2f", bonus)
+		}
+	})
+
+	t.Run("nil map returns 0", func(t *testing.T) {
+		bonus := TypeBonus("Bug", nil)
+		if bonus != 0 {
+			t.Errorf("expected 0 for nil map, got %.2f", bonus)
+		}
+	})
+
+	t.Run("PR outranks same-priority Task in sort order", func(t *testing.T) {
+		pr := task.Task{Key: "PR-1", Priority: 3, IssueType: "Pull Request", Created: created}
+		plain := task.Task{Key: "T-1", Priority: 3, IssueType: "Task", Created: created}
+
+		sorted := SortTasks([]task.Task{plain, pr}, weightsWithBonus, now)
+		if sorted[0].Task.Key != "PR-1" {
+			t.Errorf("expected PR-1 first, got %s", sorted[0].Task.Key)
+		}
+	})
+
+	t.Run("no bonus when typeBonus not configured", func(t *testing.T) {
+		pr := task.Task{Key: "PR-1", Priority: 3, IssueType: "Pull Request", Created: created}
+
+		withBonus := CompositeScore(pr, weightsWithBonus, now)
+		withoutBonus := CompositeScore(pr, defaultWeights, now)
+
+		diff := Round(withBonus-withoutBonus, 2)
+		if diff != 15.0 {
+			t.Errorf("expected 15-point difference, got %.2f", diff)
+		}
+	})
+}

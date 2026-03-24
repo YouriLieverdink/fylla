@@ -111,11 +111,12 @@ type EfficiencyConfig struct {
 
 // WeightsConfig holds sorting algorithm weights.
 type WeightsConfig struct {
-	Priority float64 `yaml:"priority"`
-	DueDate  float64 `yaml:"dueDate"`
-	Estimate float64 `yaml:"estimate"`
-	Age      float64 `yaml:"age"`
-	UpNext   float64 `yaml:"upNext"`
+	Priority  float64            `yaml:"priority"`
+	DueDate   float64            `yaml:"dueDate"`
+	Estimate  float64            `yaml:"estimate"`
+	Age       float64            `yaml:"age"`
+	UpNext    float64            `yaml:"upNext"`
+	TypeBonus map[string]float64 `yaml:"typeBonus"`
 }
 
 // Validate checks config invariants and returns an error if any are violated.

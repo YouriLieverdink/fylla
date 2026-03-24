@@ -70,3 +70,5 @@ weights:
   estimate: 0.15
   age: 0.10
   upNext: 50
+  # typeBonus:                  # flat score bonus per issue type
+  #   "Pull Request": 15
