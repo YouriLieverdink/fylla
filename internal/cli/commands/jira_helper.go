@@ -371,6 +371,66 @@ func buildProviderQueries(cfg *config.Config, jqlFlag, filterFlag string) map[st
 	return queries
 }
 
+func jiraSearchJQL(search string) string {
+	if search == "" {
+		return "status != Done ORDER BY updated DESC"
+	}
+	if isJiraKey(search) {
+		return fmt.Sprintf("key = %q", search)
+	}
+	// Check for partial project key prefix (e.g. "SOHY-" or "SOHY")
+	upper := strings.ToUpper(search)
+	if jiraProjectPrefixRe.MatchString(upper) {
+		return fmt.Sprintf("key >= %q AND key <= %q AND status != Done ORDER BY key ASC", upper, upper+"\uffff")
+	}
+	return fmt.Sprintf("status != Done AND text ~ %q ORDER BY updated DESC", search)
+}
+
+var jiraProjectPrefixRe = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d*$`)
+
+// buildSearchAllQueries builds per-provider query strings for searching all tasks
+// (not just assigned to the current user). When search is non-empty, it filters
+// by text match.
+func buildSearchAllQueries(cfg *config.Config, search string) map[string]string {
+	queries := make(map[string]string)
+	for _, p := range cfg.ActiveProviders() {
+		switch p {
+		case "jira":
+			queries["jira"] = jiraSearchJQL(search)
+		case "todoist":
+			queries["todoist"] = search
+		case "github":
+			if search != "" {
+				queries["github"] = fmt.Sprintf("is:pr state:open %s", search)
+			} else {
+				queries["github"] = "is:pr state:open"
+			}
+		case "local":
+			queries["local"] = search
+		case "kendo":
+			queries["kendo"] = "*"
+		}
+	}
+	return queries
+}
+
+// buildSearchAllQuery returns a broad query for single-provider mode.
+func buildSearchAllQuery(cfg *config.Config, search string) string {
+	switch cfg.ActiveProviders()[0] {
+	case "jira":
+		return jiraSearchJQL(search)
+	case "kendo":
+		return "*"
+	case "github":
+		if search != "" {
+			return fmt.Sprintf("is:pr state:open %s", search)
+		}
+		return "is:pr state:open"
+	default:
+		return search
+	}
+}
+
 // loadTaskSource returns the appropriate task source client(s) based on config.
 func loadTaskSource() (TaskSource, *config.Config, error) {
 	cfg, err := config.Load()

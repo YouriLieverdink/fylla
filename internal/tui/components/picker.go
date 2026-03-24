@@ -14,6 +14,12 @@ type PickerItem struct {
 	Label string // displayed text (e.g. "PROJ-123  Fix the bug")
 }
 
+// Picker mode constants.
+const (
+	PickerModeMyTasks  = 0
+	PickerModeAllTasks = 1
+)
+
 // Picker is a searchable list overlay for selecting from a list of items.
 type Picker struct {
 	Title   string
@@ -21,6 +27,8 @@ type Picker struct {
 	Filter  textinput.Model
 	Cursor  int
 	Active  bool
+	Mode    int  // PickerModeMyTasks or PickerModeAllTasks
+	Loading bool // true while fetching tasks for mode switch
 }
 
 // NewPicker creates a new picker with the given title and items.
@@ -122,12 +130,20 @@ func (p Picker) View(width, height int) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(formTitleStyle.Render(p.Title))
+	title := p.Title
+	if p.Mode == PickerModeAllTasks {
+		title = "Search All Tasks (Enter to select, Esc to cancel)"
+	}
+	b.WriteString(formTitleStyle.Render(title))
 	b.WriteString("\n\n")
 	b.WriteString(p.Filter.View())
 	b.WriteString("\n\n")
 
-	if len(filtered) == 0 {
+	if p.Loading {
+		b.WriteString(formHintStyle.Render("  Searching..."))
+	} else if len(filtered) == 0 && p.Mode == PickerModeAllTasks && p.Filter.Value() == "" {
+		b.WriteString(formHintStyle.Render("  Type to search all tasks"))
+	} else if len(filtered) == 0 {
 		b.WriteString(formHintStyle.Render("  No matching tasks"))
 	} else {
 		startIdx := 0
@@ -163,7 +179,11 @@ func (p Picker) View(width, height int) string {
 	}
 
 	b.WriteString("\n\n")
-	b.WriteString(formHintStyle.Render("↑/↓:navigate  Enter:select  Esc:cancel"))
+	modeToggle := "Tab:all tasks"
+	if p.Mode == PickerModeAllTasks {
+		modeToggle = "Tab:my tasks"
+	}
+	b.WriteString(formHintStyle.Render("↑/↓:navigate  Enter:select  " + modeToggle + "  Esc:cancel"))
 
 	box := formBorder.
 		Width(contentWidth).

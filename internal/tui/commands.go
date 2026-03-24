@@ -99,6 +99,8 @@ type Callbacks struct {
 	MoveTask         func(taskKey, provider, target string) error
 	ListIssueTypes   func(provider, project string) ([]string, error)
 	ListSprints      func(provider, project string) ([]msg.SprintOption, error)
+	ResolveJiraKey   func(prKey string) (string, error)
+	SearchAllTasks   func(query string) ([]msg.ScoredTask, error)
 }
 
 func loadTodayCmd(cb Callbacks) tea.Cmd {
@@ -483,6 +485,32 @@ func moveTaskCmd(cb Callbacks, taskKey, provider, target string) tea.Cmd {
 		err := cb.MoveTask(taskKey, provider, target)
 		return msg.TaskMovedMsg{TaskKey: taskKey, Target: target, Err: err}
 	}
+}
+
+func resolveJiraKeyCmd(cb Callbacks, prKey string) tea.Cmd {
+	return func() tea.Msg {
+		if cb.ResolveJiraKey == nil {
+			return msg.JiraKeyResolvedMsg{Err: fmt.Errorf("no resolver available")}
+		}
+		key, err := cb.ResolveJiraKey(prKey)
+		return msg.JiraKeyResolvedMsg{Key: key, Err: err}
+	}
+}
+
+func searchAllTasksCmd(cb Callbacks, query string) tea.Cmd {
+	return func() tea.Msg {
+		if cb.SearchAllTasks == nil {
+			return msg.AllTasksLoadedMsg{Query: query, Err: fmt.Errorf("search not available")}
+		}
+		tasks, err := cb.SearchAllTasks(query)
+		return msg.AllTasksLoadedMsg{Tasks: tasks, Query: query, Err: err}
+	}
+}
+
+func pickerSearchDebounceCmd(query string) tea.Cmd {
+	return tea.Tick(300*time.Millisecond, func(time.Time) tea.Msg {
+		return msg.PickerSearchDebounceMsg{Query: query}
+	})
 }
 
 func autoRefreshCmd() tea.Cmd {

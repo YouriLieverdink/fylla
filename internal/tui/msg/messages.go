@@ -255,5 +255,23 @@ type TransitionsLoadedMsg struct {
 	Err         error
 }
 
+// JiraKeyResolvedMsg carries the result of resolving a GitHub PR to a Jira key.
+type JiraKeyResolvedMsg struct {
+	Key string
+	Err error
+}
+
+// AllTasksLoadedMsg carries the result of searching all tasks (not just assigned).
+type AllTasksLoadedMsg struct {
+	Tasks []ScoredTask
+	Query string
+	Err   error
+}
+
+// PickerSearchDebounceMsg triggers a server-side search after typing pauses.
+type PickerSearchDebounceMsg struct {
+	Query string
+}
+
 // AutoRefreshMsg triggers an auto-refresh of the current view.
 type AutoRefreshMsg struct{}
