@@ -894,7 +894,7 @@ func (m model) updateTimeline(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.timeline.Loading = true
 		return m, loadTodayCmd(m.cb)
 	case key.Matches(mssg, keys.Enter), key.Matches(mssg, keys.Timer):
-		if e := m.timeline.SelectedEvent(); e != nil && !e.IsCalendarEvent && e.TaskKey != "" {
+		if e := m.timeline.SelectedEvent(); e != nil && (e.TaskKey != "" || e.IsCalendarEvent) {
 			return m, startTimerCmd(m.cb, e.TaskKey, e.Summary, e.Project, e.Section)
 		}
 	case key.Matches(mssg, keys.Done):

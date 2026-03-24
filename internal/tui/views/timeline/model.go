@@ -82,10 +82,12 @@ func (m Model) View() string {
 		if e.IsCalendarEvent {
 			label = fmt.Sprintf("%s  %s  %s", timeRange, e.Summary, durStr)
 			switch {
-			case isPast:
-				label = styles.PastStyle.Render(label)
 			case isSelected:
 				label = styles.SelectedStyle.Render(label)
+			case isCurrent:
+				label = styles.CurrentStyle.Render(label)
+			case isPast:
+				label = styles.PastStyle.Render(label)
 			default:
 				label = styles.CalEventStyle.Render(label)
 			}
