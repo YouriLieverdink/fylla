@@ -446,16 +446,27 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			}
 			return nil, nil
 		},
-		ListEpics: func(project string) ([]msg.EpicOption, error) {
+		ListEpics: func(provider, project string) ([]msg.EpicOption, error) {
 			var el EpicLister
-			if e, ok := source.(EpicLister); ok {
-				el = e
-			} else if ms, ok := source.(*MultiTaskSource); ok {
-				for _, name := range []string{"jira", "kendo"} {
-					if src, ok := ms.sources[name]; ok {
+			if provider != "" {
+				if ms, ok := source.(*MultiTaskSource); ok {
+					if src, ok := ms.sources[provider]; ok {
 						if e, ok := src.(EpicLister); ok {
 							el = e
-							break
+						}
+					}
+				}
+			}
+			if el == nil {
+				if e, ok := source.(EpicLister); ok {
+					el = e
+				} else if ms, ok := source.(*MultiTaskSource); ok {
+					for _, name := range []string{"jira", "kendo"} {
+						if src, ok := ms.sources[name]; ok {
+							if e, ok := src.(EpicLister); ok {
+								el = e
+								break
+							}
 						}
 					}
 				}
@@ -574,6 +585,12 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			return entries, nil
 		},
 		UpdateWorklog: func(issueKey, worklogID, provider string, timeSpent time.Duration, description string, started time.Time) error {
+			if provider == "" {
+				provider = cfg.Worklog.Provider
+				if provider == "" {
+					provider = cfg.ActiveProviders()[0]
+				}
+			}
 			var wu WorklogUpdater
 			if u, ok := source.(WorklogUpdater); ok {
 				wu = u
@@ -589,6 +606,12 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			return wu.UpdateWorklog(ctx, issueKey, worklogID, timeSpent, description, started)
 		},
 		DeleteWorklog: func(issueKey, worklogID, provider string) error {
+			if provider == "" {
+				provider = cfg.Worklog.Provider
+				if provider == "" {
+					provider = cfg.ActiveProviders()[0]
+				}
+			}
 			var wd WorklogDeleter
 			if d, ok := source.(WorklogDeleter); ok {
 				wd = d
@@ -604,7 +627,13 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			return wd.DeleteWorklog(ctx, issueKey, worklogID)
 		},
 		AddWorklog: func(issueKey, provider string, timeSpent time.Duration, description string, started time.Time) error {
-			if ms, ok := source.(*MultiTaskSource); ok && provider != "" {
+			if provider == "" {
+				provider = cfg.Worklog.Provider
+				if provider == "" {
+					provider = cfg.ActiveProviders()[0]
+				}
+			}
+			if ms, ok := source.(*MultiTaskSource); ok {
 				return ms.PostWorklogOn(ctx, issueKey, timeSpent, description, started, provider)
 			}
 			return source.PostWorklog(ctx, issueKey, timeSpent, description, started)
@@ -612,12 +641,21 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 		FallbackIssues: func() []tui.FallbackIssue {
 			keys := cfg.Worklog.FallbackIssues
 			issues := make([]tui.FallbackIssue, len(keys))
+			provider := cfg.Worklog.Provider
+			if provider == "" {
+				provider = cfg.ActiveProviders()[0]
+			}
 			var wg sync.WaitGroup
 			for i, k := range keys {
 				wg.Add(1)
 				go func(idx int, key string) {
 					defer wg.Done()
-					summary, _ := source.GetSummary(ctx, key)
+					var summary string
+					if ms, ok := source.(*MultiTaskSource); ok {
+						summary, _ = ms.GetSummaryOn(ctx, key, provider)
+					} else {
+						summary, _ = source.GetSummary(ctx, key)
+					}
 					issues[idx] = tui.FallbackIssue{Key: key, Summary: summary}
 				}(i, k)
 			}

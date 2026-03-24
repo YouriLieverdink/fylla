@@ -1117,6 +1117,7 @@ func (m model) updateWorklog(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			{Label: "Started", Placeholder: "e.g. 09:00, 2006-01-02T15:04", Value: startedDefault},
 		})
 		m.formKind = formAddWorklog
+		m.formWorklogProvider = ""
 	case key.Matches(mssg, keys.Edit):
 		if e := m.worklog.SelectedEntry(); e != nil {
 			m.form = components.NewForm(fmt.Sprintf("Edit Worklog — %s", e.IssueKey), []components.FormFieldDef{
@@ -1281,8 +1282,9 @@ func (m *model) openTaskPicker(tasks []msg.ScoredTask, returnKind formKind) {
 			continue
 		}
 		items = append(items, components.PickerItem{
-			Key:   t.Key,
-			Label: fmt.Sprintf("%-10s  %s", t.Key, t.Summary),
+			Key:      t.Key,
+			Label:    fmt.Sprintf("%-10s  %s", t.Key, t.Summary),
+			Provider: t.Provider,
 		})
 	}
 	m.picker = components.NewPicker("Search Tasks (Enter to select, Esc to cancel)", items)
@@ -1311,8 +1313,9 @@ func (m *model) rebuildMyTaskPickerItems() {
 			continue
 		}
 		items = append(items, components.PickerItem{
-			Key:   t.Key,
-			Label: fmt.Sprintf("%-10s  %s", t.Key, t.Summary),
+			Key:      t.Key,
+			Label:    fmt.Sprintf("%-10s  %s", t.Key, t.Summary),
+			Provider: t.Provider,
 		})
 	}
 	filter := m.picker.Filter.Value()
@@ -1325,8 +1328,9 @@ func (m *model) rebuildPickerItems(tasks []msg.ScoredTask) {
 	var items []components.PickerItem
 	for _, t := range tasks {
 		items = append(items, components.PickerItem{
-			Key:   t.Key,
-			Label: fmt.Sprintf("%-10s  %s", t.Key, t.Summary),
+			Key:      t.Key,
+			Label:    fmt.Sprintf("%-10s  %s", t.Key, t.Summary),
+			Provider: t.Provider,
 		})
 	}
 	filter := m.picker.Filter.Value()
@@ -1354,7 +1358,7 @@ func (m model) pickerSideEffect(label string) tea.Cmd {
 		if provider == "" && m.formOptions != nil {
 			provider = m.formOptions.Provider
 		}
-		cmds := []tea.Cmd{loadEpicsCmd(m.cb, project), loadSectionsCmd(m.cb, provider, project)}
+		cmds := []tea.Cmd{loadEpicsCmd(m.cb, provider, project), loadSectionsCmd(m.cb, provider, project)}
 		if provider == "kendo" {
 			cmds = append(cmds, loadLanesCmd(m.cb, provider, project))
 			cmds = append(cmds, loadSprintsCmd(m.cb, provider, project))
@@ -1387,6 +1391,9 @@ func (m model) updatePicker(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if selected != nil {
 			m.form.SetValueByLabel(m.pickerFieldLabel, selected.Key)
+			if m.pickerFieldLabel == "Issue Key" && (m.formKind == formAddWorklog || m.formKind == formStopTimer) {
+				m.formWorklogProvider = selected.Provider
+			}
 		}
 		if m.pickerFieldLabel == "Provider" && m.formKind == formAddTask && m.formOptions != nil {
 			cmd := m.rebuildAddFormForProvider()
@@ -1475,7 +1482,7 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if provider == "" && m.formOptions != nil {
 					provider = m.formOptions.Provider
 				}
-				cmds := []tea.Cmd{loadEpicsCmd(m.cb, project), loadSectionsCmd(m.cb, provider, project)}
+				cmds := []tea.Cmd{loadEpicsCmd(m.cb, provider, project), loadSectionsCmd(m.cb, provider, project)}
 				if provider == "kendo" {
 					cmds = append(cmds, loadLanesCmd(m.cb, provider, project))
 					cmds = append(cmds, loadSprintsCmd(m.cb, provider, project))
@@ -1509,7 +1516,7 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if provider == "" && m.formOptions != nil {
 					provider = m.formOptions.Provider
 				}
-				cmds := []tea.Cmd{loadEpicsCmd(m.cb, project), loadSectionsCmd(m.cb, provider, project)}
+				cmds := []tea.Cmd{loadEpicsCmd(m.cb, provider, project), loadSectionsCmd(m.cb, provider, project)}
 				if provider == "kendo" {
 					cmds = append(cmds, loadLanesCmd(m.cb, provider, project))
 					cmds = append(cmds, loadSprintsCmd(m.cb, provider, project))
@@ -1704,7 +1711,7 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.form.Active = false
 			m.formKind = formNone
 			m.saving = "Adding worklog"
-			return m, addWorklogCmd(m.cb, issueKey, "", dur, description, started)
+			return m, addWorklogCmd(m.cb, issueKey, m.formWorklogProvider, dur, description, started)
 		case formEditWorklog:
 			durationStr := m.form.ValueByLabel("Duration")
 			description := m.form.ValueByLabel("Description")
@@ -2219,7 +2226,7 @@ func (m *model) rebuildAddFormForProvider() tea.Cmd {
 	var cmds []tea.Cmd
 	cmds = append(cmds, loadProjectsCmd(m.cb, newProvider))
 	if newProvider == "jira" || newProvider == "kendo" {
-		cmds = append(cmds, loadEpicsCmd(m.cb, m.form.ValueByLabel("Project")))
+		cmds = append(cmds, loadEpicsCmd(m.cb, newProvider, m.form.ValueByLabel("Project")))
 	}
 	if newProvider == "kendo" {
 		cmds = append(cmds, loadLanesCmd(m.cb, newProvider, m.form.ValueByLabel("Project")))

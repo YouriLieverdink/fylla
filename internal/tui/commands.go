@@ -84,7 +84,7 @@ type Callbacks struct {
 	ListProjects func(provider string) ([]string, error)
 	ListSections func(provider, project string) ([]string, error)
 	ListLanes    func(provider, project string) ([]string, error)
-	ListEpics    func(project string) ([]msg.EpicOption, error)
+	ListEpics    func(provider, project string) ([]msg.EpicOption, error)
 	GetParent    func(taskKey string) (string, error)
 	Provider     func() string
 	Providers    func() []string
@@ -288,7 +288,7 @@ func loadFormOptionsCmd(cb Callbacks) tea.Cmd {
 			if len(projects) > 0 {
 				project = projects[0]
 			}
-			e, err := cb.ListEpics(project)
+			e, err := cb.ListEpics(provider, project)
 			if err == nil && e != nil {
 				epics = e
 			} else {
@@ -323,18 +323,18 @@ func loadFormOptionsCmd(cb Callbacks) tea.Cmd {
 
 func loadEditFormOptionsCmd(cb Callbacks, project, taskKey string) tea.Cmd {
 	return func() tea.Msg {
+		var provider string
+		if cb.Provider != nil {
+			provider = cb.Provider()
+		}
 		var epics []msg.EpicOption
 		if cb.ListEpics != nil {
-			e, err := cb.ListEpics(project)
+			e, err := cb.ListEpics(provider, project)
 			if err == nil && e != nil {
 				epics = e
 			} else {
 				epics = []msg.EpicOption{}
 			}
-		}
-		var provider string
-		if cb.Provider != nil {
-			provider = cb.Provider()
 		}
 		var sections []string
 		if cb.ListSections != nil {
@@ -404,12 +404,12 @@ func loadSprintsCmd(cb Callbacks, provider, project string) tea.Cmd {
 	}
 }
 
-func loadEpicsCmd(cb Callbacks, project string) tea.Cmd {
+func loadEpicsCmd(cb Callbacks, provider, project string) tea.Cmd {
 	return func() tea.Msg {
 		if cb.ListEpics == nil {
 			return msg.EpicsLoadedMsg{}
 		}
-		epics, err := cb.ListEpics(project)
+		epics, err := cb.ListEpics(provider, project)
 		return msg.EpicsLoadedMsg{Epics: epics, Err: err}
 	}
 }

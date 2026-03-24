@@ -10,8 +10,9 @@ import (
 
 // PickerItem represents an item in the picker list.
 type PickerItem struct {
-	Key   string
-	Label string // displayed text (e.g. "PROJ-123  Fix the bug")
+	Key      string
+	Label    string // displayed text (e.g. "PROJ-123  Fix the bug")
+	Provider string // task provider (e.g. "jira", "kendo")
 }
 
 // Picker mode constants.

@@ -63,6 +63,11 @@ type issueJSON struct {
 	CreatedAt        string `json:"created_at"`
 }
 
+type epicJSON struct {
+	ID    int    `json:"id"`
+	Title string `json:"title"`
+}
+
 // issueUpdatePayload builds the full payload required by PUT /issues/{key},
 // starting from the current issue state and applying overrides.
 func issueUpdatePayload(current issueJSON, overrides map[string]interface{}) map[string]interface{} {
@@ -277,7 +282,7 @@ func (c *Client) projectCodeByID(projectID int) string {
 	return ""
 }
 
-func parseIssue(issue issueJSON, projectCode, laneName string) task.Task {
+func parseIssue(issue issueJSON, projectCode, laneName string, epicMap map[int]string) task.Task {
 	t := task.Task{
 		Key:      issue.Key,
 		Provider: "kendo",
@@ -326,6 +331,12 @@ func parseIssue(issue issueJSON, projectCode, laneName string) task.Task {
 	t.NotBeforeRaw = notBeforeRaw
 	t.UpNext = upNext
 	t.NoSplit = noSplit
+
+	if issue.EpicID != nil {
+		if name, ok := epicMap[*issue.EpicID]; ok {
+			t.Section = name
+		}
+	}
 
 	return t
 }
@@ -473,6 +484,11 @@ func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, err
 
 		doneLaneID := c.doneLaneIDFromMap(laneMap)
 
+		epicMap, err := c.fetchEpicMap(ctx, pid)
+		if err != nil {
+			return nil, err
+		}
+
 		code := c.projectCodeByID(pid)
 		for _, issue := range issues {
 			if issue.LaneID == doneLaneID {
@@ -481,7 +497,7 @@ func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, err
 			if !filter.empty() && !filter.matches(issue) {
 				continue
 			}
-			allTasks = append(allTasks, parseIssue(issue, code, laneMap[issue.LaneID]))
+			allTasks = append(allTasks, parseIssue(issue, code, laneMap[issue.LaneID], epicMap))
 		}
 	}
 
@@ -684,6 +700,30 @@ func (c *Client) ListSprints(ctx context.Context, project string) ([]SprintOptio
 	return append(active, planned...), nil
 }
 
+// fetchEpicMap returns a map of epic ID → title for the given project.
+func (c *Client) fetchEpicMap(ctx context.Context, projectID int) (map[int]string, error) {
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/epics", projectID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("fetch epics: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("kendo fetch epics: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var epics []epicJSON
+	if err := json.NewDecoder(resp.Body).Decode(&epics); err != nil {
+		return nil, fmt.Errorf("decode epics: %w", err)
+	}
+	m := make(map[int]string, len(epics))
+	for _, e := range epics {
+		m[e.ID] = e.Title
+	}
+	return m, nil
+}
+
 // ListEpics returns open epics for a Kendo project.
 func (c *Client) ListEpics(ctx context.Context, project string) ([]jira.Epic, error) {
 	pid, err := c.projectIDForName(ctx, project)
@@ -691,7 +731,7 @@ func (c *Client) ListEpics(ctx context.Context, project string) ([]jira.Epic, er
 		return nil, err
 	}
 
-	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/issues?type=epic", pid), nil)
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/epics", pid), nil)
 	if err != nil {
 		return nil, fmt.Errorf("fetch epics: %w", err)
 	}
@@ -702,13 +742,13 @@ func (c *Client) ListEpics(ctx context.Context, project string) ([]jira.Epic, er
 		return nil, fmt.Errorf("kendo list epics: status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var issues []issueJSON
-	if err := json.NewDecoder(resp.Body).Decode(&issues); err != nil {
+	var raw []epicJSON
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("decode epics: %w", err)
 	}
-	epics := make([]jira.Epic, 0, len(issues))
-	for _, iss := range issues {
-		epics = append(epics, jira.Epic{Key: iss.Key, Summary: iss.Title})
+	epics := make([]jira.Epic, 0, len(raw))
+	for _, e := range raw {
+		epics = append(epics, jira.Epic{Key: strconv.Itoa(e.ID), Summary: e.Title})
 	}
 	return epics, nil
 }
@@ -801,7 +841,7 @@ func (c *Client) TransitionTask(ctx context.Context, taskKey, target string) err
 }
 
 func (c *Client) resolveEpicID(ctx context.Context, projectID int, epicKey string) (int, error) {
-	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/issues?type=epic", projectID), nil)
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/epics", projectID), nil)
 	if err != nil {
 		return 0, err
 	}
@@ -809,13 +849,14 @@ func (c *Client) resolveEpicID(ctx context.Context, projectID int, epicKey strin
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("fetch epics: status %d", resp.StatusCode)
 	}
-	var issues []issueJSON
-	if err := json.NewDecoder(resp.Body).Decode(&issues); err != nil {
+	var epics []epicJSON
+	if err := json.NewDecoder(resp.Body).Decode(&epics); err != nil {
 		return 0, err
 	}
-	for _, iss := range issues {
-		if strings.EqualFold(iss.Key, epicKey) {
-			return iss.ID, nil
+	// Match by ID (ListEpics returns epic IDs as keys) or by title.
+	for _, e := range epics {
+		if strconv.Itoa(e.ID) == epicKey || strings.EqualFold(e.Title, epicKey) {
+			return e.ID, nil
 		}
 	}
 	return 0, fmt.Errorf("no epic found for key %q", epicKey)

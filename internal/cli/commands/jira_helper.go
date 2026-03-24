@@ -280,6 +280,10 @@ func (m *MultiTaskSource) GetSummary(ctx context.Context, issueKey string) (stri
 	return m.routeTo(issueKey).GetSummary(ctx, issueKey)
 }
 
+func (m *MultiTaskSource) GetSummaryOn(ctx context.Context, issueKey, provider string) (string, error) {
+	return m.routeToWithProvider(issueKey, provider).GetSummary(ctx, issueKey)
+}
+
 func (m *MultiTaskSource) UpdateSummary(ctx context.Context, issueKey string, summary string) error {
 	return m.routeTo(issueKey).UpdateSummary(ctx, issueKey, summary)
 }

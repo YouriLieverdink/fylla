@@ -131,6 +131,36 @@ func TestFetchTasks(t *testing.T) {
 	})
 }
 
+func TestParseIssueSummary(t *testing.T) {
+	titles := []struct {
+		title   string
+		wantNon string // non-empty summary expected
+	}{
+		{"Intern development", "Intern development"},
+		{"Code reviews, refactoring, spikes", "Code reviews, refactoring, spikes"},
+		{"Fix login bug", "Fix login bug"},
+		{"Inventaris up-to-date maken.", "Inventaris up-to-date maken."},
+		{"On-premise hardware documenteren", "On-premise hardware documenteren"},
+		{"Github organisatie naar de self-hosted runner", "Github organisatie naar de self-hosted runner"},
+		{"Klantdossier aanmaken in Elements", "Klantdossier aanmaken in Elements"},
+		{"Sentry opnieuw instellen", "Sentry opnieuw instellen"},
+		{"Overstappen naar Kendo.dev", "Overstappen naar Kendo.dev"},
+	}
+	for _, tc := range titles {
+		t.Run(tc.title, func(t *testing.T) {
+			issue := issueJSON{
+				ID:    1,
+				Key:   "TEST-0001",
+				Title: tc.title,
+			}
+			task := parseIssue(issue, "TEST", "To Do", nil)
+			if task.Summary != tc.wantNon {
+				t.Errorf("parseIssue(%q).Summary = %q, want %q", tc.title, task.Summary, tc.wantNon)
+			}
+		})
+	}
+}
+
 func TestPostWorklog(t *testing.T) {
 	t.Run("sends correct request body", func(t *testing.T) {
 		var gotBody map[string]interface{}
