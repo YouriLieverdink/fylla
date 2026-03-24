@@ -158,7 +158,7 @@ func Start(taskKey, project, section, provider string, now time.Time, path strin
 	ss = &StackState{
 		Stack: []StackEntry{{
 			TaskKey:   taskKey,
-			StartTime: now,
+			StartTime: CeilMinute(now),
 			Project:   project,
 			Section:   section,
 			Provider:  provider,
@@ -178,18 +178,18 @@ func Interrupt(now time.Time, path string) error {
 	}
 
 	active := &ss.Stack[0]
-	// Save current run as a segment
+	// Save current run as a segment — floor the end time to avoid overlap.
 	seg := Segment{
 		StartTime: active.StartTime,
-		EndTime:   now,
+		EndTime:   FloorMinute(now),
 		Comment:   active.Comment,
 	}
 	active.Segments = append(active.Segments, seg)
 	active.StartTime = time.Time{} // clear — paused
 	active.Comment = ""
 
-	// Push new anonymous entry at front
-	ss.Stack = append([]StackEntry{{StartTime: now}}, ss.Stack...)
+	// Push new anonymous entry at front — ceil the start time.
+	ss.Stack = append([]StackEntry{{StartTime: CeilMinute(now)}}, ss.Stack...)
 	return saveStack(ss, path)
 }
 
@@ -205,10 +205,12 @@ func Stop(now time.Time, path string) (*StopResult, error) {
 
 	active := ss.Stack[0]
 
-	// Create final segment from current run
+	// Create final segment from current run.
+	// Floor the end time so the worklog ends on a minute boundary and does
+	// not overlap with a task that starts (ceiled) in the same minute.
 	finalSeg := Segment{
 		StartTime: active.StartTime,
-		EndTime:   now,
+		EndTime:   FloorMinute(now),
 		Comment:   active.Comment,
 	}
 	segments := append(active.Segments, finalSeg)
@@ -224,9 +226,10 @@ func Stop(now time.Time, path string) (*StopResult, error) {
 	// Remove active entry
 	ss.Stack = ss.Stack[1:]
 
-	// Resume next if present
+	// Resume next if present — ceil to the next minute so it does not
+	// share a minute with the segment that just ended.
 	if len(ss.Stack) > 0 {
-		ss.Stack[0].StartTime = now
+		ss.Stack[0].StartTime = CeilMinute(now)
 		result.Resumed = &ResumedInfo{
 			TaskKey: ss.Stack[0].TaskKey,
 			Project: ss.Stack[0].Project,
@@ -306,9 +309,9 @@ func Abort(now time.Time, path string) (*AbortResult, error) {
 	// Remove active entry
 	ss.Stack = ss.Stack[1:]
 
-	// Resume next if present
+	// Resume next if present — ceil to avoid overlap.
 	if len(ss.Stack) > 0 {
-		ss.Stack[0].StartTime = now
+		ss.Stack[0].StartTime = CeilMinute(now)
 		result.Resumed = &ResumedInfo{
 			TaskKey: ss.Stack[0].TaskKey,
 			Project: ss.Stack[0].Project,
@@ -332,6 +335,20 @@ func SetComment(comment, path string) error {
 	}
 	ss.Stack[0].Comment = comment
 	return saveStack(ss, path)
+}
+
+// FloorMinute truncates t down to the current minute boundary.
+func FloorMinute(t time.Time) time.Time {
+	return t.Truncate(time.Minute)
+}
+
+// CeilMinute rounds t up to the next minute boundary. If t is already on a
+// minute boundary it is returned unchanged.
+func CeilMinute(t time.Time) time.Time {
+	if t.Second() == 0 && t.Nanosecond() == 0 {
+		return t
+	}
+	return t.Truncate(time.Minute).Add(time.Minute)
 }
 
 // RoundDuration rounds d to the nearest roundMinutes, with a minimum of roundMinutes.
