@@ -77,7 +77,7 @@ type Callbacks struct {
 	ClearEvents func() (int, error)
 	LoadConfig  func() (string, error)
 	SetConfig   func(key, value string) error
-	AddTask      func(provider, summary, project, section, issueType, description, estimate, dueDate, priority, parent string) (key, summaryOut string, err error)
+	AddTask      func(provider, summary, project, section, issueType, description, estimate, dueDate, priority, parent string, sprintID *int) (key, summaryOut string, err error)
 	EditTask     func(params EditTaskParams) error
 	StopTimer    func(description string, done bool, fallbackIssue string) (taskKey string, elapsed time.Duration, resumedKey string, err error)
 	AbortTimer   func() (taskKey string, resumedKey string, err error)
@@ -98,6 +98,7 @@ type Callbacks struct {
 	ListTransitions  func(taskKey, provider string) ([]string, error)
 	MoveTask         func(taskKey, provider, target string) error
 	ListIssueTypes   func(provider, project string) ([]string, error)
+	ListSprints      func(provider, project string) ([]msg.SprintOption, error)
 }
 
 func loadTodayCmd(cb Callbacks) tea.Cmd {
@@ -216,9 +217,9 @@ func setConfigCmd(cb Callbacks, key, value string) tea.Cmd {
 	}
 }
 
-func addTaskCmd(cb Callbacks, provider, summary, project, section, issueType, description, estimate, dueDate, priority, parent string) tea.Cmd {
+func addTaskCmd(cb Callbacks, provider, summary, project, section, issueType, description, estimate, dueDate, priority, parent string, sprintID *int) tea.Cmd {
 	return func() tea.Msg {
-		key, summaryOut, err := cb.AddTask(provider, summary, project, section, issueType, description, estimate, dueDate, priority, parent)
+		key, summaryOut, err := cb.AddTask(provider, summary, project, section, issueType, description, estimate, dueDate, priority, parent, sprintID)
 		return msg.TaskAddedMsg{Key: key, Summary: summaryOut, Err: err}
 	}
 }
@@ -388,6 +389,16 @@ func loadIssueTypesCmd(cb Callbacks, provider, project string) tea.Cmd {
 		}
 		types, err := cb.ListIssueTypes(provider, project)
 		return msg.IssueTypesLoadedMsg{IssueTypes: types, Err: err}
+	}
+}
+
+func loadSprintsCmd(cb Callbacks, provider, project string) tea.Cmd {
+	return func() tea.Msg {
+		if cb.ListSprints == nil {
+			return msg.SprintsLoadedMsg{}
+		}
+		sprints, err := cb.ListSprints(provider, project)
+		return msg.SprintsLoadedMsg{Sprints: sprints, Err: err}
 	}
 }
 

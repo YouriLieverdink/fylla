@@ -237,7 +237,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			_, err := RunConfigSet(ConfigSetParams{ConfigPath: cfgPath, Key: key, Value: value})
 			return err
 		},
-		AddTask: func(provider, summary, project, section, issueType, description, estimate, dueDate, priority, parent string) (string, string, error) {
+		AddTask: func(provider, summary, project, section, issueType, description, estimate, dueDate, priority, parent string, sprintID *int) (string, string, error) {
 			var creator TaskCreator = source
 			if provider != "" {
 				if ms, ok := source.(*MultiTaskSource); ok {
@@ -254,6 +254,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				DueDate:     dueDate,
 				Priority:    priority,
 				Parent:      parent,
+				SprintID:    sprintID,
 				Inline:      true,
 				Creator:     creator,
 			})
@@ -410,6 +411,38 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			}
 			if il, ok := source.(IssueTypeLister); ok {
 				return il.ListIssueTypes(ctx, project)
+			}
+			return nil, nil
+		},
+		ListSprints: func(provider, project string) ([]msg.SprintOption, error) {
+			if provider != "" {
+				if ms, ok := source.(*MultiTaskSource); ok {
+					if src, ok := ms.sources[provider]; ok {
+						if sl, ok := src.(SprintLister); ok {
+							opts, err := sl.ListSprints(ctx, project)
+							if err != nil {
+								return nil, err
+							}
+							result := make([]msg.SprintOption, len(opts))
+							for i, s := range opts {
+								result[i] = msg.SprintOption{ID: s.ID, Label: s.Label, Active: s.Active}
+							}
+							return result, nil
+						}
+					}
+					return nil, nil
+				}
+			}
+			if sl, ok := source.(SprintLister); ok {
+				opts, err := sl.ListSprints(ctx, project)
+				if err != nil {
+					return nil, err
+				}
+				result := make([]msg.SprintOption, len(opts))
+				for i, s := range opts {
+					result[i] = msg.SprintOption{ID: s.ID, Label: s.Label, Active: s.Active}
+				}
+				return result, nil
 			}
 			return nil, nil
 		},

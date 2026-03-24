@@ -84,6 +84,12 @@ type LaneLister interface {
 	ListLanes(ctx context.Context, project string) ([]string, error)
 }
 
+// SprintLister lists available sprints for a project.
+type SprintLister interface {
+	ListSprints(ctx context.Context, project string) ([]kendo.SprintOption, error)
+}
+
+
 // IssueTypeLister lists available issue types for a project.
 type IssueTypeLister interface {
 	ListIssueTypes(ctx context.Context, project string) ([]string, error)

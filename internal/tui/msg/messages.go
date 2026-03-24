@@ -155,6 +155,7 @@ type FormOptionsMsg struct {
 	Provider   string   // primary provider name (e.g. "jira", "todoist")
 	Providers  []string // all active provider names
 	Epics      []EpicOption
+	Sprints    []SprintOption
 	ParentKey  string // current parent key (for edit form pre-population)
 	Err        error
 }
@@ -193,6 +194,12 @@ type SectionsLoadedMsg struct {
 type LanesLoadedMsg struct {
 	Lanes []string
 	Err   error
+}
+
+// SprintsLoadedMsg carries the result of loading sprints for a specific project.
+type SprintsLoadedMsg struct {
+	Sprints []SprintOption
+	Err     error
 }
 
 // IssueTypesLoadedMsg carries the result of loading issue types for a project.

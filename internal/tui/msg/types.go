@@ -93,6 +93,13 @@ type EpicOption struct {
 	Label string // "KEY — Summary"
 }
 
+// SprintOption represents a sprint for form select fields.
+type SprintOption struct {
+	ID     int
+	Label  string
+	Active bool
+}
+
 // WorklogEntry represents a worklog entry for TUI display.
 type WorklogEntry struct {
 	ID           string

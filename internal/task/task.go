@@ -40,4 +40,5 @@ type CreateInput struct {
 	DueDate     *time.Time
 	Priority    string // Priority name (Highest, High, Medium, Low, Lowest)
 	Parent      string // Parent issue key (e.g. Epic key)
+	SprintID    *int   // Sprint/iteration ID (Kendo)
 }

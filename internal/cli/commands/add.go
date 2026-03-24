@@ -49,6 +49,7 @@ type AddParams struct {
 	DueDate     string // raw date string, e.g. "2025-02-15"
 	Priority    string
 	Parent      string
+	SprintID    *int // Sprint/iteration ID (Kendo)
 	Inline      bool // true when args were provided on the command line
 	Creator     TaskCreator
 	Projects    ProjectLister
@@ -73,6 +74,7 @@ func BuildCreateInput(p AddParams) (task.CreateInput, error) {
 		IssueType:   p.IssueType,
 		Priority:    p.Priority,
 		Parent:      p.Parent,
+		SprintID:    p.SprintID,
 	}
 
 	if input.Priority == "" {

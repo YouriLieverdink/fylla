@@ -94,6 +94,22 @@ func issueUpdatePayload(current issueJSON, overrides map[string]interface{}) map
 	return payload
 }
 
+type sprintJSON struct {
+	ID        int    `json:"id"`
+	Title     string `json:"title"`
+	Status    int    `json:"status"` // 0=Planned, 1=Active, 2=Completed
+	Start     string `json:"start"`
+	End       string `json:"end"`
+	ProjectID int    `json:"project_id"`
+}
+
+// SprintOption represents a selectable sprint for the TUI.
+type SprintOption struct {
+	ID     int
+	Label  string
+	Active bool
+}
+
 type timeEntryJSON struct {
 	ID           int    `json:"id"`
 	MinutesSpent int    `json:"minutes_spent"`
@@ -503,6 +519,9 @@ func (c *Client) CreateTask(ctx context.Context, input task.CreateInput) (string
 			payload["priority"] = fyllaPriorityToKendo(level)
 		}
 	}
+	if input.SprintID != nil {
+		payload["sprint_id"] = *input.SprintID
+	}
 	if input.Parent != "" {
 		epicID, err := c.resolveEpicID(ctx, pid, input.Parent)
 		if err == nil {
@@ -624,6 +643,45 @@ func (c *Client) ListLanes(ctx context.Context, project string) ([]string, error
 		names[i] = l.Title
 	}
 	return names, nil
+}
+
+// ListSprints returns non-completed sprints for a Kendo project, active first.
+func (c *Client) ListSprints(ctx context.Context, project string) ([]SprintOption, error) {
+	pid, err := c.projectIDForName(ctx, project)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/sprints", pid), nil)
+	if err != nil {
+		return nil, fmt.Errorf("fetch sprints: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("kendo list sprints: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var sprints []sprintJSON
+	if err := json.NewDecoder(resp.Body).Decode(&sprints); err != nil {
+		return nil, fmt.Errorf("decode sprints: %w", err)
+	}
+
+	var active, planned []SprintOption
+	for _, s := range sprints {
+		if s.Status == 2 {
+			continue // skip completed
+		}
+		opt := SprintOption{ID: s.ID, Label: s.Title, Active: s.Status == 1}
+		if s.Status == 1 {
+			opt.Label += " (Active)"
+			active = append(active, opt)
+		} else {
+			planned = append(planned, opt)
+		}
+	}
+	return append(active, planned...), nil
 }
 
 // ListEpics returns open epics for a Kendo project.

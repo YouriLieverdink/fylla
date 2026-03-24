@@ -658,6 +658,13 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cachedFormOptions = &mssg
 			m.form = buildAddForm(mssg.Provider, &mssg)
 			m.formKind = formAddTask
+			if mssg.Provider == "kendo" {
+				project := ""
+				if len(mssg.Projects) > 0 {
+					project = mssg.Projects[0]
+				}
+				return m, loadSprintsCmd(m.cb, mssg.Provider, project)
+			}
 		} else {
 			// Background prefetch — just cache it
 			m.cachedFormOptions = &mssg
@@ -696,6 +703,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if provider == "kendo" {
 					cmds = append(cmds, loadLanesCmd(m.cb, provider, project))
+					cmds = append(cmds, loadSprintsCmd(m.cb, provider, project))
 				}
 				if provider == "jira" {
 					cmds = append(cmds, loadIssueTypesCmd(m.cb, provider, project))
@@ -734,6 +742,27 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.formOptions != nil {
 				m.formOptions.Lanes = mssg.Lanes
+			}
+		}
+		return m, nil
+
+	case msg.SprintsLoadedMsg:
+		if m.form.Active && m.formKind == formAddTask {
+			if m.formOptions != nil {
+				m.formOptions.Sprints = mssg.Sprints
+			}
+			if len(mssg.Sprints) > 0 {
+				sprintOptions := make([]string, 0, len(mssg.Sprints)+1)
+				defaultSprint := "Backlog"
+				for _, s := range mssg.Sprints {
+					sprintOptions = append(sprintOptions, s.Label)
+					if s.Active {
+						defaultSprint = s.Label
+					}
+				}
+				sprintOptions = append(sprintOptions, "Backlog")
+				m.form.ConvertToSelectByLabel("Sprint", sprintOptions, defaultSprint)
+				m.form.UpdateSelectByLabel("Sprint", sprintOptions, defaultSprint)
 			}
 		}
 		return m, nil
@@ -1441,6 +1470,18 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if section == "None" {
 				section = ""
 			}
+			var sprintID *int
+			if sprintLabel := m.form.ValueByLabel("Sprint"); sprintLabel != "" && sprintLabel != "Backlog" {
+				if opts := m.formOptions; opts != nil {
+					for _, s := range opts.Sprints {
+						if s.Label == sprintLabel {
+							id := s.ID
+							sprintID = &id
+							break
+						}
+					}
+				}
+			}
 			m.saving = "Adding task"
 			return m, addTaskCmd(m.cb, provider, summary,
 				m.form.ValueByLabel("Project"), section,
@@ -1450,6 +1491,7 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.form.ValueByLabel("Due Date"),
 				m.form.ValueByLabel("Priority"),
 				parent,
+				sprintID,
 			)
 		case formEditTask:
 			upNextVal := m.form.ValueByLabel("Up Next")
@@ -1988,6 +2030,26 @@ func buildAddForm(provider string, opts *msg.FormOptionsMsg) components.Form {
 				Label: "Issue Type", Placeholder: "Loading lanes...",
 			})
 		}
+		if len(opts.Sprints) > 0 {
+			sprintOptions := make([]string, 0, len(opts.Sprints)+1)
+			defaultSprint := "Backlog"
+			for _, s := range opts.Sprints {
+				sprintOptions = append(sprintOptions, s.Label)
+				if s.Active {
+					defaultSprint = s.Label
+				}
+			}
+			sprintOptions = append(sprintOptions, "Backlog")
+			fields = append(fields, components.FormFieldDef{
+				Label: "Sprint", Kind: components.FieldSelect,
+				Options: sprintOptions, Value: defaultSprint,
+			})
+		} else {
+			fields = append(fields, components.FormFieldDef{
+				Label: "Sprint", Kind: components.FieldSelect,
+				Options: []string{"Backlog"}, Value: "Backlog",
+			})
+		}
 	}
 	if provider != "jira" && provider != "kendo" && provider != "github" {
 		if len(opts.Sections) > 0 {
@@ -2053,6 +2115,7 @@ func (m *model) rebuildAddFormForProvider() tea.Cmd {
 	}
 	if newProvider == "kendo" {
 		cmds = append(cmds, loadLanesCmd(m.cb, newProvider, m.form.ValueByLabel("Project")))
+		cmds = append(cmds, loadSprintsCmd(m.cb, newProvider, m.form.ValueByLabel("Project")))
 	}
 	if newProvider == "jira" {
 		cmds = append(cmds, loadIssueTypesCmd(m.cb, newProvider, m.form.ValueByLabel("Project")))
