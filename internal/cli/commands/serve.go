@@ -337,7 +337,6 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				Now:           time.Now(),
 				Description:   description,
 				Jira:          source,
-				Cal:           cal,
 				Estimate:      source,
 				Cfg:           cfg,
 				Resolver:      resolver,

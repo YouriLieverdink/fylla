@@ -106,7 +106,7 @@ func (m *mockJiraKeyResolver) ResolveJiraKey(_ context.Context, _ string) (strin
 	return m.key, m.err
 }
 
-func TestStop_CalendarEventCreated(t *testing.T) {
+func TestStop_WorklogPosted(t *testing.T) {
 	now := time.Date(2025, 1, 20, 10, 30, 0, 0, time.UTC)
 	startTime := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
 
@@ -115,7 +115,6 @@ func TestStop_CalendarEventCreated(t *testing.T) {
 		t.Fatalf("timer.Start: %v", err)
 	}
 
-	cal := &mockCalendar{}
 	jira := &mockWorklogPoster{}
 
 	result, err := RunStop(context.Background(), StopParams{
@@ -124,53 +123,14 @@ func TestStop_CalendarEventCreated(t *testing.T) {
 		Now:          now,
 		Description:  "Fixed login issue",
 		Jira:         jira,
-		Cal:          cal,
 		Cfg:          testConfig(),
 	})
 	if err != nil {
 		t.Fatalf("RunStop: %v", err)
 	}
 
-	if result.CalendarEvents != 1 {
-		t.Errorf("expected 1 calendar event, got %d", result.CalendarEvents)
-	}
-	if len(cal.created) != 1 {
-		t.Fatalf("expected 1 calendar create, got %d", len(cal.created))
-	}
 	if result.TaskKey != "PROJ-1" {
 		t.Errorf("TaskKey = %q, want PROJ-1", result.TaskKey)
-	}
-}
-
-func TestStop_NoCalendarGracefullySkipped(t *testing.T) {
-	now := time.Date(2025, 1, 20, 10, 30, 0, 0, time.UTC)
-	startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
-
-	timerPath := filepath.Join(t.TempDir(), "timer.json")
-	if err := timer.Start("PROJ-2", "", "", "", startTime, timerPath); err != nil {
-		t.Fatalf("timer.Start: %v", err)
-	}
-
-	jira := &mockWorklogPoster{}
-
-	result, err := RunStop(context.Background(), StopParams{
-		TimerPath:    timerPath,
-		RoundMinutes: 5,
-		Now:          now,
-		Description:  "Work done",
-		Jira:         jira,
-		Cal:          nil, // No calendar
-		Cfg:          testConfig(),
-	})
-	if err != nil {
-		t.Fatalf("RunStop: %v", err)
-	}
-
-	if result.CalendarEvents != 0 {
-		t.Errorf("expected 0 calendar events, got %d", result.CalendarEvents)
-	}
-	if result.TaskKey != "PROJ-2" {
-		t.Errorf("TaskKey = %q, want PROJ-2", result.TaskKey)
 	}
 	if len(jira.calls) != 1 {
 		t.Fatalf("expected 1 worklog call, got %d", len(jira.calls))
@@ -487,7 +447,6 @@ func TestStop_MultiSegmentWorklogPosting(t *testing.T) {
 
 	// Now stop PROJ-1 via RunStop — it should have 3 segments
 	jira := &mockWorklogPoster{}
-	cal := &mockCalendar{}
 
 	result, err := RunStop(context.Background(), StopParams{
 		TimerPath:    timerPath,
@@ -495,7 +454,6 @@ func TestStop_MultiSegmentWorklogPosting(t *testing.T) {
 		Now:          t5,
 		Description:  "form description",
 		Jira:         jira,
-		Cal:          cal,
 		Cfg:          testConfig(),
 	})
 	if err != nil {
@@ -520,13 +478,6 @@ func TestStop_MultiSegmentWorklogPosting(t *testing.T) {
 		t.Errorf("call[2] description = %q, want %q", jira.calls[2].description, "(3/3) form description")
 	}
 
-	// Verify calendar events created per segment
-	if result.CalendarEvents != 3 {
-		t.Errorf("CalendarEvents = %d, want 3", result.CalendarEvents)
-	}
-	if len(cal.created) != 3 {
-		t.Fatalf("expected 3 calendar creates, got %d", len(cal.created))
-	}
 }
 
 func TestStop_SingleSegment_NoNumbering(t *testing.T) {

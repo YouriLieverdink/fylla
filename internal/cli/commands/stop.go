@@ -6,7 +6,6 @@ import (
 	"io"
 	"time"
 
-	"github.com/iruoy/fylla/internal/calendar"
 	"github.com/iruoy/fylla/internal/config"
 	"github.com/iruoy/fylla/internal/timer"
 )
@@ -23,7 +22,6 @@ type StopParams struct {
 	Now           time.Time
 	Description   string
 	Jira          WorklogPoster
-	Cal           CalendarClient
 	Estimate      EstimateGetter
 	Cfg           *config.Config
 	Resolver      JiraKeyResolver
@@ -39,7 +37,6 @@ type StopResult struct {
 	TotalElapsed      time.Duration
 	Description       string
 	SegmentCount      int
-	CalendarEvents    int
 	RemainingEstimate time.Duration
 	HasRemaining      bool
 	Done              bool
@@ -123,9 +120,8 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 	}
 
 	var totalElapsed time.Duration
-	calEvents := 0
 
-	// Post worklog and create calendar event for each segment
+	// Post worklog for each segment
 	for i, seg := range sr.Segments {
 		elapsed := seg.EndTime.Sub(seg.StartTime)
 		if elapsed < 0 {
@@ -154,30 +150,13 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 			}
 		}
 
-		// Create calendar event per segment
-		if p.Cal != nil {
-			isLast := i == len(sr.Segments)-1
-			if err := p.Cal.CreateEvent(ctx, calendar.CreateEventInput{
-				TaskKey:  worklogKey,
-				Project:  sr.Project,
-				Section:  sr.Section,
-				Start:    seg.StartTime,
-				End:      seg.EndTime,
-				Done:     isLast && p.Done,
-				Provider: worklogProvider,
-			}); err == nil {
-				calEvents++
-			}
-			// Gracefully ignore calendar errors
-		}
 	}
 
 	result := &StopResult{
-		TaskKey:        worklogKey,
-		TotalElapsed:   totalElapsed,
-		Description:    p.Description,
-		SegmentCount:   len(sr.Segments),
-		CalendarEvents: calEvents,
+		TaskKey:      worklogKey,
+		TotalElapsed: totalElapsed,
+		Description:  p.Description,
+		SegmentCount: len(sr.Segments),
 	}
 
 	if sr.Resumed != nil {
@@ -259,9 +238,6 @@ func PrintStopResult(w io.Writer, result *StopResult) {
 	fmt.Fprintf(w, "Worklog added to %s\n", result.TaskKey)
 	if result.SegmentCount > 1 {
 		fmt.Fprintf(w, "%d segments posted\n", result.SegmentCount)
-	}
-	if result.CalendarEvents > 0 {
-		fmt.Fprintf(w, "%d calendar events created\n", result.CalendarEvents)
 	}
 	if result.Done {
 		fmt.Fprintf(w, "Marked %s as done\n", result.TaskKey)
