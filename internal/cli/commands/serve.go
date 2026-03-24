@@ -643,6 +643,59 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			}
 			return tr.TransitionTask(ctx, taskKey, target)
 		},
+		ResolveJiraKey: func(prKey string) (string, error) {
+			if r, ok := source.(JiraKeyResolver); ok {
+				return r.ResolveJiraKey(ctx, prKey)
+			}
+			if ms, ok := source.(*MultiTaskSource); ok {
+				return ms.ResolveJiraKey(ctx, prKey)
+			}
+			return "", fmt.Errorf("no resolver available")
+		},
+		SearchAllTasks: func(search string) ([]msg.ScoredTask, error) {
+			var allFetcher TaskFetcher
+			if ms, ok := source.(*MultiTaskSource); ok {
+				queries := buildSearchAllQueries(cfg, search)
+				allFetcher = &multiFetcher{
+					queries: queries,
+					sources: ms.sources,
+				}
+			} else {
+				allFetcher = source
+			}
+			result, err := RunList(ctx, ListParams{
+				Tasks: allFetcher,
+				Cfg:   cfg,
+				Query: buildSearchAllQuery(cfg, search),
+				Now:   time.Now(),
+			})
+			if err != nil {
+				return nil, err
+			}
+			maxResults := 20
+			if len(result.Tasks) > maxResults {
+				result.Tasks = result.Tasks[:maxResults]
+			}
+			tasks := make([]msg.ScoredTask, len(result.Tasks))
+			for i, st := range result.Tasks {
+				tasks[i] = msg.ScoredTask{
+					Key:       st.Task.Key,
+					Provider:  st.Task.Provider,
+					Summary:   st.Task.Summary,
+					Priority:  st.Task.Priority,
+					DueDate:   st.Task.DueDate,
+					Estimate:  st.Task.RemainingEstimate,
+					IssueType: st.Task.IssueType,
+					Score:     st.Score,
+					Project:   st.Task.Project,
+					Section:   st.Task.Section,
+					Status:    st.Task.Status,
+					UpNext:    st.Task.UpNext,
+					NoSplit:   st.Task.NoSplit,
+				}
+			}
+			return tasks, nil
+		},
 	}
 }
 

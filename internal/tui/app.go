@@ -324,6 +324,42 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case msg.JiraKeyResolvedMsg:
+		if mssg.Err == nil && mssg.Key != "" && m.formKind == formStopTimer && m.form.Active {
+			current := m.form.ValueByLabel("Issue Key")
+			if current == "" || strings.Contains(current, "#") {
+				m.form.SetValueByLabel("Issue Key", mssg.Key)
+			}
+		}
+		return m, nil
+
+	case msg.AllTasksLoadedMsg:
+		if m.picker.Active && m.picker.Mode == components.PickerModeAllTasks {
+			// Only apply results if the query still matches what the user typed
+			if mssg.Query == m.picker.Filter.Value() {
+				m.picker.Loading = false
+				if mssg.Err != nil {
+					m.setToast(fmt.Sprintf("Failed to search tasks: %v", mssg.Err), true)
+					return m, clearToastCmd()
+				}
+				m.rebuildPickerItems(mssg.Tasks)
+			}
+		}
+		return m, nil
+
+	case msg.PickerSearchDebounceMsg:
+		// Only fire search if picker is still in all-tasks mode and query matches
+		if m.picker.Active && m.picker.Mode == components.PickerModeAllTasks && mssg.Query == m.picker.Filter.Value() {
+			if mssg.Query == "" {
+				m.picker.Items = nil
+				m.picker.Loading = false
+				return m, nil
+			}
+			m.picker.Loading = true
+			return m, searchAllTasksCmd(m.cb, mssg.Query)
+		}
+		return m, nil
+
 	case msg.TimerStatusMsg:
 		m.timer.Loading = false
 		if mssg.Err == nil {
@@ -1157,6 +1193,10 @@ func (m model) updateTimer(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.form = components.NewForm(formTitle, fields)
 			m.formKind = formStopTimer
+			// Auto-resolve Jira key from GitHub PR branch name
+			if strings.Contains(m.timerKey, "#") {
+				return m, resolveJiraKeyCmd(m.cb, m.timerKey)
+			}
 			return m, nil
 		}
 		// No timer running — start anonymous timer
@@ -1221,6 +1261,51 @@ func (m *model) openTaskPicker(tasks []msg.ScoredTask, returnKind formKind) {
 	m.formKind = returnKind
 }
 
+func (m *model) rebuildMyTaskPickerItems() {
+	var items []components.PickerItem
+	for _, fb := range m.cachedFallback {
+		label := fb.Key
+		if fb.Summary != "" {
+			label = fmt.Sprintf("%-10s  %s", fb.Key, fb.Summary)
+		}
+		items = append(items, components.PickerItem{
+			Key:   fb.Key,
+			Label: label,
+		})
+	}
+	tasks := m.cachedTasks
+	if tasks == nil {
+		tasks = []msg.ScoredTask{}
+	}
+	for _, t := range tasks {
+		if !isJiraKeyPattern(t.Key) {
+			continue
+		}
+		items = append(items, components.PickerItem{
+			Key:   t.Key,
+			Label: fmt.Sprintf("%-10s  %s", t.Key, t.Summary),
+		})
+	}
+	filter := m.picker.Filter.Value()
+	m.picker.Items = items
+	m.picker.Filter.SetValue(filter)
+	m.picker.ResetCursor()
+}
+
+func (m *model) rebuildPickerItems(tasks []msg.ScoredTask) {
+	var items []components.PickerItem
+	for _, t := range tasks {
+		items = append(items, components.PickerItem{
+			Key:   t.Key,
+			Label: fmt.Sprintf("%-10s  %s", t.Key, t.Summary),
+		})
+	}
+	filter := m.picker.Filter.Value()
+	m.picker.Items = items
+	m.picker.Filter.SetValue(filter)
+	m.picker.ResetCursor()
+}
+
 func (m *model) openPickerForSelect() {
 	label := m.form.FocusedLabel()
 	opts := m.form.FocusedSelectOptions()
@@ -1278,10 +1363,30 @@ func (m model) updatePicker(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		return m, m.pickerSideEffect(m.pickerFieldLabel)
+	case mssg.Type == tea.KeyTab && m.pickerFieldLabel == "Issue Key":
+		if m.picker.Mode == components.PickerModeMyTasks {
+			m.picker.Mode = components.PickerModeAllTasks
+			m.picker.Items = nil
+			m.picker.ResetCursor()
+			// If there's already text, trigger a search immediately
+			if q := m.picker.Filter.Value(); q != "" {
+				m.picker.Loading = true
+				return m, searchAllTasksCmd(m.cb, q)
+			}
+			return m, nil
+		}
+		m.picker.Mode = components.PickerModeMyTasks
+		m.rebuildMyTaskPickerItems()
+		return m, nil
 	default:
 		var cmd tea.Cmd
 		m.picker.Filter, cmd = m.picker.Filter.Update(mssg)
 		m.picker.ResetCursor()
+		// In all-tasks mode, debounce server-side search on each keystroke
+		if m.picker.Mode == components.PickerModeAllTasks && m.pickerFieldLabel == "Issue Key" {
+			q := m.picker.Filter.Value()
+			return m, tea.Batch(cmd, pickerSearchDebounceCmd(q))
+		}
 		return m, cmd
 	}
 }
