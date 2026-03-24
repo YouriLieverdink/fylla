@@ -1357,6 +1357,7 @@ func (m model) pickerSideEffect(label string) tea.Cmd {
 		cmds := []tea.Cmd{loadEpicsCmd(m.cb, project), loadSectionsCmd(m.cb, provider, project)}
 		if provider == "kendo" {
 			cmds = append(cmds, loadLanesCmd(m.cb, provider, project))
+			cmds = append(cmds, loadSprintsCmd(m.cb, provider, project))
 		}
 		if provider == "jira" {
 			cmds = append(cmds, loadIssueTypesCmd(m.cb, provider, project))
@@ -1477,6 +1478,7 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				cmds := []tea.Cmd{loadEpicsCmd(m.cb, project), loadSectionsCmd(m.cb, provider, project)}
 				if provider == "kendo" {
 					cmds = append(cmds, loadLanesCmd(m.cb, provider, project))
+					cmds = append(cmds, loadSprintsCmd(m.cb, provider, project))
 				}
 				if provider == "jira" {
 					cmds = append(cmds, loadIssueTypesCmd(m.cb, provider, project))
@@ -1510,6 +1512,7 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				cmds := []tea.Cmd{loadEpicsCmd(m.cb, project), loadSectionsCmd(m.cb, provider, project)}
 				if provider == "kendo" {
 					cmds = append(cmds, loadLanesCmd(m.cb, provider, project))
+					cmds = append(cmds, loadSprintsCmd(m.cb, provider, project))
 				}
 				if provider == "jira" {
 					cmds = append(cmds, loadIssueTypesCmd(m.cb, provider, project))
