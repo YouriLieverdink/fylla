@@ -14,7 +14,6 @@ import (
 	"github.com/iruoy/fylla/internal/tui/msg"
 	"github.com/iruoy/fylla/internal/tui/styles"
 	configView "github.com/iruoy/fylla/internal/tui/views/config"
-	"github.com/iruoy/fylla/internal/tui/views/schedule"
 	"github.com/iruoy/fylla/internal/tui/views/tasks"
 	"github.com/iruoy/fylla/internal/tui/views/timeline"
 	timerView "github.com/iruoy/fylla/internal/tui/views/timer"
@@ -24,7 +23,6 @@ import (
 const (
 	tabTimeline = iota
 	tabTasks
-	tabSchedule
 	tabTimer
 	tabWorklog
 	tabConfig
@@ -89,7 +87,6 @@ type model struct {
 	height       int
 	timeline     timeline.Model
 	tasks        tasks.Model
-	schedule     *schedule.Model
 	timer        timerView.Model
 	worklog      worklog.Model
 	config       *configView.Model
@@ -136,7 +133,6 @@ func initialModel(deps Deps) model {
 		cb:       deps.CB,
 		timeline: timeline.New(),
 		tasks:    tasks.New(),
-		schedule: ptrSchedule(schedule.New()),
 		timer:    timerView.New(),
 		worklog:  worklog.New(deps.DailyHours, deps.WeeklyHours, deps.EfficiencyTarget),
 		config:   ptrConfig(configView.New()),
@@ -171,7 +167,6 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		contentHeight := m.height - 5
 		m.timeline.SetSize(m.width, contentHeight)
 		m.tasks.SetSize(m.width, contentHeight)
-		m.schedule.SetSize(m.width, contentHeight)
 		m.timer.SetSize(m.width, contentHeight)
 		m.worklog.SetSize(m.width, contentHeight)
 		m.config.SetSize(m.width, contentHeight)
@@ -258,12 +253,10 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(mssg, keys.Tab2):
 			return m.switchTab(tabTasks)
 		case key.Matches(mssg, keys.Tab3):
-			return m.switchTab(tabSchedule)
-		case key.Matches(mssg, keys.Tab4):
 			return m.switchTab(tabTimer)
-		case key.Matches(mssg, keys.Tab5):
+		case key.Matches(mssg, keys.Tab4):
 			return m.switchTab(tabWorklog)
-		case key.Matches(mssg, keys.Tab6):
+		case key.Matches(mssg, keys.Tab5):
 			return m.switchTab(tabConfig)
 		case key.Matches(mssg, keys.NextTab):
 			return m.switchTab((m.activeTab + 1) % tabCount)
@@ -277,8 +270,6 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateTimeline(mssg)
 		case tabTasks:
 			return m.updateTasks(mssg)
-		case tabSchedule:
-			return m.updateSchedule(mssg)
 		case tabTimer:
 			return m.updateTimer(mssg)
 		case tabWorklog:
@@ -619,16 +610,6 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		cmds = append(cmds, clearToastCmd())
 		return m, tea.Batch(cmds...)
-
-	case msg.SyncPreviewMsg:
-		m.schedule.Loading = false
-		if mssg.Err != nil {
-			m.schedule.Err = mssg.Err
-		} else {
-			m.schedule.Result = mssg.Result
-			m.schedule.Err = nil
-		}
-		return m, nil
 
 	case msg.ClearDoneMsg:
 		if mssg.Err != nil {
@@ -1241,28 +1222,6 @@ func (m model) updateTimer(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) updateSchedule(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case key.Matches(mssg, keys.Up):
-		m.schedule.ScrollUp()
-	case key.Matches(mssg, keys.Down):
-		m.schedule.ScrollDown()
-	case key.Matches(mssg, keys.Refresh):
-		m.schedule.Loading = true
-		return m, syncPreviewCmd(m.cb)
-	case key.Matches(mssg, keys.Enter), key.Matches(mssg, keys.Add):
-		m.confirm = components.NewConfirm("Apply sync to calendar?")
-		m.confirmType = confirmSyncApply
-	case key.Matches(mssg, keys.Force):
-		m.confirm = components.NewConfirm("Force sync? This will recreate all events.")
-		m.confirmType = confirmSyncForce
-	case key.Matches(mssg, keys.Clear):
-		m.confirm = components.NewConfirm("Clear all Fylla events from calendar?")
-		m.confirmType = confirmClearEvents
-	}
-	return m, nil
-}
-
 func (m *model) openTaskPicker(tasks []msg.ScoredTask, returnKind formKind) {
 	var items []components.PickerItem
 	if returnKind == formStopTimer || returnKind == formAddWorklog {
@@ -1695,7 +1654,7 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.form.Active = false
 			m.formKind = formNone
 			m.saving = "Stopping timer"
-			return m, stopTimerCmd(m.cb, comment, done, fallbackIssue)
+			return m, stopTimerCmd(m.cb, comment, done, fallbackIssue, m.formWorklogProvider)
 		case formAddWorklog:
 			issueKey := extractIssueKey(m.form.ValueByLabel("Issue Key"))
 			durationStr := m.form.ValueByLabel("Duration")
@@ -1772,8 +1731,6 @@ func (m model) refreshActiveView() tea.Cmd {
 		return loadTodayCmd(m.cb)
 	case tabTasks:
 		return loadTasksCmd(m.cb)
-	case tabSchedule:
-		return syncPreviewCmd(m.cb)
 	case tabTimer:
 		return timerStatusCmd(m.cb)
 	case tabWorklog:
@@ -1797,10 +1754,6 @@ func (m model) isLoading() bool {
 		}
 	case tabTasks:
 		if m.tasks.Loading {
-			return true
-		}
-	case tabSchedule:
-		if m.schedule.Loading {
 			return true
 		}
 	case tabTimer:
@@ -1828,10 +1781,6 @@ func (m model) loadingLabel() string {
 	case tabTasks:
 		if m.tasks.Loading {
 			return "Loading tasks"
-		}
-	case tabSchedule:
-		if m.schedule.Loading {
-			return "Loading schedule"
 		}
 	case tabTimer:
 		if m.timer.Loading {
@@ -1901,8 +1850,6 @@ func (m model) View() string {
 		content = m.timeline.View()
 	case tabTasks:
 		content = m.tasks.View()
-	case tabSchedule:
-		content = m.schedule.View()
 	case tabTimer:
 		content = m.timer.View()
 	case tabWorklog:
@@ -1917,7 +1864,7 @@ func (m model) View() string {
 		Width(m.width).
 		Render(content)
 
-	hints := "1-6:tabs  ?:help  q:quit"
+	hints := "1-5:tabs  ?:help  q:quit"
 	var loadingText string
 	if label := m.loadingLabel(); label != "" {
 		loadingText = m.spinner.View() + " " + label
@@ -1975,11 +1922,6 @@ func (m model) renderHelp() string {
 	b.WriteString("  v             View details\n")
 	b.WriteString("  t             Start timer\n")
 	b.WriteString("  /             Search\n\n")
-
-	b.WriteString(bold.Render("Schedule") + "\n")
-	b.WriteString("  Enter/a       Apply sync\n")
-	b.WriteString("  f             Force sync\n")
-	b.WriteString("  c             Clear events\n\n")
 
 	b.WriteString(bold.Render("Timer") + "\n")
 	b.WriteString("  s             Stop timer / start anonymous\n")
@@ -2048,7 +1990,6 @@ func (m model) renderViewDetail() string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 }
 
-func ptrSchedule(m schedule.Model) *schedule.Model { return &m }
 func ptrConfig(m configView.Model) *configView.Model { return &m }
 
 var jiraKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d+$`)
