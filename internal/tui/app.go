@@ -348,6 +348,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.timer.Project = mssg.Project
 			m.timer.Section = mssg.Section
 			m.timer.Comment = mssg.Comment
+			m.timer.StartTime = mssg.StartTime
 			m.timer.Elapsed = mssg.Elapsed
 			m.timer.TotalElapsed = mssg.TotalElapsed
 			m.timer.Segments = nil
@@ -1080,7 +1081,6 @@ func (m model) updateConfig(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) updateTimer(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(mssg, keys.Refresh):
-		m.timer.Loading = true
 		return m, timerStatusCmd(m.cb)
 	case key.Matches(mssg, keys.Interrupt):
 		if m.timerRunning {
@@ -1678,6 +1678,11 @@ func (m *model) switchTab(tab int) (tea.Model, tea.Cmd) {
 		m.tasks.Loading = false
 		m.tasks.Err = nil
 		return *m, loadTasksCmd(m.cb) // background refresh
+	}
+	// Keep showing current timer state, refresh in background
+	if tab == tabTimer && m.timer.Running {
+		m.timer.Loading = false
+		return *m, timerStatusCmd(m.cb)
 	}
 	return *m, m.refreshActiveView()
 }

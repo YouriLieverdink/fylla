@@ -28,6 +28,7 @@ type Model struct {
 	Project      string
 	Section      string
 	Comment      string
+	StartTime    time.Time
 	Elapsed      time.Duration
 	TotalElapsed time.Duration
 	Segments     []SegmentInfo // prior completed segments
@@ -92,7 +93,12 @@ func (m Model) View() string {
 			label = "(anonymous)"
 		}
 	}
-	b.WriteString("  Task: " + dot + styles.TaskStyle.Render(label) + "\n\n")
+	b.WriteString("  Task: " + dot + styles.TaskStyle.Render(label) + "\n")
+	if !m.StartTime.IsZero() {
+		b.WriteString(styles.HintStyle.Render("  Started at " + m.StartTime.Local().Format("15:04")))
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
 
 	// Big elapsed display
 	if len(m.Segments) > 0 {
@@ -136,7 +142,7 @@ func (m Model) View() string {
 		b.WriteString("\n")
 	}
 
-	hints := "s:stop  c:comment  E:edit start  x:abort  i:interrupt  r:refresh"
+	hints := "s:stop  c:comment  e:edit start  x:abort  i:interrupt  r:refresh"
 	b.WriteString(styles.HintStyle.Render("  " + hints))
 
 	if len(m.Paused) > 0 {
