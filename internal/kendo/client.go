@@ -325,12 +325,15 @@ func parseIssue(issue issueJSON, projectCode, laneName string, epicMap map[int]s
 		t.Recurrence = rec
 	}
 
-	cleaned, notBefore, notBeforeRaw, upNext, noSplit := task.ExtractConstraints(t.Summary, time.Now(), t.DueDate)
+	cleaned, notBefore, notBeforeRaw, upNext, noSplit, titleDue := task.ExtractConstraints(t.Summary, time.Now(), t.DueDate)
 	t.Summary = cleaned
 	t.NotBefore = notBefore
 	t.NotBeforeRaw = notBeforeRaw
 	t.UpNext = upNext
 	t.NoSplit = noSplit
+	if t.DueDate == nil && titleDue != nil {
+		t.DueDate = titleDue
+	}
 
 	if issue.EpicID != nil {
 		if name, ok := epicMap[*issue.EpicID]; ok {
@@ -948,19 +951,67 @@ func (c *Client) UpdateEstimate(ctx context.Context, issueKey string, remaining 
 	})
 }
 
-// GetDueDate is not supported by the Kendo API — returns nil.
+// GetDueDate extracts the due date from the issue title since Kendo has no native due date field.
 func (c *Client) GetDueDate(ctx context.Context, issueKey string) (*time.Time, error) {
-	return nil, nil
+	summary, err := c.GetSummary(ctx, issueKey)
+	if err != nil {
+		return nil, err
+	}
+	// Try {date} format first
+	if due, _ := task.ParseTitleDueDate(summary); due != nil {
+		return due, nil
+	}
+	// Try "due <date>" format
+	_, due := task.ExtractDueClause(summary, time.Now())
+	return due, nil
 }
 
-// UpdateDueDate is not supported by the Kendo API — no-op.
+// UpdateDueDate stores the due date in the issue title since Kendo has no native due date field.
 func (c *Client) UpdateDueDate(ctx context.Context, issueKey string, dueDate time.Time) error {
-	return nil
+	summary, err := c.GetSummary(ctx, issueKey)
+	if err != nil {
+		return err
+	}
+	est, summary := task.ParseTitleEstimate(summary)
+	_, summary = task.ParseTitleDueDate(summary) // strip {date} format
+	cleaned, notBefore, notBeforeRaw, upNext, noSplit, _ := task.ExtractConstraints(summary, time.Now(), nil)
+	nbVal := notBeforeRaw
+	if nbVal == "" && notBefore != nil {
+		nbVal = notBefore.Format("2006-01-02")
+	}
+	mods := task.BuildModifiers(dueDate.Format("2006-01-02"), nbVal, upNext, noSplit)
+	result := cleaned
+	if mods != "" {
+		result += " " + mods
+	}
+	if est > 0 {
+		result = task.SetTitleEstimate(result, est)
+	}
+	return c.UpdateSummary(ctx, issueKey, result)
 }
 
-// RemoveDueDate is not supported by the Kendo API — no-op.
+// RemoveDueDate removes the due date from the issue title.
 func (c *Client) RemoveDueDate(ctx context.Context, issueKey string) error {
-	return nil
+	summary, err := c.GetSummary(ctx, issueKey)
+	if err != nil {
+		return err
+	}
+	est, summary := task.ParseTitleEstimate(summary)
+	_, summary = task.ParseTitleDueDate(summary) // strip {date} format
+	cleaned, notBefore, notBeforeRaw, upNext, noSplit, _ := task.ExtractConstraints(summary, time.Now(), nil)
+	nbVal := notBeforeRaw
+	if nbVal == "" && notBefore != nil {
+		nbVal = notBefore.Format("2006-01-02")
+	}
+	mods := task.BuildModifiers("", nbVal, upNext, noSplit)
+	result := cleaned
+	if mods != "" {
+		result += " " + mods
+	}
+	if est > 0 {
+		result = task.SetTitleEstimate(result, est)
+	}
+	return c.UpdateSummary(ctx, issueKey, result)
 }
 
 // GetPriority fetches the priority level for the specified issue.

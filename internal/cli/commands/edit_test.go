@@ -173,14 +173,14 @@ func TestRunEdit_UpNext(t *testing.T) {
 		if !result.UpNextSet {
 			t.Fatal("expected UpNextSet")
 		}
-		if m.updatedSummary != "Do the thing upnext" {
-			t.Errorf("summary = %q, want %q", m.updatedSummary, "Do the thing upnext")
+		if m.updatedSummary != "Do the thing (upnext)" {
+			t.Errorf("summary = %q, want %q", m.updatedSummary, "Do the thing (upnext)")
 		}
 	})
 
 	t.Run("upnext already present is idempotent", func(t *testing.T) {
 		m := &editMock{}
-		m.summary = "Do the thing upnext"
+		m.summary = "Do the thing (upnext)"
 		result, err := RunEdit(ctx, EditParams{
 			TaskKey: "PROJ-1",
 			UpNext:  true,
@@ -200,7 +200,7 @@ func TestRunEdit_UpNext(t *testing.T) {
 
 	t.Run("remove upnext from summary", func(t *testing.T) {
 		m := &editMock{}
-		m.summary = "Do the thing upnext"
+		m.summary = "Do the thing (upnext)"
 		result, err := RunEdit(ctx, EditParams{
 			TaskKey:  "PROJ-1",
 			NoUpNext: true,

@@ -284,7 +284,7 @@ func TestExtractConstraints(t *testing.T) {
 	ref := time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC)
 
 	t.Run("all constraints", func(t *testing.T) {
-		cleaned, notBefore, _, upNext, noSplit := ExtractConstraints(
+		cleaned, notBefore, _, upNext, noSplit, _ := ExtractConstraints(
 			"Write docs not before 2025-03-01 upnext nosplit", ref, nil,
 		)
 		if cleaned != "Write docs" {
@@ -306,7 +306,7 @@ func TestExtractConstraints(t *testing.T) {
 	})
 
 	t.Run("parenthesized not before", func(t *testing.T) {
-		cleaned, notBefore, _, upNext, noSplit := ExtractConstraints(
+		cleaned, notBefore, _, upNext, noSplit, _ := ExtractConstraints(
 			"Write docs (not before 2025-03-01)", ref, nil,
 		)
 		if cleaned != "Write docs" {
@@ -327,8 +327,53 @@ func TestExtractConstraints(t *testing.T) {
 		}
 	})
 
+	t.Run("parenthesized all modifiers", func(t *testing.T) {
+		cleaned, notBefore, _, upNext, noSplit, titleDue := ExtractConstraints(
+			"Write docs (due 2025-04-01 not before 2025-03-01 upnext nosplit)", ref, nil,
+		)
+		if cleaned != "Write docs" {
+			t.Errorf("cleaned = %q, want %q", cleaned, "Write docs")
+		}
+		if titleDue == nil {
+			t.Fatal("titleDue = nil")
+		}
+		wantDue := time.Date(2025, 4, 1, 0, 0, 0, 0, time.UTC)
+		if !titleDue.Equal(wantDue) {
+			t.Errorf("titleDue = %v, want %v", *titleDue, wantDue)
+		}
+		if notBefore == nil {
+			t.Fatal("notBefore = nil")
+		}
+		wantNB := time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC)
+		if !notBefore.Equal(wantNB) {
+			t.Errorf("notBefore = %v, want %v", *notBefore, wantNB)
+		}
+		if !upNext {
+			t.Error("upNext = false, want true")
+		}
+		if !noSplit {
+			t.Error("noSplit = false, want true")
+		}
+	})
+
+	t.Run("due only in parens", func(t *testing.T) {
+		cleaned, _, _, _, _, titleDue := ExtractConstraints(
+			"Write docs (due 2025-04-01)", ref, nil,
+		)
+		if cleaned != "Write docs" {
+			t.Errorf("cleaned = %q, want %q", cleaned, "Write docs")
+		}
+		if titleDue == nil {
+			t.Fatal("titleDue = nil")
+		}
+		wantDue := time.Date(2025, 4, 1, 0, 0, 0, 0, time.UTC)
+		if !titleDue.Equal(wantDue) {
+			t.Errorf("titleDue = %v, want %v", *titleDue, wantDue)
+		}
+	})
+
 	t.Run("no constraints", func(t *testing.T) {
-		cleaned, notBefore, _, upNext, noSplit := ExtractConstraints("Plain task", ref, nil)
+		cleaned, notBefore, _, upNext, noSplit, titleDue := ExtractConstraints("Plain task", ref, nil)
 		if cleaned != "Plain task" {
 			t.Errorf("cleaned = %q, want %q", cleaned, "Plain task")
 		}
@@ -340,6 +385,9 @@ func TestExtractConstraints(t *testing.T) {
 		}
 		if noSplit {
 			t.Error("noSplit = true, want false")
+		}
+		if titleDue != nil {
+			t.Errorf("titleDue = %v, want nil", titleDue)
 		}
 	})
 }
@@ -483,7 +531,7 @@ func TestExtractConstraints_relative(t *testing.T) {
 	due := time.Date(2025, 3, 15, 0, 0, 0, 0, time.UTC)
 
 	t.Run("with due date", func(t *testing.T) {
-		cleaned, notBefore, notBeforeRaw, _, _ := ExtractConstraints(
+		cleaned, notBefore, notBeforeRaw, _, _, _ := ExtractConstraints(
 			"Write docs not before -3d", ref, &due,
 		)
 		if cleaned != "Write docs" {
@@ -502,7 +550,7 @@ func TestExtractConstraints_relative(t *testing.T) {
 	})
 
 	t.Run("without due date", func(t *testing.T) {
-		cleaned, notBefore, _, _, _ := ExtractConstraints(
+		cleaned, notBefore, _, _, _, _ := ExtractConstraints(
 			"Write docs not before -3d", ref, nil,
 		)
 		if cleaned != "Write docs" {
@@ -510,6 +558,32 @@ func TestExtractConstraints_relative(t *testing.T) {
 		}
 		if notBefore != nil {
 			t.Errorf("notBefore = %v, want nil", *notBefore)
+		}
+	})
+
+	t.Run("relative not before resolves against title due", func(t *testing.T) {
+		cleaned, notBefore, notBeforeRaw, _, _, titleDue := ExtractConstraints(
+			"Write docs (due 2025-03-15 not before -3d)", ref, nil,
+		)
+		if cleaned != "Write docs" {
+			t.Errorf("cleaned = %q, want %q", cleaned, "Write docs")
+		}
+		if titleDue == nil {
+			t.Fatal("titleDue = nil")
+		}
+		wantDue := time.Date(2025, 3, 15, 0, 0, 0, 0, time.UTC)
+		if !titleDue.Equal(wantDue) {
+			t.Errorf("titleDue = %v, want %v", *titleDue, wantDue)
+		}
+		if notBefore == nil {
+			t.Fatal("notBefore = nil")
+		}
+		wantNB := time.Date(2025, 3, 12, 0, 0, 0, 0, time.UTC)
+		if !notBefore.Equal(wantNB) {
+			t.Errorf("notBefore = %v, want %v", *notBefore, wantNB)
+		}
+		if notBeforeRaw != "-3d" {
+			t.Errorf("notBeforeRaw = %q, want %q", notBeforeRaw, "-3d")
 		}
 	})
 }

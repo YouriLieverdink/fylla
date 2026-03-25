@@ -310,7 +310,7 @@ func (c *Client) parseTask(t todoistTask) task.Task {
 	}
 
 	// Extract scheduling constraints from summary
-	cleaned, notBefore, notBeforeRaw, upNext, noSplit := task.ExtractConstraints(result.Summary, time.Now(), result.DueDate)
+	cleaned, notBefore, notBeforeRaw, upNext, noSplit, _ := task.ExtractConstraints(result.Summary, time.Now(), result.DueDate)
 	result.Summary = cleaned
 	result.NotBefore = notBefore
 	result.NotBeforeRaw = notBeforeRaw

@@ -50,7 +50,12 @@ func RunView(ctx context.Context, p ViewParams) (*ViewResult, error) {
 	}
 
 	// Extract constraints from summary
-	cleaned, notBefore, _, upNext, noSplit := task.ExtractConstraints(summary, time.Now(), due)
+	cleaned, notBefore, _, upNext, noSplit, titleDue := task.ExtractConstraints(summary, time.Now(), due)
+
+	// Use title-based due date when the provider has no native due date support (e.g. Kendo)
+	if due == nil && titleDue != nil {
+		due = titleDue
+	}
 
 	return &ViewResult{
 		Key:       p.TaskKey,

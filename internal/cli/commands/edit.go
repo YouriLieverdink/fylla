@@ -11,9 +11,12 @@ import (
 )
 
 var (
-	upnextRe    = regexp.MustCompile(`(?i)\bupnext\b`)
-	nosplitRe   = regexp.MustCompile(`(?i)\bnosplit\b`)
-	notBeforeRe = regexp.MustCompile(`(?i)\bnot before \S+`)
+	upnextRe            = regexp.MustCompile(`(?i)\bupnext\b`)
+	nosplitRe           = regexp.MustCompile(`(?i)\bnosplit\b`)
+	notBeforeRe         = regexp.MustCompile(`(?i)\bnot before \S+`)
+	dueRe               = regexp.MustCompile(`(?i)\bdue \S+`)
+	emptyParensRe       = regexp.MustCompile(`\(\s*\)`)
+	trailingOpenParenRe = regexp.MustCompile(`\(\s*$`)
 )
 
 // EditParams holds inputs for the edit command.
@@ -97,7 +100,8 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 		result.EstimateRemoved = true
 	}
 
-	if p.Due != "" {
+	// For Kendo, due dates are stored in the title — handled in the summary section below.
+	if p.Due != "" && p.Provider != "kendo" {
 		r, err := RunDueDate(ctx, DueDateParams{
 			TaskKey: p.TaskKey,
 			Date:    p.Due,
@@ -110,7 +114,7 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 		result.DueDateResult = r
 	}
 
-	if p.NoDue {
+	if p.NoDue && p.Provider != "kendo" {
 		if err := p.Source.RemoveDueDate(ctx, p.TaskKey); err != nil {
 			return nil, fmt.Errorf("remove due date: %w", err)
 		}
@@ -209,10 +213,11 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 		}
 	}
 
-	// Summary-keyword operations (upnext, nosplit, not before, direct summary)
+	// Summary-keyword operations (upnext, nosplit, not before, due for kendo, direct summary)
 	// need to work on the same summary to avoid race conditions.
+	kendoDue := (p.Due != "" || p.NoDue) && p.Provider == "kendo"
 	needsSummaryUpdate := p.UpNext || p.NoUpNext || p.NoSplit || p.NoNoSplit ||
-		p.NotBefore != "" || p.NoNotBefore || p.Summary != ""
+		p.NotBefore != "" || p.NoNotBefore || p.Summary != "" || kendoDue
 
 	if needsSummaryUpdate {
 		summary, err := p.Source.GetSummary(ctx, p.TaskKey)
@@ -289,7 +294,34 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 			result.NotBeforeRemoved = true
 		}
 
+		// Due date in title (Kendo)
+		if kendoDue {
+			hasDue := dueRe.MatchString(summary)
+			if p.Due != "" {
+				d, err := ParseDate(p.Due)
+				if err != nil {
+					return nil, fmt.Errorf("due date: %w", err)
+				}
+				if hasDue {
+					summary = strings.TrimSpace(dueRe.ReplaceAllString(summary, ""))
+					summary = strings.Join(strings.Fields(summary), " ")
+				}
+				summary = strings.TrimSpace(summary) + " due " + d.Format("2006-01-02")
+				changed = true
+				result.DueDateResult = &DueDateResult{TaskKey: p.TaskKey, DueDate: d}
+			} else if p.NoDue && hasDue {
+				summary = strings.TrimSpace(dueRe.ReplaceAllString(summary, ""))
+				summary = strings.Join(strings.Fields(summary), " ")
+				changed = true
+				result.DueDateRemoved = true
+			} else if p.NoDue && !hasDue {
+				result.DueDateRemoved = true
+			}
+		}
+
 		if changed {
+			// Normalize modifiers into parenthesized format
+			summary = normalizeModifierParens(summary)
 			// Re-add bracket estimate if one was present
 			if titleEst > 0 {
 				summary = task.SetTitleEstimate(summary, titleEst)
@@ -303,15 +335,19 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 	return result, nil
 }
 
-// stripKeywords removes constraint keywords (upnext, nosplit, not before <date>) from a summary.
+// stripKeywords removes constraint keywords (upnext, nosplit, not before <date>, due <date>)
+// and parenthesized modifier blocks from a summary.
 func stripKeywords(summary string) string {
 	s := upnextRe.ReplaceAllString(summary, "")
 	s = nosplitRe.ReplaceAllString(s, "")
 	s = notBeforeRe.ReplaceAllString(s, "")
+	s = dueRe.ReplaceAllString(s, "")
+	s = emptyParensRe.ReplaceAllString(s, "")
+	s = trailingOpenParenRe.ReplaceAllString(s, "")
 	return strings.TrimSpace(strings.Join(strings.Fields(s), " "))
 }
 
-// extractKeywordSuffix returns the keyword portion of a summary.
+// extractKeywordSuffix returns the keyword portion of a summary as a parenthesized block.
 func extractKeywordSuffix(summary string) string {
 	var parts []string
 	if upnextRe.MatchString(summary) {
@@ -321,12 +357,52 @@ func extractKeywordSuffix(summary string) string {
 		parts = append(parts, "nosplit")
 	}
 	if loc := notBeforeRe.FindString(summary); loc != "" {
+		loc = strings.TrimRight(loc, ")")
+		parts = append(parts, loc)
+	}
+	if loc := dueRe.FindString(summary); loc != "" {
+		loc = strings.TrimRight(loc, ")")
 		parts = append(parts, loc)
 	}
 	if len(parts) == 0 {
 		return ""
 	}
-	return " " + strings.Join(parts, " ")
+	return " (" + strings.Join(parts, " ") + ")"
+}
+
+// normalizeModifierParens collects all bare modifiers from the summary,
+// strips them, and re-adds them in a single parenthesized block.
+func normalizeModifierParens(summary string) string {
+	var mods []string
+
+	if loc := dueRe.FindString(summary); loc != "" {
+		loc = strings.TrimRight(loc, ")")
+		mods = append(mods, loc)
+		summary = dueRe.ReplaceAllString(summary, "")
+	}
+	if loc := notBeforeRe.FindString(summary); loc != "" {
+		loc = strings.TrimRight(loc, ")")
+		mods = append(mods, loc)
+		summary = notBeforeRe.ReplaceAllString(summary, "")
+	}
+	if upnextRe.MatchString(summary) {
+		mods = append(mods, "upnext")
+		summary = upnextRe.ReplaceAllString(summary, "")
+	}
+	if nosplitRe.MatchString(summary) {
+		mods = append(mods, "nosplit")
+		summary = nosplitRe.ReplaceAllString(summary, "")
+	}
+
+	// Clean up any orphaned parentheses
+	summary = emptyParensRe.ReplaceAllString(summary, "")
+	summary = trailingOpenParenRe.ReplaceAllString(summary, "")
+	summary = strings.TrimSpace(strings.Join(strings.Fields(summary), " "))
+
+	if len(mods) > 0 {
+		summary += " (" + strings.Join(mods, " ") + ")"
+	}
+	return summary
 }
 
 // PrintEditResult writes the edit confirmation to the given writer.

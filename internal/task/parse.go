@@ -20,6 +20,8 @@ var (
 	nosplitRe           = regexp.MustCompile(`(?i)\bnosplit\b`)
 	upnextRe            = regexp.MustCompile(`(?i)\bupnext\b`)
 	relativeNotBeforeRe = regexp.MustCompile(`^-(\d+)([dwm])$`)
+	emptyParensRe       = regexp.MustCompile(`\(\s*\)`)
+	trailingOpenParenRe = regexp.MustCompile(`\(\s*$`)
 )
 
 var priorityAliases = map[string]string{
@@ -263,11 +265,12 @@ func extractNotBeforeClause(text string, ref time.Time, dueDate *time.Time) (str
 	return text, nil, ""
 }
 
-// ExtractConstraints extracts scheduling constraints (not before, upnext, nosplit)
+// ExtractConstraints extracts scheduling constraints (not before, upnext, nosplit, due)
 // from a task summary string. Returns the cleaned summary and extracted values.
 // The dueDate is used to resolve relative not-before offsets (e.g. "-3d").
-// This is used by Jira/Todoist clients when reading tasks back.
-func ExtractConstraints(summary string, ref time.Time, dueDate *time.Time) (cleaned string, notBefore *time.Time, notBeforeRaw string, upNext, noSplit bool) {
+// titleDue is non-nil when a "due <date>" clause was found in the summary text.
+// This is used by Jira/Todoist/Kendo clients when reading tasks back.
+func ExtractConstraints(summary string, ref time.Time, dueDate *time.Time) (cleaned string, notBefore *time.Time, notBeforeRaw string, upNext, noSplit bool, titleDue *time.Time) {
 	cleaned = summary
 
 	if nosplitRe.MatchString(cleaned) {
@@ -280,9 +283,50 @@ func ExtractConstraints(summary string, ref time.Time, dueDate *time.Time) (clea
 		cleaned = strings.TrimSpace(upnextRe.ReplaceAllString(cleaned, ""))
 	}
 
-	cleaned, notBefore, notBeforeRaw = extractNotBeforeClause(cleaned, ref, dueDate)
+	// Extract "due <date>" before "not before" so relative offsets can resolve
+	cleaned, titleDue = extractDueClause(cleaned, ref)
+
+	// Use title due date for not-before resolution if no API due date provided
+	effectiveDue := dueDate
+	if effectiveDue == nil {
+		effectiveDue = titleDue
+	}
+
+	cleaned, notBefore, notBeforeRaw = extractNotBeforeClause(cleaned, ref, effectiveDue)
+
+	// Clean up orphaned parentheses left after modifier extraction
+	cleaned = emptyParensRe.ReplaceAllString(cleaned, "")
+	cleaned = trailingOpenParenRe.ReplaceAllString(cleaned, "")
 	cleaned = strings.TrimSpace(spacesRe.ReplaceAllString(cleaned, " "))
 	return
+}
+
+// ExtractDueClause extracts "due <date>" from text, returning the cleaned text
+// and parsed date. Exported for use by providers that store due dates in titles.
+func ExtractDueClause(text string, ref time.Time) (string, *time.Time) {
+	return extractDueClause(text, ref)
+}
+
+// BuildModifiers returns a parenthesized modifier string like "(due 2025-03-25 not before Monday upnext)".
+// Returns empty string if no modifiers are active.
+func BuildModifiers(due, notBefore string, upNext, noSplit bool) string {
+	var parts []string
+	if due != "" {
+		parts = append(parts, "due "+due)
+	}
+	if notBefore != "" {
+		parts = append(parts, "not before "+notBefore)
+	}
+	if upNext {
+		parts = append(parts, "upnext")
+	}
+	if noSplit {
+		parts = append(parts, "nosplit")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "(" + strings.Join(parts, " ") + ")"
 }
 
 // extractDueClause extracts "due <date>" from the attributes text.
