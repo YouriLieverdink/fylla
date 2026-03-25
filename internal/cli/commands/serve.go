@@ -238,8 +238,8 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			}
 			return result.Count, nil
 		},
-		LoadConfig: func() (string, error) {
-			return RunConfigShow(ConfigShowParams{ConfigPath: cfgPath})
+		LoadConfig: func() (*config.Config, error) {
+			return config.LoadFrom(cfgPath)
 		},
 		SetConfig: func(key, value string) error {
 			_, err := RunConfigSet(ConfigSetParams{ConfigPath: cfgPath, Key: key, Value: value})

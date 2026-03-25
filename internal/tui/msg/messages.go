@@ -1,6 +1,10 @@
 package msg
 
-import "time"
+import (
+	"time"
+
+	"github.com/iruoy/fylla/internal/config"
+)
 
 // TodayLoadedMsg carries the result of loading today's events.
 type TodayLoadedMsg struct {
@@ -131,10 +135,10 @@ type ClearDoneMsg struct {
 	Err   error
 }
 
-// ConfigLoadedMsg carries the config display string.
+// ConfigLoadedMsg carries the parsed config.
 type ConfigLoadedMsg struct {
-	Content string
-	Err     error
+	Config *config.Config
+	Err    error
 }
 
 // ConfigSetMsg is sent after setting a config value.

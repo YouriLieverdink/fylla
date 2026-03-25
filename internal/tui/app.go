@@ -106,6 +106,7 @@ type model struct {
 	form         components.Form
 	picker       components.Picker
 	formKind         formKind
+	formConfigKey    string
 	formTaskKey      string
 	formTaskProvider string
 	formWorklogID       string
@@ -633,8 +634,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		if mssg.Err != nil {
 			m.config.Err = mssg.Err
 		} else {
-			m.config.Content = mssg.Content
-			m.config.Err = nil
+			m.config.SetConfig(mssg.Config)
 		}
 		return m, nil
 
@@ -1062,18 +1062,20 @@ func (m model) updateWorklog(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) updateConfig(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(mssg, keys.Up):
-		m.config.ScrollUp()
+		m.config.CursorUp()
 	case key.Matches(mssg, keys.Down):
-		m.config.ScrollDown()
+		m.config.CursorDown()
 	case key.Matches(mssg, keys.Refresh):
 		m.config.Loading = true
 		return m, loadConfigCmd(m.cb)
-	case key.Matches(mssg, keys.Edit):
-		m.form = components.NewForm("Set Config", []components.FormFieldDef{
-			{Label: "Key", Placeholder: "e.g. scheduling.windowDays"},
-			{Label: "Value", Placeholder: "new value"},
-		})
-		m.formKind = formSetConfig
+	case key.Matches(mssg, keys.Enter):
+		if row := m.config.SelectedRow(); row != nil {
+			m.formConfigKey = row.Key
+			m.form = components.NewForm("Edit: "+row.Label, []components.FormFieldDef{
+				{Label: "Value", Placeholder: "new value", Value: row.Value},
+			})
+			m.formKind = formSetConfig
+		}
 	}
 	return m, nil
 }
@@ -1644,17 +1646,11 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.saving = "Updating worklog"
 			return m, updateWorklogCmd(m.cb, m.formWorklogKey, m.formWorklogID, m.formWorklogProvider, dur, description, started)
 		case formSetConfig:
-			cfgKey := vals[0]
-			cfgVal := vals[1]
-			if cfgKey == "" {
-				m.form.Active = false
-				m.formKind = formNone
-				return m, nil
-			}
+			cfgVal := vals[0]
 			m.form.Active = false
 			m.formKind = formNone
 			m.saving = "Saving config"
-			return m, setConfigCmd(m.cb, cfgKey, cfgVal)
+			return m, setConfigCmd(m.cb, m.formConfigKey, cfgVal)
 		}
 		m.form.Active = false
 		m.formKind = formNone

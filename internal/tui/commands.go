@@ -5,6 +5,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/iruoy/fylla/internal/config"
 	"github.com/iruoy/fylla/internal/tui/msg"
 )
 
@@ -77,7 +78,7 @@ type Callbacks struct {
 	SyncPreview func() (*msg.SyncResult, error)
 	SyncApply   func(force bool) (*msg.SyncResult, error)
 	ClearEvents func() (int, error)
-	LoadConfig  func() (string, error)
+	LoadConfig  func() (*config.Config, error)
 	SetConfig   func(key, value string) error
 	AddTask      func(provider, summary, project, section, issueType, description, estimate, dueDate, priority, parent string, sprintID *int) (key, summaryOut string, err error)
 	EditTask     func(params EditTaskParams) error
@@ -217,8 +218,8 @@ func clearEventsCmd(cb Callbacks) tea.Cmd {
 
 func loadConfigCmd(cb Callbacks) tea.Cmd {
 	return func() tea.Msg {
-		content, err := cb.LoadConfig()
-		return msg.ConfigLoadedMsg{Content: content, Err: err}
+		cfg, err := cb.LoadConfig()
+		return msg.ConfigLoadedMsg{Config: cfg, Err: err}
 	}
 }
 
