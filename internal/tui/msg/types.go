@@ -105,6 +105,7 @@ type WorklogEntry struct {
 	ID           string
 	IssueKey     string
 	Provider     string
+	Project      string
 	IssueSummary string
 	Description  string
 	Started      time.Time

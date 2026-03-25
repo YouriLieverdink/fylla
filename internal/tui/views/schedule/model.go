@@ -110,6 +110,7 @@ func (m *Model) View() string {
 				b.WriteString("\n  " + styles.HeaderFmt.Render(day) + "\n")
 				currentDay = day
 			}
+			dot := styles.FormatProjectDot(e.Project)
 			line := fmt.Sprintf("    %s - %s  %s%s",
 				e.Start.Format("15:04"), e.End.Format("15:04"),
 				styles.FormatPrefix(e.Project, e.Section), e.Summary)
@@ -119,7 +120,7 @@ func (m *Model) View() string {
 			case e.AtRisk:
 				line = styles.AtRiskStyle.Render(line)
 			}
-			b.WriteString(styles.Truncate(line, m.Width) + "\n")
+			b.WriteString(dot + styles.Truncate(line, m.Width) + "\n")
 		}
 		b.WriteString("\n")
 	}
@@ -129,10 +130,11 @@ func (m *Model) View() string {
 		b.WriteString(styles.AtRiskStyle.Render("At Risk"))
 		b.WriteString("\n")
 		for _, a := range atRisk {
+			dot := styles.FormatProjectDot(a.Project)
 			line := styles.AtRiskStyle.Render(fmt.Sprintf("    %s%s (%s - %s)",
 				styles.FormatPrefix(a.Project, a.Section), a.Summary,
 				a.Start.Format("15:04"), a.End.Format("15:04")))
-			b.WriteString(styles.Truncate(line, m.Width) + "\n")
+			b.WriteString(dot + styles.Truncate(line, m.Width) + "\n")
 		}
 		b.WriteString("\n")
 	}
@@ -142,10 +144,11 @@ func (m *Model) View() string {
 		b.WriteString(styles.WarnStyle.Render("Unscheduled"))
 		b.WriteString("\n")
 		for _, u := range m.Result.Unscheduled {
+			dot := styles.FormatProjectDot(u.Project)
 			est := styles.FormatDurationOrDash(u.Estimate)
 			line := styles.WarnStyle.Render(fmt.Sprintf("    %s%s  %s  (%s)",
 				styles.FormatPrefix(u.Project, u.Section), u.Summary, est, u.Reason))
-			b.WriteString(styles.Truncate(line, m.Width) + "\n")
+			b.WriteString(dot + styles.Truncate(line, m.Width) + "\n")
 		}
 		b.WriteString("\n")
 	}

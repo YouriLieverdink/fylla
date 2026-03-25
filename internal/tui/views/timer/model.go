@@ -83,6 +83,7 @@ func (m Model) View() string {
 	}
 
 	b.WriteString("  " + styles.RunningStyle.Render("RUNNING") + "\n\n")
+	dot := styles.FormatProjectDot(m.Project)
 	label := styles.FormatPrefix(m.Project, m.Section) + m.Summary
 	if m.Summary == "" {
 		if m.TaskKey != "" {
@@ -91,7 +92,7 @@ func (m Model) View() string {
 			label = "(anonymous)"
 		}
 	}
-	b.WriteString("  Task: " + styles.TaskStyle.Render(label) + "\n\n")
+	b.WriteString("  Task: " + dot + styles.TaskStyle.Render(label) + "\n\n")
 
 	// Big elapsed display
 	if len(m.Segments) > 0 {

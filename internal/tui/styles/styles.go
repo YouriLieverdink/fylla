@@ -1,6 +1,10 @@
 package styles
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"hash/fnv"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 var (
 	HeaderFmt     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
@@ -18,4 +22,24 @@ var (
 	TimerBig      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#43BF6D", Dark: "#73F59F"})
 	TaskStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"})
 	YamlStyle     = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#333333", Dark: "#CCCCCC"})
+
+	projectPalette = []lipgloss.AdaptiveColor{
+		{Light: "#1E88E5", Dark: "#42A5F5"}, // blue
+		{Light: "#43A047", Dark: "#66BB6A"}, // green
+		{Light: "#FB8C00", Dark: "#FFA726"}, // orange
+		{Light: "#8E24AA", Dark: "#AB47BC"}, // purple
+		{Light: "#00897B", Dark: "#26A69A"}, // teal
+		{Light: "#E53935", Dark: "#EF5350"}, // red
+		{Light: "#3949AB", Dark: "#5C6BC0"}, // indigo
+		{Light: "#6D4C41", Dark: "#8D6E63"}, // brown
+	}
 )
+
+// ProjectBadgeStyle returns a lipgloss style with a deterministic foreground
+// color based on the project name.
+func ProjectBadgeStyle(project string) lipgloss.Style {
+	h := fnv.New32a()
+	h.Write([]byte(project))
+	idx := int(h.Sum32()) % len(projectPalette)
+	return lipgloss.NewStyle().Foreground(projectPalette[idx])
+}

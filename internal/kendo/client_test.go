@@ -238,6 +238,8 @@ func TestFetchWorklogs(t *testing.T) {
 			switch r.URL.Path {
 			case "/api/auth/user":
 				json.NewEncoder(w).Encode(map[string]interface{}{"id": 42})
+			case "/api/projects":
+				w.Write(projectsResponse())
 			case "/api/time-entries":
 				json.NewEncoder(w).Encode([]timeEntryJSON{
 					{
@@ -247,6 +249,7 @@ func TestFetchWorklogs(t *testing.T) {
 						StartedAt:    "2025-01-20T09:00:00Z",
 						IssueTitle:   "Fix bug",
 						IssueKey:     "IRUOY-0001",
+						ProjectID:    1,
 					},
 				})
 			default:

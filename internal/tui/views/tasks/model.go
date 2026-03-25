@@ -220,6 +220,7 @@ func (m Model) View() string {
 			t := filtered[dl.taskIdx]
 			isSelected := dl.taskIdx == m.Cursor
 
+			dot := styles.FormatProjectDot(t.Project)
 			rank := fmt.Sprintf("%2d.", dl.taskIdx+1)
 			est := styles.FormatDurationPadded(t.Estimate)
 			score := fmt.Sprintf("%5.1f", t.Score)
@@ -244,6 +245,7 @@ func (m Model) View() string {
 			}
 
 			b.WriteString(cursor)
+			b.WriteString(dot)
 			b.WriteString(line)
 			b.WriteString("\n")
 		}

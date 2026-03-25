@@ -576,6 +576,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 					ID:           e.ID,
 					IssueKey:     e.IssueKey,
 					Provider:     e.Provider,
+					Project:      e.Project,
 					IssueSummary: e.IssueSummary,
 					Description:  e.Description,
 					Started:      e.Started,

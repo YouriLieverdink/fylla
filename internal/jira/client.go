@@ -883,6 +883,7 @@ type WorklogEntry struct {
 	ID           string
 	IssueKey     string
 	Provider     string
+	Project      string
 	IssueSummary string
 	Description  string
 	Started      time.Time
@@ -902,7 +903,7 @@ func (c *Client) FetchWorklogs(ctx context.Context, since, until time.Time) ([]W
 
 	payload := map[string]interface{}{
 		"jql":    jql,
-		"fields": []string{"summary"},
+		"fields": []string{"summary", "project"},
 	}
 
 	resp, err := c.do(ctx, http.MethodPost, "/rest/api/3/search/jql", payload)
@@ -931,15 +932,15 @@ func (c *Client) FetchWorklogs(ctx context.Context, since, until time.Time) ([]W
 	sem := make(chan struct{}, 5)
 	for i, issue := range result.Issues {
 		wg.Add(1)
-		go func(idx int, key, summary string) {
+		go func(idx int, key, project, summary string) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			wls, err := c.fetchIssueWorklogs(ctx, key, summary, since, until)
+			wls, err := c.fetchIssueWorklogs(ctx, key, project, summary, since, until)
 			if err == nil {
 				results[idx] = wlResult{entries: wls}
 			}
-		}(i, issue.Key, issue.Fields.Summary)
+		}(i, issue.Key, issue.Fields.Project.Key, issue.Fields.Summary)
 	}
 	wg.Wait()
 
@@ -950,7 +951,7 @@ func (c *Client) FetchWorklogs(ctx context.Context, since, until time.Time) ([]W
 	return entries, nil
 }
 
-func (c *Client) fetchIssueWorklogs(ctx context.Context, issueKey, issueSummary string, since, until time.Time) ([]WorklogEntry, error) {
+func (c *Client) fetchIssueWorklogs(ctx context.Context, issueKey, project, issueSummary string, since, until time.Time) ([]WorklogEntry, error) {
 	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/rest/api/3/issue/%s/worklog", issueKey), nil)
 	if err != nil {
 		return nil, err
@@ -995,6 +996,7 @@ func (c *Client) fetchIssueWorklogs(ctx context.Context, issueKey, issueSummary 
 			ID:           wl.ID,
 			IssueKey:     issueKey,
 			Provider:     "jira",
+			Project:      project,
 			IssueSummary: issueSummary,
 			Description:  extractADFText(wl.Comment),
 			Started:      started,

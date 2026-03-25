@@ -1092,6 +1092,9 @@ func (c *Client) FetchWorklogs(ctx context.Context, since, until time.Time) ([]j
 	if err := c.fetchUserID(ctx); err != nil {
 		return nil, fmt.Errorf("fetch worklogs: %w", err)
 	}
+	if err := c.loadProjects(ctx); err != nil {
+		return nil, fmt.Errorf("fetch worklogs: %w", err)
+	}
 
 	sinceDate := time.Date(since.Year(), since.Month(), since.Day(), 0, 0, 0, 0, since.Location())
 	untilDate := time.Date(until.Year(), until.Month(), until.Day(), 23, 59, 59, 0, until.Location())
@@ -1127,6 +1130,7 @@ func (c *Client) FetchWorklogs(ctx context.Context, since, until time.Time) ([]j
 			ID:           strconv.Itoa(te.ID),
 			IssueKey:     te.IssueKey,
 			Provider:     "kendo",
+			Project:      c.projectCodeByID(te.ProjectID),
 			IssueSummary: te.IssueTitle,
 			Description:  te.Note,
 			Started:      started,

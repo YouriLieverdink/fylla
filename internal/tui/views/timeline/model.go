@@ -78,7 +78,7 @@ func (m Model) View() string {
 		dur := e.End.Sub(e.Start)
 		durStr := styles.FormatDurationParens(dur)
 
-		var label string
+		var dot, label string
 		if e.IsCalendarEvent {
 			label = fmt.Sprintf("%s  %s  %s", timeRange, e.Summary, durStr)
 			switch {
@@ -92,6 +92,7 @@ func (m Model) View() string {
 				label = styles.CalEventStyle.Render(label)
 			}
 		} else {
+			dot = styles.FormatProjectDot(e.Project)
 			prefix := ""
 			if e.AtRisk {
 				prefix = "[LATE] "
@@ -122,6 +123,7 @@ func (m Model) View() string {
 		}
 
 		b.WriteString(cursor)
+		b.WriteString(dot)
 		b.WriteString(label)
 		b.WriteString("\n")
 	}

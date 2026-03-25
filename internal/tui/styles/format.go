@@ -18,6 +18,14 @@ func FormatPrefix(project, section string) string {
 	return ""
 }
 
+// FormatProjectDot renders a colored dot for a project.
+func FormatProjectDot(project string) string {
+	if project == "" {
+		return ""
+	}
+	return ProjectBadgeStyle(project).Render("●") + " "
+}
+
 // FormatDuration formats a duration as "1h30m", "1h", or "30m". Zero returns "0m".
 func FormatDuration(d time.Duration) string {
 	if d <= 0 {
