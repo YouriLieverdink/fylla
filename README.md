@@ -170,7 +170,6 @@ scheduling:
   bufferMinutes: 15
   travelBufferMinutes: 30
   snapMinutes: [0, 15, 30, 45]
-  autoResync: false               # re-sync calendar after task changes
 
 businessHours:
   - start: "09:00"
@@ -440,26 +439,6 @@ of what was planned and worked on:
 3. Marks the event as done (✓ prefix visible in Google Calendar)
 4. Shows remaining estimate — suggests next steps if the task has time left
    or is at zero
-
-### Auto-resync
-
-When `scheduling.autoResync` is enabled, commands that change the schedule
-automatically trigger a re-sync:
-
-| Command | Why |
-|---------|-----|
-| `fylla timer stop` | Task duration changed |
-| `fylla task done` | Task completed, free up slots |
-| `fylla task add` | New task needs scheduling |
-| `fylla task delete` | Task removed, free up slots |
-| `fylla task edit` | Estimate/due date/priority changed |
-
-Enable in config:
-
-```yaml
-scheduling:
-  autoResync: true
-```
 
 ## Kendo Integration
 

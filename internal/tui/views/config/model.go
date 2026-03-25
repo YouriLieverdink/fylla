@@ -282,7 +282,6 @@ func buildRows(cfg *config.Config) []configRow {
 	rows = append(rows, configRow{Kind: rowSetting, Label: "bufferMinutes", Key: "scheduling.bufferMinutes", Value: fmt.Sprintf("%d", cfg.Scheduling.BufferMinutes)})
 	rows = append(rows, configRow{Kind: rowSetting, Label: "travelBuffer", Key: "scheduling.travelBufferMinutes", Value: fmt.Sprintf("%d", cfg.Scheduling.TravelBufferMinutes)})
 	rows = append(rows, configRow{Kind: rowSetting, Label: "snapMinutes", Key: "scheduling.snapMinutes", Value: formatIntSlice(cfg.Scheduling.SnapMinutes)})
-	rows = append(rows, configRow{Kind: rowSetting, Label: "autoResync", Key: "scheduling.autoResync", Value: fmt.Sprintf("%t", cfg.Scheduling.AutoResync)})
 
 	// Business Hours
 	rows = append(rows, configRow{Kind: rowSection, Label: "Business Hours"})

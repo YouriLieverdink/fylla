@@ -86,7 +86,6 @@ type SchedulingConfig struct {
 	BufferMinutes          int   `yaml:"bufferMinutes"`
 	TravelBufferMinutes    int   `yaml:"travelBufferMinutes"`
 	SnapMinutes            []int `yaml:"snapMinutes"`
-	AutoResync             bool  `yaml:"autoResync"`
 }
 
 // BusinessHoursConfig holds default business hours.

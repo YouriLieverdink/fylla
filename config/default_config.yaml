@@ -42,7 +42,6 @@ scheduling:
   bufferMinutes: 15
   travelBufferMinutes: 30
   snapMinutes: [0, 15, 30, 45]
-  autoResync: false
 
 businessHours:
   - start: "09:00"

@@ -31,7 +31,6 @@ Fylla supports multiple task providers (Jira, Todoist, GitHub, Kendo) simultaneo
 - **Calendar descriptions:** `BuildDescriptionWithProvider()` constructs event descriptions with provider-aware markers (`fylla:` for Jira, `fylla:kendo` for Kendo, etc.) and correct URLs. `TaskKeyAndProviderFromDescription()` extracts both the task key and provider from event descriptions
 - **Done marker:** `DoneMarker` (`✓ `) prefix on calendar event titles indicates completed work. `ParseTitle` strips it and sets `Done bool`. Used by `timer stop` to mark events as done.
 - **Past event preservation:** `reconcile()` takes a `now` parameter and skips events whose end time is before `now`, preserving them as a calendar record
-- **Auto-resync:** `maybeAutoResync()` triggers a sync after schedule-affecting commands when `scheduling.autoResync` is enabled
 - **Worklog command:** `fylla worklog` walks calendar events (tasks + meetings), prompts for adjustments, fills remaining hours, and bulk-posts to Jira. Kendo tasks are posted directly to Kendo as time entries (bypassing the Jira fallback resolution)
 
 ### Key Interfaces
