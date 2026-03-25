@@ -247,11 +247,15 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Panel focus toggle
-		if m.timerRunning && key.Matches(mssg, keys.TogglePanel) {
-			m.panelFocused = !m.panelFocused
-			m.timer.Focused = m.panelFocused
-			return m, nil
+		// Panel focus toggle / anonymous timer start
+		if key.Matches(mssg, keys.TogglePanel) {
+			if m.timerRunning {
+				m.panelFocused = !m.panelFocused
+				m.timer.Focused = m.panelFocused
+				return m, nil
+			}
+			// No timer running — start anonymous timer
+			return m, startTimerCmd(m.cb, "", "", "", "")
 		}
 
 		// Tab switching
@@ -1866,6 +1870,9 @@ func (m model) View() string {
 	}
 
 	hints := "1-3:tabs  ?:help  q:quit"
+	if !m.timerRunning {
+		hints = "1-3:tabs  p:timer  ?:help  q:quit"
+	}
 	var loadingText string
 	if label := m.loadingLabel(); label != "" {
 		loadingText = m.spinner.View() + " " + label
