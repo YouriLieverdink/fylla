@@ -88,7 +88,7 @@ type Callbacks struct {
 	ListSections func(provider, project string) ([]string, error)
 	ListLanes    func(provider, project string) ([]string, error)
 	ListEpics    func(provider, project string) ([]msg.EpicOption, error)
-	GetParent    func(taskKey string) (string, error)
+	GetParent    func(taskKey, provider string) (string, error)
 	Provider     func() string
 	Providers    func() []string
 	SnoozeTask   func(taskKey, target string) error
@@ -332,10 +332,10 @@ func loadFormOptionsCmd(cb Callbacks) tea.Cmd {
 	}
 }
 
-func loadEditFormOptionsCmd(cb Callbacks, project, taskKey string) tea.Cmd {
+func loadEditFormOptionsCmd(cb Callbacks, project, taskKey, taskProvider string) tea.Cmd {
 	return func() tea.Msg {
-		var provider string
-		if cb.Provider != nil {
+		provider := taskProvider
+		if provider == "" && cb.Provider != nil {
 			provider = cb.Provider()
 		}
 		var epics []msg.EpicOption
@@ -356,7 +356,7 @@ func loadEditFormOptionsCmd(cb Callbacks, project, taskKey string) tea.Cmd {
 		}
 		var parentKey string
 		if cb.GetParent != nil {
-			p, err := cb.GetParent(taskKey)
+			p, err := cb.GetParent(taskKey, provider)
 			if err == nil {
 				parentKey = p
 			}

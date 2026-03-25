@@ -865,6 +865,42 @@ func (c *Client) resolveEpicID(ctx context.Context, projectID int, epicKey strin
 	return 0, fmt.Errorf("no epic found for key %q", epicKey)
 }
 
+// GetParent returns the epic ID for the given Kendo issue.
+func (c *Client) GetParent(ctx context.Context, issueKey string) (string, error) {
+	pid, err := c.projectIDForKey(ctx, issueKey)
+	if err != nil {
+		return "", err
+	}
+	issue, err := c.fetchIssue(ctx, pid, issueKey)
+	if err != nil {
+		return "", err
+	}
+	if issue.EpicID == nil {
+		return "", nil
+	}
+	return strconv.Itoa(*issue.EpicID), nil
+}
+
+// UpdateParent sets or clears the epic for the given Kendo issue.
+func (c *Client) UpdateParent(ctx context.Context, issueKey, parentKey string) error {
+	pid, err := c.projectIDForKey(ctx, issueKey)
+	if err != nil {
+		return err
+	}
+	if parentKey == "" {
+		return c.putIssue(ctx, pid, issueKey, map[string]interface{}{
+			"epic_id": nil,
+		})
+	}
+	epicID, err := c.resolveEpicID(ctx, pid, parentKey)
+	if err != nil {
+		return err
+	}
+	return c.putIssue(ctx, pid, issueKey, map[string]interface{}{
+		"epic_id": epicID,
+	})
+}
+
 // DeleteTask deletes a Kendo issue.
 func (c *Client) DeleteTask(ctx context.Context, issueKey string) error {
 	pid, err := c.projectIDForKey(ctx, issueKey)

@@ -922,7 +922,7 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.formTaskProvider = t.Provider
 			m.pendingEdit = &ed
 			m.formKind = formEditTaskPending
-			return m, loadEditFormOptionsCmd(m.cb, t.Project, t.Key)
+			return m, loadEditFormOptionsCmd(m.cb, t.Project, t.Key, t.Provider)
 		}
 	case key.Matches(mssg, keys.Move):
 		if t := m.tasks.SelectedTask(); t != nil {

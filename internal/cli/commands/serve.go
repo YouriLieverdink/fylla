@@ -496,13 +496,12 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			}
 			return options, nil
 		},
-		GetParent: func(taskKey string) (string, error) {
+		GetParent: func(taskKey, provider string) (string, error) {
 			var pg ParentGetter
 			if g, ok := source.(ParentGetter); ok {
 				pg = g
 			} else if ms, ok := source.(*MultiTaskSource); ok {
-				// ParentGetter is only supported by Jira, so route directly
-				routed := ms.routeTo(taskKey)
+				routed := ms.routeToWithProvider(taskKey, provider)
 				if g, ok := routed.(ParentGetter); ok {
 					pg = g
 				}
