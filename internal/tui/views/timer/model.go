@@ -37,6 +37,7 @@ type Model struct {
 	Err          error
 	Width        int
 	Height       int
+	Focused      bool
 	Paused       []PausedInfo
 }
 
@@ -51,117 +52,162 @@ func (m *Model) SetSize(w, h int) {
 	m.Height = h
 }
 
-// View renders the timer view.
+// View renders the timer as a compact side panel.
 func (m Model) View() string {
 	if m.Loading {
-		return "  Loading timer status..."
+		return "  Loading..."
 	}
 	if m.Err != nil {
 		return styles.ErrStyle.Render(fmt.Sprintf("  Error: %v", m.Err))
 	}
 
 	var b strings.Builder
-	b.WriteString(styles.HeaderFmt.Render("Timer"))
-	b.WriteString("\n\n")
+
+	// Panel title
+	titleStyle := styles.HeaderFmt
+	if m.Focused {
+		titleStyle = styles.SectionFmt
+	}
+	b.WriteString("  " + titleStyle.Render("Timer") + "\n\n")
 
 	if !m.Running {
-		b.WriteString("  No timer running.\n\n")
-		b.WriteString(styles.HintStyle.Render("  Start a timer from the Timeline or Tasks tab using 't' or 'Enter'."))
+		b.WriteString("  No timer running.\n")
 		if len(m.Paused) > 0 {
-			b.WriteString("\n\n")
-			for _, p := range m.Paused {
-				label := p.TaskKey
-				if label == "" {
-					label = "(anonymous)"
-				}
-				if p.Project != "" {
-					label = fmt.Sprintf("[%s] %s", p.Project, label)
-				}
-				b.WriteString(fmt.Sprintf("  Paused: %s (%d segments)\n", styles.TaskStyle.Render(label), p.SegmentCount))
-			}
+			b.WriteString("\n")
+			m.writePaused(&b)
 		}
 		return b.String()
 	}
 
-	b.WriteString("  " + styles.RunningStyle.Render("RUNNING") + "\n\n")
+	// Task info
 	dot := styles.FormatProjectDot(m.Project)
-	label := styles.FormatPrefix(m.Project, m.Section) + m.Summary
-	if m.Summary == "" {
+	label := m.Summary
+	if label == "" {
 		if m.TaskKey != "" {
 			label = m.TaskKey
 		} else {
 			label = "(anonymous)"
 		}
 	}
-	b.WriteString("  Task: " + dot + styles.TaskStyle.Render(label) + "\n")
+	wrapWidth := m.Width - 4
+	if wrapWidth < 10 {
+		wrapWidth = 10
+	}
+	wrapped := wordWrap(label, wrapWidth-2) // -2 for dot
+	for i, line := range wrapped {
+		if i == 0 {
+			b.WriteString("  " + dot + styles.TaskStyle.Render(line) + "\n")
+		} else {
+			b.WriteString("    " + styles.TaskStyle.Render(line) + "\n")
+		}
+	}
 	if !m.StartTime.IsZero() {
-		b.WriteString(styles.HintStyle.Render("  Started at " + m.StartTime.Local().Format("15:04")))
-		b.WriteString("\n")
+		b.WriteString(styles.HintStyle.Render("  Started at "+m.StartTime.Local().Format("15:04")) + "\n")
 	}
 	b.WriteString("\n")
 
 	// Big elapsed display
+	dur := m.Elapsed
 	if len(m.Segments) > 0 {
-		// Show total time (all segments + current) as the main display
-		th := int(m.TotalElapsed.Hours())
-		tmin := int(m.TotalElapsed.Minutes()) % 60
-		tsec := int(m.TotalElapsed.Seconds()) % 60
-		totalStr := fmt.Sprintf("  %02d:%02d:%02d", th, tmin, tsec)
-		b.WriteString(styles.TimerBig.Render(totalStr))
-		b.WriteString("\n")
-		// Show each prior segment
+		dur = m.TotalElapsed
+	}
+	h := int(dur.Hours())
+	min := int(dur.Minutes()) % 60
+	sec := int(dur.Seconds()) % 60
+	b.WriteString("  " + styles.TimerBig.Render(fmt.Sprintf("%02d:%02d:%02d", h, min, sec)) + "\n")
+	b.WriteString("\n")
+
+	// Segments
+	if len(m.Segments) > 0 {
 		for i, seg := range m.Segments {
-			segLabel := fmt.Sprintf("  segment %d: %s", i+1, styles.FormatDuration(seg.Duration))
+			line := fmt.Sprintf("  seg %d: %s", i+1, styles.FormatDuration(seg.Duration))
 			if seg.Comment != "" {
-				segLabel += " — " + seg.Comment
+				line += " — " + seg.Comment
 			}
-			b.WriteString(styles.HintStyle.Render(segLabel))
-			b.WriteString("\n")
+			if m.Width > 0 {
+				line = styles.Truncate(line, m.Width-2)
+			}
+			b.WriteString(styles.HintStyle.Render(line) + "\n")
 		}
-		// Show current segment
-		sh := int(m.Elapsed.Hours())
-		smin := int(m.Elapsed.Minutes()) % 60
-		ssec := int(m.Elapsed.Seconds()) % 60
-		curStr := fmt.Sprintf("  segment %d: %02d:%02d:%02d", len(m.Segments)+1, sh, smin, ssec)
+		curLine := fmt.Sprintf("  seg %d: %s", len(m.Segments)+1, formatSegmentDuration(m.Elapsed))
 		if m.Comment != "" {
-			curStr += " — " + m.Comment
+			curLine += " — " + m.Comment
 		}
-		b.WriteString(styles.HintStyle.Render(curStr))
-		b.WriteString("\n\n")
-	} else {
-		h := int(m.Elapsed.Hours())
-		min := int(m.Elapsed.Minutes()) % 60
-		sec := int(m.Elapsed.Seconds()) % 60
-		elapsed := fmt.Sprintf("  %02d:%02d:%02d", h, min, sec)
-		b.WriteString(styles.TimerBig.Render(elapsed))
+		if m.Width > 0 {
+			curLine = styles.Truncate(curLine, m.Width-2)
+		}
+		b.WriteString(styles.HintStyle.Render(curLine) + "\n")
 		b.WriteString("\n")
-		if m.Comment != "" {
-			b.WriteString(styles.HintStyle.Render("  " + m.Comment))
-			b.WriteString("\n")
+	} else if m.Comment != "" {
+		wrapWidth := m.Width - 4
+		if wrapWidth < 10 {
+			wrapWidth = 10
+		}
+		for _, line := range wordWrap(m.Comment, wrapWidth) {
+			b.WriteString(styles.HintStyle.Render("  "+line) + "\n")
 		}
 		b.WriteString("\n")
 	}
 
-	hints := "s:stop  c:comment  e:edit start  x:abort  i:interrupt  r:refresh"
-	b.WriteString(styles.HintStyle.Render("  " + hints))
+	// Key hints
+	b.WriteString(styles.HintStyle.Render("  s:stop  c:comment") + "\n")
+	b.WriteString(styles.HintStyle.Render("  e:edit  x:abort") + "\n")
+	b.WriteString(styles.HintStyle.Render("  i:interrupt") + "\n")
 
 	if len(m.Paused) > 0 {
-		b.WriteString("\n\n")
-		for _, p := range m.Paused {
-			plabel := p.TaskKey
-			if plabel == "" {
-				plabel = "(anonymous)"
-			}
-			if p.Project != "" {
-				plabel = fmt.Sprintf("[%s] %s", p.Project, plabel)
-			}
-			segments := "segment"
-			if p.SegmentCount != 1 {
-				segments = "segments"
-			}
-			b.WriteString(fmt.Sprintf("  Paused: %s (%d %s)\n", styles.TaskStyle.Render(plabel), p.SegmentCount, segments))
-		}
+		b.WriteString("\n")
+		m.writePaused(&b)
 	}
 
 	return b.String()
+}
+
+func (m Model) writePaused(b *strings.Builder) {
+	for _, p := range m.Paused {
+		plabel := p.TaskKey
+		if plabel == "" {
+			plabel = "(anonymous)"
+		}
+		if p.Project != "" {
+			plabel = fmt.Sprintf("[%s] %s", p.Project, plabel)
+		}
+		segments := "seg"
+		if p.SegmentCount != 1 {
+			segments = "segs"
+		}
+		b.WriteString(fmt.Sprintf("  Paused: %s (%d %s)\n", styles.TaskStyle.Render(plabel), p.SegmentCount, segments))
+	}
+}
+
+func wordWrap(s string, width int) []string {
+	if width <= 0 {
+		return []string{s}
+	}
+	var lines []string
+	for len(s) > width {
+		// Find last space within width
+		cut := width
+		if i := strings.LastIndex(s[:cut], " "); i > 0 {
+			cut = i
+		}
+		lines = append(lines, s[:cut])
+		s = strings.TrimLeft(s[cut:], " ")
+	}
+	if s != "" {
+		lines = append(lines, s)
+	}
+	return lines
+}
+
+func formatSegmentDuration(d time.Duration) string {
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	s := int(d.Seconds()) % 60
+	if h > 0 {
+		return fmt.Sprintf("%dh%02dm%02ds", h, m, s)
+	}
+	if m > 0 {
+		return fmt.Sprintf("%dm%02ds", m, s)
+	}
+	return fmt.Sprintf("%ds", s)
 }

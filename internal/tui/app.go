@@ -21,7 +21,6 @@ import (
 
 const (
 	tabTasks = iota
-	tabTimer
 	tabWorklog
 	tabConfig
 	tabCount
@@ -94,6 +93,7 @@ type model struct {
 	timerStartTime time.Time
 	timerElapsed   time.Duration
 	timerRunning   bool
+	panelFocused   bool
 	tickGen      int
 	toast        string
 	toastIsError bool
@@ -163,10 +163,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = mssg.Width
 		m.height = mssg.Height
 		contentHeight := m.height - 5
-		m.tasks.SetSize(m.width, contentHeight)
-		m.timer.SetSize(m.width, contentHeight)
-		m.worklog.SetSize(m.width, contentHeight)
-		m.config.SetSize(m.width, contentHeight)
+		m.resizeViews(contentHeight)
 		m.ready = true
 		return m, nil
 
@@ -243,15 +240,27 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 
+		// Escape from panel focus
+		if m.panelFocused && key.Matches(mssg, keys.Escape) {
+			m.panelFocused = false
+			m.timer.Focused = false
+			return m, nil
+		}
+
+		// Panel focus toggle
+		if m.timerRunning && key.Matches(mssg, keys.TogglePanel) {
+			m.panelFocused = !m.panelFocused
+			m.timer.Focused = m.panelFocused
+			return m, nil
+		}
+
 		// Tab switching
 		switch {
 		case key.Matches(mssg, keys.Tab1):
 			return m.switchTab(tabTasks)
 		case key.Matches(mssg, keys.Tab2):
-			return m.switchTab(tabTimer)
-		case key.Matches(mssg, keys.Tab3):
 			return m.switchTab(tabWorklog)
-		case key.Matches(mssg, keys.Tab4):
+		case key.Matches(mssg, keys.Tab3):
 			return m.switchTab(tabConfig)
 		case key.Matches(mssg, keys.NextTab):
 			return m.switchTab((m.activeTab + 1) % tabCount)
@@ -259,12 +268,13 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.switchTab((m.activeTab + tabCount - 1) % tabCount)
 		}
 
-		// Route to active view
+		// Route to panel or active view
+		if m.panelFocused {
+			return m.updateTimer(mssg)
+		}
 		switch m.activeTab {
 		case tabTasks:
 			return m.updateTasks(mssg)
-		case tabTimer:
-			return m.updateTimer(mssg)
 		case tabWorklog:
 			return m.updateWorklog(mssg)
 		case tabConfig:
@@ -371,6 +381,10 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.worklog.TimerRunning = m.timerRunning
 		m.worklog.TimerElapsed = m.timerElapsed
+		m.resizeViews(m.height - 5)
+		if !m.timerRunning {
+			m.panelFocused = false
+		}
 		if m.timerRunning {
 			m.tickGen++
 			cmds = append(cmds, timerTickCmd(m.tickGen))
@@ -405,6 +419,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.timer.Running = true
 			m.worklog.TimerRunning = true
 			m.worklog.TimerElapsed = 0
+			m.resizeViews(m.height - 5)
 			label := mssg.Summary
 			if label == "" {
 				label = mssg.TaskKey
@@ -539,6 +554,8 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 				m.timer.Paused = nil
 				m.worklog.TimerRunning = false
 				m.worklog.TimerElapsed = 0
+				m.panelFocused = false
+				m.resizeViews(m.height - 5)
 				m.setToast(fmt.Sprintf("Stopped %s (%s)", stoppedLabel, elapsed), false)
 			}
 		}
@@ -592,6 +609,8 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 				m.timer.Paused = nil
 				m.worklog.TimerRunning = false
 				m.worklog.TimerElapsed = 0
+				m.panelFocused = false
+				m.resizeViews(m.height - 5)
 				m.setToast(fmt.Sprintf("Timer aborted for %s", stoppedLabel), false)
 			}
 		}
@@ -1668,6 +1687,8 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *model) switchTab(tab int) (tea.Model, tea.Cmd) {
 	m.activeTab = tab
+	m.panelFocused = false
+	m.timer.Focused = false
 	// Serve cached tasks instantly, then refresh in background
 	if tab == tabTasks && m.cachedTasks != nil {
 		m.tasks.Tasks = m.cachedTasks
@@ -1675,20 +1696,14 @@ func (m *model) switchTab(tab int) (tea.Model, tea.Cmd) {
 		m.tasks.Err = nil
 		return *m, loadTasksCmd(m.cb) // background refresh
 	}
-	// Keep showing current timer state, refresh in background
-	if tab == tabTimer && m.timer.Running {
-		m.timer.Loading = false
-		return *m, timerStatusCmd(m.cb)
-	}
 	return *m, m.refreshActiveView()
 }
+
 
 func (m model) refreshActiveView() tea.Cmd {
 	switch m.activeTab {
 	case tabTasks:
 		return loadTasksCmd(m.cb)
-	case tabTimer:
-		return timerStatusCmd(m.cb)
 	case tabWorklog:
 		return loadWorklogsCmd(m.cb, m.worklog.WeekView, m.worklog.Date)
 	case tabConfig:
@@ -1697,19 +1712,38 @@ func (m model) refreshActiveView() tea.Cmd {
 	return nil
 }
 
+func (m model) panelWidth() int {
+	pw := m.width / 3
+	if pw > 30 {
+		pw = 30
+	}
+	return pw
+}
+
+func (m *model) resizeViews(contentHeight int) {
+	mainWidth := m.width
+	if m.timerRunning {
+		pw := m.panelWidth()
+		mainWidth = m.width - pw - 1
+		m.timer.SetSize(pw, contentHeight)
+	}
+	m.tasks.SetSize(mainWidth, contentHeight)
+	m.worklog.SetSize(mainWidth, contentHeight)
+	m.config.SetSize(mainWidth, contentHeight)
+}
+
 func (m *model) setToast(text string, isError bool) {
 	m.toast = text
 	m.toastIsError = isError
 }
 
 func (m model) isLoading() bool {
+	if m.timerRunning && m.timer.Loading {
+		return true
+	}
 	switch m.activeTab {
 	case tabTasks:
 		if m.tasks.Loading {
-			return true
-		}
-	case tabTimer:
-		if m.timer.Loading {
 			return true
 		}
 	case tabWorklog:
@@ -1725,14 +1759,13 @@ func (m model) isLoading() bool {
 }
 
 func (m model) loadingLabel() string {
+	if m.timerRunning && m.timer.Loading {
+		return "Loading timer"
+	}
 	switch m.activeTab {
 	case tabTasks:
 		if m.tasks.Loading {
 			return "Loading tasks"
-		}
-	case tabTimer:
-		if m.timer.Loading {
-			return "Loading timer"
 		}
 	case tabWorklog:
 		if m.worklog.Loading {
@@ -1796,30 +1829,48 @@ func (m model) View() string {
 	switch m.activeTab {
 	case tabTasks:
 		content = m.tasks.View()
-	case tabTimer:
-		content = m.timer.View()
 	case tabWorklog:
 		content = m.worklog.View()
 	case tabConfig:
 		content = m.config.View()
 	}
 
-	contentArea := lipgloss.NewStyle().
-		Height(contentHeight).
-		MaxHeight(contentHeight).
-		Width(m.width).
-		Render(content)
+	var contentArea string
+	if m.timerRunning {
+		pw := m.panelWidth()
+		mainWidth := m.width - pw - 1
+		main := lipgloss.NewStyle().
+			Height(contentHeight).
+			MaxHeight(contentHeight).
+			Width(mainWidth).
+			Render(content)
+		borderColor := lipgloss.AdaptiveColor{Light: "#999999", Dark: "#444444"}
+		if m.panelFocused {
+			borderColor = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}
+		}
+		panel := lipgloss.NewStyle().
+			BorderLeft(true).
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderForeground(borderColor).
+			Height(contentHeight).
+			MaxHeight(contentHeight).
+			Width(pw).
+			Render(m.timer.View())
+		contentArea = lipgloss.JoinHorizontal(lipgloss.Top, main, panel)
+	} else {
+		contentArea = lipgloss.NewStyle().
+			Height(contentHeight).
+			MaxHeight(contentHeight).
+			Width(m.width).
+			Render(content)
+	}
 
-	hints := "1-4:tabs  ?:help  q:quit"
+	hints := "1-3:tabs  ?:help  q:quit"
 	var loadingText string
 	if label := m.loadingLabel(); label != "" {
 		loadingText = m.spinner.View() + " " + label
 	}
 	statusBar := components.StatusBar{
-		TimerKey:     m.timerKey,
-		TimerSummary: m.timerSummary,
-		TimerElapsed: m.timer.TotalElapsed,
-		TimerRunning: m.timerRunning,
 		Toast:        m.toast,
 		ToastIsError: m.toastIsError,
 		HelpHints:    hints,
@@ -1842,12 +1893,13 @@ func (m model) renderHelp() string {
 	b.WriteString(bold.Render("Keyboard Shortcuts") + "\n\n")
 
 	b.WriteString(bold.Render("Global") + "\n")
-	b.WriteString("  1-4           Switch tabs\n")
+	b.WriteString("  1-3           Switch tabs\n")
 	b.WriteString("  Tab           Next tab\n")
 	b.WriteString("  Shift+Tab     Previous tab\n")
+	b.WriteString("  p             Toggle timer panel focus\n")
 	b.WriteString("  q/Ctrl+C      Quit\n")
 	b.WriteString("  ?             Toggle help\n")
-	b.WriteString("  Esc           Close overlay\n")
+	b.WriteString("  Esc           Close overlay / unfocus panel\n")
 	b.WriteString("  r             Refresh\n\n")
 
 	b.WriteString(bold.Render("Navigation") + "\n")
@@ -1864,7 +1916,7 @@ func (m model) renderHelp() string {
 	b.WriteString("  t             Start timer\n")
 	b.WriteString("  /             Search\n\n")
 
-	b.WriteString(bold.Render("Timer") + "\n")
+	b.WriteString(bold.Render("Timer (focus panel with Tab)") + "\n")
 	b.WriteString("  s             Stop timer / start anonymous\n")
 	b.WriteString("  x             Abort timer\n")
 	b.WriteString("  i             Interrupt (pause + new timer)\n")
