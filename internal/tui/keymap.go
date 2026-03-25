@@ -7,7 +7,6 @@ type globalKeyMap struct {
 	Tab2       key.Binding
 	Tab3       key.Binding
 	Tab4       key.Binding
-	Tab5       key.Binding
 	NextTab    key.Binding
 	PrevTab    key.Binding
 	Quit       key.Binding
@@ -36,15 +35,15 @@ type globalKeyMap struct {
 	GoToday    key.Binding
 	Move       key.Binding
 	Comment    key.Binding
+	EditStart  key.Binding
 	Interrupt  key.Binding
 }
 
 var keys = globalKeyMap{
-	Tab1:     key.NewBinding(key.WithKeys("1"), key.WithHelp("1", "Timeline")),
-	Tab2:     key.NewBinding(key.WithKeys("2"), key.WithHelp("2", "Tasks")),
-	Tab3:     key.NewBinding(key.WithKeys("3"), key.WithHelp("3", "Timer")),
-	Tab4:     key.NewBinding(key.WithKeys("4"), key.WithHelp("4", "Worklog")),
-	Tab5:     key.NewBinding(key.WithKeys("5"), key.WithHelp("5", "Config")),
+	Tab1:     key.NewBinding(key.WithKeys("1"), key.WithHelp("1", "Tasks")),
+	Tab2:     key.NewBinding(key.WithKeys("2"), key.WithHelp("2", "Timer")),
+	Tab3:     key.NewBinding(key.WithKeys("3"), key.WithHelp("3", "Worklog")),
+	Tab4:     key.NewBinding(key.WithKeys("4"), key.WithHelp("4", "Config")),
 	NextTab:  key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next tab")),
 	PrevTab:  key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "prev tab")),
 	Quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
@@ -73,5 +72,6 @@ var keys = globalKeyMap{
 	GoToday:    key.NewBinding(key.WithKeys("T"), key.WithHelp("T", "go to today")),
 	Move:       key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "move")),
 	Comment:    key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "comment")),
+	EditStart:  key.NewBinding(key.WithKeys("E"), key.WithHelp("E", "edit start")),
 	Interrupt:  key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "interrupt")),
 }

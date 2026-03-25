@@ -33,6 +33,7 @@ type StatusResult struct {
 	TaskKey      string
 	Project      string
 	Section      string
+	StartTime    time.Time
 	Elapsed      time.Duration
 	TotalElapsed time.Duration
 	Segments     []SegmentStatus
@@ -53,6 +54,7 @@ func RunStatus(p StatusParams) (*StatusResult, error) {
 		TaskKey:      sr.TaskKey,
 		Project:      sr.Project,
 		Section:      sr.Section,
+		StartTime:    sr.StartTime,
 		Elapsed:      sr.Elapsed,
 		TotalElapsed: sr.TotalElapsed,
 		Comment:      sr.Comment,

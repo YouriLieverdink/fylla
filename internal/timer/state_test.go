@@ -291,6 +291,71 @@ func TestSetComment(t *testing.T) {
 	})
 }
 
+func TestSetStartTime(t *testing.T) {
+	t.Run("changes start time", func(t *testing.T) {
+		path := tmpPath(t)
+		now := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
+
+		if err := Start("PROJ-123", "", "", "", now, path); err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+		newStart := time.Date(2025, 6, 15, 9, 30, 0, 0, time.UTC)
+		if err := SetStartTime(newStart, now, path); err != nil {
+			t.Fatalf("SetStartTime: %v", err)
+		}
+		ss, err := loadStack(path)
+		if err != nil {
+			t.Fatalf("loadStack: %v", err)
+		}
+		if !ss.Stack[0].StartTime.Equal(newStart) {
+			t.Errorf("StartTime = %v, want %v", ss.Stack[0].StartTime, newStart)
+		}
+	})
+
+	t.Run("ceils to minute boundary", func(t *testing.T) {
+		path := tmpPath(t)
+		now := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
+
+		if err := Start("PROJ-123", "", "", "", now, path); err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+		newStart := time.Date(2025, 6, 15, 9, 30, 15, 0, time.UTC)
+		if err := SetStartTime(newStart, now, path); err != nil {
+			t.Fatalf("SetStartTime: %v", err)
+		}
+		ss, err := loadStack(path)
+		if err != nil {
+			t.Fatalf("loadStack: %v", err)
+		}
+		want := time.Date(2025, 6, 15, 9, 31, 0, 0, time.UTC)
+		if !ss.Stack[0].StartTime.Equal(want) {
+			t.Errorf("StartTime = %v, want %v", ss.Stack[0].StartTime, want)
+		}
+	})
+
+	t.Run("error when no timer running", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "timer.json")
+		err := SetStartTime(time.Now(), time.Now(), path)
+		if err == nil {
+			t.Error("expected error when no timer running")
+		}
+	})
+
+	t.Run("error when start time in future", func(t *testing.T) {
+		path := tmpPath(t)
+		now := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
+
+		if err := Start("PROJ-123", "", "", "", now, path); err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+		future := now.Add(time.Hour)
+		err := SetStartTime(future, now, path)
+		if err == nil {
+			t.Error("expected error for future start time")
+		}
+	})
+}
+
 func TestStop_IncludesComment(t *testing.T) {
 	path := tmpPath(t)
 	start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)

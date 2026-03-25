@@ -136,7 +136,7 @@ func (m Model) View() string {
 		b.WriteString("\n")
 	}
 
-	hints := "s:stop  c:comment  x:abort  i:interrupt  r:refresh"
+	hints := "s:stop  c:comment  E:edit start  x:abort  i:interrupt  r:refresh"
 	b.WriteString(styles.HintStyle.Render("  " + hints))
 
 	if len(m.Paused) > 0 {

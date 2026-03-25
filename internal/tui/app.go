@@ -15,14 +15,12 @@ import (
 	"github.com/iruoy/fylla/internal/tui/styles"
 	configView "github.com/iruoy/fylla/internal/tui/views/config"
 	"github.com/iruoy/fylla/internal/tui/views/tasks"
-	"github.com/iruoy/fylla/internal/tui/views/timeline"
 	timerView "github.com/iruoy/fylla/internal/tui/views/timer"
 	"github.com/iruoy/fylla/internal/tui/views/worklog"
 )
 
 const (
-	tabTimeline = iota
-	tabTasks
+	tabTasks = iota
 	tabTimer
 	tabWorklog
 	tabConfig
@@ -66,6 +64,7 @@ const (
 	formEditWorklog
 	formMoveTaskPending  // waiting for transitions to load
 	formTimerComment
+	formTimerStartTime
 )
 
 type pendingEditData struct {
@@ -85,16 +84,16 @@ type model struct {
 	activeTab    int
 	width        int
 	height       int
-	timeline     timeline.Model
 	tasks        tasks.Model
 	timer        timerView.Model
 	worklog      worklog.Model
 	config       *configView.Model
-	timerKey     string
-	timerSummary string
-	timerComment string
-	timerElapsed time.Duration
-	timerRunning bool
+	timerKey       string
+	timerSummary   string
+	timerComment   string
+	timerStartTime time.Time
+	timerElapsed   time.Duration
+	timerRunning   bool
 	tickGen      int
 	toast        string
 	toastIsError bool
@@ -131,7 +130,6 @@ func initialModel(deps Deps) model {
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
 	return model{
 		cb:       deps.CB,
-		timeline: timeline.New(),
 		tasks:    tasks.New(),
 		timer:    timerView.New(),
 		worklog:  worklog.New(deps.DailyHours, deps.WeeklyHours, deps.EfficiencyTarget),
@@ -143,7 +141,6 @@ func initialModel(deps Deps) model {
 func (m model) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
-		loadTodayCmd(m.cb),
 		timerStatusCmd(m.cb),
 		loadTasksCmd(m.cb),
 		loadFormOptionsCmd(m.cb),
@@ -165,7 +162,6 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = mssg.Width
 		m.height = mssg.Height
 		contentHeight := m.height - 5
-		m.timeline.SetSize(m.width, contentHeight)
 		m.tasks.SetSize(m.width, contentHeight)
 		m.timer.SetSize(m.width, contentHeight)
 		m.worklog.SetSize(m.width, contentHeight)
@@ -249,14 +245,12 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		// Tab switching
 		switch {
 		case key.Matches(mssg, keys.Tab1):
-			return m.switchTab(tabTimeline)
-		case key.Matches(mssg, keys.Tab2):
 			return m.switchTab(tabTasks)
-		case key.Matches(mssg, keys.Tab3):
+		case key.Matches(mssg, keys.Tab2):
 			return m.switchTab(tabTimer)
-		case key.Matches(mssg, keys.Tab4):
+		case key.Matches(mssg, keys.Tab3):
 			return m.switchTab(tabWorklog)
-		case key.Matches(mssg, keys.Tab5):
+		case key.Matches(mssg, keys.Tab4):
 			return m.switchTab(tabConfig)
 		case key.Matches(mssg, keys.NextTab):
 			return m.switchTab((m.activeTab + 1) % tabCount)
@@ -266,8 +260,6 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Route to active view
 		switch m.activeTab {
-		case tabTimeline:
-			return m.updateTimeline(mssg)
 		case tabTasks:
 			return m.updateTasks(mssg)
 		case tabTimer:
@@ -277,15 +269,6 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		case tabConfig:
 			return m.updateConfig(mssg)
 		}
-
-	case msg.TodayLoadedMsg:
-		m.timeline.Loading = false
-		if mssg.Err != nil {
-			m.timeline.Err = mssg.Err
-		} else {
-			m.timeline.Events = mssg.Events
-		}
-		return m, nil
 
 	case msg.TasksLoadedMsg:
 		// Always update cache on successful fetch
@@ -357,6 +340,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.timerKey = mssg.TaskKey
 			m.timerSummary = mssg.Summary
 			m.timerComment = mssg.Comment
+			m.timerStartTime = mssg.StartTime
 			m.timerElapsed = mssg.Elapsed
 			m.timerRunning = mssg.Running
 			m.timer.TaskKey = mssg.TaskKey
@@ -565,6 +549,17 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setToast(fmt.Sprintf("Comment error: %v", mssg.Err), true)
 		} else {
 			m.setToast("Comment saved", false)
+		}
+		cmds = append(cmds, clearToastCmd())
+		return m, tea.Batch(cmds...)
+
+	case msg.TimerStartTimeSavedMsg:
+		m.saving = ""
+		if mssg.Err != nil {
+			m.setToast(fmt.Sprintf("Start time error: %v", mssg.Err), true)
+		} else {
+			m.setToast("Start time updated", false)
+			cmds = append(cmds, timerStatusCmd(m.cb))
 		}
 		cmds = append(cmds, clearToastCmd())
 		return m, tea.Batch(cmds...)
@@ -865,66 +860,6 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m model) updateTimeline(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case key.Matches(mssg, keys.Up):
-		m.timeline.CursorUp()
-	case key.Matches(mssg, keys.Down):
-		m.timeline.CursorDown()
-	case key.Matches(mssg, keys.Refresh):
-		m.timeline.Loading = true
-		return m, loadTodayCmd(m.cb)
-	case key.Matches(mssg, keys.Enter), key.Matches(mssg, keys.Timer):
-		if e := m.timeline.SelectedEvent(); e != nil && (e.TaskKey != "" || e.IsCalendarEvent) {
-			return m, startTimerCmd(m.cb, e.TaskKey, e.Summary, e.Project, e.Section)
-		}
-	case key.Matches(mssg, keys.Done):
-		if e := m.timeline.SelectedEvent(); e != nil && !e.IsCalendarEvent && e.TaskKey != "" {
-			return m, doneTaskCmd(m.cb, e.TaskKey, e.Provider)
-		}
-	case key.Matches(mssg, keys.Delete):
-		if e := m.timeline.SelectedEvent(); e != nil && !e.IsCalendarEvent && e.TaskKey != "" {
-			m.confirm = components.NewConfirm(fmt.Sprintf("Delete %s?", e.TaskKey))
-			m.confirmType = confirmDeleteTask
-			m.confirmKey = e.TaskKey
-			m.confirmProvider = e.Provider
-		}
-	case key.Matches(mssg, keys.Add):
-		if m.cachedFormOptions != nil {
-			m.formOptions = m.cachedFormOptions
-			m.form = buildAddForm(m.cachedFormOptions.Provider, m.cachedFormOptions)
-			m.formKind = formAddTask
-			return m, loadFormOptionsCmd(m.cb) // refresh cache in background
-		}
-		m.formKind = formAddTaskPending
-		return m, loadFormOptionsCmd(m.cb)
-	case key.Matches(mssg, keys.Snooze):
-		if e := m.timeline.SelectedEvent(); e != nil && !e.IsCalendarEvent && e.TaskKey != "" {
-			m.form = components.NewForm(fmt.Sprintf("Snooze %s", e.TaskKey), []components.FormFieldDef{
-				{Label: "Duration", Placeholder: "e.g. 3d, 1w, Monday"},
-			})
-			m.formKind = formSnoozeTask
-			m.formTaskKey = e.TaskKey
-			m.formTaskProvider = e.Provider
-		}
-	case key.Matches(mssg, keys.Move):
-		if e := m.timeline.SelectedEvent(); e != nil && !e.IsCalendarEvent && e.TaskKey != "" {
-			m.formKind = formMoveTaskPending
-			m.formTaskKey = e.TaskKey
-			m.formTaskProvider = e.Provider
-			return m, listTransitionsCmd(m.cb, e.TaskKey, e.Provider)
-		}
-	case key.Matches(mssg, keys.ViewTask):
-		if e := m.timeline.SelectedEvent(); e != nil && !e.IsCalendarEvent && e.TaskKey != "" {
-			return m, viewTaskCmd(m.cb, e.TaskKey)
-		}
-	case key.Matches(mssg, keys.Sync):
-		m.confirm = components.NewConfirm("Apply sync to calendar?")
-		m.confirmType = confirmSyncApply
-	}
-	return m, nil
-}
-
 func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(mssg, keys.Up):
@@ -1158,6 +1093,15 @@ func (m model) updateTimer(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.form = components.NewForm("Timer Comment", fields)
 			m.formKind = formTimerComment
+			return m, nil
+		}
+	case key.Matches(mssg, keys.EditStart):
+		if m.timerRunning {
+			fields := []components.FormFieldDef{
+				{Label: "Start time", Placeholder: "HH:MM", Value: m.timerStartTime.Local().Format("15:04")},
+			}
+			m.form = components.NewForm("Edit Start Time", fields)
+			m.formKind = formTimerStartTime
 			return m, nil
 		}
 	case key.Matches(mssg, keys.Stop):
@@ -1647,6 +1591,19 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.formKind = formNone
 			m.saving = "Saving comment"
 			return m, saveTimerCommentCmd(m.cb, comment)
+		case formTimerStartTime:
+			raw := m.form.ValueByLabel("Start time")
+			m.form.Active = false
+			m.formKind = formNone
+			parsed, err := time.ParseInLocation("15:04", raw, time.Now().Location())
+			if err != nil {
+				m.setToast(fmt.Sprintf("Invalid time: %v", err), true)
+				return m, clearToastCmd()
+			}
+			now := time.Now()
+			newStart := time.Date(now.Year(), now.Month(), now.Day(), parsed.Hour(), parsed.Minute(), 0, 0, now.Location())
+			m.saving = "Saving start time"
+			return m, saveTimerStartTimeCmd(m.cb, newStart)
 		case formStopTimer:
 			comment := m.form.ValueByLabel("Comment")
 			done := m.form.ValueByLabel("Mark done") == "true"
@@ -1727,8 +1684,6 @@ func (m *model) switchTab(tab int) (tea.Model, tea.Cmd) {
 
 func (m model) refreshActiveView() tea.Cmd {
 	switch m.activeTab {
-	case tabTimeline:
-		return loadTodayCmd(m.cb)
 	case tabTasks:
 		return loadTasksCmd(m.cb)
 	case tabTimer:
@@ -1748,10 +1703,6 @@ func (m *model) setToast(text string, isError bool) {
 
 func (m model) isLoading() bool {
 	switch m.activeTab {
-	case tabTimeline:
-		if m.timeline.Loading {
-			return true
-		}
 	case tabTasks:
 		if m.tasks.Loading {
 			return true
@@ -1774,10 +1725,6 @@ func (m model) isLoading() bool {
 
 func (m model) loadingLabel() string {
 	switch m.activeTab {
-	case tabTimeline:
-		if m.timeline.Loading {
-			return "Loading timeline"
-		}
 	case tabTasks:
 		if m.tasks.Loading {
 			return "Loading tasks"
@@ -1846,8 +1793,6 @@ func (m model) View() string {
 	contentHeight := m.height - lipgloss.Height(tabBar) - 3
 	var content string
 	switch m.activeTab {
-	case tabTimeline:
-		content = m.timeline.View()
 	case tabTasks:
 		content = m.tasks.View()
 	case tabTimer:
@@ -1864,7 +1809,7 @@ func (m model) View() string {
 		Width(m.width).
 		Render(content)
 
-	hints := "1-5:tabs  ?:help  q:quit"
+	hints := "1-4:tabs  ?:help  q:quit"
 	var loadingText string
 	if label := m.loadingLabel(); label != "" {
 		loadingText = m.spinner.View() + " " + label
@@ -1896,7 +1841,7 @@ func (m model) renderHelp() string {
 	b.WriteString(bold.Render("Keyboard Shortcuts") + "\n\n")
 
 	b.WriteString(bold.Render("Global") + "\n")
-	b.WriteString("  1-6           Switch tabs\n")
+	b.WriteString("  1-4           Switch tabs\n")
 	b.WriteString("  Tab           Next tab\n")
 	b.WriteString("  Shift+Tab     Previous tab\n")
 	b.WriteString("  q/Ctrl+C      Quit\n")
@@ -1907,11 +1852,6 @@ func (m model) renderHelp() string {
 	b.WriteString(bold.Render("Navigation") + "\n")
 	b.WriteString("  j/k/arrows    Move cursor\n")
 	b.WriteString("  Enter         Primary action\n\n")
-
-	b.WriteString(bold.Render("Timeline") + "\n")
-	b.WriteString("  t/Enter       Start timer\n")
-	b.WriteString("  d             Mark done\n")
-	b.WriteString("  s             Sync\n")
 
 	b.WriteString(bold.Render("Tasks") + "\n")
 	b.WriteString("  a             Add task\n")

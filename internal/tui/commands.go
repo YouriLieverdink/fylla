@@ -21,6 +21,7 @@ type TimerStatusInfo struct {
 	Project      string
 	Section      string
 	Comment      string
+	StartTime    time.Time
 	Elapsed      time.Duration
 	TotalElapsed time.Duration
 	Segments     []TimerSegmentInfo
@@ -71,7 +72,8 @@ type Callbacks struct {
 	StartTimer     func(taskKey, project, section string) error
 	InterruptTimer func() error
 	TimerStatus    func() (*TimerStatusInfo, error)
-	SaveTimerComment func(comment string) error
+	SaveTimerComment   func(comment string) error
+	SaveTimerStartTime func(startTime time.Time) error
 	SyncPreview func() (*msg.SyncResult, error)
 	SyncApply   func(force bool) (*msg.SyncResult, error)
 	ClearEvents func() (int, error)
@@ -153,6 +155,7 @@ func timerStatusCmd(cb Callbacks) tea.Cmd {
 			Project:      info.Project,
 			Section:      info.Section,
 			Comment:      info.Comment,
+			StartTime:    info.StartTime,
 			Elapsed:      info.Elapsed,
 			TotalElapsed: info.TotalElapsed,
 			Running:      info.Running,
@@ -175,6 +178,13 @@ func saveTimerCommentCmd(cb Callbacks, comment string) tea.Cmd {
 	return func() tea.Msg {
 		err := cb.SaveTimerComment(comment)
 		return msg.TimerCommentSavedMsg{Err: err}
+	}
+}
+
+func saveTimerStartTimeCmd(cb Callbacks, startTime time.Time) tea.Cmd {
+	return func() tea.Msg {
+		err := cb.SaveTimerStartTime(startTime)
+		return msg.TimerStartTimeSavedMsg{Err: err}
 	}
 }
 

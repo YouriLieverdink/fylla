@@ -59,6 +59,7 @@ type TimerStatusMsg struct {
 	Project      string
 	Section      string
 	Comment      string
+	StartTime    time.Time
 	Elapsed      time.Duration
 	TotalElapsed time.Duration
 	Segments     []TimerSegmentInfo
@@ -69,6 +70,11 @@ type TimerStatusMsg struct {
 
 // TimerCommentSavedMsg is sent after saving a comment to the running timer.
 type TimerCommentSavedMsg struct {
+	Err error
+}
+
+// TimerStartTimeSavedMsg is sent after changing the start time of the running timer.
+type TimerStartTimeSavedMsg struct {
 	Err error
 }
 

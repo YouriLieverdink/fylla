@@ -171,6 +171,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				Project:      project,
 				Section:      section,
 				Comment:      result.Comment,
+				StartTime:    result.StartTime,
 				Elapsed:      result.Elapsed,
 				TotalElapsed: result.TotalElapsed,
 				Running:      true,
@@ -193,6 +194,13 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				return err
 			}
 			return timer.SetComment(comment, path)
+		},
+		SaveTimerStartTime: func(startTime time.Time) error {
+			path, err := timer.DefaultPath()
+			if err != nil {
+				return err
+			}
+			return timer.SetStartTime(startTime, time.Now(), path)
 		},
 		SyncPreview: func() (*msg.SyncResult, error) {
 			now := time.Now()

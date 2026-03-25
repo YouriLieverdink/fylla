@@ -66,6 +66,7 @@ type StatusResult struct {
 	Project      string
 	Section      string
 	Comment      string
+	StartTime    time.Time     // start of current segment
 	Elapsed      time.Duration // current segment elapsed
 	TotalElapsed time.Duration // all segments + current segment
 	Segments     []SegmentInfo // prior completed segments
@@ -275,6 +276,7 @@ func Status(now time.Time, path string) (*StatusResult, error) {
 		Project:      active.Project,
 		Section:      active.Section,
 		Comment:      active.Comment,
+		StartTime:    active.StartTime,
 		Elapsed:      elapsed,
 		TotalElapsed: priorElapsed + elapsed,
 		Segments:     segments,
@@ -322,6 +324,24 @@ func Abort(now time.Time, path string) (*AbortResult, error) {
 		return nil, err
 	}
 	return result, nil
+}
+
+// SetStartTime changes the start time of the active (current segment) timer.
+// The provided time is ceiled to the next minute boundary for consistency.
+func SetStartTime(startTime, now time.Time, path string) error {
+	ss, err := loadStack(path)
+	if err != nil {
+		return err
+	}
+	if ss == nil || len(ss.Stack) == 0 {
+		return fmt.Errorf("no timer running")
+	}
+	rounded := CeilMinute(startTime)
+	if rounded.After(CeilMinute(now)) {
+		return fmt.Errorf("start time cannot be in the future")
+	}
+	ss.Stack[0].StartTime = rounded
+	return saveStack(ss, path)
 }
 
 // SetComment sets the comment on the active timer.
