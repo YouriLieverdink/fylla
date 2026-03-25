@@ -323,7 +323,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			}
 			return result.TaskKey, result.ResumedKey, nil
 		},
-		StopTimer: func(description string, done bool, fallbackIssue string) (string, time.Duration, string, error) {
+		StopTimer: func(description string, done bool, fallbackIssue, fallbackProvider string) (string, time.Duration, string, error) {
 			path, err := timer.DefaultPath()
 			if err != nil {
 				return "", 0, "", err
@@ -333,17 +333,18 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				resolver = r
 			}
 			result, err := RunStop(ctx, StopParams{
-				TimerPath:     path,
-				RoundMinutes:  5,
-				Now:           time.Now(),
-				Description:   description,
-				Jira:          source,
-				Estimate:      source,
-				Cfg:           cfg,
-				Resolver:      resolver,
-				Completer:     source,
-				Done:          done,
-				FallbackIssue: fallbackIssue,
+				TimerPath:        path,
+				RoundMinutes:     5,
+				Now:              time.Now(),
+				Description:      description,
+				Jira:             source,
+				Estimate:         source,
+				Cfg:              cfg,
+				Resolver:         resolver,
+				Completer:        source,
+				Done:             done,
+				FallbackIssue:    fallbackIssue,
+				FallbackProvider: fallbackProvider,
 			})
 			if err != nil {
 				return "", 0, "", err

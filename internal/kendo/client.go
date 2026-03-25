@@ -892,6 +892,10 @@ func (c *Client) PostWorklog(ctx context.Context, issueKey string, timeSpent tim
 		return err
 	}
 
+	if now := time.Now(); started.After(now) {
+		started = now
+	}
+
 	payload := map[string]interface{}{
 		"minutes_spent": int(timeSpent.Minutes()),
 		"note":          description,

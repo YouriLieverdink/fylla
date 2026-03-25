@@ -27,8 +27,9 @@ type StopParams struct {
 	Resolver      JiraKeyResolver
 	Survey        Surveyor
 	Completer     TaskCompleter
-	Done          bool
-	FallbackIssue string // pre-resolved Jira key for non-Jira tasks (used by TUI)
+	Done             bool
+	FallbackIssue    string // pre-resolved Jira key for non-Jira tasks (used by TUI)
+	FallbackProvider string // provider of the fallback issue (used by TUI)
 }
 
 // StopResult holds the output of a stop operation.
@@ -51,12 +52,22 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 	}
 
 	worklogKey := sr.TaskKey
-	worklogProvider := sr.Provider
+	worklogProvider := p.Cfg.Worklog.Provider
+	if sr.Provider != "" {
+		worklogProvider = sr.Provider
+	}
+
+	applyFallback := func() {
+		worklogKey = p.FallbackIssue
+		if p.FallbackProvider != "" {
+			worklogProvider = p.FallbackProvider
+		}
+	}
 
 	// Resolve GitHub PR keys to Jira issue keys for worklog posting.
 	if isGitHubKey(sr.TaskKey) {
 		if p.FallbackIssue != "" {
-			worklogKey = p.FallbackIssue
+			applyFallback()
 		} else if p.Resolver != nil {
 			resolved, err := resolveGitHubToJira(ctx, p.Resolver, p.Survey, sr.TaskKey, p.Cfg)
 			if err != nil {
@@ -77,7 +88,7 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 	// Resolve local task keys to a fallback issue for worklog posting.
 	if isLocalKey(sr.TaskKey) {
 		if p.FallbackIssue != "" {
-			worklogKey = p.FallbackIssue
+			applyFallback()
 		} else {
 			resolved, err := resolveToFallbackIssue(p.Survey, p.Cfg)
 			if err != nil {
@@ -90,7 +101,7 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 	// Resolve anonymous timers (empty key) to a fallback issue.
 	if sr.TaskKey == "" {
 		if p.FallbackIssue != "" {
-			worklogKey = p.FallbackIssue
+			applyFallback()
 		} else {
 			resolved, err := resolveToFallbackIssue(p.Survey, p.Cfg)
 			if err != nil {
@@ -104,7 +115,7 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 	// but allow Kendo tasks to post worklogs directly to Kendo.
 	if !isJiraKey(worklogKey) && p.Cfg.Worklog.Provider == "jira" && worklogProvider != "kendo" {
 		if p.FallbackIssue != "" {
-			worklogKey = p.FallbackIssue
+			applyFallback()
 		} else {
 			resolved, err := resolveToFallbackIssue(p.Survey, p.Cfg)
 			if err != nil {
@@ -116,7 +127,7 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 
 	// Allow overriding the worklog key for Jira tasks via FallbackIssue.
 	if p.FallbackIssue != "" && p.FallbackIssue != sr.TaskKey && isJiraKey(p.FallbackIssue) && isJiraKey(sr.TaskKey) {
-		worklogKey = p.FallbackIssue
+		applyFallback()
 	}
 
 	var totalElapsed time.Duration

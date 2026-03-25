@@ -79,7 +79,7 @@ type Callbacks struct {
 	SetConfig   func(key, value string) error
 	AddTask      func(provider, summary, project, section, issueType, description, estimate, dueDate, priority, parent string, sprintID *int) (key, summaryOut string, err error)
 	EditTask     func(params EditTaskParams) error
-	StopTimer    func(description string, done bool, fallbackIssue string) (taskKey string, elapsed time.Duration, resumedKey string, err error)
+	StopTimer    func(description string, done bool, fallbackIssue, fallbackProvider string) (taskKey string, elapsed time.Duration, resumedKey string, err error)
 	AbortTimer   func() (taskKey string, resumedKey string, err error)
 	ListProjects func(provider string) ([]string, error)
 	ListSections func(provider, project string) ([]string, error)
@@ -233,9 +233,9 @@ func editTaskCmd(cb Callbacks, params EditTaskParams) tea.Cmd {
 	}
 }
 
-func stopTimerCmd(cb Callbacks, description string, done bool, fallbackIssue string) tea.Cmd {
+func stopTimerCmd(cb Callbacks, description string, done bool, fallbackIssue, fallbackProvider string) tea.Cmd {
 	return func() tea.Msg {
-		taskKey, elapsed, resumedKey, err := cb.StopTimer(description, done, fallbackIssue)
+		taskKey, elapsed, resumedKey, err := cb.StopTimer(description, done, fallbackIssue, fallbackProvider)
 		return msg.TimerStoppedMsg{TaskKey: taskKey, Elapsed: elapsed, ResumedKey: resumedKey, Err: err}
 	}
 }

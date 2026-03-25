@@ -275,6 +275,9 @@ func (f *Form) SetValueByLabel(label, value string) {
 						return
 					}
 				}
+				// Value not in options — add it (e.g. picker result outside fallback list)
+				f.selects[idx].options = append(f.selects[idx].options, value)
+				f.selects[idx].selected = len(f.selects[idx].options) - 1
 			case FieldToggle:
 				f.toggles[f.togIdx[i]].value = value == "true"
 			}
