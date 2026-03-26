@@ -126,12 +126,12 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			_, err := RunDelete(ctx, DeleteParams{TaskKey: taskKey, Provider: provider, Deleter: source})
 			return err
 		},
-		StartTimer: func(taskKey, project, section string) error {
+		StartTimer: func(taskKey, project, section, provider string) error {
 			path, err := timer.DefaultPath()
 			if err != nil {
 				return err
 			}
-			return RunStart(StartParams{TaskKey: taskKey, Project: project, Section: section, TimerPath: path, Now: time.Now()})
+			return RunStart(StartParams{TaskKey: taskKey, Project: project, Section: section, Provider: provider, TimerPath: path, Now: time.Now()})
 		},
 		InterruptTimer: func() error {
 			path, err := timer.DefaultPath()
@@ -152,7 +152,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			if result == nil {
 				return nil, nil
 			}
-			summary, _ := source.GetSummary(ctx, result.TaskKey)
+			summary, _ := routedSource(source, result.Provider).GetSummary(ctx, result.TaskKey)
 			project, section := result.Project, result.Section
 			if project == "" {
 				if tasks, err := fetcher.FetchTasks(ctx, query); err == nil {

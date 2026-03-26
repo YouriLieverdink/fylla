@@ -70,7 +70,7 @@ type Callbacks struct {
 	LoadTasks   func() ([]msg.ScoredTask, error)
 	DoneTask    func(taskKey, provider string) error
 	DeleteTask  func(taskKey, provider string) error
-	StartTimer     func(taskKey, project, section string) error
+	StartTimer     func(taskKey, project, section, provider string) error
 	InterruptTimer func() error
 	TimerStatus    func() (*TimerStatusInfo, error)
 	SaveTimerComment   func(comment string) error
@@ -134,9 +134,9 @@ func deleteTaskCmd(cb Callbacks, taskKey, provider string) tea.Cmd {
 	}
 }
 
-func startTimerCmd(cb Callbacks, taskKey, summary, project, section string) tea.Cmd {
+func startTimerCmd(cb Callbacks, taskKey, summary, project, section, provider string) tea.Cmd {
 	return func() tea.Msg {
-		err := cb.StartTimer(taskKey, project, section)
+		err := cb.StartTimer(taskKey, project, section, provider)
 		return msg.TimerStartedMsg{TaskKey: taskKey, Summary: summary, Project: project, Section: section, Err: err}
 	}
 }

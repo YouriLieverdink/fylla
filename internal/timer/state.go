@@ -63,6 +63,7 @@ type SegmentInfo struct {
 // StatusResult holds the current timer status.
 type StatusResult struct {
 	TaskKey      string
+	Provider     string
 	Project      string
 	Section      string
 	Comment      string
@@ -76,6 +77,7 @@ type StatusResult struct {
 // PausedInfo describes a paused timer on the stack.
 type PausedInfo struct {
 	TaskKey      string
+	Provider     string
 	Project      string
 	Section      string
 	SegmentCount int
@@ -253,6 +255,7 @@ func Status(now time.Time, path string) (*StatusResult, error) {
 
 	result := &StatusResult{
 		TaskKey:      active.TaskKey,
+		Provider:     active.Provider,
 		Project:      active.Project,
 		Section:      active.Section,
 		Comment:      active.Comment,
@@ -265,6 +268,7 @@ func Status(now time.Time, path string) (*StatusResult, error) {
 	for _, entry := range ss.Stack[1:] {
 		result.Paused = append(result.Paused, PausedInfo{
 			TaskKey:      entry.TaskKey,
+			Provider:     entry.Provider,
 			Project:      entry.Project,
 			Section:      entry.Section,
 			SegmentCount: len(entry.Segments),

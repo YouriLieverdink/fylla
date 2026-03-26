@@ -18,6 +18,7 @@ type StatusParams struct {
 // PausedStatus describes a paused timer in the status output.
 type PausedStatus struct {
 	TaskKey      string
+	Provider     string
 	Project      string
 	Section      string
 	SegmentCount int
@@ -32,6 +33,7 @@ type SegmentStatus struct {
 // StatusResult holds the output of a status operation.
 type StatusResult struct {
 	TaskKey      string
+	Provider     string
 	Project      string
 	Section      string
 	StartTime    time.Time
@@ -53,6 +55,7 @@ func RunStatus(p StatusParams) (*StatusResult, error) {
 	}
 	result := &StatusResult{
 		TaskKey:      sr.TaskKey,
+		Provider:     sr.Provider,
 		Project:      sr.Project,
 		Section:      sr.Section,
 		StartTime:    sr.StartTime,
@@ -66,6 +69,7 @@ func RunStatus(p StatusParams) (*StatusResult, error) {
 	for _, p := range sr.Paused {
 		result.Paused = append(result.Paused, PausedStatus{
 			TaskKey:      p.TaskKey,
+			Provider:     p.Provider,
 			Project:      p.Project,
 			Section:      p.Section,
 			SegmentCount: p.SegmentCount,

@@ -255,7 +255,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			// No timer running — start anonymous timer
-			return m, startTimerCmd(m.cb, "", "", "", "")
+			return m, startTimerCmd(m.cb, "", "", "", "", "")
 		}
 
 		// Tab switching
@@ -897,7 +897,7 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, loadTasksCmd(m.cb)
 	case key.Matches(mssg, keys.Enter), key.Matches(mssg, keys.Timer):
 		if t := m.tasks.SelectedTask(); t != nil {
-			return m, startTimerCmd(m.cb, t.Key, t.Summary, t.Project, t.Section)
+			return m, startTimerCmd(m.cb, t.Key, t.Summary, t.Project, t.Section, t.Provider)
 		}
 	case key.Matches(mssg, keys.Done):
 		if t := m.tasks.SelectedTask(); t != nil {
@@ -1182,7 +1182,7 @@ func (m model) updateTimer(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// No timer running — start anonymous timer
-		return m, startTimerCmd(m.cb, "", "", "", "")
+		return m, startTimerCmd(m.cb, "", "", "", "", "")
 	case key.Matches(mssg, keys.Abort):
 		if m.timerRunning {
 			m.confirm = components.NewConfirm("Abort timer? Work will not be logged.")
