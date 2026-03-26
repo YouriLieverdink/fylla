@@ -99,34 +99,14 @@ func loadStack(path string) (*StackState, error) {
 		return nil, fmt.Errorf("read timer state: %w", err)
 	}
 
-	// Try stack format first
 	var ss StackState
-	if err := json.Unmarshal(data, &ss); err == nil && len(ss.Stack) > 0 {
-		return &ss, nil
-	}
-
-	// Fall back to legacy single-state format for backward compatibility
-	var legacy struct {
-		TaskKey   string    `json:"taskKey"`
-		StartTime time.Time `json:"startTime"`
-		Project   string    `json:"project,omitempty"`
-		Section   string    `json:"section,omitempty"`
-		Provider  string    `json:"provider,omitempty"`
-		Comment   string    `json:"comment,omitempty"`
-	}
-	if err := json.Unmarshal(data, &legacy); err != nil {
+	if err := json.Unmarshal(data, &ss); err != nil {
 		return nil, fmt.Errorf("parse timer state: %w", err)
 	}
-	return &StackState{
-		Stack: []StackEntry{{
-			TaskKey:   legacy.TaskKey,
-			StartTime: legacy.StartTime,
-			Project:   legacy.Project,
-			Section:   legacy.Section,
-			Provider:  legacy.Provider,
-			Comment:   legacy.Comment,
-		}},
-	}, nil
+	if len(ss.Stack) == 0 {
+		return nil, nil
+	}
+	return &ss, nil
 }
 
 func saveStack(ss *StackState, path string) error {

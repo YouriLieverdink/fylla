@@ -18,24 +18,6 @@ func (m *mockTaskDeleter) DeleteTask(_ context.Context, taskKey string) error {
 	return m.err
 }
 
-type mockProviderTaskDeleter struct {
-	calls       []string
-	onCalls     []string
-	onProviders []string
-	err         error
-}
-
-func (m *mockProviderTaskDeleter) DeleteTask(_ context.Context, taskKey string) error {
-	m.calls = append(m.calls, taskKey)
-	return m.err
-}
-
-func (m *mockProviderTaskDeleter) DeleteTaskOn(_ context.Context, taskKey, provider string) error {
-	m.onCalls = append(m.onCalls, taskKey)
-	m.onProviders = append(m.onProviders, provider)
-	return m.err
-}
-
 func TestRunDelete(t *testing.T) {
 	t.Run("deletes task", func(t *testing.T) {
 		deleter := &mockTaskDeleter{}
@@ -72,8 +54,8 @@ func TestRunDelete(t *testing.T) {
 		}
 	})
 
-	t.Run("uses DeleteTaskOn when provider is set", func(t *testing.T) {
-		deleter := &mockProviderTaskDeleter{}
+	t.Run("calls DeleteTask even with provider set for non-multi source", func(t *testing.T) {
+		deleter := &mockTaskDeleter{}
 		result, err := RunDelete(context.Background(), DeleteParams{
 			TaskKey:  "PROJ-123",
 			Provider: "kendo",
@@ -82,37 +64,12 @@ func TestRunDelete(t *testing.T) {
 		if err != nil {
 			t.Fatalf("RunDelete: %v", err)
 		}
-		if len(deleter.calls) != 0 {
-			t.Errorf("expected 0 DeleteTask calls, got %d", len(deleter.calls))
-		}
-		if len(deleter.onCalls) != 1 {
-			t.Fatalf("expected 1 DeleteTaskOn call, got %d", len(deleter.onCalls))
-		}
-		if deleter.onCalls[0] != "PROJ-123" {
-			t.Errorf("task key = %q, want PROJ-123", deleter.onCalls[0])
-		}
-		if deleter.onProviders[0] != "kendo" {
-			t.Errorf("provider = %q, want kendo", deleter.onProviders[0])
-		}
-		if result.TaskKey != "PROJ-123" {
-			t.Errorf("result.TaskKey = %q, want PROJ-123", result.TaskKey)
-		}
-	})
-
-	t.Run("falls back to DeleteTask when provider is empty", func(t *testing.T) {
-		deleter := &mockProviderTaskDeleter{}
-		_, err := RunDelete(context.Background(), DeleteParams{
-			TaskKey: "PROJ-123",
-			Deleter: deleter,
-		})
-		if err != nil {
-			t.Fatalf("RunDelete: %v", err)
-		}
+		// For non-MultiTaskSource, routedSource returns the source unchanged.
 		if len(deleter.calls) != 1 {
 			t.Errorf("expected 1 DeleteTask call, got %d", len(deleter.calls))
 		}
-		if len(deleter.onCalls) != 0 {
-			t.Errorf("expected 0 DeleteTaskOn calls, got %d", len(deleter.onCalls))
+		if result.TaskKey != "PROJ-123" {
+			t.Errorf("result.TaskKey = %q, want PROJ-123", result.TaskKey)
 		}
 	})
 

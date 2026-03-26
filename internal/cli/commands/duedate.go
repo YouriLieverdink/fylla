@@ -12,16 +12,6 @@ import (
 	"github.com/tj/go-naturaldate"
 )
 
-// DueDateGetter abstracts fetching the current due date from Jira.
-type DueDateGetter interface {
-	GetDueDate(ctx context.Context, issueKey string) (*time.Time, error)
-}
-
-// DueDateUpdater abstracts updating the due date in Jira.
-type DueDateUpdater interface {
-	UpdateDueDate(ctx context.Context, issueKey string, dueDate time.Time) error
-}
-
 // DueDateParams holds inputs for the due date command.
 type DueDateParams struct {
 	TaskKey string

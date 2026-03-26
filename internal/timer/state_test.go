@@ -375,8 +375,10 @@ func TestStop_IncludesComment(t *testing.T) {
 	}
 }
 
-func TestBackwardCompat_LegacyFormat(t *testing.T) {
+func TestLegacyFormat_ReturnsNil(t *testing.T) {
 	path := tmpPath(t)
+	// Legacy single-entry format (no "stack" key) is no longer supported.
+	// It should be treated as "no timer running" (nil).
 	data := []byte(`{"taskKey":"PROJ-1","startTime":"2025-06-15T10:00:00Z"}`)
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -385,14 +387,8 @@ func TestBackwardCompat_LegacyFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadStack: %v", err)
 	}
-	if len(ss.Stack) != 1 {
-		t.Fatalf("expected 1 stack entry, got %d", len(ss.Stack))
-	}
-	if ss.Stack[0].TaskKey != "PROJ-1" {
-		t.Errorf("TaskKey = %q, want PROJ-1", ss.Stack[0].TaskKey)
-	}
-	if ss.Stack[0].Comment != "" {
-		t.Errorf("Comment = %q, want empty", ss.Stack[0].Comment)
+	if ss != nil {
+		t.Fatalf("expected nil for legacy format, got %+v", ss)
 	}
 }
 

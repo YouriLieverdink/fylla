@@ -8,16 +8,6 @@ import (
 	"strings"
 )
 
-// PriorityGetter abstracts fetching the current priority from a task source.
-type PriorityGetter interface {
-	GetPriority(ctx context.Context, issueKey string) (int, error)
-}
-
-// PriorityUpdater abstracts updating the priority in a task source.
-type PriorityUpdater interface {
-	UpdatePriority(ctx context.Context, issueKey string, priority int) error
-}
-
 // PriorityParams holds inputs for the priority command.
 type PriorityParams struct {
 	TaskKey  string

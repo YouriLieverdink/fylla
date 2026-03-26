@@ -248,9 +248,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 		AddTask: func(provider, summary, project, section, issueType, description, estimate, dueDate, priority, parent string, sprintID *int) (string, string, error) {
 			var creator TaskCreator = source
 			if provider != "" {
-				if ms, ok := source.(*MultiTaskSource); ok {
-					creator = &providerCreator{ms: ms, provider: provider}
-				}
+				creator = &providerCreator{source: source, provider: provider}
 			}
 			result, err := RunAdd(ctx, AddParams{
 				Summary:     summary,
@@ -360,122 +358,50 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			return result.TaskKey, result.TotalElapsed, result.ResumedKey, nil
 		},
 		ListSections: func(provider, project string) ([]string, error) {
-			if provider != "" {
-				if ms, ok := source.(*MultiTaskSource); ok {
-					if src, ok := ms.sources[provider]; ok {
-						if sl, ok := src.(SectionLister); ok {
-							return sl.ListSections(ctx, project)
-						}
-					}
-					return nil, nil
-				}
-			}
-			if sl, ok := source.(SectionLister); ok {
+			if sl, ok := routedSource(source, provider).(SectionLister); ok {
 				return sl.ListSections(ctx, project)
 			}
 			return nil, nil
 		},
 		ListProjects: func(provider string) ([]string, error) {
-			if provider != "" {
-				if ms, ok := source.(*MultiTaskSource); ok {
-					if src, ok := ms.sources[provider]; ok {
-						if pl, ok := src.(ProjectLister); ok {
-							return pl.ListProjects(ctx)
-						}
-					}
-					return nil, nil
-				}
-			}
-			if pl, ok := source.(ProjectLister); ok {
+			if pl, ok := routedSource(source, provider).(ProjectLister); ok {
 				return pl.ListProjects(ctx)
 			}
 			return nil, nil
 		},
 		ListLanes: func(provider, project string) ([]string, error) {
-			if provider != "" {
-				if ms, ok := source.(*MultiTaskSource); ok {
-					if src, ok := ms.sources[provider]; ok {
-						if ll, ok := src.(LaneLister); ok {
-							return ll.ListLanes(ctx, project)
-						}
-					}
-					return nil, nil
-				}
-			}
-			if ll, ok := source.(LaneLister); ok {
+			if ll, ok := routedSource(source, provider).(LaneLister); ok {
 				return ll.ListLanes(ctx, project)
 			}
 			return nil, nil
 		},
 		ListIssueTypes: func(provider, project string) ([]string, error) {
-			if provider != "" {
-				if ms, ok := source.(*MultiTaskSource); ok {
-					if src, ok := ms.sources[provider]; ok {
-						if il, ok := src.(IssueTypeLister); ok {
-							return il.ListIssueTypes(ctx, project)
-						}
-					}
-					return nil, nil
-				}
-			}
-			if il, ok := source.(IssueTypeLister); ok {
+			if il, ok := routedSource(source, provider).(IssueTypeLister); ok {
 				return il.ListIssueTypes(ctx, project)
 			}
 			return nil, nil
 		},
 		ListSprints: func(provider, project string) ([]msg.SprintOption, error) {
-			if provider != "" {
-				if ms, ok := source.(*MultiTaskSource); ok {
-					if src, ok := ms.sources[provider]; ok {
-						if sl, ok := src.(SprintLister); ok {
-							opts, err := sl.ListSprints(ctx, project)
-							if err != nil {
-								return nil, err
-							}
-							result := make([]msg.SprintOption, len(opts))
-							for i, s := range opts {
-								result[i] = msg.SprintOption{ID: s.ID, Label: s.Label, Active: s.Active}
-							}
-							return result, nil
-						}
-					}
-					return nil, nil
-				}
-			}
-			if sl, ok := source.(SprintLister); ok {
-				opts, err := sl.ListSprints(ctx, project)
-				if err != nil {
-					return nil, err
-				}
-				result := make([]msg.SprintOption, len(opts))
-				for i, s := range opts {
-					result[i] = msg.SprintOption{ID: s.ID, Label: s.Label, Active: s.Active}
-				}
-				return result, nil
+			if sl, ok := routedSource(source, provider).(SprintLister); ok {
+				return sl.ListSprints(ctx, project)
 			}
 			return nil, nil
 		},
 		ListEpics: func(provider, project string) ([]msg.EpicOption, error) {
 			var el EpicLister
 			if provider != "" {
-				if ms, ok := source.(*MultiTaskSource); ok {
-					if src, ok := ms.sources[provider]; ok {
-						if e, ok := src.(EpicLister); ok {
-							el = e
-						}
-					}
+				if e, ok := routedSource(source, provider).(EpicLister); ok {
+					el = e
 				}
-			}
-			if el == nil {
+			} else {
+				// Try source directly, then fall back to jira/kendo providers.
 				if e, ok := source.(EpicLister); ok {
 					el = e
-				} else if ms, ok := source.(*MultiTaskSource); ok {
+				} else {
 					for _, name := range []string{"jira", "kendo"} {
-						if src, ok := ms.sources[name]; ok {
-							if e, ok := src.(EpicLister); ok {
-								el = e
-								break
-							}
+						if e, ok := routedSource(source, name).(EpicLister); ok {
+							el = e
+							break
 						}
 					}
 				}
@@ -497,19 +423,10 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			return options, nil
 		},
 		GetParent: func(taskKey, provider string) (string, error) {
-			var pg ParentGetter
-			if g, ok := source.(ParentGetter); ok {
-				pg = g
-			} else if ms, ok := source.(*MultiTaskSource); ok {
-				routed := ms.routeToWithProvider(taskKey, provider)
-				if g, ok := routed.(ParentGetter); ok {
-					pg = g
-				}
+			if pg, ok := routedSourceFor(source, taskKey, provider).(ParentGetter); ok {
+				return pg.GetParent(ctx, taskKey)
 			}
-			if pg == nil {
-				return "", nil
-			}
-			return pg.GetParent(ctx, taskKey)
+			return "", nil
 		},
 		Provider: func() string {
 			return cfg.ActiveProviders()[0]
@@ -557,95 +474,29 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				since = time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
 				until = since
 			}
-			var wf WorklogFetcher
-			if f, ok := source.(WorklogFetcher); ok {
-				wf = f
-			} else if ms, ok := source.(*MultiTaskSource); ok {
-				provider := cfg.Worklog.Provider
-				if provider == "" {
-					provider = cfg.ActiveProviders()[0]
-				}
-				if src, ok := ms.sources[provider]; ok {
-					if f, ok := src.(WorklogFetcher); ok {
-						wf = f
-					}
-				}
+			routed := routedSource(source, worklogProvider(cfg))
+			if wf, ok := routed.(WorklogFetcher); ok {
+				return wf.FetchWorklogs(ctx, since, until)
 			}
-			if wf == nil {
-				return nil, fmt.Errorf("no worklog provider available")
-			}
-			allEntries, err := wf.FetchWorklogs(ctx, since, until)
-			if err != nil {
-				return nil, err
-			}
-			entries := make([]msg.WorklogEntry, len(allEntries))
-			for i, e := range allEntries {
-				entries[i] = msg.WorklogEntry{
-					ID:           e.ID,
-					IssueKey:     e.IssueKey,
-					Provider:     e.Provider,
-					Project:      e.Project,
-					IssueSummary: e.IssueSummary,
-					Description:  e.Description,
-					Started:      e.Started,
-					TimeSpent:    e.TimeSpent,
-				}
-			}
-			return entries, nil
+			return nil, fmt.Errorf("no worklog provider available")
 		},
 		UpdateWorklog: func(issueKey, worklogID, provider string, timeSpent time.Duration, description string, started time.Time) error {
-			if provider == "" {
-				provider = cfg.Worklog.Provider
-				if provider == "" {
-					provider = cfg.ActiveProviders()[0]
-				}
+			routed := routedSourceFor(source, issueKey, coalesce(provider, worklogProvider(cfg)))
+			if wu, ok := routed.(WorklogUpdater); ok {
+				return wu.UpdateWorklog(ctx, issueKey, worklogID, timeSpent, description, started)
 			}
-			var wu WorklogUpdater
-			if u, ok := source.(WorklogUpdater); ok {
-				wu = u
-			} else if ms, ok := source.(*MultiTaskSource); ok {
-				routed := ms.routeToWithProvider(issueKey, provider)
-				if u, ok := routed.(WorklogUpdater); ok {
-					wu = u
-				}
-			}
-			if wu == nil {
-				return fmt.Errorf("no worklog updater available")
-			}
-			return wu.UpdateWorklog(ctx, issueKey, worklogID, timeSpent, description, started)
+			return fmt.Errorf("no worklog updater available")
 		},
 		DeleteWorklog: func(issueKey, worklogID, provider string) error {
-			if provider == "" {
-				provider = cfg.Worklog.Provider
-				if provider == "" {
-					provider = cfg.ActiveProviders()[0]
-				}
+			routed := routedSourceFor(source, issueKey, coalesce(provider, worklogProvider(cfg)))
+			if wd, ok := routed.(WorklogDeleter); ok {
+				return wd.DeleteWorklog(ctx, issueKey, worklogID)
 			}
-			var wd WorklogDeleter
-			if d, ok := source.(WorklogDeleter); ok {
-				wd = d
-			} else if ms, ok := source.(*MultiTaskSource); ok {
-				routed := ms.routeToWithProvider(issueKey, provider)
-				if d, ok := routed.(WorklogDeleter); ok {
-					wd = d
-				}
-			}
-			if wd == nil {
-				return fmt.Errorf("no worklog deleter available")
-			}
-			return wd.DeleteWorklog(ctx, issueKey, worklogID)
+			return fmt.Errorf("no worklog deleter available")
 		},
 		AddWorklog: func(issueKey, provider string, timeSpent time.Duration, description string, started time.Time) error {
-			if provider == "" {
-				provider = cfg.Worklog.Provider
-				if provider == "" {
-					provider = cfg.ActiveProviders()[0]
-				}
-			}
-			if ms, ok := source.(*MultiTaskSource); ok {
-				return ms.PostWorklogOn(ctx, issueKey, timeSpent, description, started, provider)
-			}
-			return source.PostWorklog(ctx, issueKey, timeSpent, description, started)
+			routed := routedSource(source, coalesce(provider, worklogProvider(cfg)))
+			return routed.PostWorklog(ctx, issueKey, timeSpent, description, started)
 		},
 		FallbackIssues: func() []tui.FallbackIssue {
 			keys := cfg.Worklog.FallbackIssues
@@ -654,17 +505,13 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			if provider == "" {
 				provider = cfg.ActiveProviders()[0]
 			}
+			routed := routedSource(source, provider)
 			var wg sync.WaitGroup
 			for i, k := range keys {
 				wg.Add(1)
 				go func(idx int, key string) {
 					defer wg.Done()
-					var summary string
-					if ms, ok := source.(*MultiTaskSource); ok {
-						summary, _ = ms.GetSummaryOn(ctx, key, provider)
-					} else {
-						summary, _ = source.GetSummary(ctx, key)
-					}
+					summary, _ := routed.GetSummary(ctx, key)
 					issues[idx] = tui.FallbackIssue{Key: key, Summary: summary}
 				}(i, k)
 			}
@@ -672,63 +519,20 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			return issues
 		},
 		ListTransitions: func(taskKey, provider string) ([]string, error) {
-			var tl TransitionLister
-			if provider != "" {
-				if ms, ok := source.(*MultiTaskSource); ok {
-					if src, ok := ms.sources[provider]; ok {
-						if l, ok := src.(TransitionLister); ok {
-							tl = l
-						}
-					}
-				}
+			if tl, ok := routedSourceFor(source, taskKey, provider).(TransitionLister); ok {
+				return tl.ListTransitions(ctx, taskKey)
 			}
-			if tl == nil {
-				if l, ok := source.(TransitionLister); ok {
-					tl = l
-				} else if ms, ok := source.(*MultiTaskSource); ok {
-					routed := ms.routeToWithProvider(taskKey, provider)
-					if l, ok := routed.(TransitionLister); ok {
-						tl = l
-					}
-				}
-			}
-			if tl == nil {
-				return nil, fmt.Errorf("provider does not support transitions")
-			}
-			return tl.ListTransitions(ctx, taskKey)
+			return nil, fmt.Errorf("provider does not support transitions")
 		},
 		MoveTask: func(taskKey, provider, target string) error {
-			var tr Transitioner
-			if provider != "" {
-				if ms, ok := source.(*MultiTaskSource); ok {
-					if src, ok := ms.sources[provider]; ok {
-						if t, ok := src.(Transitioner); ok {
-							tr = t
-						}
-					}
-				}
+			if tr, ok := routedSourceFor(source, taskKey, provider).(Transitioner); ok {
+				return tr.TransitionTask(ctx, taskKey, target)
 			}
-			if tr == nil {
-				if t, ok := source.(Transitioner); ok {
-					tr = t
-				} else if ms, ok := source.(*MultiTaskSource); ok {
-					routed := ms.routeToWithProvider(taskKey, provider)
-					if t, ok := routed.(Transitioner); ok {
-						tr = t
-					}
-				}
-			}
-			if tr == nil {
-				return fmt.Errorf("provider does not support transitions")
-			}
-			return tr.TransitionTask(ctx, taskKey, target)
+			return fmt.Errorf("provider does not support transitions")
 		},
 		ResolveJiraKey: func(prKey string) (string, error) {
 			if r, ok := source.(JiraKeyResolver); ok {
 				return r.ResolveJiraKey(ctx, prKey)
-			}
-			if ms, ok := source.(*MultiTaskSource); ok {
-				return ms.ResolveJiraKey(ctx, prKey)
 			}
 			return "", fmt.Errorf("no resolver available")
 		},
@@ -780,12 +584,31 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 }
 
 type providerCreator struct {
-	ms       *MultiTaskSource
+	source   TaskSource
 	provider string
 }
 
 func (p *providerCreator) CreateTask(ctx context.Context, input task.CreateInput) (string, error) {
-	return p.ms.CreateTaskOn(ctx, p.provider, input)
+	return routedSource(p.source, p.provider).CreateTask(ctx, input)
+}
+
+// worklogProvider returns the configured worklog provider name,
+// falling back to the first active provider.
+func worklogProvider(cfg *config.Config) string {
+	if cfg.Worklog.Provider != "" {
+		return cfg.Worklog.Provider
+	}
+	return cfg.ActiveProviders()[0]
+}
+
+// coalesce returns the first non-empty string.
+func coalesce(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func convertSyncResult(r *SyncResult) *msg.SyncResult {

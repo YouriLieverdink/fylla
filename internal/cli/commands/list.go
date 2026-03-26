@@ -9,6 +9,7 @@ import (
 
 	"github.com/iruoy/fylla/internal/config"
 	"github.com/iruoy/fylla/internal/scheduler"
+	"github.com/iruoy/fylla/internal/task"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -155,13 +156,5 @@ func formatDuration(d time.Duration) string {
 	if d <= 0 {
 		return "no estimate"
 	}
-	h := int(d.Hours())
-	m := int(d.Minutes()) % 60
-	if h > 0 && m > 0 {
-		return fmt.Sprintf("%dh%dm", h, m)
-	}
-	if h > 0 {
-		return fmt.Sprintf("%dh", h)
-	}
-	return fmt.Sprintf("%dm", m)
+	return task.FormatDuration(d)
 }

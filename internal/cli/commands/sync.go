@@ -22,21 +22,6 @@ const (
 	maxSummaryWidth = 40
 )
 
-// CalendarClient abstracts calendar operations for testing.
-type CalendarClient interface {
-	FetchEvents(ctx context.Context, start, end time.Time) ([]calendar.Event, error)
-	FetchFyllaEvents(ctx context.Context, start, end time.Time) ([]calendar.Event, error)
-	DeleteFyllaEvents(ctx context.Context, start, end time.Time) error
-	CreateEvent(ctx context.Context, input calendar.CreateEventInput) error
-	UpdateEvent(ctx context.Context, eventID string, input calendar.CreateEventInput) error
-	DeleteEvent(ctx context.Context, eventID string) error
-}
-
-// TaskFetcher abstracts task fetching for testing.
-type TaskFetcher interface {
-	FetchTasks(ctx context.Context, query string) ([]task.Task, error)
-}
-
 // SyncParams holds all inputs for the sync process.
 type SyncParams struct {
 	Cal      CalendarClient
@@ -446,14 +431,14 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 	progress(p.Progress, "Sorting %d tasks...", len(tasks))
 	sorted := scheduler.SortTasks(tasks, p.Cfg.Weights, p.Now)
 
-	// Step 3: Fetch Google Calendar events
+	// Step 4: Fetch Google Calendar events
 	progress(p.Progress, "Reading calendar...")
 	events, err := p.Cal.FetchEvents(ctx, p.Start, p.End)
 	if err != nil {
 		return nil, fmt.Errorf("fetch calendar events: %w", err)
 	}
 
-	// Step 4: Find free slots per project
+	// Step 5: Find free slots per project
 	progress(p.Progress, "Finding free slots...")
 	slotsByProject := make(map[string][]calendar.Slot)
 
@@ -486,7 +471,7 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 		slotsByProject[project] = slots
 	}
 
-	// Step 5: Allocate tasks to slots
+	// Step 6: Allocate tasks to slots
 	progress(p.Progress, "Scheduling %d tasks into available slots...", len(sorted))
 	allocations, unscheduled := scheduler.Allocate(sorted, slotsByProject, scheduler.AllocateConfig{
 		MinTaskDurationMinutes: p.Cfg.Scheduling.MinTaskDurationMinutes,
@@ -497,7 +482,7 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 		Now:                    p.Now,
 	})
 
-	// Step 6: Apply schedule to calendar
+	// Step 7: Apply schedule to calendar
 	// Cleanup covers all past Fylla events, not just the scheduling window.
 	cleanupStart := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	var created, updated, deleted, unchanged int
@@ -553,7 +538,7 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 		}
 	}
 
-	// Step 7: Collect at-risk warnings
+	// Step 8: Collect at-risk warnings
 	var atRisk []scheduler.Allocation
 	seen := make(map[string]bool)
 	for _, alloc := range allocations {

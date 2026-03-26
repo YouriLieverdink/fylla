@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/iruoy/fylla/internal/jira"
 	"github.com/iruoy/fylla/internal/task"
 )
 
@@ -108,12 +107,8 @@ type sprintJSON struct {
 	ProjectID int    `json:"project_id"`
 }
 
-// SprintOption represents a selectable sprint for the TUI.
-type SprintOption struct {
-	ID     int
-	Label  string
-	Active bool
-}
+// SprintOption is an alias for the provider-neutral task.SprintOption type.
+type SprintOption = task.SprintOption
 
 type timeEntryJSON struct {
 	ID           int    `json:"id"`
@@ -728,7 +723,7 @@ func (c *Client) fetchEpicMap(ctx context.Context, projectID int) (map[int]strin
 }
 
 // ListEpics returns open epics for a Kendo project.
-func (c *Client) ListEpics(ctx context.Context, project string) ([]jira.Epic, error) {
+func (c *Client) ListEpics(ctx context.Context, project string) ([]task.Epic, error) {
 	pid, err := c.projectIDForName(ctx, project)
 	if err != nil {
 		return nil, err
@@ -749,9 +744,9 @@ func (c *Client) ListEpics(ctx context.Context, project string) ([]jira.Epic, er
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("decode epics: %w", err)
 	}
-	epics := make([]jira.Epic, 0, len(raw))
+	epics := make([]task.Epic, 0, len(raw))
 	for _, e := range raw {
-		epics = append(epics, jira.Epic{Key: strconv.Itoa(e.ID), Summary: e.Title})
+		epics = append(epics, task.Epic{Key: strconv.Itoa(e.ID), Summary: e.Title})
 	}
 	return epics, nil
 }
@@ -1128,7 +1123,7 @@ func (c *Client) UpdateSummary(ctx context.Context, issueKey string, summary str
 }
 
 // FetchWorklogs retrieves time entries for the current user in the given date range.
-func (c *Client) FetchWorklogs(ctx context.Context, since, until time.Time) ([]jira.WorklogEntry, error) {
+func (c *Client) FetchWorklogs(ctx context.Context, since, until time.Time) ([]task.WorklogEntry, error) {
 	if err := c.fetchUserID(ctx); err != nil {
 		return nil, fmt.Errorf("fetch worklogs: %w", err)
 	}
@@ -1156,7 +1151,7 @@ func (c *Client) FetchWorklogs(ctx context.Context, since, until time.Time) ([]j
 		return nil, fmt.Errorf("decode time entries: %w", err)
 	}
 
-	var allEntries []jira.WorklogEntry
+	var allEntries []task.WorklogEntry
 	for _, te := range entries {
 		started, err := time.Parse(time.RFC3339, te.StartedAt)
 		if err != nil {
@@ -1166,7 +1161,7 @@ func (c *Client) FetchWorklogs(ctx context.Context, since, until time.Time) ([]j
 			continue
 		}
 
-		allEntries = append(allEntries, jira.WorklogEntry{
+		allEntries = append(allEntries, task.WorklogEntry{
 			ID:           strconv.Itoa(te.ID),
 			IssueKey:     te.IssueKey,
 			Provider:     "kendo",

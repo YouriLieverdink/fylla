@@ -780,11 +780,8 @@ func (c *Client) ListProjects(ctx context.Context) ([]string, error) {
 	return keys, nil
 }
 
-// Epic represents a Jira epic issue.
-type Epic struct {
-	Key     string
-	Summary string
-}
+// Epic is an alias for the provider-neutral task.Epic type.
+type Epic = task.Epic
 
 // ListEpics searches for open epics in Jira, optionally scoped to a project.
 func (c *Client) ListEpics(ctx context.Context, project string) ([]Epic, error) {
@@ -878,17 +875,8 @@ func (c *Client) GetParent(ctx context.Context, issueKey string) (string, error)
 	return result.Fields.Parent.Key, nil
 }
 
-// WorklogEntry represents a single worklog entry from Jira.
-type WorklogEntry struct {
-	ID           string
-	IssueKey     string
-	Provider     string
-	Project      string
-	IssueSummary string
-	Description  string
-	Started      time.Time
-	TimeSpent    time.Duration
-}
+// WorklogEntry is an alias for the provider-neutral task.WorklogEntry type.
+type WorklogEntry = task.WorklogEntry
 
 // FetchWorklogs retrieves the current user's worklogs in the given date range.
 func (c *Client) FetchWorklogs(ctx context.Context, since, until time.Time) ([]WorklogEntry, error) {
@@ -1094,15 +1082,7 @@ func (c *Client) DeleteWorklog(ctx context.Context, issueKey, worklogID string) 
 
 // formatDuration converts a time.Duration to Jira duration string (e.g. "4h", "2h 30m").
 func formatDuration(d time.Duration) string {
-	h := int(d.Hours())
-	m := int(d.Minutes()) % 60
-	if h > 0 && m > 0 {
-		return fmt.Sprintf("%dh %dm", h, m)
-	}
-	if h > 0 {
-		return fmt.Sprintf("%dh", h)
-	}
-	return fmt.Sprintf("%dm", m)
+	return task.FormatDurationSpaced(d)
 }
 
 // ListIssueTypes returns the available issue type names for a project.

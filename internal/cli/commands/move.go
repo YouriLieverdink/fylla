@@ -28,14 +28,7 @@ func RunMove(ctx context.Context, p MoveParams) (*MoveResult, error) {
 	key, _ := task.StripInstanceSuffix(p.TaskKey)
 
 	// Route to provider
-	var src interface{} = p.Source
-	if p.Provider != "" {
-		if ms, ok := p.Source.(*MultiTaskSource); ok {
-			if routed, ok := ms.RouteToProvider(p.Provider); ok {
-				src = routed
-			}
-		}
-	}
+	src := routedSource(p.Source, p.Provider)
 
 	lister, ok := src.(TransitionLister)
 	if !ok {

@@ -169,7 +169,8 @@ func TestMultiTaskSource_RoutesJiraKeys(t *testing.T) {
 	})
 
 	t.Run("CreateTaskOn routes to specific provider", func(t *testing.T) {
-		key, _ := ms.CreateTaskOn(context.Background(), "todoist", task.CreateInput{Summary: "test"})
+		src, _ := ms.RouteToProvider("todoist")
+		key, _ := src.CreateTask(context.Background(), task.CreateInput{Summary: "test"})
 		if key != "todoist-NEW" {
 			t.Errorf("CreateTaskOn returned %q, want todoist-NEW", key)
 		}

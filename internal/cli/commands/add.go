@@ -23,21 +23,6 @@ func defaultProject(cfg *config.Config, provider string) string {
 	}
 }
 
-// TaskCreator abstracts task creation for testing.
-type TaskCreator interface {
-	CreateTask(ctx context.Context, input task.CreateInput) (string, error)
-}
-
-// ProjectLister returns available project names.
-type ProjectLister interface {
-	ListProjects(ctx context.Context) ([]string, error)
-}
-
-// SectionLister returns available section names, optionally filtered by project.
-type SectionLister interface {
-	ListSections(ctx context.Context, project string) ([]string, error)
-}
-
 // AddParams holds inputs for the add command.
 type AddParams struct {
 	Project     string

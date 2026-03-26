@@ -31,16 +31,6 @@ func ParseDuration(s string) (time.Duration, error) {
 	return d, nil
 }
 
-// EstimateGetter abstracts fetching the current remaining estimate from Jira.
-type EstimateGetter interface {
-	GetEstimate(ctx context.Context, issueKey string) (time.Duration, error)
-}
-
-// EstimateUpdater abstracts updating the remaining estimate in Jira.
-type EstimateUpdater interface {
-	UpdateEstimate(ctx context.Context, issueKey string, remaining time.Duration) error
-}
-
 // EstimateParams holds inputs for the estimate command.
 type EstimateParams struct {
 	TaskKey  string

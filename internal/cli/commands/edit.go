@@ -68,15 +68,7 @@ type EditResult struct {
 // RunEdit applies one or more edits to a task.
 func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 	// Resolve to the correct provider-specific source when provider is known.
-	source := p.Source
-	if p.Provider != "" {
-		if ms, ok := source.(*MultiTaskSource); ok {
-			if src, ok := ms.RouteToProvider(p.Provider); ok {
-				source = src
-			}
-		}
-	}
-	p.Source = source
+	p.Source = routedSource(p.Source, p.Provider)
 
 	result := &EditResult{TaskKey: p.TaskKey}
 
@@ -142,16 +134,7 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 	}
 
 	if p.Parent != "" {
-		var pu ParentUpdater
-		if u, ok := p.Source.(ParentUpdater); ok {
-			pu = u
-		} else if ms, ok := p.Source.(*MultiTaskSource); ok {
-			routed := ms.routeTo(p.TaskKey)
-			if u, ok := routed.(ParentUpdater); ok {
-				pu = u
-			}
-		}
-		if pu != nil {
+		if pu, ok := p.Source.(ParentUpdater); ok {
 			if err := pu.UpdateParent(ctx, p.TaskKey, p.Parent); err != nil {
 				return nil, fmt.Errorf("update parent: %w", err)
 			}
@@ -160,16 +143,7 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 	}
 
 	if p.NoParent {
-		var pu ParentUpdater
-		if u, ok := p.Source.(ParentUpdater); ok {
-			pu = u
-		} else if ms, ok := p.Source.(*MultiTaskSource); ok {
-			routed := ms.routeTo(p.TaskKey)
-			if u, ok := routed.(ParentUpdater); ok {
-				pu = u
-			}
-		}
-		if pu != nil {
+		if pu, ok := p.Source.(ParentUpdater); ok {
 			if err := pu.UpdateParent(ctx, p.TaskKey, ""); err != nil {
 				return nil, fmt.Errorf("remove parent: %w", err)
 			}
@@ -178,16 +152,7 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 	}
 
 	if p.Section != "" {
-		var su SectionUpdater
-		if u, ok := p.Source.(SectionUpdater); ok {
-			su = u
-		} else if ms, ok := p.Source.(*MultiTaskSource); ok {
-			routed := ms.routeTo(p.TaskKey)
-			if u, ok := routed.(SectionUpdater); ok {
-				su = u
-			}
-		}
-		if su != nil {
+		if su, ok := p.Source.(SectionUpdater); ok {
 			if err := su.UpdateSection(ctx, p.TaskKey, p.Section); err != nil {
 				return nil, fmt.Errorf("update section: %w", err)
 			}
@@ -196,16 +161,7 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 	}
 
 	if p.NoSection {
-		var su SectionUpdater
-		if u, ok := p.Source.(SectionUpdater); ok {
-			su = u
-		} else if ms, ok := p.Source.(*MultiTaskSource); ok {
-			routed := ms.routeTo(p.TaskKey)
-			if u, ok := routed.(SectionUpdater); ok {
-				su = u
-			}
-		}
-		if su != nil {
+		if su, ok := p.Source.(SectionUpdater); ok {
 			if err := su.UpdateSection(ctx, p.TaskKey, ""); err != nil {
 				return nil, fmt.Errorf("remove section: %w", err)
 			}

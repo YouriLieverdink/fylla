@@ -10,11 +10,6 @@ import (
 	"github.com/iruoy/fylla/internal/timer"
 )
 
-// WorklogPoster abstracts Jira worklog posting for testing.
-type WorklogPoster interface {
-	PostWorklog(ctx context.Context, issueKey string, timeSpent time.Duration, description string, started time.Time) error
-}
-
 // StopParams holds inputs for the stop command.
 type StopParams struct {
 	TimerPath     string
@@ -51,83 +46,14 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 		return nil, err
 	}
 
-	worklogKey := sr.TaskKey
 	worklogProvider := p.Cfg.Worklog.Provider
 	if sr.Provider != "" {
 		worklogProvider = sr.Provider
 	}
 
-	applyFallback := func() {
-		worklogKey = p.FallbackIssue
-		if p.FallbackProvider != "" {
-			worklogProvider = p.FallbackProvider
-		}
-	}
-
-	// Resolve GitHub PR keys to Jira issue keys for worklog posting.
-	if isGitHubKey(sr.TaskKey) {
-		if p.FallbackIssue != "" {
-			applyFallback()
-		} else if p.Resolver != nil {
-			resolved, err := resolveGitHubToJira(ctx, p.Resolver, p.Survey, sr.TaskKey, p.Cfg)
-			if err != nil {
-				return nil, fmt.Errorf("resolve jira key: %w", err)
-			}
-			worklogKey = resolved
-		} else if p.Survey != nil {
-			resolved, err := resolveToFallbackIssue(p.Survey, p.Cfg)
-			if err != nil {
-				return nil, fmt.Errorf("resolve worklog target: %w", err)
-			}
-			worklogKey = resolved
-		} else {
-			return nil, fmt.Errorf("cannot post worklog for GitHub key %s: no resolver or interactive prompt available", sr.TaskKey)
-		}
-	}
-
-	// Resolve local task keys to a fallback issue for worklog posting.
-	if isLocalKey(sr.TaskKey) {
-		if p.FallbackIssue != "" {
-			applyFallback()
-		} else {
-			resolved, err := resolveToFallbackIssue(p.Survey, p.Cfg)
-			if err != nil {
-				return nil, fmt.Errorf("resolve worklog target: %w", err)
-			}
-			worklogKey = resolved
-		}
-	}
-
-	// Resolve anonymous timers (empty key) to a fallback issue.
-	if sr.TaskKey == "" {
-		if p.FallbackIssue != "" {
-			applyFallback()
-		} else {
-			resolved, err := resolveToFallbackIssue(p.Survey, p.Cfg)
-			if err != nil {
-				return nil, fmt.Errorf("resolve worklog target: %w", err)
-			}
-			worklogKey = resolved
-		}
-	}
-
-	// Resolve non-Jira keys (e.g. Todoist) when worklog provider is jira,
-	// but allow Kendo tasks to post worklogs directly to Kendo.
-	if !isJiraKey(worklogKey) && p.Cfg.Worklog.Provider == "jira" && worklogProvider != "kendo" {
-		if p.FallbackIssue != "" {
-			applyFallback()
-		} else {
-			resolved, err := resolveToFallbackIssue(p.Survey, p.Cfg)
-			if err != nil {
-				return nil, fmt.Errorf("resolve worklog target: %w", err)
-			}
-			worklogKey = resolved
-		}
-	}
-
-	// Allow overriding the worklog key for Jira tasks via FallbackIssue.
-	if p.FallbackIssue != "" && p.FallbackIssue != sr.TaskKey && isJiraKey(p.FallbackIssue) && isJiraKey(sr.TaskKey) {
-		applyFallback()
+	worklogKey, worklogProvider, err := resolveWorklogTarget(ctx, sr.TaskKey, worklogProvider, p)
+	if err != nil {
+		return nil, err
 	}
 
 	var totalElapsed time.Duration
@@ -151,14 +77,9 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 		}
 
 		// Post worklog
-		if multi, ok := p.Jira.(*MultiTaskSource); ok && worklogProvider != "" {
-			if err := multi.PostWorklogOn(ctx, worklogKey, rounded, desc, seg.StartTime, worklogProvider); err != nil {
-				return nil, fmt.Errorf("post worklog: %w", err)
-			}
-		} else {
-			if err := p.Jira.PostWorklog(ctx, worklogKey, rounded, desc, seg.StartTime); err != nil {
-				return nil, fmt.Errorf("post worklog: %w", err)
-			}
+		routed := routedSource(p.Jira, worklogProvider)
+		if err := routed.PostWorklog(ctx, worklogKey, rounded, desc, seg.StartTime); err != nil {
+			return nil, fmt.Errorf("post worklog: %w", err)
 		}
 
 	}
@@ -175,35 +96,20 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 	}
 
 	// Check remaining estimate if available
-	if p.Estimate != nil {
-		if multi, ok := p.Estimate.(*MultiTaskSource); ok && worklogProvider != "" {
-			remaining, err := multi.GetEstimateOn(ctx, sr.TaskKey, worklogProvider)
-			if err == nil {
-				result.RemainingEstimate = remaining
-				result.HasRemaining = true
-			}
-		} else if sr.TaskKey != "" {
-			remaining, err := p.Estimate.GetEstimate(ctx, sr.TaskKey)
-			if err == nil {
-				result.RemainingEstimate = remaining
-				result.HasRemaining = true
-			}
+	if p.Estimate != nil && sr.TaskKey != "" {
+		routed := routedSource(p.Estimate, worklogProvider)
+		remaining, err := routed.GetEstimate(ctx, sr.TaskKey)
+		if err == nil {
+			result.RemainingEstimate = remaining
+			result.HasRemaining = true
 		}
 	}
 
 	// Mark task as done if requested
 	if p.Done && p.Completer != nil && sr.TaskKey != "" {
-		if multi, ok := p.Completer.(*MultiTaskSource); ok && worklogProvider != "" {
-			if err := multi.CompleteTaskOn(ctx, sr.TaskKey, worklogProvider); err != nil {
-				return nil, fmt.Errorf("mark done: %w", err)
-			}
-		} else {
-			if _, err := RunDone(ctx, DoneParams{
-				TaskKey:   sr.TaskKey,
-				Completer: p.Completer,
-			}); err != nil {
-				return nil, fmt.Errorf("mark done: %w", err)
-			}
+		routed := routedSource(p.Completer, worklogProvider)
+		if err := routed.CompleteTask(ctx, sr.TaskKey); err != nil {
+			return nil, fmt.Errorf("mark done: %w", err)
 		}
 		result.Done = true
 	}
@@ -273,4 +179,53 @@ func resolveToFallbackIssue(survey Surveyor, cfg *config.Config) (string, error)
 		fallbacks = cfg.Worklog.FallbackIssues
 	}
 	return promptFallbackIssue(survey, fallbacks)
+}
+
+// resolveWorklogTarget determines the worklog key and provider for a timer stop.
+// It handles GitHub keys, local keys, anonymous timers, non-Jira keys with Jira
+// worklog provider, and explicit fallback overrides.
+func resolveWorklogTarget(ctx context.Context, taskKey, provider string, p StopParams) (string, string, error) {
+	// Check if the key needs fallback resolution.
+	needsFallback := taskKey == "" ||
+		isGitHubKey(taskKey) ||
+		isLocalKey(taskKey) ||
+		(!isJiraKey(taskKey) && p.Cfg.Worklog.Provider == "jira" && provider != "kendo")
+
+	// Pre-resolved fallback takes priority.
+	if p.FallbackIssue != "" {
+		fbProvider := provider
+		if p.FallbackProvider != "" {
+			fbProvider = p.FallbackProvider
+		}
+		if needsFallback {
+			return p.FallbackIssue, fbProvider, nil
+		}
+		// Jira-to-Jira override: allow switching to a different Jira issue.
+		if isJiraKey(p.FallbackIssue) && isJiraKey(taskKey) && p.FallbackIssue != taskKey {
+			return p.FallbackIssue, fbProvider, nil
+		}
+	}
+
+	if !needsFallback {
+		return taskKey, provider, nil
+	}
+
+	// GitHub: try branch/body resolution first.
+	if isGitHubKey(taskKey) && p.Resolver != nil {
+		resolved, err := resolveGitHubToJira(ctx, p.Resolver, p.Survey, taskKey, p.Cfg)
+		if err == nil && resolved != "" {
+			return resolved, provider, nil
+		}
+	}
+
+	// Interactive fallback.
+	if p.Survey != nil {
+		resolved, err := resolveToFallbackIssue(p.Survey, p.Cfg)
+		if err != nil {
+			return "", "", fmt.Errorf("resolve worklog target: %w", err)
+		}
+		return resolved, provider, nil
+	}
+
+	return "", "", fmt.Errorf("cannot resolve worklog target for key %q: no fallback or interactive prompt available", taskKey)
 }

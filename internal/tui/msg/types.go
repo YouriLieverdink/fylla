@@ -1,6 +1,10 @@
 package msg
 
-import "time"
+import (
+	"time"
+
+	"github.com/iruoy/fylla/internal/task"
+)
 
 // FyllaEvent represents a scheduled Fylla task event or a calendar event.
 type FyllaEvent struct {
@@ -93,22 +97,9 @@ type EpicOption struct {
 	Label string // "KEY — Summary"
 }
 
-// SprintOption represents a sprint for form select fields.
-type SprintOption struct {
-	ID     int
-	Label  string
-	Active bool
-}
+// SprintOption is an alias for the provider-neutral task.SprintOption type.
+type SprintOption = task.SprintOption
 
-// WorklogEntry represents a worklog entry for TUI display.
-type WorklogEntry struct {
-	ID           string
-	IssueKey     string
-	Provider     string
-	Project      string
-	IssueSummary string
-	Description  string
-	Started      time.Time
-	TimeSpent    time.Duration
-}
+// WorklogEntry is an alias for the provider-neutral task.WorklogEntry type.
+type WorklogEntry = task.WorklogEntry
 
