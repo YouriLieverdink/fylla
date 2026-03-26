@@ -112,6 +112,7 @@ type SprintOption = task.SprintOption
 
 type timeEntryJSON struct {
 	ID           int    `json:"id"`
+	UserID       int    `json:"user_id"`
 	MinutesSpent int    `json:"minutes_spent"`
 	Note         string `json:"note"`
 	StartedAt    string `json:"started_at"`
@@ -1134,8 +1135,8 @@ func (c *Client) FetchWorklogs(ctx context.Context, since, until time.Time) ([]t
 	sinceDate := time.Date(since.Year(), since.Month(), since.Day(), 0, 0, 0, 0, since.Location())
 	untilDate := time.Date(until.Year(), until.Month(), until.Day(), 23, 59, 59, 0, until.Location())
 
-	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/time-entries?start_date=%s&end_date=%s",
-		since.Format("2006-01-02"), until.Format("2006-01-02")), nil)
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/time-entries?start_date=%s&end_date=%s&user_id=%d",
+		since.Format("2006-01-02"), until.Format("2006-01-02"), c.UserID), nil)
 	if err != nil {
 		return nil, fmt.Errorf("fetch time entries: %w", err)
 	}
@@ -1153,6 +1154,9 @@ func (c *Client) FetchWorklogs(ctx context.Context, since, until time.Time) ([]t
 
 	var allEntries []task.WorklogEntry
 	for _, te := range entries {
+		if te.UserID != c.UserID {
+			continue
+		}
 		started, err := time.Parse(time.RFC3339, te.StartedAt)
 		if err != nil {
 			continue

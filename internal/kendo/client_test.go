@@ -233,7 +233,7 @@ func TestCompleteTask(t *testing.T) {
 }
 
 func TestFetchWorklogs(t *testing.T) {
-	t.Run("returns entries for user", func(t *testing.T) {
+	t.Run("returns only current user entries", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.URL.Path {
 			case "/api/auth/user":
@@ -244,11 +244,22 @@ func TestFetchWorklogs(t *testing.T) {
 				json.NewEncoder(w).Encode([]timeEntryJSON{
 					{
 						ID:           1,
+						UserID:       42,
 						MinutesSpent: 60,
 						Note:         "worked on stuff",
 						StartedAt:    "2025-01-20T09:00:00Z",
 						IssueTitle:   "Fix bug",
 						IssueKey:     "IRUOY-0001",
+						ProjectID:    1,
+					},
+					{
+						ID:           2,
+						UserID:       99,
+						MinutesSpent: 120,
+						Note:         "colleague work",
+						StartedAt:    "2025-01-20T10:00:00Z",
+						IssueTitle:   "Other task",
+						IssueKey:     "IRUOY-0002",
 						ProjectID:    1,
 					},
 				})
@@ -265,8 +276,8 @@ func TestFetchWorklogs(t *testing.T) {
 		if err != nil {
 			t.Fatalf("FetchWorklogs: %v", err)
 		}
-		if len(entries) == 0 {
-			t.Fatal("expected at least 1 entry")
+		if len(entries) != 1 {
+			t.Fatalf("got %d entries, want 1 (colleague entry should be filtered)", len(entries))
 		}
 		if entries[0].IssueKey != "IRUOY-0001" {
 			t.Errorf("IssueKey = %q, want IRUOY-0001", entries[0].IssueKey)
