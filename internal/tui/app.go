@@ -411,6 +411,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.timerKey = mssg.TaskKey
 			m.timerSummary = mssg.Summary
+			m.timerComment = ""
 			m.timerElapsed = 0
 			m.timerRunning = true
 			m.timer.TaskKey = mssg.TaskKey
@@ -419,6 +420,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.timer.Section = mssg.Section
 			m.timer.Elapsed = 0
 			m.timer.TotalElapsed = 0
+			m.timer.Comment = ""
 			m.timer.Segments = nil
 			m.timer.Running = true
 			m.worklog.TimerRunning = true
