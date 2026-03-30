@@ -99,6 +99,7 @@ type BusinessHoursConfig struct {
 type WorklogConfig struct {
 	Provider       string   `yaml:"provider"`
 	FallbackIssues []string `yaml:"fallbackIssues"`
+	RoundMinutes   int      `yaml:"roundMinutes"`
 }
 
 // EfficiencyConfig holds efficiency tracking settings.

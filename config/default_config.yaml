@@ -57,6 +57,7 @@ projectRules:
 worklog:
   provider: ""
   fallbackIssues: []
+  roundMinutes: 1
 
 efficiency:
   weeklyHours: 40

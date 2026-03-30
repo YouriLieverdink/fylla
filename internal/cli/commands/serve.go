@@ -349,7 +349,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			}
 			result, err := RunStop(ctx, StopParams{
 				TimerPath:        path,
-				RoundMinutes:     5,
+				RoundMinutes:     cfg.Worklog.RoundMinutes,
 				Now:              time.Now(),
 				Description:      description,
 				Jira:             source,
