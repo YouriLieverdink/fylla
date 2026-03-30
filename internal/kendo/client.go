@@ -411,6 +411,35 @@ func isFilterQuery(query string) bool {
 	return strings.Contains(query, "=")
 }
 
+// isTextSearch returns true if the query is a free-text search term
+// (not empty, not "*", not a filter query, and not a known project code/name).
+func (c *Client) isTextSearch(query string) bool {
+	if query == "" || query == "*" || isFilterQuery(query) {
+		return false
+	}
+	for _, p := range c.projects {
+		if strings.EqualFold(p.Code, query) || strings.EqualFold(p.Name, query) {
+			return false
+		}
+	}
+	if _, err := strconv.Atoi(query); err == nil {
+		return false
+	}
+	return true
+}
+
+// issueMatchesText returns true if the issue key or title contains the search term (case-insensitive).
+func issueMatchesText(issue issueJSON, search string) bool {
+	lower := strings.ToLower(search)
+	if strings.Contains(strings.ToLower(issue.Key), lower) {
+		return true
+	}
+	if strings.Contains(strings.ToLower(issue.Title), lower) {
+		return true
+	}
+	return false
+}
+
 // FetchTasks retrieves issues from Kendo projects.
 //
 // The query can be:
@@ -418,6 +447,7 @@ func isFilterQuery(query string) bool {
 //   - A project code/name: fetch all issues from that project
 //   - Filter params (key=value pairs joined by &): fetch and filter issues
 //     Supported filters: assignee_id=me, assignee_id=N, project_id=N, lane_id=N, priority=N
+//   - Free text: search issues by key or title match
 func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, error) {
 	if err := c.loadProjects(ctx); err != nil {
 		return nil, err
@@ -432,11 +462,13 @@ func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, err
 		filter = c.parseFilter(query, c.UserID)
 	}
 
+	textSearch := c.isTextSearch(query)
+
 	// Determine which project IDs to fetch
 	var projectIDs []int
 	if filter.projectID != nil {
 		projectIDs = append(projectIDs, *filter.projectID)
-	} else if !isFilterQuery(query) && query != "" && query != "*" {
+	} else if !isFilterQuery(query) && !textSearch && query != "" && query != "*" {
 		// Simple project code/name filter
 		for _, p := range c.projects {
 			if strings.EqualFold(p.Code, query) || strings.EqualFold(p.Name, query) {
@@ -495,6 +527,9 @@ func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, err
 				continue
 			}
 			if !filter.empty() && !filter.matches(issue) {
+				continue
+			}
+			if textSearch && !issueMatchesText(issue, query) {
 				continue
 			}
 			allTasks = append(allTasks, parseIssue(issue, code, laneMap[issue.LaneID], epicMap))

@@ -66,6 +66,13 @@ const (
 	formTimerStartTime
 )
 
+type pendingTimerData struct {
+	prKey   string
+	summary string
+	project string
+	section string
+}
+
 type pendingEditData struct {
 	summary      string
 	estimate     string
@@ -116,6 +123,7 @@ type model struct {
 	formOptions      *msg.FormOptionsMsg
 	pickerFieldLabel string
 	pendingEdit      *pendingEditData
+	pendingTimerStart *pendingTimerData
 	viewDetail   *msg.ViewResult
 	scoreDetail  *msg.ScoreBreakdown
 	scoreTaskKey string
@@ -325,6 +333,27 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case msg.JiraKeyResolvedMsg:
+		// Timer start from GitHub PR: resolve to referenced issue or show fallback picker
+		if pending := m.pendingTimerStart; pending != nil {
+			m.pendingTimerStart = nil
+			m.saving = ""
+			if mssg.Err == nil && mssg.Key != "" {
+				return m, startTimerCmd(m.cb, mssg.Key, pending.summary, pending.project, pending.section, "")
+			}
+			// No issue reference found — open fallback picker
+			var items []components.PickerItem
+			for _, fb := range m.cachedFallback {
+				label := fb.Key
+				if fb.Summary != "" {
+					label = fmt.Sprintf("%-10s  %s", fb.Key, fb.Summary)
+				}
+				items = append(items, components.PickerItem{Key: fb.Key, Label: label})
+			}
+			m.picker = components.NewPicker("Select fallback issue (Enter to select, Esc to cancel)", items)
+			m.pickerFieldLabel = "timerStartFallback"
+			return m, nil
+		}
+		// Stop timer form: auto-fill issue key from PR
 		if mssg.Err == nil && mssg.Key != "" && m.formKind == formStopTimer && m.form.Active {
 			current := m.form.ValueByLabel("Issue Key")
 			if current == "" || strings.Contains(current, "#") {
@@ -912,6 +941,16 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, loadTasksCmd(m.cb)
 	case key.Matches(mssg, keys.Enter), key.Matches(mssg, keys.Timer):
 		if t := m.tasks.SelectedTask(); t != nil {
+			if t.Provider == "github" {
+				m.pendingTimerStart = &pendingTimerData{
+					prKey:   t.Key,
+					summary: t.Summary,
+					project: t.Project,
+					section: t.Section,
+				}
+				m.saving = "Resolving issue..."
+				return m, resolveJiraKeyCmd(m.cb, t.Key)
+			}
 			return m, startTimerCmd(m.cb, t.Key, t.Summary, t.Project, t.Section, t.Provider)
 		}
 	case key.Matches(mssg, keys.Done):
@@ -1277,7 +1316,11 @@ func (m *model) rebuildMyTaskPickerItems() {
 
 func (m *model) rebuildPickerItems(tasks []msg.ScoredTask) {
 	var items []components.PickerItem
+	worklogOnly := m.formKind == formStopTimer || m.formKind == formAddWorklog
 	for _, t := range tasks {
+		if worklogOnly && !isJiraKeyPattern(t.Key) {
+			continue
+		}
 		items = append(items, components.PickerItem{
 			Key:      t.Key,
 			Label:    fmt.Sprintf("%-10s  %s", t.Key, t.Summary),
@@ -1337,6 +1380,13 @@ func (m model) updatePicker(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(mssg, keys.Enter):
 		selected := m.picker.Selected()
 		m.picker.Active = false
+		if selected != nil && m.pickerFieldLabel == "timerStartFallback" {
+			return m, startTimerCmd(m.cb, selected.Key, "", "", "", "")
+		}
+		if m.pickerFieldLabel == "timerStartFallback" {
+			// No selection, cancel timer start
+			return m, nil
+		}
 		if selected != nil && m.pickerFieldLabel == "move" {
 			return m, moveTaskCmd(m.cb, m.formTaskKey, m.formTaskProvider, selected.Key)
 		}

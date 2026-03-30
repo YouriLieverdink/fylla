@@ -114,7 +114,11 @@ func buildSearchAllQueries(cfg *config.Config, search string) map[string]string 
 		case "local":
 			queries["local"] = search
 		case "kendo":
-			queries["kendo"] = "*"
+			if search != "" {
+				queries["kendo"] = search
+			} else {
+				queries["kendo"] = "*"
+			}
 		}
 	}
 	return queries
@@ -126,6 +130,9 @@ func buildSearchAllQuery(cfg *config.Config, search string) string {
 	case "jira":
 		return jiraSearchJQL(search)
 	case "kendo":
+		if search != "" {
+			return search
+		}
 		return "*"
 	case "github":
 		if search != "" {

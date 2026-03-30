@@ -245,8 +245,11 @@ func (c *Client) ResolveJiraKey(ctx context.Context, prKey string) (string, erro
 		return "", fmt.Errorf("fetch PR %s: %w", prKey, err)
 	}
 
-	// Search branch name first, then body.
+	// Search branch name first, then title, then body.
 	if key := jiraKeyPattern.FindString(pr.GetHead().GetRef()); key != "" {
+		return key, nil
+	}
+	if key := jiraKeyPattern.FindString(pr.GetTitle()); key != "" {
 		return key, nil
 	}
 	if key := jiraKeyPattern.FindString(pr.GetBody()); key != "" {
