@@ -56,6 +56,8 @@ type EditTaskParams struct {
 	HadPriority  bool
 	HadParent    bool
 	HadSection   bool
+	SprintID     *int
+	HadSprint    bool
 }
 
 // FallbackIssue pairs a Jira key with its summary for display.
@@ -80,7 +82,7 @@ type Callbacks struct {
 	ClearEvents func() (int, error)
 	LoadConfig  func() (*config.Config, error)
 	SetConfig   func(key, value string) error
-	AddTask      func(provider, summary, project, section, issueType, description, estimate, dueDate, priority, parent string, sprintID *int) (key, summaryOut string, err error)
+	AddTask      func(provider, summary, project, section, issueType, lane, description, estimate, dueDate, priority, parent string, sprintID *int) (key, summaryOut string, err error)
 	EditTask     func(params EditTaskParams) error
 	StopTimer    func(description string, done bool, fallbackIssue, fallbackProvider string) (taskKey string, elapsed time.Duration, resumedKey string, err error)
 	AbortTimer   func() (taskKey string, resumedKey string, err error)
@@ -230,9 +232,9 @@ func setConfigCmd(cb Callbacks, key, value string) tea.Cmd {
 	}
 }
 
-func addTaskCmd(cb Callbacks, provider, summary, project, section, issueType, description, estimate, dueDate, priority, parent string, sprintID *int) tea.Cmd {
+func addTaskCmd(cb Callbacks, provider, summary, project, section, issueType, lane, description, estimate, dueDate, priority, parent string, sprintID *int) tea.Cmd {
 	return func() tea.Msg {
-		key, summaryOut, err := cb.AddTask(provider, summary, project, section, issueType, description, estimate, dueDate, priority, parent, sprintID)
+		key, summaryOut, err := cb.AddTask(provider, summary, project, section, issueType, lane, description, estimate, dueDate, priority, parent, sprintID)
 		return msg.TaskAddedMsg{Key: key, Summary: summaryOut, Err: err}
 	}
 }
@@ -361,7 +363,14 @@ func loadEditFormOptionsCmd(cb Callbacks, project, taskKey, taskProvider string)
 				parentKey = p
 			}
 		}
-		return msg.FormOptionsMsg{Provider: provider, Sections: sections, Epics: epics, ParentKey: parentKey}
+		var sprints []msg.SprintOption
+		if provider == "kendo" && cb.ListSprints != nil {
+			s, err := cb.ListSprints(provider, project)
+			if err == nil {
+				sprints = s
+			}
+		}
+		return msg.FormOptionsMsg{Provider: provider, Sections: sections, Epics: epics, ParentKey: parentKey, Sprints: sprints}
 	}
 }
 

@@ -27,6 +27,7 @@ type Task struct {
 	NoSplit           bool
 	Recurrence        *Recurrence
 	Status            string
+	SprintID          *int
 }
 
 // CreateInput holds the fields for creating a new task.
@@ -41,4 +42,5 @@ type CreateInput struct {
 	Priority    string // Priority name (Highest, High, Medium, Low, Lowest)
 	Parent      string // Parent issue key (e.g. Epic key)
 	SprintID    *int   // Sprint/iteration ID (Kendo)
+	Lane        string // Board column / lane name (Kendo)
 }

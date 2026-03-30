@@ -34,8 +34,9 @@ type AddParams struct {
 	DueDate     string // raw date string, e.g. "2025-02-15"
 	Priority    string
 	Parent      string
-	SprintID    *int // Sprint/iteration ID (Kendo)
-	Inline      bool // true when args were provided on the command line
+	SprintID    *int   // Sprint/iteration ID (Kendo)
+	Lane        string // Board column / lane name (Kendo)
+	Inline      bool   // true when args were provided on the command line
 	Creator     TaskCreator
 	Projects    ProjectLister
 	Sections    SectionLister
@@ -60,6 +61,7 @@ func BuildCreateInput(p AddParams) (task.CreateInput, error) {
 		Priority:    p.Priority,
 		Parent:      p.Parent,
 		SprintID:    p.SprintID,
+		Lane:        p.Lane,
 	}
 
 	if input.Priority == "" {

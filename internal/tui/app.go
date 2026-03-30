@@ -76,6 +76,7 @@ type pendingEditData struct {
 	notBefore    string
 	parentKey    string // current parent key
 	section      string
+	sprintID     *int
 }
 
 type model struct {
@@ -115,8 +116,10 @@ type model struct {
 	formOptions      *msg.FormOptionsMsg
 	pickerFieldLabel string
 	pendingEdit      *pendingEditData
-	viewDetail *msg.ViewResult
-	spinner    spinner.Model
+	viewDetail   *msg.ViewResult
+	scoreDetail  *msg.ScoreBreakdown
+	scoreTaskKey string
+	spinner      spinner.Model
 	saving       string // non-empty shows spinner in status bar with this label
 
 	// Background prefetch cache
@@ -218,6 +221,14 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.showHelp {
 			if key.Matches(mssg, keys.Escape) || key.Matches(mssg, keys.Help) {
 				m.showHelp = false
+			}
+			return m, nil
+		}
+
+		// Score breakdown overlay
+		if m.scoreDetail != nil {
+			if key.Matches(mssg, keys.Escape) || mssg.Type == tea.KeyRunes {
+				m.scoreDetail = nil
 			}
 			return m, nil
 		}
@@ -414,10 +425,13 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.timerComment = ""
 			m.timerElapsed = 0
 			m.timerRunning = true
+			now := time.Now().Truncate(time.Minute).Add(time.Minute)
+			m.timerStartTime = now
 			m.timer.TaskKey = mssg.TaskKey
 			m.timer.Summary = mssg.Summary
 			m.timer.Project = mssg.Project
 			m.timer.Section = mssg.Section
+			m.timer.StartTime = now
 			m.timer.Elapsed = 0
 			m.timer.TotalElapsed = 0
 			m.timer.Comment = ""
@@ -687,7 +701,8 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 	case msg.FormOptionsMsg:
 		if m.formKind == formEditTaskPending && m.pendingEdit != nil {
 			m.pendingEdit.parentKey = mssg.ParentKey
-			m.form = buildEditForm(m.formTaskKey, m.formTaskProvider, *m.pendingEdit, mssg.Epics, mssg.Sections)
+			m.formOptions = &mssg
+			m.form = buildEditForm(m.formTaskKey, m.formTaskProvider, *m.pendingEdit, mssg.Epics, mssg.Sections, mssg.Sprints)
 			m.formKind = formEditTask
 			return m, nil
 		}
@@ -771,12 +786,12 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 	case msg.LanesLoadedMsg:
 		if m.form.Active && (m.formKind == formAddTask || m.formKind == formEditTask) {
 			if len(mssg.Lanes) > 0 {
-				current := m.form.ValueByLabel("Issue Type")
+				current := m.form.ValueByLabel("Lane")
 				if current == "" {
 					current = mssg.Lanes[0]
 				}
-				m.form.ConvertToSelectByLabel("Issue Type", mssg.Lanes, current)
-				m.form.UpdateSelectByLabel("Issue Type", mssg.Lanes, current)
+				m.form.ConvertToSelectByLabel("Lane", mssg.Lanes, current)
+				m.form.UpdateSelectByLabel("Lane", mssg.Lanes, current)
 			}
 			if m.formOptions != nil {
 				m.formOptions.Lanes = mssg.Lanes
@@ -948,6 +963,12 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(mssg, keys.ViewTask):
 		if t := m.tasks.SelectedTask(); t != nil {
 			return m, viewTaskCmd(m.cb, t.Key)
+		}
+	case key.Matches(mssg, keys.ViewScore):
+		if t := m.tasks.SelectedTask(); t != nil {
+			bd := t.Breakdown
+			m.scoreDetail = &bd
+			m.scoreTaskKey = t.Key
 		}
 	}
 	return m, nil
@@ -1531,6 +1552,7 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, addTaskCmd(m.cb, provider, summary,
 				m.form.ValueByLabel("Project"), section,
 				m.form.ValueByLabel("Issue Type"),
+				m.form.ValueByLabel("Lane"),
 				m.form.ValueByLabel("Description"),
 				m.form.ValueByLabel("Estimate"),
 				m.form.ValueByLabel("Due Date"),
@@ -1575,6 +1597,19 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			hadPriority := m.pendingEdit != nil && m.pendingEdit.priority != ""
 			hadParent := m.pendingEdit != nil && m.pendingEdit.parentKey != ""
 			hadSection := m.pendingEdit != nil && m.pendingEdit.section != ""
+			hadSprint := m.pendingEdit != nil && m.pendingEdit.sprintID != nil
+			var sprintID *int
+			if sprintLabel := m.form.ValueByLabel("Sprint"); sprintLabel != "" && sprintLabel != "Backlog" {
+				if m.formOptions != nil {
+					for _, s := range m.formOptions.Sprints {
+						if s.Label == sprintLabel {
+							id := s.ID
+							sprintID = &id
+							break
+						}
+					}
+				}
+			}
 			priority := m.form.ValueByLabel("Priority")
 			if priority == "None" {
 				priority = ""
@@ -1598,6 +1633,8 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				HadPriority:  hadPriority,
 				HadParent:    hadParent,
 				HadSection:   hadSection,
+				SprintID:     sprintID,
+				HadSprint:    hadSprint,
 			})
 		case formSnoozeTask:
 			duration := m.form.ValueByLabel("Duration")
@@ -1820,6 +1857,10 @@ func (m model) View() string {
 		return m.confirm.View(m.width, m.height)
 	}
 
+	if m.scoreDetail != nil {
+		return m.renderScoreBreakdown()
+	}
+
 	if m.viewDetail != nil {
 		return m.renderViewDetail()
 	}
@@ -1922,6 +1963,7 @@ func (m model) renderHelp() string {
 	b.WriteString("  D             Delete\n")
 	b.WriteString("  S             Snooze\n")
 	b.WriteString("  v             View details\n")
+	b.WriteString("  V             Score breakdown\n")
 	b.WriteString("  t             Start timer\n")
 	b.WriteString("  /             Search\n\n")
 
@@ -1992,6 +2034,56 @@ func (m model) renderViewDetail() string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 }
 
+func (m model) renderScoreBreakdown() string {
+	bold := lipgloss.NewStyle().Bold(true)
+	dim := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
+
+	s := m.scoreDetail
+	var b strings.Builder
+	b.WriteString(bold.Render(fmt.Sprintf("Score Breakdown — %s", m.scoreTaskKey)) + "\n\n")
+
+	wLine := func(label, reason string, raw, weight, weighted float64) {
+		b.WriteString(fmt.Sprintf("  %-14s %5.1f  x %.2f  =  %6.2f  %s\n",
+			label, raw, weight, weighted, dim.Render(reason)))
+	}
+
+	wLine("Priority:", s.PriorityReason, s.PriorityRaw, s.PriorityWeight, s.PriorityWeighted)
+	wLine("Due Date:", s.DueDateReason, s.DueDateRaw, s.DueDateWeight, s.DueDateWeighted)
+	wLine("Estimate:", s.EstimateReason, s.EstimateRaw, s.EstimateWeight, s.EstimateWeighted)
+	wLine("Age:", s.AgeReason, s.AgeRaw, s.AgeWeight, s.AgeWeighted)
+
+	subtotal := s.PriorityWeighted + s.DueDateWeighted + s.EstimateWeighted + s.AgeWeighted
+	b.WriteString(dim.Render("                                --------") + "\n")
+	b.WriteString(fmt.Sprintf("  %-14s                 %6.2f\n", "Subtotal:", subtotal))
+
+	aLine := func(label, reason string, value float64) {
+		b.WriteString(fmt.Sprintf("  %-14s               + %6.2f  %s\n",
+			label, value, dim.Render(reason)))
+	}
+
+	aLine("Crunch Boost:", s.CrunchReason, s.CrunchBoost)
+	aLine("Type Bonus:", s.TypeBonusReason, s.TypeBonus)
+	if s.UpNextBoost > 0 || s.NotBeforeMult >= 1.0 {
+		b.WriteString(fmt.Sprintf("  %-14s               + %6.2f\n", "Up Next:", s.UpNextBoost))
+	}
+	if s.NotBeforeMult < 1.0 {
+		b.WriteString(fmt.Sprintf("  %-14s               x %6.2f  %s\n",
+			"Not Before:", s.NotBeforeMult, dim.Render(s.NotBeforeReason)))
+	}
+
+	b.WriteString(dim.Render("                                --------") + "\n")
+	b.WriteString(bold.Render(fmt.Sprintf("  %-14s                 %6.2f", "Total:", s.Total)) + "\n\n")
+	b.WriteString(dim.Render("Press any key to close"))
+
+	content := lipgloss.NewStyle().Padding(1, 3).Render(b.String())
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}).
+		Padding(1, 2).
+		Render(content)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+}
+
 func ptrConfig(m configView.Model) *configView.Model { return &m }
 
 var jiraKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d+$`)
@@ -2042,6 +2134,7 @@ func buildPendingEditData(t *msg.ScoredTask) pendingEditData {
 	if t.NoSplit {
 		ed.noSplit = "true"
 	}
+	ed.sprintID = t.SprintID
 	return ed
 }
 
@@ -2078,14 +2171,18 @@ func buildAddForm(provider string, opts *msg.FormOptionsMsg) components.Form {
 			})
 		}
 	} else if provider == "kendo" {
+		fields = append(fields, components.FormFieldDef{
+			Label: "Issue Type", Kind: components.FieldSelect,
+			Options: []string{"Feature", "Bug"}, Value: "Feature",
+		})
 		if len(opts.Lanes) > 0 {
 			fields = append(fields, components.FormFieldDef{
-				Label: "Issue Type", Kind: components.FieldSelect,
+				Label: "Lane", Kind: components.FieldSelect,
 				Options: opts.Lanes, Value: opts.Lanes[0],
 			})
 		} else {
 			fields = append(fields, components.FormFieldDef{
-				Label: "Issue Type", Placeholder: "Loading lanes...",
+				Label: "Lane", Placeholder: "Loading lanes...",
 			})
 		}
 		if len(opts.Sprints) > 0 {
@@ -2182,13 +2279,30 @@ func (m *model) rebuildAddFormForProvider() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func buildEditForm(taskKey, provider string, ed pendingEditData, epics []msg.EpicOption, sections []string) components.Form {
+func buildEditForm(taskKey, provider string, ed pendingEditData, epics []msg.EpicOption, sections []string, sprints []msg.SprintOption) components.Form {
 	fields := []components.FormFieldDef{
 		{Label: "Provider", Value: provider, Disabled: true},
 		{Label: "Summary", Placeholder: "Task summary", Value: ed.summary},
 		{Label: "Estimate", Placeholder: "e.g. 2h, 30m", Value: ed.estimate},
 		{Label: "Due Date", Placeholder: "e.g. YYYY-MM-DD", Value: ed.dueDate},
 		{Label: "Priority", Kind: components.FieldSelect, Options: []string{"None", "Highest", "High", "Medium", "Low", "Lowest"}, Value: ed.priority},
+	}
+	if provider == "kendo" && len(sprints) > 0 {
+		sprintOptions := make([]string, 0, len(sprints)+1)
+		currentVal := "Backlog"
+		for _, s := range sprints {
+			sprintOptions = append(sprintOptions, s.Label)
+			if ed.sprintID != nil && s.ID == *ed.sprintID {
+				currentVal = s.Label
+			} else if s.Active && currentVal == "Backlog" {
+				currentVal = s.Label
+			}
+		}
+		sprintOptions = append(sprintOptions, "Backlog")
+		fields = append(fields, components.FormFieldDef{
+			Label: "Sprint", Kind: components.FieldSelect,
+			Options: sprintOptions, Value: currentVal,
+		})
 	}
 	if epics != nil {
 		epicOptions := []string{"None"}

@@ -286,6 +286,7 @@ func parseIssue(issue issueJSON, projectCode, laneName string, epicMap map[int]s
 		Priority: kendoPriorityToFylla(issue.Priority),
 		Project:  projectCode,
 		Status:   laneName,
+		SprintID: issue.SprintID,
 	}
 
 	if issue.CreatedAt != "" {
@@ -510,16 +511,21 @@ func (c *Client) CreateTask(ctx context.Context, input task.CreateInput) (string
 		return "", err
 	}
 
-	laneID, err := c.findLaneID(ctx, pid, input.IssueType)
+	laneID, err := c.findLaneID(ctx, pid, input.Lane)
 	if err != nil {
 		return "", fmt.Errorf("resolve lane: %w", err)
+	}
+
+	issueType := 0 // feature
+	if strings.EqualFold(input.IssueType, "Bug") {
+		issueType = 1
 	}
 
 	payload := map[string]interface{}{
 		"title":       input.Summary,
 		"description": input.Description,
 		"priority":    2, // default medium
-		"type":        0, // feature
+		"type":        issueType,
 		"order":       0,
 		"lane_id":     laneID,
 	}
@@ -837,6 +843,21 @@ func (c *Client) TransitionTask(ctx context.Context, taskKey, target string) err
 	return c.putIssue(ctx, pid, taskKey, map[string]interface{}{
 		"lane_id": laneID,
 	})
+}
+
+// UpdateSprint moves a Kendo issue to the given sprint, or removes from sprint if nil.
+func (c *Client) UpdateSprint(ctx context.Context, issueKey string, sprintID *int) error {
+	pid, err := c.projectIDForKey(ctx, issueKey)
+	if err != nil {
+		return err
+	}
+	overrides := map[string]interface{}{}
+	if sprintID != nil {
+		overrides["sprint_id"] = *sprintID
+	} else {
+		overrides["sprint_id"] = nil
+	}
+	return c.putIssue(ctx, pid, issueKey, overrides)
 }
 
 func (c *Client) resolveEpicID(ctx context.Context, projectID int, epicKey string) (int, error) {

@@ -37,6 +37,7 @@ type globalKeyMap struct {
 	EditStart  key.Binding
 	Interrupt    key.Binding
 	TogglePanel  key.Binding
+	ViewScore    key.Binding
 }
 
 var keys = globalKeyMap{
@@ -74,4 +75,5 @@ var keys = globalKeyMap{
 	EditStart:  key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit start")),
 	Interrupt:   key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "interrupt")),
 	TogglePanel: key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "toggle panel")),
+	ViewScore:   key.NewBinding(key.WithKeys("V"), key.WithHelp("V", "score breakdown")),
 }

@@ -20,6 +20,34 @@ type FyllaEvent struct {
 	IsCalendarEvent bool
 }
 
+// ScoreBreakdown holds the individual components of a composite score.
+type ScoreBreakdown struct {
+	PriorityRaw      float64
+	PriorityWeight   float64
+	PriorityWeighted float64
+	PriorityReason   string
+	DueDateRaw       float64
+	DueDateWeight    float64
+	DueDateWeighted  float64
+	DueDateReason    string
+	EstimateRaw      float64
+	EstimateWeight   float64
+	EstimateWeighted float64
+	EstimateReason   string
+	AgeRaw           float64
+	AgeWeight        float64
+	AgeWeighted      float64
+	AgeReason        string
+	CrunchBoost      float64
+	CrunchReason     string
+	TypeBonus        float64
+	TypeBonusReason  string
+	UpNextBoost      float64
+	NotBeforeMult    float64
+	NotBeforeReason  string
+	Total            float64
+}
+
 // ScoredTask holds a task with its computed score for display.
 type ScoredTask struct {
 	Key       string
@@ -30,6 +58,7 @@ type ScoredTask struct {
 	Estimate  time.Duration
 	IssueType string
 	Score     float64
+	Breakdown ScoreBreakdown
 	Project   string
 	Section   string
 	Status       string
@@ -37,6 +66,7 @@ type ScoredTask struct {
 	NoSplit      bool
 	NotBefore    *time.Time
 	NotBeforeRaw string
+	SprintID     *int
 }
 
 // CalendarEvent represents a non-task calendar event (meeting, etc.).

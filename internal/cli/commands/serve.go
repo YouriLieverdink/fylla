@@ -8,6 +8,7 @@ import (
 
 	"github.com/iruoy/fylla/internal/calendar"
 	"github.com/iruoy/fylla/internal/config"
+	"github.com/iruoy/fylla/internal/scheduler"
 	"github.com/iruoy/fylla/internal/task"
 	"github.com/iruoy/fylla/internal/timer"
 	"github.com/iruoy/fylla/internal/tui"
@@ -107,6 +108,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 					Estimate:  st.Task.RemainingEstimate,
 					IssueType: st.Task.IssueType,
 					Score:     st.Score,
+					Breakdown: mapBreakdown(st.Breakdown),
 					Project:   st.Task.Project,
 					Section:   st.Task.Section,
 					Status:       st.Task.Status,
@@ -114,6 +116,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 					NoSplit:      st.Task.NoSplit,
 					NotBefore:    st.Task.NotBefore,
 					NotBeforeRaw: st.Task.NotBeforeRaw,
+					SprintID:     st.Task.SprintID,
 				}
 			}
 			return tasks, nil
@@ -245,7 +248,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			_, err := RunConfigSet(ConfigSetParams{ConfigPath: cfgPath, Key: key, Value: value})
 			return err
 		},
-		AddTask: func(provider, summary, project, section, issueType, description, estimate, dueDate, priority, parent string, sprintID *int) (string, string, error) {
+		AddTask: func(provider, summary, project, section, issueType, lane, description, estimate, dueDate, priority, parent string, sprintID *int) (string, string, error) {
 			var creator TaskCreator = source
 			if provider != "" {
 				creator = &providerCreator{source: source, provider: provider}
@@ -255,6 +258,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				Project:     project,
 				Section:     section,
 				IssueType:   issueType,
+				Lane:        lane,
 				Description: description,
 				Estimate:    estimate,
 				DueDate:     dueDate,
@@ -314,6 +318,11 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				} else {
 					ep.NoNoSplit = true
 				}
+			}
+			if params.SprintID != nil {
+				ep.SprintID = params.SprintID
+			} else if params.HadSprint {
+				ep.NoSprint = true
 			}
 			_, err := RunEdit(ctx, ep)
 			return err
@@ -571,11 +580,13 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 					Estimate:  st.Task.RemainingEstimate,
 					IssueType: st.Task.IssueType,
 					Score:     st.Score,
+					Breakdown: mapBreakdown(st.Breakdown),
 					Project:   st.Task.Project,
 					Section:   st.Task.Section,
 					Status:    st.Task.Status,
 					UpNext:    st.Task.UpNext,
 					NoSplit:   st.Task.NoSplit,
+					SprintID:  st.Task.SprintID,
 				}
 			}
 			return tasks, nil
@@ -653,4 +664,33 @@ func convertSyncResult(r *SyncResult) *msg.SyncResult {
 		})
 	}
 	return result
+}
+
+func mapBreakdown(b scheduler.ScoreBreakdown) msg.ScoreBreakdown {
+	return msg.ScoreBreakdown{
+		PriorityRaw:      b.PriorityRaw,
+		PriorityWeight:   b.PriorityWeight,
+		PriorityWeighted: b.PriorityWeighted,
+		PriorityReason:   b.PriorityReason,
+		DueDateRaw:       b.DueDateRaw,
+		DueDateWeight:    b.DueDateWeight,
+		DueDateWeighted:  b.DueDateWeighted,
+		DueDateReason:    b.DueDateReason,
+		EstimateRaw:      b.EstimateRaw,
+		EstimateWeight:   b.EstimateWeight,
+		EstimateWeighted: b.EstimateWeighted,
+		EstimateReason:   b.EstimateReason,
+		AgeRaw:           b.AgeRaw,
+		AgeWeight:        b.AgeWeight,
+		AgeWeighted:      b.AgeWeighted,
+		AgeReason:        b.AgeReason,
+		CrunchBoost:      b.CrunchBoost,
+		CrunchReason:     b.CrunchReason,
+		TypeBonus:        b.TypeBonus,
+		TypeBonusReason:  b.TypeBonusReason,
+		UpNextBoost:      b.UpNextBoost,
+		NotBeforeMult:    b.NotBeforeMult,
+		NotBeforeReason:  b.NotBeforeReason,
+		Total:            b.Total,
+	}
 }

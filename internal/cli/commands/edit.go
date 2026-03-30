@@ -40,6 +40,8 @@ type EditParams struct {
 	NoSection   bool
 	NoEstimate  bool
 	NoPriority  bool
+	SprintID    *int
+	NoSprint    bool
 	Source      TaskSource
 }
 
@@ -284,6 +286,14 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 			}
 			if err := p.Source.UpdateSummary(ctx, p.TaskKey, summary); err != nil {
 				return nil, fmt.Errorf("update summary: %w", err)
+			}
+		}
+	}
+
+	if p.SprintID != nil || p.NoSprint {
+		if su, ok := p.Source.(SprintUpdater); ok {
+			if err := su.UpdateSprint(ctx, p.TaskKey, p.SprintID); err != nil {
+				return nil, fmt.Errorf("update sprint: %w", err)
 			}
 		}
 	}

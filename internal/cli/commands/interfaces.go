@@ -180,6 +180,11 @@ type SectionUpdater interface {
 	UpdateSection(ctx context.Context, taskKey, section string) error
 }
 
+// SprintUpdater updates the sprint of a task.
+type SprintUpdater interface {
+	UpdateSprint(ctx context.Context, issueKey string, sprintID *int) error
+}
+
 // TransitionLister lists available transitions/lanes for a task.
 type TransitionLister interface {
 	ListTransitions(ctx context.Context, taskKey string) ([]string, error)

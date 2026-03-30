@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"time"
@@ -9,10 +10,39 @@ import (
 	"github.com/iruoy/fylla/internal/task"
 )
 
+// ScoreBreakdown holds the individual components of a composite score.
+type ScoreBreakdown struct {
+	PriorityRaw      float64
+	PriorityWeight   float64
+	PriorityWeighted float64
+	PriorityReason   string
+	DueDateRaw       float64
+	DueDateWeight    float64
+	DueDateWeighted  float64
+	DueDateReason    string
+	EstimateRaw      float64
+	EstimateWeight   float64
+	EstimateWeighted float64
+	EstimateReason   string
+	AgeRaw           float64
+	AgeWeight        float64
+	AgeWeighted      float64
+	AgeReason        string
+	CrunchBoost      float64
+	CrunchReason     string
+	TypeBonus        float64
+	TypeBonusReason  string
+	UpNextBoost      float64
+	NotBeforeMult    float64
+	NotBeforeReason  string
+	Total            float64
+}
+
 // ScoredTask pairs a task with its computed composite score.
 type ScoredTask struct {
-	Task  task.Task
-	Score float64
+	Task      task.Task
+	Score     float64
+	Breakdown ScoreBreakdown
 }
 
 // SortTasks scores and sorts tasks by descending composite score.
@@ -20,9 +50,11 @@ type ScoredTask struct {
 func SortTasks(tasks []task.Task, cfg config.WeightsConfig, now time.Time) []ScoredTask {
 	scored := make([]ScoredTask, len(tasks))
 	for i, t := range tasks {
+		bd := CompositeScoreBreakdown(t, cfg, now)
 		scored[i] = ScoredTask{
-			Task:  t,
-			Score: CompositeScore(t, cfg, now),
+			Task:      t,
+			Score:     bd.Total,
+			Breakdown: bd,
 		}
 	}
 
@@ -50,6 +82,50 @@ func CompositeScore(t task.Task, w config.WeightsConfig, now time.Time) float64 
 	}
 
 	return score
+}
+
+// CompositeScoreBreakdown calculates the weighted composite score and returns
+// the individual components for display.
+func CompositeScoreBreakdown(t task.Task, w config.WeightsConfig, now time.Time) ScoreBreakdown {
+	bd := ScoreBreakdown{
+		PriorityRaw:      PriorityScore(t.Priority),
+		PriorityWeight:   w.Priority,
+		PriorityWeighted: w.Priority * PriorityScore(t.Priority),
+		PriorityReason:   priorityReason(t.Priority),
+		DueDateRaw:       DueDateScore(t.DueDate, now),
+		DueDateWeight:    w.DueDate,
+		DueDateWeighted:  w.DueDate * DueDateScore(t.DueDate, now),
+		DueDateReason:    dueDateReason(t.DueDate, now),
+		EstimateRaw:      EstimateScore(t.RemainingEstimate),
+		EstimateWeight:   w.Estimate,
+		EstimateWeighted: w.Estimate * EstimateScore(t.RemainingEstimate),
+		EstimateReason:   estimateReason(t.RemainingEstimate),
+		AgeRaw:           AgeScore(t.Created, now),
+		AgeWeight:        w.Age,
+		AgeWeighted:      w.Age * AgeScore(t.Created, now),
+		AgeReason:        ageReason(t.Created, now),
+		CrunchBoost:      CrunchBoost(t.DueDate, now),
+		CrunchReason:     crunchReason(t.DueDate, now),
+		TypeBonus:        TypeBonus(t.IssueType, w.TypeBonus),
+		TypeBonusReason:  typeBonusReason(t.IssueType, w.TypeBonus),
+		NotBeforeMult:    1.0,
+	}
+
+	score := bd.PriorityWeighted + bd.DueDateWeighted + bd.EstimateWeighted + bd.AgeWeighted
+	score += bd.CrunchBoost
+	score += bd.TypeBonus
+
+	if t.UpNext {
+		bd.UpNextBoost = w.UpNext
+		score += bd.UpNextBoost
+	} else {
+		bd.NotBeforeMult = NotBeforePenalty(t.NotBefore, now)
+		bd.NotBeforeReason = notBeforeReason(t.NotBefore, now)
+		score *= bd.NotBeforeMult
+	}
+
+	bd.Total = score
+	return bd
 }
 
 // PriorityScore maps Jira priority (1-5) to a 0-100 score.
@@ -148,4 +224,87 @@ func NotBeforePenalty(notBefore *time.Time, now time.Time) float64 {
 func Round(val float64, precision int) float64 {
 	p := math.Pow(10, float64(precision))
 	return math.Round(val*p) / p
+}
+
+var priorityNames = [6]string{"", "Highest", "High", "Medium", "Low", "Lowest"}
+
+func priorityReason(priority int) string {
+	if priority < 1 || priority > 5 {
+		return "unset"
+	}
+	return priorityNames[priority]
+}
+
+func dueDateReason(dueDate *time.Time, now time.Time) string {
+	if dueDate == nil {
+		return "no due date"
+	}
+	days := int(math.Ceil(dueDate.Sub(now).Hours() / 24))
+	if days < 0 {
+		return fmt.Sprintf("%d days overdue", -days)
+	}
+	if days == 0 {
+		return "due today"
+	}
+	if days == 1 {
+		return "due tomorrow"
+	}
+	return fmt.Sprintf("due in %d days", days)
+}
+
+func estimateReason(estimate time.Duration) string {
+	if estimate <= 0 {
+		return "no estimate"
+	}
+	h := estimate.Hours()
+	if h < 1 {
+		return fmt.Sprintf("%.0fm", estimate.Minutes())
+	}
+	return fmt.Sprintf("%.1fh", h)
+}
+
+func ageReason(created time.Time, now time.Time) string {
+	days := int(now.Sub(created).Hours() / 24)
+	if days <= 0 {
+		return "created today"
+	}
+	if days == 1 {
+		return "1 day old"
+	}
+	return fmt.Sprintf("%d days old", days)
+}
+
+func crunchReason(dueDate *time.Time, now time.Time) string {
+	if dueDate == nil {
+		return "no due date"
+	}
+	days := dueDate.Sub(now).Hours() / 24
+	if days > 3 {
+		return "due in >3 days"
+	}
+	if days <= 0 {
+		return "overdue"
+	}
+	return fmt.Sprintf("due in %.1f days", days)
+}
+
+func typeBonusReason(issueType string, bonuses map[string]float64) string {
+	if issueType == "" {
+		return "no type"
+	}
+	if len(bonuses) == 0 || bonuses[issueType] == 0 {
+		return issueType
+	}
+	return issueType
+}
+
+func notBeforeReason(notBefore *time.Time, now time.Time) string {
+	if notBefore == nil || !notBefore.After(now) {
+		return "actionable now"
+	}
+	days := int(math.Ceil(notBefore.Sub(now).Hours() / 24))
+	if days == 1 {
+		return "starts tomorrow"
+	}
+	return fmt.Sprintf("starts in %d days", days)
 }
