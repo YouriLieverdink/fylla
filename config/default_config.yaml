@@ -64,6 +64,9 @@ efficiency:
   dailyHours: 8
   target: 0.7
 
+pomodoro:
+  intervalMinutes: 25
+
 weights:
   priority: 0.45
   dueDate: 0.30

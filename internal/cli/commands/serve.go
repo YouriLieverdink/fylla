@@ -45,10 +45,11 @@ func RunServe(ctx context.Context) error {
 	query := serveDefaultQuery(cfg)
 
 	return tui.Run(tui.Deps{
-		CB:               buildCallbacks(ctx, cal, fetcher, source, cfg, cfgPath, query),
-		DailyHours:       cfg.Efficiency.DailyHours,
-		WeeklyHours:      cfg.Efficiency.WeeklyHours,
-		EfficiencyTarget: cfg.Efficiency.Target,
+		CB:                      buildCallbacks(ctx, cal, fetcher, source, cfg, cfgPath, query),
+		DailyHours:              cfg.Efficiency.DailyHours,
+		WeeklyHours:             cfg.Efficiency.WeeklyHours,
+		EfficiencyTarget:        cfg.Efficiency.Target,
+		PomodoroIntervalMinutes: cfg.Pomodoro.IntervalMinutes,
 	})
 }
 

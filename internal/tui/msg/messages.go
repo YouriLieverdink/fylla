@@ -289,5 +289,10 @@ type StandupGeneratedMsg struct {
 	Err     error
 }
 
+// PomodoroTickMsg triggers pomodoro countdown updates.
+type PomodoroTickMsg struct {
+	Gen int
+}
+
 // AutoRefreshMsg triggers an auto-refresh of the current view.
 type AutoRefreshMsg struct{}

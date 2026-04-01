@@ -39,6 +39,8 @@ type globalKeyMap struct {
 	TogglePanel  key.Binding
 	ViewScore    key.Binding
 	Standup      key.Binding
+	Break        key.Binding
+	BreakStop    key.Binding
 }
 
 var keys = globalKeyMap{
@@ -78,4 +80,6 @@ var keys = globalKeyMap{
 	TogglePanel: key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "toggle panel")),
 	ViewScore:   key.NewBinding(key.WithKeys("V"), key.WithHelp("V", "score breakdown")),
 	Standup:     key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "standup")),
+	Break:       key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "break timer")),
+	BreakStop:   key.NewBinding(key.WithKeys("B"), key.WithHelp("B", "stop break timer")),
 }

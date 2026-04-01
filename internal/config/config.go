@@ -20,6 +20,12 @@ type Config struct {
 	Weights       WeightsConfig                    `yaml:"weights"`
 	Worklog       WorklogConfig                    `yaml:"worklog"`
 	Efficiency    EfficiencyConfig                 `yaml:"efficiency"`
+	Pomodoro      PomodoroConfig                   `yaml:"pomodoro"`
+}
+
+// PomodoroConfig holds pomodoro break reminder settings.
+type PomodoroConfig struct {
+	IntervalMinutes int `yaml:"intervalMinutes"`
 }
 
 // ActiveProviders returns the list of configured providers.

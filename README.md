@@ -191,6 +191,9 @@ efficiency:
   dailyHours: 8                   # daily hour target
   target: 0.7                     # target efficiency (0.0–1.0, 70% = 0.7)
 
+pomodoro:
+  intervalMinutes: 25             # break reminder interval (default 25 min)
+
 weights:
   priority: 0.45
   dueDate: 0.30
@@ -401,6 +404,33 @@ Efficiency is calculated as `posted worklogs / target hours`. The percentage
 is color-coded: green when at or above target, yellow when within 10% of
 target, red when below. In the week view, per-day efficiency is shown in each
 day header.
+
+### Pomodoro break reminder
+
+The TUI includes a pomodoro-style break reminder to help you take regular breaks.
+Press `b` to start a countdown timer (default 25 minutes) shown in the status bar.
+When the countdown reaches zero, you get a toast notification and terminal bell.
+
+| Key | Action |
+|---|---|
+| `b` | Start / pause / resume countdown, or restart after break alert |
+| `B` | Stop the break timer entirely |
+
+**Status bar states:**
+
+| State | Display |
+|---|---|
+| Off | `🍅 b:start` (greyed) |
+| Running | `🍅 18:32` |
+| Paused | `🍅 18:32` (greyed) |
+| Break alert | `🍅 break!` |
+
+Configure the interval in your config:
+
+```yaml
+pomodoro:
+  intervalMinutes: 25   # default: 25 minutes
+```
 
 ### Worklog provider routing
 
