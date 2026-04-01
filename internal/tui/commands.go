@@ -2,6 +2,9 @@ package tui
 
 import (
 	"fmt"
+	"os/exec"
+	"sort"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -543,4 +546,74 @@ func clearToastCmd() tea.Cmd {
 	return tea.Tick(3*time.Second, func(time.Time) tea.Msg {
 		return msg.ClearToastMsg{}
 	})
+}
+
+func generateStandupCmd(entries []msg.WorklogEntry, date time.Time) tea.Cmd {
+	return func() tea.Msg {
+		if len(entries) == 0 {
+			return msg.StandupGeneratedMsg{Content: "No worklogs to summarize."}
+		}
+
+		// Merge entries by issue key: sum durations, collect descriptions.
+		type merged struct {
+			key          string
+			summary      string
+			duration     time.Duration
+			descriptions []string
+		}
+		byKey := make(map[string]*merged)
+		var order []string
+		for _, e := range entries {
+			m, ok := byKey[e.IssueKey]
+			if !ok {
+				m = &merged{key: e.IssueKey, summary: e.IssueSummary}
+				byKey[e.IssueKey] = m
+				order = append(order, e.IssueKey)
+			}
+			m.duration += e.TimeSpent
+			if e.Description != "" {
+				m.descriptions = append(m.descriptions, e.Description)
+			}
+		}
+
+		// Sort by total duration descending.
+		sort.Slice(order, func(i, j int) bool {
+			return byKey[order[i]].duration > byKey[order[j]].duration
+		})
+
+		// Build context for Claude.
+		var sb strings.Builder
+		for _, key := range order {
+			m := byKey[key]
+			fmt.Fprintf(&sb, "- %s: %s (%s)", m.key, m.summary, formatDur(m.duration))
+			if len(m.descriptions) > 0 {
+				fmt.Fprintf(&sb, " — %s", strings.Join(m.descriptions, "; "))
+			}
+			sb.WriteString("\n")
+		}
+
+		prompt := fmt.Sprintf(
+			"Hier zijn mijn worklogs van %s:\n\n%s\nSchrijf een korte stand-up samenvatting in het Nederlands als één doorlopende paragraaf (geen opsommingstekens, geen lijsten). Houd het natuurlijk en beknopt — dit is om in een teamchat te plakken. Geen tijdsduren, begroetingen of afsluitingen.",
+			date.Format("Monday, January 2"),
+			sb.String(),
+		)
+
+		out, err := exec.Command("claude", "-p", "--model", "haiku", prompt).Output()
+		if err != nil {
+			return msg.StandupGeneratedMsg{Err: fmt.Errorf("claude: %w", err)}
+		}
+		return msg.StandupGeneratedMsg{Content: strings.TrimSpace(string(out))}
+	}
+}
+
+func formatDur(d time.Duration) string {
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	if h > 0 && m > 0 {
+		return fmt.Sprintf("%dh%dm", h, m)
+	}
+	if h > 0 {
+		return fmt.Sprintf("%dh", h)
+	}
+	return fmt.Sprintf("%dm", m)
 }

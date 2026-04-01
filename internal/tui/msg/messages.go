@@ -283,5 +283,11 @@ type PickerSearchDebounceMsg struct {
 	Query string
 }
 
+// StandupGeneratedMsg carries the AI-generated stand-up summary.
+type StandupGeneratedMsg struct {
+	Content string
+	Err     error
+}
+
 // AutoRefreshMsg triggers an auto-refresh of the current view.
 type AutoRefreshMsg struct{}

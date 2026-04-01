@@ -124,9 +124,11 @@ type model struct {
 	pickerFieldLabel string
 	pendingEdit      *pendingEditData
 	pendingTimerStart *pendingTimerData
-	viewDetail   *msg.ViewResult
-	scoreDetail  *msg.ScoreBreakdown
-	scoreTaskKey string
+	viewDetail      *msg.ViewResult
+	scoreDetail     *msg.ScoreBreakdown
+	scoreTaskKey    string
+	standupContent  string
+	standupLoading  bool
 	spinner      spinner.Model
 	saving       string // non-empty shows spinner in status bar with this label
 
@@ -229,6 +231,15 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.showHelp {
 			if key.Matches(mssg, keys.Escape) || key.Matches(mssg, keys.Help) {
 				m.showHelp = false
+			}
+			return m, nil
+		}
+
+		// Standup overlay
+		if m.standupContent != "" || m.standupLoading {
+			if key.Matches(mssg, keys.Escape) {
+				m.standupContent = ""
+				m.standupLoading = false
 			}
 			return m, nil
 		}
@@ -875,6 +886,17 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case msg.StandupGeneratedMsg:
+		m.standupLoading = false
+		if mssg.Err != nil {
+			m.standupContent = ""
+			m.setToast(fmt.Sprintf("Standup error: %v", mssg.Err), true)
+			cmds = append(cmds, clearToastCmd())
+		} else {
+			m.standupContent = mssg.Content
+		}
+		return m, tea.Batch(cmds...)
+
 	case msg.WorklogsLoadedMsg:
 		m.worklog.Loading = false
 		if mssg.Err != nil {
@@ -1139,6 +1161,11 @@ func (m model) updateWorklog(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.confirmKey = e.ID
 			m.formWorklogKey = e.IssueKey
 			m.formWorklogProvider = e.Provider
+		}
+	case key.Matches(mssg, keys.Standup):
+		if len(m.worklog.Entries) > 0 && !m.standupLoading {
+			m.standupLoading = true
+			return m, generateStandupCmd(m.worklog.Entries, m.worklog.Date)
 		}
 	}
 	return m, nil
@@ -1907,6 +1934,10 @@ func (m model) View() string {
 		return m.confirm.View(m.width, m.height)
 	}
 
+	if m.standupContent != "" || m.standupLoading {
+		return m.renderStandup()
+	}
+
 	if m.scoreDetail != nil {
 		return m.renderScoreBreakdown()
 	}
@@ -2027,7 +2058,8 @@ func (m model) renderHelp() string {
 	b.WriteString("  a             Add worklog\n")
 	b.WriteString("  e             Edit worklog\n")
 	b.WriteString("  D             Delete worklog\n")
-	b.WriteString("  w             Toggle week view\n\n")
+	b.WriteString("  w             Toggle week view\n")
+	b.WriteString("  s             Stand-up summary\n\n")
 
 	b.WriteString(bold.Render("Config") + "\n")
 	b.WriteString("  e             Edit value\n\n")
@@ -2039,6 +2071,41 @@ func (m model) renderHelp() string {
 		Render(b.String())
 
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
+}
+
+func (m model) renderStandup() string {
+	bold := lipgloss.NewStyle().Bold(true)
+	hint := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
+
+	var b strings.Builder
+	b.WriteString(bold.Render("Stand-up Summary") + "\n\n")
+	if m.standupLoading {
+		b.WriteString(m.spinner.View() + " Generating stand-up summary...\n")
+	} else {
+		b.WriteString(m.standupContent)
+		b.WriteString("\n\n")
+		b.WriteString(hint.Render("Press Esc to close"))
+	}
+
+	boxWidth := m.width - 10
+	if boxWidth > 80 {
+		boxWidth = 80
+	}
+	maxHeight := m.height - 4
+	// border=2 + padding=4 + content padding=6 = 12 chars horizontal overhead
+	contentWidth := boxWidth - 12
+	content := lipgloss.NewStyle().
+		Padding(1, 3).
+		Width(contentWidth).
+		Render(b.String())
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}).
+		Padding(1, 2).
+		Width(boxWidth).
+		MaxHeight(maxHeight).
+		Render(content)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 }
 
 func (m model) renderViewDetail() string {

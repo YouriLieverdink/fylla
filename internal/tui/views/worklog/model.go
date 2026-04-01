@@ -185,7 +185,7 @@ func (m Model) View() string {
 	}
 
 	b.WriteString("\n")
-	hints := "j/k:navigate  h/l:prev/next day  T:today  a:add  e:edit  D:delete  w:toggle week  r:refresh"
+	hints := "j/k:navigate  h/l:prev/next day  T:today  a:add  e:edit  D:delete  w:toggle week  s:standup  r:refresh"
 	b.WriteString(styles.HintStyle.Render("  " + hints))
 
 	return b.String()
