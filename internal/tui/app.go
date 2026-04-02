@@ -32,7 +32,6 @@ type Deps struct {
 	DailyHours              float64
 	WeeklyHours             float64
 	EfficiencyTarget        float64
-	PomodoroIntervalMinutes int
 }
 
 type confirmAction int
@@ -65,7 +64,6 @@ const (
 	formMoveTaskPending  // waiting for transitions to load
 	formTimerComment
 	formTimerStartTime
-	formPomodoroStart
 )
 
 type pendingTimerData struct {
@@ -134,12 +132,6 @@ type model struct {
 	spinner      spinner.Model
 	saving       string // non-empty shows spinner in status bar with this label
 
-	// Pomodoro break reminder
-	pomodoroState     components.PomodoroState
-	pomodoroRemaining time.Duration
-	pomodoroInterval  time.Duration
-	pomodoroTickGen   int
-
 	// Background prefetch cache
 	cachedTasks       []msg.ScoredTask
 	cachedFormOptions *msg.FormOptionsMsg
@@ -150,18 +142,13 @@ func initialModel(deps Deps) model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
-	pomoMinutes := deps.PomodoroIntervalMinutes
-	if pomoMinutes <= 0 {
-		pomoMinutes = 25
-	}
 	return model{
-		cb:               deps.CB,
-		tasks:            tasks.New(),
-		timer:            timerView.New(),
-		worklog:          worklog.New(deps.DailyHours, deps.WeeklyHours, deps.EfficiencyTarget),
-		config:           ptrConfig(configView.New()),
-		spinner:          s,
-		pomodoroInterval: time.Duration(pomoMinutes) * time.Minute,
+		cb:      deps.CB,
+		tasks:   tasks.New(),
+		timer:   timerView.New(),
+		worklog: worklog.New(deps.DailyHours, deps.WeeklyHours, deps.EfficiencyTarget),
+		config:  ptrConfig(configView.New()),
+		spinner: s,
 	}
 }
 
@@ -299,31 +286,6 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// No timer running — start anonymous timer
 			return m, startTimerCmd(m.cb, "", "", "", "", "")
-		}
-
-		// Pomodoro break timer
-		if key.Matches(mssg, keys.BreakStop) {
-			m.pomodoroState = components.PomodoroOff
-			m.pomodoroRemaining = 0
-			return m, nil
-		}
-		if key.Matches(mssg, keys.Break) {
-			switch m.pomodoroState {
-			case components.PomodoroOff, components.PomodoroBreak:
-				fields := []components.FormFieldDef{
-					{Label: "Minutes", Placeholder: "25", Value: fmt.Sprintf("%d", int(m.pomodoroInterval.Minutes()))},
-				}
-				m.form = components.NewForm("Break Timer", fields)
-				m.formKind = formPomodoroStart
-				return m, nil
-			case components.PomodoroRunning:
-				m.pomodoroState = components.PomodoroPaused
-				return m, nil
-			case components.PomodoroPaused:
-				m.pomodoroState = components.PomodoroRunning
-				m.pomodoroTickGen++
-				return m, pomodoroTickCmd(m.pomodoroTickGen)
-			}
 		}
 
 		// Tab switching
@@ -472,8 +434,6 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.timer.Err = mssg.Err
 		}
-		m.worklog.TimerRunning = m.timerRunning
-		m.worklog.TimerElapsed = m.timerElapsed
 		m.resizeViews(m.height - 5)
 		if !m.timerRunning {
 			m.panelFocused = false
@@ -489,23 +449,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.timerElapsed += time.Second
 			m.timer.Elapsed = m.timerElapsed
 			m.timer.TotalElapsed += time.Second
-			m.worklog.TimerElapsed = m.timerElapsed
 			cmds = append(cmds, timerTickCmd(m.tickGen))
-		}
-		return m, tea.Batch(cmds...)
-
-	case msg.PomodoroTickMsg:
-		if m.pomodoroState == components.PomodoroRunning && mssg.Gen == m.pomodoroTickGen {
-			m.pomodoroRemaining -= time.Second
-			if m.pomodoroRemaining <= 0 {
-				m.pomodoroState = components.PomodoroBreak
-				m.pomodoroRemaining = 0
-				m.setToast("Time for a break!", false)
-				cmds = append(cmds, clearToastCmd())
-				cmds = append(cmds, bellCmd())
-			} else {
-				cmds = append(cmds, pomodoroTickCmd(m.pomodoroTickGen))
-			}
 		}
 		return m, tea.Batch(cmds...)
 
@@ -530,8 +474,6 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.timer.Comment = ""
 			m.timer.Segments = nil
 			m.timer.Running = true
-			m.worklog.TimerRunning = true
-			m.worklog.TimerElapsed = 0
 			m.resizeViews(m.height - 5)
 			label := mssg.Summary
 			if label == "" {
@@ -665,8 +607,6 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 				m.timer.Section = ""
 				m.timer.Elapsed = 0
 				m.timer.Paused = nil
-				m.worklog.TimerRunning = false
-				m.worklog.TimerElapsed = 0
 				m.panelFocused = false
 				m.resizeViews(m.height - 5)
 				m.setToast(fmt.Sprintf("Stopped %s (%s)", stoppedLabel, elapsed), false)
@@ -720,8 +660,6 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 				m.timer.Section = ""
 				m.timer.Elapsed = 0
 				m.timer.Paused = nil
-				m.worklog.TimerRunning = false
-				m.worklog.TimerElapsed = 0
 				m.panelFocused = false
 				m.resizeViews(m.height - 5)
 				m.setToast(fmt.Sprintf("Timer aborted for %s", stoppedLabel), false)
@@ -1785,19 +1723,6 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.formKind = formNone
 			m.saving = "Saving comment"
 			return m, saveTimerCommentCmd(m.cb, comment)
-		case formPomodoroStart:
-			raw := m.form.ValueByLabel("Minutes")
-			m.form.Active = false
-			m.formKind = formNone
-			minutes := 0
-			if _, err := fmt.Sscanf(raw, "%d", &minutes); err != nil || minutes <= 0 {
-				m.setToast("Invalid minutes", true)
-				return m, clearToastCmd()
-			}
-			m.pomodoroRemaining = time.Duration(minutes) * time.Minute
-			m.pomodoroState = components.PomodoroRunning
-			m.pomodoroTickGen++
-			return m, pomodoroTickCmd(m.pomodoroTickGen)
 		case formTimerStartTime:
 			raw := m.form.ValueByLabel("Start time")
 			m.form.Active = false
@@ -2073,8 +1998,6 @@ func (m model) View() string {
 		HelpHints:         hints,
 		Width:             m.width,
 		LoadingText:       loadingText,
-		Pomodoro:          m.pomodoroState,
-		PomodoroRemaining: m.pomodoroRemaining,
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left,
@@ -2128,10 +2051,6 @@ func (m model) renderHelp() string {
 	b.WriteString("  D             Delete worklog\n")
 	b.WriteString("  w             Toggle week view\n")
 	b.WriteString("  s             Stand-up summary\n\n")
-
-	b.WriteString(bold.Render("Pomodoro") + "\n")
-	b.WriteString("  b             Start/pause/resume break timer\n")
-	b.WriteString("  B             Stop break timer\n\n")
 
 	b.WriteString(bold.Render("Config") + "\n")
 	b.WriteString("  e             Edit value\n\n")

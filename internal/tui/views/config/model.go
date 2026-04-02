@@ -323,10 +323,6 @@ func buildRows(cfg *config.Config) []configRow {
 	rows = append(rows, configRow{Kind: rowSetting, Label: "dailyHours", Key: "efficiency.dailyHours", Value: formatFloat(cfg.Efficiency.DailyHours)})
 	rows = append(rows, configRow{Kind: rowSetting, Label: "target", Key: "efficiency.target", Value: fmt.Sprintf("%.0f%%", cfg.Efficiency.Target*100)})
 
-	// Pomodoro
-	rows = append(rows, configRow{Kind: rowSection, Label: "Pomodoro"})
-	rows = append(rows, configRow{Kind: rowSetting, Label: "intervalMinutes", Key: "pomodoro.intervalMinutes", Value: fmt.Sprintf("%d", cfg.Pomodoro.IntervalMinutes)})
-
 	return rows
 }
 

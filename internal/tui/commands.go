@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -198,19 +197,6 @@ func saveTimerStartTimeCmd(cb Callbacks, startTime time.Time) tea.Cmd {
 func timerTickCmd(gen int) tea.Cmd {
 	return tea.Tick(time.Second, func(time.Time) tea.Msg {
 		return msg.TimerTickMsg{Gen: gen}
-	})
-}
-
-func bellCmd() tea.Cmd {
-	return func() tea.Msg {
-		os.Stdout.Write([]byte("\a"))
-		return nil
-	}
-}
-
-func pomodoroTickCmd(gen int) tea.Cmd {
-	return tea.Tick(time.Second, func(time.Time) tea.Msg {
-		return msg.PomodoroTickMsg{Gen: gen}
 	})
 }
 

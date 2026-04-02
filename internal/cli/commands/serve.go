@@ -49,7 +49,6 @@ func RunServe(ctx context.Context) error {
 		DailyHours:              cfg.Efficiency.DailyHours,
 		WeeklyHours:             cfg.Efficiency.WeeklyHours,
 		EfficiencyTarget:        cfg.Efficiency.Target,
-		PomodoroIntervalMinutes: cfg.Pomodoro.IntervalMinutes,
 	})
 }
 
