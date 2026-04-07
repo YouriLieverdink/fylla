@@ -25,7 +25,6 @@ const (
 	tabTasks = iota
 	tabSchedule
 	tabWorklog
-	tabDashboard
 	tabConfig
 	tabCount
 )
@@ -310,8 +309,6 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(mssg, keys.Tab3):
 			return m.switchTab(tabWorklog)
 		case key.Matches(mssg, keys.Tab4):
-			return m.switchTab(tabDashboard)
-		case key.Matches(mssg, keys.Tab5):
 			return m.switchTab(tabConfig)
 		case key.Matches(mssg, keys.NextTab):
 			return m.switchTab((m.activeTab + 1) % tabCount)
@@ -330,8 +327,6 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateSchedule(mssg)
 		case tabWorklog:
 			return m.updateWorklog(mssg)
-		case tabDashboard:
-			return m.updateDashboard(mssg)
 		case tabConfig:
 			return m.updateConfig(mssg)
 		}
@@ -1916,12 +1911,6 @@ func (m model) refreshActiveView() tea.Cmd {
 		return syncPreviewCmd(m.cb)
 	case tabWorklog:
 		return loadWorklogsCmd(m.cb, m.worklog.WeekView, m.worklog.Date)
-	case tabDashboard:
-		// Only fetch if no data is cached for this month (avoid redundant API calls).
-		if len(m.dashboard.Entries) == 0 || m.dashboard.Err != nil {
-			return loadDashboardCmd(m.cb, m.dashboard.Month)
-		}
-		return nil
 	case tabConfig:
 		return loadConfigCmd(m.cb)
 	}
@@ -1972,10 +1961,6 @@ func (m model) isLoading() bool {
 		if m.worklog.Loading {
 			return true
 		}
-	case tabDashboard:
-		if m.dashboard.Loading {
-			return true
-		}
 	case tabConfig:
 		if m.config.Loading {
 			return true
@@ -2000,10 +1985,6 @@ func (m model) loadingLabel() string {
 	case tabWorklog:
 		if m.worklog.Loading {
 			return "Loading worklogs"
-		}
-	case tabDashboard:
-		if m.dashboard.Loading {
-			return "Loading dashboard"
 		}
 	case tabConfig:
 		if m.config.Loading {
@@ -2075,8 +2056,6 @@ func (m model) View() string {
 		content = m.schedule.View()
 	case tabWorklog:
 		content = m.worklog.View()
-	case tabDashboard:
-		content = m.dashboard.View()
 	case tabConfig:
 		content = m.config.View()
 	}
@@ -2183,11 +2162,6 @@ func (m model) renderHelp() string {
 	b.WriteString("  D             Delete worklog\n")
 	b.WriteString("  w             Toggle week view\n")
 	b.WriteString("  s             Stand-up summary\n\n")
-
-	b.WriteString(bold.Render("Statistics") + "\n")
-	b.WriteString("  h/l           Previous/next month\n")
-	b.WriteString("  T             Current month\n")
-	b.WriteString("  j/k           Scroll\n\n")
 
 	b.WriteString(bold.Render("Config") + "\n")
 	b.WriteString("  e             Edit value\n\n")
