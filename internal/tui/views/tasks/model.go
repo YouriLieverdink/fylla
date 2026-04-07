@@ -184,8 +184,7 @@ func (m Model) View() string {
 			}
 		}
 
-		// Calculate visible range for scrolling based on cursor position in display lines.
-		// Find the display line index for the current cursor.
+		// Calculate visible range for scrolling, keeping cursor in view.
 		cursorDisplayIdx := 0
 		for di, dl := range lines {
 			if dl.taskIdx == m.Cursor {
@@ -198,10 +197,19 @@ func (m Model) View() string {
 		if visibleHeight < 3 {
 			visibleHeight = 3
 		}
-		startIdx := 0
-		if cursorDisplayIdx >= visibleHeight {
-			startIdx = cursorDisplayIdx - visibleHeight + 1
+
+		// Center the cursor in the visible window.
+		startIdx := cursorDisplayIdx - visibleHeight/2
+		if startIdx < 0 {
+			startIdx = 0
 		}
+		if startIdx > len(lines)-visibleHeight {
+			startIdx = len(lines) - visibleHeight
+		}
+		if startIdx < 0 {
+			startIdx = 0
+		}
+
 		endIdx := startIdx + visibleHeight
 		if endIdx > len(lines) {
 			endIdx = len(lines)
@@ -225,18 +233,34 @@ func (m Model) View() string {
 			est := styles.FormatDurationPadded(t.Estimate)
 			score := fmt.Sprintf("%5.1f", t.Score)
 
-			label := styles.FormatPrefix(t.Project, t.Section) + styles.Truncate(t.Summary, 50)
-			line := fmt.Sprintf("%s %s  %s  %s", rank, label, est, score)
-
+			// Build compact tags.
+			var tags string
 			if t.Status != "" {
-				line += styles.HintStyle.Render(fmt.Sprintf(" [%s]", t.Status))
+				tags += " " + styles.AbbrevStatus(t.Status)
 			}
 			if t.UpNext {
-				line += styles.UpNextStyle.Render(" [UP NEXT]")
+				tags += styles.UpNextStyle.Render(" ↑")
 			}
 			if t.NotBefore != nil && t.NotBefore.After(time.Now()) {
-				line += styles.HintStyle.Render(fmt.Sprintf(" [not before %s]", t.NotBefore.Format("Jan 2")))
+				tags += styles.HintStyle.Render(" ≥" + t.NotBefore.Format("Jan 2"))
 			}
+
+			// Fixed parts: cursor(2) + dot(2) + rank(3) + gaps(6) + est(5) + score(5) = 23
+			// Tags and label share the remaining space.
+			tagsWidth := styles.StringWidth(tags)
+			labelWidth := m.Width - 23 - tagsWidth
+			if labelWidth < 20 {
+				labelWidth = 20
+			}
+
+			prefix := styles.FormatPrefix(t.Project, t.Section)
+			summaryWidth := labelWidth - len(prefix)
+			if summaryWidth < 10 {
+				summaryWidth = 10
+			}
+			label := styles.PadOrTruncate(prefix+styles.Truncate(t.Summary, summaryWidth), labelWidth)
+
+			line := fmt.Sprintf("%s  %s  %s  %s%s", rank, label, est, score, tags)
 
 			cursor := "  "
 			if isSelected {

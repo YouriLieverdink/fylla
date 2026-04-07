@@ -2,20 +2,49 @@ package styles
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
 )
 
 // FormatPrefix formats a project/section prefix for display.
+// Uses the last path segment of the project name to save horizontal space.
 func FormatPrefix(project, section string) string {
-	if project != "" && section != "" {
-		return project + " / " + section + ": "
+	short := abbreviateProject(project)
+	if short != "" && section != "" {
+		return short + "/" + section + ": "
 	}
-	if project != "" {
-		return project + ": "
+	if short != "" {
+		return short + ": "
 	}
 	return ""
+}
+
+// abbreviateProject returns the last segment of a slash-separated project name.
+func abbreviateProject(project string) string {
+	if project == "" {
+		return ""
+	}
+	if i := strings.LastIndex(project, "/"); i >= 0 {
+		return project[i+1:]
+	}
+	return project
+}
+
+// PadOrTruncate pads or truncates s (ANSI-aware) to exactly the given width.
+func PadOrTruncate(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	w := ansi.StringWidth(s)
+	if w > width {
+		return ansi.Truncate(s, width, "…")
+	}
+	if w < width {
+		return s + strings.Repeat(" ", width-w)
+	}
+	return s
 }
 
 // FormatProjectDot renders a colored dot for a project.
@@ -42,12 +71,17 @@ func FormatDurationOrDash(d time.Duration) string {
 	return formatDur(d)
 }
 
-// FormatDurationPadded formats a duration, returning "  --" for zero.
+// FormatDurationPadded formats a duration right-aligned in a 5-char field, returning "   --" for zero.
 func FormatDurationPadded(d time.Duration) string {
-	if d <= 0 {
-		return "  --"
+	s := "--"
+	if d > 0 {
+		s = formatDur(d)
 	}
-	return formatDur(d)
+	const w = 5
+	if len(s) < w {
+		return strings.Repeat(" ", w-len(s)) + s
+	}
+	return s
 }
 
 // FormatDurationParens formats a duration in parentheses, e.g. "(1h30m)".
@@ -89,4 +123,31 @@ var priorityLevelNames = map[int]string{
 	3: "Medium",
 	4: "Low",
 	5: "Lowest",
+}
+
+// StringWidth returns the visible width of an ANSI string.
+func StringWidth(s string) int {
+	return ansi.StringWidth(s)
+}
+
+var statusAbbrev = map[string]string{
+	"to do":       "TD",
+	"in progress": "IP",
+	"in review":   "IR",
+	"done":        "DN",
+	"blocked":     "BL",
+	"on hold":     "OH",
+}
+
+// AbbrevStatus returns a short abbreviation for a Jira-style status.
+func AbbrevStatus(status string) string {
+	if a, ok := statusAbbrev[strings.ToLower(status)]; ok {
+		return HintStyle.Render(a)
+	}
+	// Fallback: first 2 uppercase letters.
+	up := strings.ToUpper(status)
+	if len(up) > 2 {
+		up = up[:2]
+	}
+	return HintStyle.Render(up)
 }

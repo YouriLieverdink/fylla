@@ -259,9 +259,17 @@ func (m Model) renderDayView(b *strings.Builder, sorted []msg.WorklogEntry) {
 	if visibleHeight < 3 {
 		visibleHeight = 3
 	}
-	startIdx := 0
-	if m.Cursor >= visibleHeight {
-		startIdx = m.Cursor - visibleHeight + 1
+
+	// Center cursor in visible window.
+	startIdx := m.Cursor - visibleHeight/2
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	if startIdx > len(sorted)-visibleHeight {
+		startIdx = len(sorted) - visibleHeight
+	}
+	if startIdx < 0 {
+		startIdx = 0
 	}
 	endIdx := startIdx + visibleHeight
 	if endIdx > len(sorted) {
@@ -271,7 +279,7 @@ func (m Model) renderDayView(b *strings.Builder, sorted []msg.WorklogEntry) {
 	for i := startIdx; i < endIdx; i++ {
 		e := sorted[i]
 		isSelected := i == m.Cursor
-		line := formatEntryLine(e)
+		line := m.formatEntryLine(e)
 		cursor := "  "
 		if isSelected {
 			cursor = "> "
@@ -337,18 +345,24 @@ func (m Model) renderWeekView(b *strings.Builder, sorted []msg.WorklogEntry) {
 		visibleHeight = 3
 	}
 
-	// Find display line for cursor
+	// Find display line for cursor and center it.
 	cursorDisplayIdx := 0
-	for _, dl := range lines {
+	for di, dl := range lines {
 		if dl.entryIdx == m.Cursor {
+			cursorDisplayIdx = di
 			break
 		}
-		cursorDisplayIdx++
 	}
 
-	startIdx := 0
-	if cursorDisplayIdx >= visibleHeight {
-		startIdx = cursorDisplayIdx - visibleHeight + 1
+	startIdx := cursorDisplayIdx - visibleHeight/2
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	if startIdx > len(lines)-visibleHeight {
+		startIdx = len(lines) - visibleHeight
+	}
+	if startIdx < 0 {
+		startIdx = 0
 	}
 	endIdx := startIdx + visibleHeight
 	if endIdx > len(lines) {
@@ -367,7 +381,7 @@ func (m Model) renderWeekView(b *strings.Builder, sorted []msg.WorklogEntry) {
 
 		e := sorted[dl.entryIdx]
 		isSelected := dl.entryIdx == m.Cursor
-		line := formatEntryLine(e)
+		line := m.formatEntryLine(e)
 		cursor := "  "
 		if isSelected {
 			cursor = "> "
@@ -379,26 +393,34 @@ func (m Model) renderWeekView(b *strings.Builder, sorted []msg.WorklogEntry) {
 	}
 }
 
-func formatEntryLine(e msg.WorklogEntry) string {
+func (m Model) formatEntryLine(e msg.WorklogEntry) string {
 	dot := styles.FormatProjectDot(e.Project)
-	timeStr := e.Started.Format("15:04")
-	endStr := e.Started.Add(e.TimeSpent).Format("15:04")
-	dur := styles.FormatDuration(e.TimeSpent)
+	timeRange := e.Started.Format("15:04") + "–" + e.Started.Add(e.TimeSpent).Format("15:04")
+	dur := styles.FormatDurationPadded(e.TimeSpent)
+	key := styles.PadOrTruncate(e.IssueKey, 10)
+
+	// Fixed parts: cursor(2) + dot(2) + time(11) + gaps(6) + key(10) + dur(5) = 36
+	const fixedCols = 36
+	remaining := m.Width - fixedCols
+	if remaining < 10 {
+		remaining = 10
+	}
+
+	// Split remaining space: ~60% summary, ~40% description.
+	summaryW := remaining * 6 / 10
+	descW := remaining - summaryW - 2 // 2 for gap
+
 	summary := e.IssueSummary
 	if summary == "" {
 		summary = "-"
 	}
-	if len(summary) > 30 {
-		summary = summary[:27] + "..."
-	}
+	summary = styles.PadOrTruncate(summary, summaryW)
+
 	desc := e.Description
 	if desc == "" {
 		desc = "-"
 	}
-	if len(desc) > 30 {
-		desc = desc[:27] + "..."
-	}
-	line := fmt.Sprintf("%s%s–%s  %-10s  %6s  %s", dot, timeStr, endStr, e.IssueKey, dur, summary)
-	line += styles.HintStyle.Render("  " + desc)
-	return line
+	desc = styles.Truncate(desc, descW)
+
+	return fmt.Sprintf("%s%s  %s  %s  %s  %s", dot, timeRange, key, dur, summary, styles.HintStyle.Render(desc))
 }

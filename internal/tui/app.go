@@ -1844,7 +1844,7 @@ func (m *model) resizeViews(contentHeight int) {
 	mainWidth := m.width
 	if m.timerRunning {
 		pw := m.panelWidth()
-		mainWidth = m.width - pw - 1
+		mainWidth = m.width - pw - 3
 		m.timer.SetSize(pw, contentHeight)
 	}
 	m.tasks.SetSize(mainWidth, contentHeight)
