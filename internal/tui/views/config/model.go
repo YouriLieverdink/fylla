@@ -130,8 +130,6 @@ func (m *Model) View() string {
 	}
 
 	var lines []string
-	lines = append(lines, styles.HeaderFmt.Render("  Configuration"))
-	lines = append(lines, "")
 
 	for i, r := range m.Rows {
 		switch r.Kind {

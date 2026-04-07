@@ -143,9 +143,9 @@ func (m Model) View() string {
 
 	var b strings.Builder
 
-	title := fmt.Sprintf("Tasks (%d)", len(m.Tasks))
+	title := fmt.Sprintf("  Tasks (%d)", len(m.Tasks))
 	if m.Filter != "" {
-		title = fmt.Sprintf("Tasks (%d/%d) filter: %s", len(filtered), len(m.Tasks), m.Filter)
+		title = fmt.Sprintf("  Tasks (%d/%d) filter: %s", len(filtered), len(m.Tasks), m.Filter)
 	}
 	b.WriteString(styles.HeaderFmt.Render(title))
 	b.WriteString("\n\n")

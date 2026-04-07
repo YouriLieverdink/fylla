@@ -159,7 +159,7 @@ func (m *Model) View() string {
 	}
 
 	var b strings.Builder
-	b.WriteString(styles.HeaderFmt.Render("Schedule Preview (Dry Run)"))
+	b.WriteString(styles.HeaderFmt.Render("  Schedule Preview (Dry Run)"))
 	b.WriteString("\n\n")
 
 	// Calculate visible range, keeping cursor in view.

@@ -131,7 +131,7 @@ func (m Model) View() string {
 		monthLabel = m.Month.Format("January 2006")
 	}
 	monthTotal := totalTime(m.Entries)
-	title := fmt.Sprintf("Dashboard — %s (%d entries, %s)", monthLabel, len(m.Entries), styles.FormatDuration(monthTotal))
+	title := fmt.Sprintf("  Dashboard — %s (%d entries, %s)", monthLabel, len(m.Entries), styles.FormatDuration(monthTotal))
 	b.WriteString(styles.HeaderFmt.Render(title))
 	b.WriteString("\n\n")
 
@@ -338,81 +338,6 @@ func (m Model) renderProjectBreakdown(b *strings.Builder, monthTotal time.Durati
 	}
 }
 
-func (m Model) renderDailyHeatmap(b *strings.Builder) {
-	b.WriteString(styles.HeaderFmt.Render("  Daily Activity"))
-	b.WriteString("\n")
-
-	dailyTotals := make(map[string]time.Duration)
-	for _, e := range m.Entries {
-		day := e.Started.Format("2006-01-02")
-		dailyTotals[day] += e.TimeSpent
-	}
-
-	dailyTarget := time.Duration(m.DailyHours * float64(time.Hour))
-
-	// Iterate through all days of the month
-	endDate := m.Month.AddDate(0, 1, -1)
-	now := time.Now()
-	if endDate.After(now) {
-		endDate = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	}
-
-	for d := m.Month; !d.After(endDate); d = d.AddDate(0, 0, 1) {
-		iso := isoWeekday(d.Weekday())
-		if !m.WorkDays[iso] {
-			continue
-		}
-
-		key := d.Format("2006-01-02")
-		total := dailyTotals[key]
-
-		dayLabel := d.Format("Mon 02")
-		hours := styles.FormatDuration(total)
-
-		var indicator string
-		if dailyTarget > 0 {
-			ratio := float64(total) / float64(dailyTarget)
-			indicator = heatBlock(ratio, m.EfficiencyTarget)
-		}
-
-		b.WriteString(fmt.Sprintf("  %s  %s  %s", dayLabel, styles.PadOrTruncate(hours, 6), indicator))
-		b.WriteString("\n")
-	}
-}
-
-func (m Model) computeWeekStats() []weekStats {
-	weekMap := make(map[int]*weekStats)
-	var weekNums []int
-
-	for _, e := range m.Entries {
-		_, wk := e.Started.ISOWeek()
-		ws, ok := weekMap[wk]
-		if !ok {
-			// Find Monday of this ISO week
-			weekStart := isoWeekStart(e.Started)
-			ws = &weekStats{
-				weekNum:   wk,
-				weekStart: weekStart,
-				weekEnd:   weekStart.AddDate(0, 0, 6),
-				byProject: make(map[string]time.Duration),
-			}
-			weekMap[wk] = ws
-			weekNums = append(weekNums, wk)
-		}
-		ws.total += e.TimeSpent
-		ws.entries++
-		ws.byProject[e.Project] += e.TimeSpent
-	}
-
-	sort.Ints(weekNums)
-	result := make([]weekStats, 0, len(weekNums))
-	for _, wk := range weekNums {
-		ws := weekMap[wk]
-		ws.workingDays = countWorkingDays(ws.weekStart, ws.weekEnd, m.WorkDays)
-		result = append(result, *ws)
-	}
-	return result
-}
 
 func (m Model) computeProjectStats() []projectStats {
 	projectMap := make(map[string]*projectStats)
@@ -470,13 +395,6 @@ func isoWeekday(wd time.Weekday) int {
 	return d
 }
 
-func isoWeekStart(t time.Time) time.Time {
-	wd := t.Weekday()
-	if wd == time.Sunday {
-		wd = 7
-	}
-	return time.Date(t.Year(), t.Month(), t.Day()-int(wd)+1, 0, 0, 0, 0, t.Location())
-}
 
 func colorPct(pct, target float64) string {
 	label := fmt.Sprintf("%.1f%%", pct)
@@ -491,53 +409,6 @@ func colorPct(pct, target float64) string {
 	}
 }
 
-func renderBar(value, target time.Duration, effTarget float64, maxWidth int) string {
-	if maxWidth < 10 {
-		maxWidth = 10
-	}
-	barWidth := maxWidth - 2 // leave room for brackets
-	if barWidth < 5 {
-		barWidth = 5
-	}
-
-	ratio := float64(value) / float64(target)
-	filled := int(math.Round(ratio * float64(barWidth)))
-	if filled > barWidth {
-		filled = barWidth
-	}
-	if filled < 0 {
-		filled = 0
-	}
-
-	// Target marker position
-	targetPos := int(math.Round(effTarget * float64(barWidth)))
-	if targetPos > barWidth {
-		targetPos = barWidth
-	}
-
-	var barColor lipgloss.Style
-	switch {
-	case ratio >= effTarget:
-		barColor = styles.CurrentStyle
-	case ratio >= effTarget-0.1:
-		barColor = styles.WarnStyle
-	default:
-		barColor = styles.ErrStyle
-	}
-
-	bar := make([]rune, barWidth)
-	for i := range bar {
-		if i < filled {
-			bar[i] = '█'
-		} else if i == targetPos {
-			bar[i] = '│'
-		} else {
-			bar[i] = '░'
-		}
-	}
-
-	return barColor.Render(string(bar))
-}
 
 func renderProportionBar(value, total time.Duration, project string, maxWidth int) string {
 	if maxWidth < 10 {
@@ -569,17 +440,3 @@ func renderProportionBar(value, total time.Duration, project string, maxWidth in
 	return styles.ProjectBadgeStyle(project).Render(string(bar))
 }
 
-func heatBlock(ratio, target float64) string {
-	switch {
-	case ratio >= target:
-		return styles.CurrentStyle.Render("████")
-	case ratio >= target-0.1:
-		return styles.WarnStyle.Render("███░")
-	case ratio >= 0.5:
-		return styles.WarnStyle.Render("██░░")
-	case ratio > 0:
-		return styles.ErrStyle.Render("█░░░")
-	default:
-		return styles.HintStyle.Render("░░░░")
-	}
-}

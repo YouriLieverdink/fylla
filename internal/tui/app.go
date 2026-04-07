@@ -1937,7 +1937,7 @@ func (m model) panelWidth() int {
 }
 
 func (m *model) resizeViews(contentHeight int) {
-	mainWidth := m.width
+	mainWidth := m.width - 1
 	if m.timerRunning {
 		pw := m.panelWidth()
 		mainWidth = m.width - pw - 3

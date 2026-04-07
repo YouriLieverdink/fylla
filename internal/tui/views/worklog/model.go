@@ -161,7 +161,7 @@ func (m Model) View() string {
 		}
 	}
 	total := totalTime(sorted)
-	title := fmt.Sprintf("Worklogs — %s (%d entries, %s)", viewLabel, len(sorted), styles.FormatDuration(total))
+	title := fmt.Sprintf("  Worklogs — %s (%d entries, %s)", viewLabel, len(sorted), styles.FormatDuration(total))
 	b.WriteString(styles.HeaderFmt.Render(title))
 	b.WriteString("\n")
 
