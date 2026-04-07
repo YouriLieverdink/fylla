@@ -171,7 +171,6 @@ func (m model) Init() tea.Cmd {
 		loadTasksCmd(m.cb),
 		loadFormOptionsCmd(m.cb),
 		prefetchFallbackCmd(m.cb),
-		autoRefreshCmd(),
 	)
 }
 
@@ -972,7 +971,6 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case msg.AutoRefreshMsg:
-		cmds = append(cmds, m.refreshActiveView(), autoRefreshCmd())
 		return m, tea.Batch(cmds...)
 	}
 

@@ -544,11 +544,6 @@ func pickerSearchDebounceCmd(query string) tea.Cmd {
 	})
 }
 
-func autoRefreshCmd() tea.Cmd {
-	return tea.Tick(60*time.Second, func(time.Time) tea.Msg {
-		return msg.AutoRefreshMsg{}
-	})
-}
 
 func clearToastCmd() tea.Cmd {
 	return tea.Tick(3*time.Second, func(time.Time) tea.Msg {

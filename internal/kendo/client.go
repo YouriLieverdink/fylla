@@ -26,6 +26,15 @@ type Client struct {
 	projects     []project
 	projectsOnce sync.Once
 	projectsErr  error
+
+	userOnce sync.Once
+	userErr  error
+
+	lanesMu    sync.Mutex
+	lanesCache map[int]map[int]string // projectID → laneID → name
+
+	epicsMu    sync.Mutex
+	epicsCache map[int]map[int]string // projectID → epicID → title
 }
 
 // NewClient creates a Kendo client with the given credentials.
@@ -170,29 +179,34 @@ func (c *Client) loadProjects(ctx context.Context) error {
 }
 
 func (c *Client) fetchUserID(ctx context.Context) error {
-	if c.UserID != 0 {
-		return nil
-	}
+	c.userOnce.Do(func() {
+		if c.UserID != 0 {
+			return
+		}
 
-	resp, err := c.do(ctx, http.MethodGet, "/api/auth/user", nil)
-	if err != nil {
-		return fmt.Errorf("fetch user: %w", err)
-	}
-	defer resp.Body.Close()
+		resp, err := c.do(ctx, http.MethodGet, "/api/auth/user", nil)
+		if err != nil {
+			c.userErr = fmt.Errorf("fetch user: %w", err)
+			return
+		}
+		defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("kendo user: status %d: %s", resp.StatusCode, string(body))
-	}
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			c.userErr = fmt.Errorf("kendo user: status %d: %s", resp.StatusCode, string(body))
+			return
+		}
 
-	var result struct {
-		ID int `json:"id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("decode user: %w", err)
-	}
-	c.UserID = result.ID
-	return nil
+		var result struct {
+			ID int `json:"id"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			c.userErr = fmt.Errorf("decode user: %w", err)
+			return
+		}
+		c.UserID = result.ID
+	})
+	return c.userErr
 }
 
 // fetchIssue retrieves the full issue state for a given key.
@@ -628,37 +642,15 @@ type laneJSON struct {
 }
 
 func (c *Client) findDoneLaneID(ctx context.Context, projectID int) (int, error) {
-	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/lanes", projectID), nil)
+	laneMap, err := c.fetchLaneMap(ctx, projectID)
 	if err != nil {
-		return 0, fmt.Errorf("fetch lanes: %w", err)
+		return 0, err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return 0, fmt.Errorf("kendo fetch lanes: status %d: %s", resp.StatusCode, string(body))
+	id := c.doneLaneIDFromMap(laneMap)
+	if id == -1 {
+		return 0, fmt.Errorf("no done lane found for project %d", projectID)
 	}
-
-	var lanes []laneJSON
-	if err := json.NewDecoder(resp.Body).Decode(&lanes); err != nil {
-		return 0, fmt.Errorf("decode lanes: %w", err)
-	}
-
-	target := c.DoneLane
-	if target == "" {
-		target = "done"
-	}
-
-	for _, l := range lanes {
-		if strings.EqualFold(l.Title, target) {
-			return l.ID, nil
-		}
-	}
-	// Fall back to last lane (typically done)
-	if len(lanes) > 0 {
-		return lanes[len(lanes)-1].ID, nil
-	}
-	return 0, fmt.Errorf("no done lane found for project %d", projectID)
+	return id, nil
 }
 
 func (c *Client) doneLaneIDFromMap(laneMap map[int]string) int {
@@ -681,24 +673,13 @@ func (c *Client) ListLanes(ctx context.Context, project string) ([]string, error
 		return nil, err
 	}
 
-	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/lanes", pid), nil)
+	laneMap, err := c.fetchLaneMap(ctx, pid)
 	if err != nil {
-		return nil, fmt.Errorf("fetch lanes: %w", err)
+		return nil, err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("kendo list lanes: status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var lanes []laneJSON
-	if err := json.NewDecoder(resp.Body).Decode(&lanes); err != nil {
-		return nil, fmt.Errorf("decode lanes: %w", err)
-	}
-	names := make([]string, len(lanes))
-	for i, l := range lanes {
-		names[i] = l.Title
+	names := make([]string, 0, len(laneMap))
+	for _, title := range laneMap {
+		names = append(names, title)
 	}
 	return names, nil
 }
@@ -749,6 +730,15 @@ func (c *Client) ListSprints(ctx context.Context, project string) ([]SprintOptio
 
 // fetchEpicMap returns a map of epic ID → title for the given project.
 func (c *Client) fetchEpicMap(ctx context.Context, projectID int) (map[int]string, error) {
+	c.epicsMu.Lock()
+	if c.epicsCache != nil {
+		if m, ok := c.epicsCache[projectID]; ok {
+			c.epicsMu.Unlock()
+			return m, nil
+		}
+	}
+	c.epicsMu.Unlock()
+
 	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/epics", projectID), nil)
 	if err != nil {
 		return nil, fmt.Errorf("fetch epics: %w", err)
@@ -768,6 +758,14 @@ func (c *Client) fetchEpicMap(ctx context.Context, projectID int) (map[int]strin
 	for _, e := range epics {
 		m[e.ID] = e.Title
 	}
+
+	c.epicsMu.Lock()
+	if c.epicsCache == nil {
+		c.epicsCache = make(map[int]map[int]string)
+	}
+	c.epicsCache[projectID] = m
+	c.epicsMu.Unlock()
+
 	return m, nil
 }
 
@@ -778,24 +776,13 @@ func (c *Client) ListEpics(ctx context.Context, project string) ([]task.Epic, er
 		return nil, err
 	}
 
-	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/epics", pid), nil)
+	epicMap, err := c.fetchEpicMap(ctx, pid)
 	if err != nil {
-		return nil, fmt.Errorf("fetch epics: %w", err)
+		return nil, err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("kendo list epics: status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var raw []epicJSON
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return nil, fmt.Errorf("decode epics: %w", err)
-	}
-	epics := make([]task.Epic, 0, len(raw))
-	for _, e := range raw {
-		epics = append(epics, task.Epic{Key: strconv.Itoa(e.ID), Summary: e.Title})
+	epics := make([]task.Epic, 0, len(epicMap))
+	for id, title := range epicMap {
+		epics = append(epics, task.Epic{Key: strconv.Itoa(id), Summary: title})
 	}
 	return epics, nil
 }
@@ -813,6 +800,15 @@ func (c *Client) projectIDForName(ctx context.Context, project string) (int, err
 }
 
 func (c *Client) fetchLaneMap(ctx context.Context, projectID int) (map[int]string, error) {
+	c.lanesMu.Lock()
+	if c.lanesCache != nil {
+		if m, ok := c.lanesCache[projectID]; ok {
+			c.lanesMu.Unlock()
+			return m, nil
+		}
+	}
+	c.lanesMu.Unlock()
+
 	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/lanes", projectID), nil)
 	if err != nil {
 		return nil, fmt.Errorf("fetch lanes: %w", err)
@@ -833,29 +829,25 @@ func (c *Client) fetchLaneMap(ctx context.Context, projectID int) (map[int]strin
 	for _, l := range lanes {
 		m[l.ID] = l.Title
 	}
+
+	c.lanesMu.Lock()
+	if c.lanesCache == nil {
+		c.lanesCache = make(map[int]map[int]string)
+	}
+	c.lanesCache[projectID] = m
+	c.lanesMu.Unlock()
+
 	return m, nil
 }
 
 func (c *Client) findLaneID(ctx context.Context, projectID int, laneName string) (int, error) {
-	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/lanes", projectID), nil)
+	laneMap, err := c.fetchLaneMap(ctx, projectID)
 	if err != nil {
-		return 0, fmt.Errorf("fetch lanes: %w", err)
+		return 0, err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return 0, fmt.Errorf("kendo fetch lanes: status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var lanes []laneJSON
-	if err := json.NewDecoder(resp.Body).Decode(&lanes); err != nil {
-		return 0, fmt.Errorf("decode lanes: %w", err)
-	}
-
-	for _, l := range lanes {
-		if strings.EqualFold(l.Title, laneName) {
-			return l.ID, nil
+	for id, title := range laneMap {
+		if strings.EqualFold(title, laneName) {
+			return id, nil
 		}
 	}
 	return 0, fmt.Errorf("no lane found for %q", laneName)
@@ -903,22 +895,13 @@ func (c *Client) UpdateSprint(ctx context.Context, issueKey string, sprintID *in
 }
 
 func (c *Client) resolveEpicID(ctx context.Context, projectID int, epicKey string) (int, error) {
-	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/epics", projectID), nil)
+	epicMap, err := c.fetchEpicMap(ctx, projectID)
 	if err != nil {
 		return 0, err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("fetch epics: status %d", resp.StatusCode)
-	}
-	var epics []epicJSON
-	if err := json.NewDecoder(resp.Body).Decode(&epics); err != nil {
-		return 0, err
-	}
-	// Match by ID (ListEpics returns epic IDs as keys) or by title.
-	for _, e := range epics {
-		if strconv.Itoa(e.ID) == epicKey || strings.EqualFold(e.Title, epicKey) {
-			return e.ID, nil
+	for id, title := range epicMap {
+		if strconv.Itoa(id) == epicKey || strings.EqualFold(title, epicKey) {
+			return id, nil
 		}
 	}
 	return 0, fmt.Errorf("no epic found for key %q", epicKey)
@@ -1017,20 +1000,9 @@ func (c *Client) GetEstimate(ctx context.Context, issueKey string) (time.Duratio
 		return 0, err
 	}
 
-	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/issues/%s", pid, issueKey), nil)
+	issue, err := c.fetchIssue(ctx, pid, issueKey)
 	if err != nil {
-		return 0, fmt.Errorf("get estimate: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return 0, fmt.Errorf("kendo get estimate: status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var issue issueJSON
-	if err := json.NewDecoder(resp.Body).Decode(&issue); err != nil {
-		return 0, fmt.Errorf("decode issue: %w", err)
+		return 0, err
 	}
 
 	if issue.EstimatedMinutes == nil {
@@ -1120,20 +1092,9 @@ func (c *Client) GetPriority(ctx context.Context, issueKey string) (int, error) 
 		return 0, err
 	}
 
-	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/issues/%s", pid, issueKey), nil)
+	issue, err := c.fetchIssue(ctx, pid, issueKey)
 	if err != nil {
-		return 0, fmt.Errorf("get priority: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return 0, fmt.Errorf("kendo get priority: status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var issue issueJSON
-	if err := json.NewDecoder(resp.Body).Decode(&issue); err != nil {
-		return 0, fmt.Errorf("decode issue: %w", err)
+		return 0, err
 	}
 
 	return kendoPriorityToFylla(issue.Priority), nil
@@ -1157,20 +1118,9 @@ func (c *Client) GetSummary(ctx context.Context, issueKey string) (string, error
 		return "", err
 	}
 
-	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/issues/%s", pid, issueKey), nil)
+	issue, err := c.fetchIssue(ctx, pid, issueKey)
 	if err != nil {
-		return "", fmt.Errorf("get summary: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("kendo get summary: status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var issue issueJSON
-	if err := json.NewDecoder(resp.Body).Decode(&issue); err != nil {
-		return "", fmt.Errorf("decode issue: %w", err)
+		return "", err
 	}
 	return issue.Title, nil
 }
