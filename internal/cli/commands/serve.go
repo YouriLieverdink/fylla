@@ -49,6 +49,7 @@ func RunServe(ctx context.Context) error {
 		DailyHours:              cfg.Efficiency.DailyHours,
 		WeeklyHours:             cfg.Efficiency.WeeklyHours,
 		EfficiencyTarget:        cfg.Efficiency.Target,
+		WorkDays:                collectWorkDays(cfg),
 		WorklogProvider:         worklogProvider(cfg),
 	})
 }
@@ -471,7 +472,16 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				NoSplit:   result.NoSplit,
 			}, nil
 		},
-		LoadWorklogs: func(weekView bool, date time.Time) ([]msg.WorklogEntry, error) {
+		LoadDashboard: func(month time.Time) ([]msg.WorklogEntry, error) {
+				since := month
+				until := month.AddDate(0, 1, -1)
+				routed := routedSource(source, worklogProvider(cfg))
+				if wf, ok := routed.(WorklogFetcher); ok {
+					return wf.FetchWorklogs(ctx, since, until)
+				}
+				return nil, fmt.Errorf("no worklog provider available")
+			},
+			LoadWorklogs: func(weekView bool, date time.Time) ([]msg.WorklogEntry, error) {
 			var since, until time.Time
 			if weekView {
 				weekday := int(date.Weekday())
@@ -606,6 +616,20 @@ func (p *providerCreator) CreateTask(ctx context.Context, input task.CreateInput
 
 // worklogProvider returns the configured worklog provider name,
 // falling back to the first active provider.
+func collectWorkDays(cfg *config.Config) []int {
+	seen := make(map[int]bool)
+	for _, bh := range cfg.BusinessHours {
+		for _, d := range bh.WorkDays {
+			seen[d] = true
+		}
+	}
+	days := make([]int, 0, len(seen))
+	for d := range seen {
+		days = append(days, d)
+	}
+	return days
+}
+
 func worklogProvider(cfg *config.Config) string {
 	if cfg.Worklog.Provider != "" {
 		return cfg.Worklog.Provider

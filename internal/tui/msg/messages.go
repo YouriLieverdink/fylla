@@ -289,5 +289,11 @@ type StandupGeneratedMsg struct {
 	Err     error
 }
 
+// DashboardLoadedMsg carries the result of loading dashboard worklogs.
+type DashboardLoadedMsg struct {
+	Entries []WorklogEntry
+	Err     error
+}
+
 // AutoRefreshMsg triggers an auto-refresh of the current view.
 type AutoRefreshMsg struct{}

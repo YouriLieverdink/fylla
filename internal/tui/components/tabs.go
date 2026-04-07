@@ -39,7 +39,7 @@ func RenderTabBar(tabs []string, active int, width int) string {
 
 // TabNames returns the default tab labels.
 func TabNames() []string {
-	return []string{"Tasks", "Worklog", "Config"}
+	return []string{"Tasks", "Schedule", "Worklog", "Statistics", "Config"}
 }
 
 // RenderHelp renders a key hint string.

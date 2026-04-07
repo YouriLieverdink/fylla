@@ -14,6 +14,8 @@ import (
 	"github.com/iruoy/fylla/internal/tui/msg"
 	"github.com/iruoy/fylla/internal/tui/styles"
 	configView "github.com/iruoy/fylla/internal/tui/views/config"
+	"github.com/iruoy/fylla/internal/tui/views/dashboard"
+	"github.com/iruoy/fylla/internal/tui/views/schedule"
 	"github.com/iruoy/fylla/internal/tui/views/tasks"
 	timerView "github.com/iruoy/fylla/internal/tui/views/timer"
 	"github.com/iruoy/fylla/internal/tui/views/worklog"
@@ -21,7 +23,9 @@ import (
 
 const (
 	tabTasks = iota
+	tabSchedule
 	tabWorklog
+	tabDashboard
 	tabConfig
 	tabCount
 )
@@ -32,6 +36,7 @@ type Deps struct {
 	DailyHours              float64
 	WeeklyHours             float64
 	EfficiencyTarget        float64
+	WorkDays                []int // ISO weekday numbers (1=Mon..7=Sun)
 	WorklogProvider         string
 }
 
@@ -93,8 +98,10 @@ type model struct {
 	width        int
 	height       int
 	tasks        tasks.Model
+	schedule     *schedule.Model
 	timer        timerView.Model
 	worklog      worklog.Model
+	dashboard    dashboard.Model
 	config       *configView.Model
 	timerKey       string
 	timerSummary   string
@@ -148,8 +155,10 @@ func initialModel(deps Deps) model {
 	return model{
 		cb:              deps.CB,
 		tasks:           tasks.New(),
+		schedule:        ptrSchedule(schedule.New()),
 		timer:           timerView.New(),
 		worklog:         worklog.New(deps.DailyHours, deps.WeeklyHours, deps.EfficiencyTarget),
+		dashboard:       dashboard.New(deps.DailyHours, deps.WeeklyHours, deps.EfficiencyTarget, deps.WorkDays),
 		config:          ptrConfig(configView.New()),
 		spinner:         s,
 		worklogProvider: deps.WorklogProvider,
@@ -297,8 +306,12 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(mssg, keys.Tab1):
 			return m.switchTab(tabTasks)
 		case key.Matches(mssg, keys.Tab2):
-			return m.switchTab(tabWorklog)
+			return m.switchTab(tabSchedule)
 		case key.Matches(mssg, keys.Tab3):
+			return m.switchTab(tabWorklog)
+		case key.Matches(mssg, keys.Tab4):
+			return m.switchTab(tabDashboard)
+		case key.Matches(mssg, keys.Tab5):
 			return m.switchTab(tabConfig)
 		case key.Matches(mssg, keys.NextTab):
 			return m.switchTab((m.activeTab + 1) % tabCount)
@@ -313,8 +326,12 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.activeTab {
 		case tabTasks:
 			return m.updateTasks(mssg)
+		case tabSchedule:
+			return m.updateSchedule(mssg)
 		case tabWorklog:
 			return m.updateWorklog(mssg)
+		case tabDashboard:
+			return m.updateDashboard(mssg)
 		case tabConfig:
 			return m.updateConfig(mssg)
 		}
@@ -682,6 +699,16 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, clearToastCmd())
 		return m, tea.Batch(cmds...)
 
+	case msg.SyncPreviewMsg:
+		m.schedule.Loading = false
+		if mssg.Err != nil {
+			m.schedule.Err = mssg.Err
+		} else {
+			m.schedule.Result = mssg.Result
+			m.schedule.Err = nil
+		}
+		return m, nil
+
 	case msg.ClearDoneMsg:
 		if mssg.Err != nil {
 			m.setToast(fmt.Sprintf("Clear error: %v", mssg.Err), true)
@@ -899,6 +926,16 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.worklog.Entries = mssg.Entries
 			m.worklog.Err = nil
+		}
+		return m, nil
+
+	case msg.DashboardLoadedMsg:
+		m.dashboard.Loading = false
+		if mssg.Err != nil {
+			m.dashboard.Err = mssg.Err
+		} else {
+			m.dashboard.Entries = mssg.Entries
+			m.dashboard.Err = nil
 		}
 		return m, nil
 
@@ -1171,6 +1208,35 @@ func (m model) updateWorklog(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) updateDashboard(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(mssg, keys.Up):
+		m.dashboard.ScrollUp()
+	case key.Matches(mssg, keys.Down):
+		m.dashboard.ScrollDown()
+	case key.Matches(mssg, keys.Refresh):
+		m.dashboard.Entries = nil
+		m.dashboard.Loading = true
+		return m, loadDashboardCmd(m.cb, m.dashboard.Month)
+	case key.Matches(mssg, keys.DatePrev):
+		m.dashboard.PrevMonth()
+		m.dashboard.Entries = nil
+		m.dashboard.Loading = true
+		return m, loadDashboardCmd(m.cb, m.dashboard.Month)
+	case key.Matches(mssg, keys.DateNext):
+		m.dashboard.NextMonth()
+		m.dashboard.Entries = nil
+		m.dashboard.Loading = true
+		return m, loadDashboardCmd(m.cb, m.dashboard.Month)
+	case key.Matches(mssg, keys.GoToday):
+		m.dashboard.GoToCurrentMonth()
+		m.dashboard.Entries = nil
+		m.dashboard.Loading = true
+		return m, loadDashboardCmd(m.cb, m.dashboard.Month)
+	}
+	return m, nil
+}
+
 func (m model) updateConfig(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(mssg, keys.Up):
@@ -1276,6 +1342,28 @@ func (m model) updateTimer(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.confirmType = confirmAbortTimer
 			return m, nil
 		}
+	}
+	return m, nil
+}
+
+func (m model) updateSchedule(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(mssg, keys.Up):
+		m.schedule.ScrollUp()
+	case key.Matches(mssg, keys.Down):
+		m.schedule.ScrollDown()
+	case key.Matches(mssg, keys.Refresh):
+		m.schedule.Loading = true
+		return m, syncPreviewCmd(m.cb)
+	case key.Matches(mssg, keys.Enter), key.Matches(mssg, keys.Add):
+		m.confirm = components.NewConfirm("Apply sync to calendar?")
+		m.confirmType = confirmSyncApply
+	case key.Matches(mssg, keys.Force):
+		m.confirm = components.NewConfirm("Force sync? This will recreate all events.")
+		m.confirmType = confirmSyncForce
+	case key.Matches(mssg, keys.Clear):
+		m.confirm = components.NewConfirm("Clear all Fylla events from calendar?")
+		m.confirmType = confirmClearEvents
 	}
 	return m, nil
 }
@@ -1824,8 +1912,16 @@ func (m model) refreshActiveView() tea.Cmd {
 	switch m.activeTab {
 	case tabTasks:
 		return loadTasksCmd(m.cb)
+	case tabSchedule:
+		return syncPreviewCmd(m.cb)
 	case tabWorklog:
 		return loadWorklogsCmd(m.cb, m.worklog.WeekView, m.worklog.Date)
+	case tabDashboard:
+		// Only fetch if no data is cached for this month (avoid redundant API calls).
+		if len(m.dashboard.Entries) == 0 || m.dashboard.Err != nil {
+			return loadDashboardCmd(m.cb, m.dashboard.Month)
+		}
+		return nil
 	case tabConfig:
 		return loadConfigCmd(m.cb)
 	}
@@ -1848,7 +1944,9 @@ func (m *model) resizeViews(contentHeight int) {
 		m.timer.SetSize(pw, contentHeight)
 	}
 	m.tasks.SetSize(mainWidth, contentHeight)
+	m.schedule.SetSize(mainWidth, contentHeight)
 	m.worklog.SetSize(mainWidth, contentHeight)
+	m.dashboard.SetSize(mainWidth, contentHeight)
 	m.config.SetSize(mainWidth, contentHeight)
 }
 
@@ -1866,8 +1964,16 @@ func (m model) isLoading() bool {
 		if m.tasks.Loading {
 			return true
 		}
+	case tabSchedule:
+		if m.schedule.Loading {
+			return true
+		}
 	case tabWorklog:
 		if m.worklog.Loading {
+			return true
+		}
+	case tabDashboard:
+		if m.dashboard.Loading {
 			return true
 		}
 	case tabConfig:
@@ -1887,9 +1993,17 @@ func (m model) loadingLabel() string {
 		if m.tasks.Loading {
 			return "Loading tasks"
 		}
+	case tabSchedule:
+		if m.schedule.Loading {
+			return "Loading schedule"
+		}
 	case tabWorklog:
 		if m.worklog.Loading {
 			return "Loading worklogs"
+		}
+	case tabDashboard:
+		if m.dashboard.Loading {
+			return "Loading dashboard"
 		}
 	case tabConfig:
 		if m.config.Loading {
@@ -1957,8 +2071,12 @@ func (m model) View() string {
 	switch m.activeTab {
 	case tabTasks:
 		content = m.tasks.View()
+	case tabSchedule:
+		content = m.schedule.View()
 	case tabWorklog:
 		content = m.worklog.View()
+	case tabDashboard:
+		content = m.dashboard.View()
 	case tabConfig:
 		content = m.config.View()
 	}
@@ -1993,9 +2111,9 @@ func (m model) View() string {
 			Render(content)
 	}
 
-	hints := "1-3:tabs  ?:help  q:quit"
+	hints := "1-4:tabs  ?:help  q:quit"
 	if !m.timerRunning {
-		hints = "1-3:tabs  p:timer  ?:help  q:quit"
+		hints = "1-4:tabs  p:timer  ?:help  q:quit"
 	}
 	var loadingText string
 	if label := m.loadingLabel(); label != "" {
@@ -2024,7 +2142,7 @@ func (m model) renderHelp() string {
 	b.WriteString(bold.Render("Keyboard Shortcuts") + "\n\n")
 
 	b.WriteString(bold.Render("Global") + "\n")
-	b.WriteString("  1-3           Switch tabs\n")
+	b.WriteString("  1-5           Switch tabs\n")
 	b.WriteString("  Tab           Next tab\n")
 	b.WriteString("  Shift+Tab     Previous tab\n")
 	b.WriteString("  p             Toggle timer panel focus\n")
@@ -2048,6 +2166,11 @@ func (m model) renderHelp() string {
 	b.WriteString("  t             Start timer\n")
 	b.WriteString("  /             Search\n\n")
 
+	b.WriteString(bold.Render("Schedule") + "\n")
+	b.WriteString("  Enter/a       Apply sync\n")
+	b.WriteString("  f             Force sync\n")
+	b.WriteString("  c             Clear events\n\n")
+
 	b.WriteString(bold.Render("Timer (focus panel with Tab)") + "\n")
 	b.WriteString("  s             Stop timer / start anonymous\n")
 	b.WriteString("  x             Abort timer\n")
@@ -2060,6 +2183,11 @@ func (m model) renderHelp() string {
 	b.WriteString("  D             Delete worklog\n")
 	b.WriteString("  w             Toggle week view\n")
 	b.WriteString("  s             Stand-up summary\n\n")
+
+	b.WriteString(bold.Render("Statistics") + "\n")
+	b.WriteString("  h/l           Previous/next month\n")
+	b.WriteString("  T             Current month\n")
+	b.WriteString("  j/k           Scroll\n\n")
 
 	b.WriteString(bold.Render("Config") + "\n")
 	b.WriteString("  e             Edit value\n\n")
@@ -2201,6 +2329,7 @@ func (m model) renderScoreBreakdown() string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 }
 
+func ptrSchedule(m schedule.Model) *schedule.Model { return &m }
 func ptrConfig(m configView.Model) *configView.Model { return &m }
 
 var jiraKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d+$`)
