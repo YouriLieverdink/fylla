@@ -94,39 +94,14 @@ func jiraSearchJQL(search string) string {
 	return fmt.Sprintf("status != Done AND text ~ %q ORDER BY updated DESC", search)
 }
 
-// buildSearchAllQueries builds per-provider query strings for searching all tasks
-// (not just assigned to the current user). When search is non-empty, it filters
-// by text match.
-func buildSearchAllQueries(cfg *config.Config, search string) map[string]string {
-	queries := make(map[string]string)
-	for _, p := range cfg.ActiveProviders() {
-		switch p {
-		case "jira":
-			queries["jira"] = jiraSearchJQL(search)
-		case "todoist":
-			queries["todoist"] = search
-		case "github":
-			if search != "" {
-				queries["github"] = fmt.Sprintf("is:pr state:open %s", search)
-			} else {
-				queries["github"] = "is:pr state:open"
-			}
-		case "local":
-			queries["local"] = search
-		case "kendo":
-			if search != "" {
-				queries["kendo"] = search
-			} else {
-				queries["kendo"] = "*"
-			}
-		}
-	}
-	return queries
-}
-
 // buildSearchAllQuery returns a broad query for single-provider mode.
 func buildSearchAllQuery(cfg *config.Config, search string) string {
-	switch cfg.ActiveProviders()[0] {
+	return searchQueryForProvider(cfg.ActiveProviders()[0], search)
+}
+
+// searchQueryForProvider returns a search query for a specific provider.
+func searchQueryForProvider(provider, search string) string {
+	switch provider {
 	case "jira":
 		return jiraSearchJQL(search)
 	case "kendo":

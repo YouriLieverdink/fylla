@@ -557,20 +557,12 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			return "", fmt.Errorf("no resolver available")
 		},
 		SearchAllTasks: func(search string) ([]msg.ScoredTask, error) {
-			var allFetcher TaskFetcher
-			if ms, ok := source.(*MultiTaskSource); ok {
-				queries := buildSearchAllQueries(cfg, search)
-				allFetcher = &multiFetcher{
-					queries: queries,
-					sources: ms.sources,
-				}
-			} else {
-				allFetcher = source
-			}
+			wp := worklogProvider(cfg)
+			wpSource := routedSource(source, wp)
 			result, err := RunList(ctx, ListParams{
-				Tasks: allFetcher,
+				Tasks: wpSource,
 				Cfg:   cfg,
-				Query: buildSearchAllQuery(cfg, search),
+				Query: searchQueryForProvider(wp, search),
 				Now:   time.Now(),
 			})
 			if err != nil {
