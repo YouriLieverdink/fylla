@@ -32,6 +32,7 @@ type Deps struct {
 	DailyHours              float64
 	WeeklyHours             float64
 	EfficiencyTarget        float64
+	WorklogProvider         string
 }
 
 type confirmAction int
@@ -132,6 +133,8 @@ type model struct {
 	spinner      spinner.Model
 	saving       string // non-empty shows spinner in status bar with this label
 
+	worklogProvider string
+
 	// Background prefetch cache
 	cachedTasks       []msg.ScoredTask
 	cachedFormOptions *msg.FormOptionsMsg
@@ -143,12 +146,13 @@ func initialModel(deps Deps) model {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
 	return model{
-		cb:      deps.CB,
-		tasks:   tasks.New(),
-		timer:   timerView.New(),
-		worklog: worklog.New(deps.DailyHours, deps.WeeklyHours, deps.EfficiencyTarget),
-		config:  ptrConfig(configView.New()),
-		spinner: s,
+		cb:              deps.CB,
+		tasks:           tasks.New(),
+		timer:           timerView.New(),
+		worklog:         worklog.New(deps.DailyHours, deps.WeeklyHours, deps.EfficiencyTarget),
+		config:          ptrConfig(configView.New()),
+		spinner:         s,
+		worklogProvider: deps.WorklogProvider,
 	}
 }
 
@@ -349,7 +353,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingTimerStart = nil
 			m.saving = ""
 			if mssg.Err == nil && mssg.Key != "" {
-				return m, startTimerCmd(m.cb, mssg.Key, pending.summary, pending.project, pending.section, "")
+				return m, startTimerCmd(m.cb, mssg.Key, pending.summary, pending.project, pending.section, m.worklogProvider)
 			}
 			// No issue reference found — open fallback picker
 			var items []components.PickerItem
@@ -955,6 +959,11 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(mssg, keys.Enter), key.Matches(mssg, keys.Timer):
 		if t := m.tasks.SelectedTask(); t != nil {
 			if t.Provider == "github" {
+				// Try to extract a worklog issue key from the PR summary locally first,
+				// falling back to a GitHub API call only when needed.
+				if key := issueKeyFromSummary.FindString(t.Summary); key != "" {
+					return m, startTimerCmd(m.cb, key, t.Summary, t.Project, t.Section, m.worklogProvider)
+				}
 				m.pendingTimerStart = &pendingTimerData{
 					prKey:   t.Key,
 					summary: t.Summary,
@@ -1399,7 +1408,7 @@ func (m model) updatePicker(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		selected := m.picker.Selected()
 		m.picker.Active = false
 		if selected != nil && m.pickerFieldLabel == "timerStartFallback" {
-			return m, startTimerCmd(m.cb, selected.Key, "", "", "", "")
+			return m, startTimerCmd(m.cb, selected.Key, "", "", "", m.worklogProvider)
 		}
 		if m.pickerFieldLabel == "timerStartFallback" {
 			// No selection, cancel timer start
@@ -2195,6 +2204,7 @@ func (m model) renderScoreBreakdown() string {
 func ptrConfig(m configView.Model) *configView.Model { return &m }
 
 var jiraKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d+$`)
+var issueKeyFromSummary = regexp.MustCompile(`[A-Z][A-Z0-9]+-\d+`)
 
 func isJiraKeyPattern(key string) bool {
 	return jiraKeyPattern.MatchString(key)
