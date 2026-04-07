@@ -217,7 +217,7 @@ func TestMultiFetcher_ConcurrentFetch(t *testing.T) {
 		}
 	})
 
-	t.Run("partial success continues with warnings", func(t *testing.T) {
+	t.Run("partial failure returns error with partial tasks", func(t *testing.T) {
 		jiraSrc := &mockSource{
 			name:  "jira",
 			tasks: []task.Task{{Key: "PROJ-1", Summary: "Jira task"}},
@@ -230,8 +230,8 @@ func TestMultiFetcher_ConcurrentFetch(t *testing.T) {
 		}
 
 		tasks, err := mf.FetchTasks(context.Background(), "")
-		if err != nil {
-			t.Fatalf("expected partial success, got error: %v", err)
+		if err == nil {
+			t.Fatal("expected error for partial failure")
 		}
 		if len(tasks) != 1 {
 			t.Fatalf("expected 1 task from successful provider, got %d", len(tasks))

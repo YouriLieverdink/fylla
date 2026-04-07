@@ -178,8 +178,8 @@ func (mf *multiFetcher) FetchTasks(ctx context.Context, _ string) ([]task.Task, 
 		allTasks = append(allTasks, r.tasks...)
 	}
 
-	if succeeded == 0 && len(errs) > 0 {
-		return nil, fmt.Errorf("all providers failed: %s", strings.Join(errs, "; "))
+	if len(errs) > 0 {
+		return allTasks, fmt.Errorf("some providers failed: %s", strings.Join(errs, "; "))
 	}
 
 	return allTasks, nil
