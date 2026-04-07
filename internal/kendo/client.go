@@ -554,6 +554,8 @@ func (c *Client) CreateTask(ctx context.Context, input task.CreateInput) (string
 	issueType := 0 // feature
 	if strings.EqualFold(input.IssueType, "Bug") {
 		issueType = 1
+	} else if strings.EqualFold(input.IssueType, "Task") {
+		issueType = 2
 	}
 
 	payload := map[string]interface{}{
@@ -699,6 +701,11 @@ func (c *Client) ListLanes(ctx context.Context, project string) ([]string, error
 		names[i] = l.Title
 	}
 	return names, nil
+}
+
+// ListIssueTypes returns the available issue type names for Kendo.
+func (c *Client) ListIssueTypes(_ context.Context, _ string) ([]string, error) {
+	return []string{"Feature", "Bug", "Task"}, nil
 }
 
 // ListSprints returns non-completed sprints for a Kendo project, active first.

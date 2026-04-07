@@ -2289,9 +2289,13 @@ func buildAddForm(provider string, opts *msg.FormOptionsMsg) components.Form {
 			})
 		}
 	} else if provider == "kendo" {
+		kendoTypes := []string{"Feature", "Bug", "Task"}
+		if len(opts.IssueTypes) > 0 {
+			kendoTypes = opts.IssueTypes
+		}
 		fields = append(fields, components.FormFieldDef{
 			Label: "Issue Type", Kind: components.FieldSelect,
-			Options: []string{"Feature", "Bug"}, Value: "Feature",
+			Options: kendoTypes, Value: kendoTypes[0],
 		})
 		if len(opts.Lanes) > 0 {
 			fields = append(fields, components.FormFieldDef{

@@ -99,7 +99,7 @@ func RequiredFields(p AddParams, provider string) []string {
 	if p.Inline {
 		return fields
 	}
-	if provider == "jira" && p.IssueType == "" {
+	if (provider == "jira" || provider == "kendo") && p.IssueType == "" {
 		fields = append(fields, "issueType")
 	}
 	if p.Summary == "" {

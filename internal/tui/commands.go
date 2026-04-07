@@ -323,7 +323,7 @@ func loadFormOptionsCmd(cb Callbacks) tea.Cmd {
 			}
 		}
 		var issueTypes []string
-		if cb.ListIssueTypes != nil && provider == "jira" {
+		if cb.ListIssueTypes != nil && (provider == "jira" || provider == "kendo") {
 			project := ""
 			if len(projects) > 0 {
 				project = projects[0]
