@@ -13,6 +13,8 @@ type BulkAction string
 const (
 	BulkDone   BulkAction = "done"
 	BulkDelete BulkAction = "delete"
+	BulkMove   BulkAction = "move"
+	BulkSnooze BulkAction = "snooze"
 )
 
 // BulkParams holds inputs for a bulk operation.
@@ -20,6 +22,7 @@ type BulkParams struct {
 	Action   BulkAction
 	TaskKeys []string // keys of tasks to operate on
 	Provider string   // optional provider hint
+	Target   string   // target for move (transition) or snooze (duration)
 	Source   TaskSource
 }
 
@@ -49,6 +52,18 @@ func RunBulk(ctx context.Context, p BulkParams) (*BulkResult, error) {
 			err = src.CompleteTask(ctx, key)
 		case BulkDelete:
 			err = src.DeleteTask(ctx, key)
+		case BulkMove:
+			if tr, ok := src.(Transitioner); ok {
+				err = tr.TransitionTask(ctx, key, p.Target)
+			} else {
+				err = fmt.Errorf("provider does not support transitions")
+			}
+		case BulkSnooze:
+			_, err = RunSnooze(ctx, SnoozeParams{
+				TaskKey: key,
+				Target:  p.Target,
+				Source:   p.Source,
+			})
 		default:
 			err = fmt.Errorf("unknown action %q", p.Action)
 		}

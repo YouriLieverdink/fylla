@@ -561,6 +561,30 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			}
 			return result.Succeeded, result.Failed, nil
 		},
+		BulkMove: func(taskKeys []string, target string) ([]string, map[string]error, error) {
+			result, err := RunBulk(ctx, BulkParams{
+				Action:   BulkMove,
+				TaskKeys: taskKeys,
+				Target:   target,
+				Source:   source,
+			})
+			if err != nil {
+				return nil, nil, err
+			}
+			return result.Succeeded, result.Failed, nil
+		},
+		BulkSnooze: func(taskKeys []string, target string) ([]string, map[string]error, error) {
+			result, err := RunBulk(ctx, BulkParams{
+				Action:   BulkSnooze,
+				TaskKeys: taskKeys,
+				Target:   target,
+				Source:   source,
+			})
+			if err != nil {
+				return nil, nil, err
+			}
+			return result.Succeeded, result.Failed, nil
+		},
 		LoadTasksByProvider: func(provider string) ([]msg.ScoredTask, error) {
 			src := routedSource(source, provider)
 			queries := buildProviderQueries(cfg, "")

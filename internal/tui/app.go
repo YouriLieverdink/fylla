@@ -69,7 +69,10 @@ const (
 	formAddWorklog
 	formAddWorklogPending // waiting for tasks to load for picker
 	formEditWorklog
-	formMoveTaskPending  // waiting for transitions to load
+	formMoveTaskPending      // waiting for transitions to load
+	formBulkMoveTaskPending  // waiting for transitions to load (bulk)
+	formBulkSnoozeTask
+	formBulkEditTask
 	formTimerComment
 	formTimerStartTime
 )
@@ -225,7 +228,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if m.formKind == formMoveTaskPending {
+		if m.formKind == formMoveTaskPending || m.formKind == formBulkMoveTaskPending {
 			if key.Matches(mssg, keys.Escape) {
 				m.formKind = formNone
 			}
@@ -571,7 +574,8 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case msg.TransitionsLoadedMsg:
-		if m.formKind != formMoveTaskPending {
+		isBulk := m.formKind == formBulkMoveTaskPending
+		if m.formKind != formMoveTaskPending && !isBulk {
 			return m, nil
 		}
 		if mssg.Err != nil {
@@ -590,8 +594,14 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		for i, t := range mssg.Transitions {
 			items[i] = components.PickerItem{Key: t, Label: t}
 		}
-		m.picker = components.NewPicker(fmt.Sprintf("Move %s to:", m.formTaskKey), items)
-		m.pickerFieldLabel = "move"
+		if isBulk {
+			count := m.tasks.SelectionCount()
+			m.picker = components.NewPicker(fmt.Sprintf("Move %d tasks to:", count), items)
+			m.pickerFieldLabel = "bulkMove"
+		} else {
+			m.picker = components.NewPicker(fmt.Sprintf("Move %s to:", m.formTaskKey), items)
+			m.pickerFieldLabel = "move"
+		}
 		m.formKind = formNone
 		return m, nil
 
@@ -1080,6 +1090,49 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, startTimerCmd(m.cb, t.Key, t.Summary, t.Project, t.Section, t.Provider)
 		}
+	// In multi-select mode, bulk actions take priority over single-task actions
+	case key.Matches(mssg, keys.Done) && m.tasks.SelectMode && m.tasks.SelectionCount() > 0:
+		taskKeys := m.tasks.SelectedKeys()
+		count := len(taskKeys)
+		m.confirm = components.NewConfirm(fmt.Sprintf("Mark %d tasks as done?", count))
+		m.confirmType = confirmBulkDone
+		return m, nil
+	case key.Matches(mssg, keys.Delete) && m.tasks.SelectMode && m.tasks.SelectionCount() > 0:
+		taskKeys := m.tasks.SelectedKeys()
+		count := len(taskKeys)
+		m.confirm = components.NewConfirm(fmt.Sprintf("Delete %d tasks?", count))
+		m.confirmType = confirmBulkDelete
+		return m, nil
+	case key.Matches(mssg, keys.Move) && m.tasks.SelectMode && m.tasks.SelectionCount() > 0:
+		selected := m.tasks.SelectedTasks()
+		if len(selected) > 0 {
+			first := selected[0]
+			m.formKind = formBulkMoveTaskPending
+			m.formTaskKey = first.Key
+			m.formTaskProvider = first.Provider
+			return m, listTransitionsCmd(m.cb, first.Key, first.Provider)
+		}
+	case key.Matches(mssg, keys.Snooze) && m.tasks.SelectMode && m.tasks.SelectionCount() > 0:
+		count := m.tasks.SelectionCount()
+		m.form = components.NewForm(fmt.Sprintf("Snooze %d tasks", count), []components.FormFieldDef{
+			{Label: "Duration", Placeholder: "e.g. 3d, 1w, Monday"},
+		})
+		m.formKind = formBulkSnoozeTask
+		return m, nil
+	case key.Matches(mssg, keys.Edit) && m.tasks.SelectMode && m.tasks.SelectionCount() > 0:
+		count := m.tasks.SelectionCount()
+		m.form = components.NewForm(fmt.Sprintf("Edit %d tasks", count), []components.FormFieldDef{
+			{Label: "Estimate", Placeholder: "e.g. 2h, 30m"},
+			{Label: "Due Date", Placeholder: "e.g. 2025-03-01"},
+			{Label: "Priority", Kind: components.FieldSelect, Options: []string{"—", "Highest", "High", "Medium", "Low", "Lowest"}, Value: "—"},
+			{Label: "Up Next", Kind: components.FieldSelect, Options: []string{"—", "Yes", "No"}, Value: "—"},
+			{Label: "No Split", Kind: components.FieldSelect, Options: []string{"—", "Yes", "No"}, Value: "—"},
+			{Label: "Not Before", Placeholder: "e.g. 3d, 2025-03-01"},
+		})
+		m.formKind = formBulkEditTask
+		return m, nil
+
+	// Single-task actions
 	case key.Matches(mssg, keys.Done):
 		if t := m.tasks.SelectedTask(); t != nil {
 			return m, doneTaskCmd(m.cb, t.Key, t.Provider)
@@ -1168,25 +1221,6 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.tasks.ToggleSelectMode()
 		}
 		m.tasks.ToggleSelect()
-		m.tasks.CursorDown()
-	}
-
-	// In multi-select mode, override Done and Delete for bulk actions
-	if m.tasks.SelectMode && m.tasks.SelectionCount() > 0 {
-		switch {
-		case key.Matches(mssg, keys.Done):
-			taskKeys := m.tasks.SelectedKeys()
-			count := len(taskKeys)
-			m.confirm = components.NewConfirm(fmt.Sprintf("Mark %d tasks as done?", count))
-			m.confirmType = confirmBulkDone
-			return m, nil
-		case key.Matches(mssg, keys.Delete):
-			taskKeys := m.tasks.SelectedKeys()
-			count := len(taskKeys)
-			m.confirm = components.NewConfirm(fmt.Sprintf("Delete %d tasks?", count))
-			m.confirmType = confirmBulkDelete
-			return m, nil
-		}
 	}
 
 	return m, nil
@@ -1643,6 +1677,12 @@ func (m model) updatePicker(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// No selection, cancel timer start
 			return m, nil
 		}
+		if selected != nil && m.pickerFieldLabel == "bulkMove" {
+			taskKeys := m.tasks.SelectedKeys()
+			m.tasks.ToggleSelectMode()
+			m.saving = "Moving tasks"
+			return m, bulkMoveCmd(m.cb, taskKeys, selected.Key)
+		}
 		if selected != nil && m.pickerFieldLabel == "move" {
 			return m, moveTaskCmd(m.cb, m.formTaskKey, m.formTaskProvider, selected.Key)
 		}
@@ -1964,6 +2004,51 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.formKind = formNone
 			m.saving = "Snoozing task"
 			return m, snoozeTaskCmd(m.cb, m.formTaskKey, duration)
+		case formBulkSnoozeTask:
+			duration := m.form.ValueByLabel("Duration")
+			if duration == "" {
+				m.form.Active = false
+				m.formKind = formNone
+				return m, nil
+			}
+			m.form.Active = false
+			m.formKind = formNone
+			taskKeys := m.tasks.SelectedKeys()
+			m.tasks.ToggleSelectMode()
+			m.saving = "Snoozing tasks"
+			return m, bulkSnoozeCmd(m.cb, taskKeys, duration)
+		case formBulkEditTask:
+			estimate := m.form.ValueByLabel("Estimate")
+			due := m.form.ValueByLabel("Due Date")
+			priority := m.form.ValueByLabel("Priority")
+			if priority == "—" {
+				priority = ""
+			}
+			upNextVal := m.form.ValueByLabel("Up Next")
+			noSplitVal := m.form.ValueByLabel("No Split")
+			notBefore := m.form.ValueByLabel("Not Before")
+			// Nothing filled → cancel
+			if estimate == "" && due == "" && priority == "" && upNextVal == "—" && noSplitVal == "—" && notBefore == "" {
+				m.form.Active = false
+				m.formKind = formNone
+				return m, nil
+			}
+			var upNext *bool
+			if upNextVal != "—" {
+				v := upNextVal == "Yes"
+				upNext = &v
+			}
+			var noSplit *bool
+			if noSplitVal != "—" {
+				v := noSplitVal == "Yes"
+				noSplit = &v
+			}
+			m.form.Active = false
+			m.formKind = formNone
+			selected := m.tasks.SelectedTasks()
+			m.tasks.ToggleSelectMode()
+			m.saving = "Editing tasks"
+			return m, bulkEditCmd(m.cb, selected, estimate, due, priority, upNext, noSplit, notBefore)
 		case formTimerComment:
 			comment := m.form.ValueByLabel("Comment")
 			m.timerComment = comment
@@ -2123,7 +2208,7 @@ func (m model) isLoading() bool {
 			return true
 		}
 	}
-	return m.formKind == formAddTaskPending || m.formKind == formEditTaskPending || m.formKind == formAddWorklogPending || m.formKind == formStopTimerPending || m.formKind == formMoveTaskPending
+	return m.formKind == formAddTaskPending || m.formKind == formEditTaskPending || m.formKind == formAddWorklogPending || m.formKind == formStopTimerPending || m.formKind == formMoveTaskPending || m.formKind == formBulkMoveTaskPending
 }
 
 func (m model) loadingLabel() string {

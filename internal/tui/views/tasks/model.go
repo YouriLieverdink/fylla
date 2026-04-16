@@ -117,6 +117,20 @@ func (m *Model) SelectionCount() int {
 	return len(m.Selected)
 }
 
+// SelectedTasks returns the full task objects for all selected tasks.
+func (m *Model) SelectedTasks() []msg.ScoredTask {
+	if len(m.Selected) == 0 {
+		return nil
+	}
+	var result []msg.ScoredTask
+	for _, t := range m.filteredTasks() {
+		if m.Selected[t.Key] {
+			result = append(result, t)
+		}
+	}
+	return result
+}
+
 // ClearFilter clears the filter and exits filter mode.
 func (m *Model) ClearFilter() {
 	m.Filter = ""
@@ -297,9 +311,14 @@ func (m Model) View() string {
 			}
 
 			// Fixed parts: cursor(2) + dot(2) + rank(3) + gaps(6) + est(5) + score(5) = 23
+			// When multi-select is active, checkbox adds 4 chars: "[x] " or "[ ] "
+			fixedWidth := 23
+			if m.SelectMode {
+				fixedWidth += 4
+			}
 			// Tags and label share the remaining space.
 			tagsWidth := styles.StringWidth(tags)
-			labelWidth := m.Width - 23 - tagsWidth
+			labelWidth := m.Width - fixedWidth - tagsWidth
 			if labelWidth < 20 {
 				labelWidth = 20
 			}
@@ -347,7 +366,7 @@ func (m Model) View() string {
 		b.WriteString(styles.HintStyle.Render("  Type to filter, Enter/Esc to confirm"))
 	} else if m.SelectMode {
 		count := m.SelectionCount()
-		hints := fmt.Sprintf("  space:toggle  d:done %d  D:delete %d  Esc:exit select", count, count)
+		hints := fmt.Sprintf("  space:toggle  d:done %d  D:delete %d  m:move %d  e:edit %d  S:snooze %d  Esc:exit", count, count, count, count, count)
 		b.WriteString(styles.HintStyle.Render(hints))
 	} else {
 		filterHint := "/:filter"

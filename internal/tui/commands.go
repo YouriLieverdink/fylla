@@ -113,6 +113,8 @@ type Callbacks struct {
 	LoadTasksByProvider   func(provider string) ([]msg.ScoredTask, error)
 	BulkDone             func(taskKeys []string) (succeeded []string, failed map[string]error, err error)
 	BulkDelete           func(taskKeys []string) (succeeded []string, failed map[string]error, err error)
+	BulkMove             func(taskKeys []string, target string) (succeeded []string, failed map[string]error, err error)
+	BulkSnooze           func(taskKeys []string, target string) (succeeded []string, failed map[string]error, err error)
 }
 
 func loadTodayCmd(cb Callbacks) tea.Cmd {
@@ -162,6 +164,54 @@ func bulkDeleteCmd(cb Callbacks, taskKeys []string) tea.Cmd {
 		}
 		succeeded, failed, err := cb.BulkDelete(taskKeys)
 		return msg.BulkActionMsg{Action: "delete", Succeeded: succeeded, Failed: failed, Err: err}
+	}
+}
+
+func bulkMoveCmd(cb Callbacks, taskKeys []string, target string) tea.Cmd {
+	return func() tea.Msg {
+		if cb.BulkMove == nil {
+			return msg.BulkActionMsg{Action: "move", Err: fmt.Errorf("bulk move not available")}
+		}
+		succeeded, failed, err := cb.BulkMove(taskKeys, target)
+		return msg.BulkActionMsg{Action: "move", Succeeded: succeeded, Failed: failed, Err: err}
+	}
+}
+
+func bulkSnoozeCmd(cb Callbacks, taskKeys []string, target string) tea.Cmd {
+	return func() tea.Msg {
+		if cb.BulkSnooze == nil {
+			return msg.BulkActionMsg{Action: "snooze", Err: fmt.Errorf("bulk snooze not available")}
+		}
+		succeeded, failed, err := cb.BulkSnooze(taskKeys, target)
+		return msg.BulkActionMsg{Action: "snooze", Succeeded: succeeded, Failed: failed, Err: err}
+	}
+}
+
+func bulkEditCmd(cb Callbacks, tasks []msg.ScoredTask, estimate, due, priority string, upNext, noSplit *bool, notBefore string) tea.Cmd {
+	return func() tea.Msg {
+		if cb.EditTask == nil {
+			return msg.BulkActionMsg{Action: "edit", Err: fmt.Errorf("edit not available")}
+		}
+		var succeeded []string
+		failed := make(map[string]error)
+		for _, t := range tasks {
+			err := cb.EditTask(EditTaskParams{
+				TaskKey:   t.Key,
+				Provider:  t.Provider,
+				Estimate:  estimate,
+				Due:       due,
+				Priority:  priority,
+				UpNext:    upNext,
+				NoSplit:   noSplit,
+				NotBefore: notBefore,
+			})
+			if err != nil {
+				failed[t.Key] = err
+			} else {
+				succeeded = append(succeeded, t.Key)
+			}
+		}
+		return msg.BulkActionMsg{Action: "edit", Succeeded: succeeded, Failed: failed}
 	}
 }
 
