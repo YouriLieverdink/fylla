@@ -60,6 +60,7 @@ type toggleField struct {
 // Form represents a modal form overlay with multiple fields of varying types.
 type Form struct {
 	Title    string
+	Subtitle string // optional hint text shown below the title
 	kinds    []FieldKind
 	texts    []textinput.Model
 	selects  []selectField
@@ -396,6 +397,10 @@ func (f Form) View(width, height int) string {
 	var b strings.Builder
 	b.WriteString(formTitleStyle.Render(f.Title))
 	b.WriteString("\n")
+	if f.Subtitle != "" {
+		b.WriteString(formHintStyle.Render(f.Subtitle))
+		b.WriteString("\n")
+	}
 	if f.Error != "" {
 		errStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))
 		b.WriteString(errStyle.Render(f.Error))

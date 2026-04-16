@@ -15,7 +15,7 @@ import (
 )
 
 // newTestClient creates a GoogleClient backed by the given httptest.Server.
-func newTestClient(t *testing.T, server *httptest.Server, sourceCalendars []string, fyllaCalendar, jiraBaseURL string) *GoogleClient {
+func newTestClient(t *testing.T, server *httptest.Server, sourceCalendars []string, fyllaCalendar string) *GoogleClient {
 	t.Helper()
 	svc, err := googlecalendar.NewService(context.Background(),
 		option.WithHTTPClient(server.Client()),
@@ -28,7 +28,6 @@ func newTestClient(t *testing.T, server *httptest.Server, sourceCalendars []stri
 		Service:         svc,
 		SourceCalendars: sourceCalendars,
 		FyllaCalendar:   fyllaCalendar,
-		JiraBaseURL:     jiraBaseURL,
 	}
 }
 
@@ -68,7 +67,7 @@ func Test_GCAL003_FetchEventsFromSourceCalendar(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(t, server, []string{"primary"}, "fylla", "https://company.atlassian.net")
+		client := newTestClient(t, server, []string{"primary"}, "fylla")
 		events, err := client.FetchEvents(context.Background(), start, end)
 		if err != nil {
 			t.Fatalf("FetchEvents: %v", err)
@@ -97,7 +96,7 @@ func Test_GCAL003_FetchEventsFromSourceCalendar(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(t, server, []string{"source-cal-id"}, "fylla-cal-id", "https://co.atlassian.net")
+		client := newTestClient(t, server, []string{"source-cal-id"}, "fylla-cal-id")
 		_, err := client.FetchEvents(context.Background(), time.Now(), time.Now().Add(24*time.Hour))
 		if err != nil {
 			t.Fatalf("FetchEvents: %v", err)
@@ -123,7 +122,7 @@ func Test_GCAL003_FetchEventsFromSourceCalendar(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(t, server, []string{"primary"}, "fylla", "https://co.atlassian.net")
+		client := newTestClient(t, server, []string{"primary"}, "fylla")
 		events, err := client.FetchEvents(context.Background(), time.Now(), time.Now().Add(24*time.Hour))
 		if err != nil {
 			t.Fatalf("FetchEvents: %v", err)
@@ -163,7 +162,7 @@ func Test_GCAL004_CreateEventsOnFyllaCalendar(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(t, server, []string{"primary"}, "fylla-cal", "https://company.atlassian.net")
+		client := newTestClient(t, server, []string{"primary"}, "fylla-cal")
 		start := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
 		end := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
@@ -199,7 +198,7 @@ func Test_GCAL004_CreateEventsOnFyllaCalendar(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(t, server, []string{"primary"}, "my-fylla-cal", "https://co.atlassian.net")
+		client := newTestClient(t, server, []string{"primary"}, "my-fylla-cal")
 		err := client.CreateEvent(context.Background(), CreateEventInput{
 			TaskKey: "PROJ-1",
 			Summary: "Test",
@@ -239,7 +238,7 @@ func Test_GCAL005_DeleteFyllaEvents(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(t, server, []string{"primary"}, "fylla", "https://co.atlassian.net")
+		client := newTestClient(t, server, []string{"primary"}, "fylla")
 		err := client.DeleteFyllaEvents(context.Background(), time.Now(), time.Now().Add(7*24*time.Hour))
 		if err != nil {
 			t.Fatalf("DeleteFyllaEvents: %v", err)
@@ -274,7 +273,7 @@ func Test_GCAL005_DeleteFyllaEvents(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(t, server, []string{"primary"}, "fylla", "https://co.atlassian.net")
+		client := newTestClient(t, server, []string{"primary"}, "fylla")
 		err := client.DeleteFyllaEvents(context.Background(), time.Now(), time.Now().Add(7*24*time.Hour))
 		if err != nil {
 			t.Fatalf("DeleteFyllaEvents: %v", err)
@@ -305,7 +304,7 @@ func Test_GCAL005_DeleteFyllaEvents(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(t, server, []string{"primary"}, "fylla", "https://co.atlassian.net")
+		client := newTestClient(t, server, []string{"primary"}, "fylla")
 		err := client.DeleteFyllaEvents(context.Background(), time.Now(), time.Now().Add(7*24*time.Hour))
 		if err != nil {
 			t.Fatalf("DeleteFyllaEvents: %v", err)
@@ -330,7 +329,7 @@ func Test_GCAL006_EventTitleFormat(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(t, server, []string{"primary"}, "fylla", "https://co.atlassian.net")
+		client := newTestClient(t, server, []string{"primary"}, "fylla")
 		err := client.CreateEvent(context.Background(), CreateEventInput{
 			TaskKey: "PROJ-123",
 			Summary: "Fix login bug",
@@ -359,7 +358,7 @@ func Test_GCAL006_EventTitleFormat(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(t, server, []string{"primary"}, "fylla", "https://co.atlassian.net")
+		client := newTestClient(t, server, []string{"primary"}, "fylla")
 		err := client.CreateEvent(context.Background(), CreateEventInput{
 			TaskKey: "PROJ-456",
 			Summary: "Overdue task",
@@ -377,8 +376,8 @@ func Test_GCAL006_EventTitleFormat(t *testing.T) {
 	})
 }
 
-func Test_GCAL007_EventDescriptionIncludesJiraLink(t *testing.T) {
-	t.Run("description contains task key and Jira issue URL", func(t *testing.T) {
+func Test_GCAL007_EventDescriptionIncludesFyllaMarker(t *testing.T) {
+	t.Run("description contains task key and fylla marker", func(t *testing.T) {
 		var created googlecalendar.Event
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodPost {
@@ -391,7 +390,7 @@ func Test_GCAL007_EventDescriptionIncludesJiraLink(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(t, server, []string{"primary"}, "fylla", "https://company.atlassian.net")
+		client := newTestClient(t, server, []string{"primary"}, "fylla")
 		err := client.CreateEvent(context.Background(), CreateEventInput{
 			TaskKey: "PROJ-123",
 			Summary: "Fix bug",
@@ -404,13 +403,9 @@ func Test_GCAL007_EventDescriptionIncludesJiraLink(t *testing.T) {
 		if !strings.Contains(created.Description, "fylla: PROJ-123") {
 			t.Errorf("expected description to contain fylla marker, got %q", created.Description)
 		}
-		expectedURL := "https://company.atlassian.net/browse/PROJ-123"
-		if !strings.Contains(created.Description, expectedURL) {
-			t.Errorf("expected description to contain %q, got %q", expectedURL, created.Description)
-		}
 	})
 
-	t.Run("Jira URL uses configured base URL", func(t *testing.T) {
+	t.Run("description contains fylla marker for different key", func(t *testing.T) {
 		var created googlecalendar.Event
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodPost {
@@ -423,7 +418,7 @@ func Test_GCAL007_EventDescriptionIncludesJiraLink(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(t, server, []string{"primary"}, "fylla", "https://other.atlassian.net")
+		client := newTestClient(t, server, []string{"primary"}, "fylla")
 		err := client.CreateEvent(context.Background(), CreateEventInput{
 			TaskKey: "ABC-99",
 			Summary: "Test",
@@ -433,8 +428,8 @@ func Test_GCAL007_EventDescriptionIncludesJiraLink(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateEvent: %v", err)
 		}
-		if !strings.Contains(created.Description, "https://other.atlassian.net/browse/ABC-99") {
-			t.Errorf("expected other.atlassian.net URL, got %q", created.Description)
+		if !strings.Contains(created.Description, "fylla: ABC-99") {
+			t.Errorf("expected fylla marker with ABC-99, got %q", created.Description)
 		}
 	})
 }
@@ -464,7 +459,7 @@ func Test_GCAL008_DetectOOOByEventType(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(t, server, []string{"primary"}, "fylla", "https://co.atlassian.net")
+		client := newTestClient(t, server, []string{"primary"}, "fylla")
 		events, err := client.FetchEvents(context.Background(), time.Now(), time.Now().Add(7*24*time.Hour))
 		if err != nil {
 			t.Fatalf("FetchEvents: %v", err)
@@ -497,7 +492,7 @@ func Test_GCAL008_DetectOOOByEventType(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(t, server, []string{"primary"}, "fylla", "https://co.atlassian.net")
+		client := newTestClient(t, server, []string{"primary"}, "fylla")
 		events, err := client.FetchEvents(context.Background(), time.Now(), time.Now().Add(7*24*time.Hour))
 		if err != nil {
 			t.Fatalf("FetchEvents: %v", err)
@@ -561,7 +556,7 @@ func Test_GCAL009_DetectOOOByTitlePattern(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(t, server, []string{"primary"}, "fylla", "https://co.atlassian.net")
+		client := newTestClient(t, server, []string{"primary"}, "fylla")
 		events, err := client.FetchEvents(context.Background(), time.Now(), time.Now().Add(7*24*time.Hour))
 		if err != nil {
 			t.Fatalf("FetchEvents: %v", err)
@@ -593,7 +588,7 @@ func Test_GCAL009_DetectOOOByTitlePattern(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(t, server, []string{"primary"}, "fylla", "https://co.atlassian.net")
+		client := newTestClient(t, server, []string{"primary"}, "fylla")
 		events, err := client.FetchEvents(context.Background(), time.Now(), time.Now().Add(14*24*time.Hour))
 		if err != nil {
 			t.Fatalf("FetchEvents: %v", err)
@@ -750,19 +745,18 @@ func TestBuildDoneTitle(t *testing.T) {
 
 func TestBuildDescription(t *testing.T) {
 	tests := []struct {
-		name        string
-		key         string
-		project     string
-		jiraBaseURL string
-		want        string
+		name    string
+		key     string
+		project string
+		want    string
 	}{
-		{"jira key", "PROJ-123", "PROJ", "https://company.atlassian.net", "fylla: PROJ-123\nhttps://company.atlassian.net/browse/PROJ-123"},
-		{"todoist numeric key", "123456", "", "https://company.atlassian.net", "fylla: 123456\nhttps://todoist.com/app/task/123456"},
-		{"github PR key", "fylla#42", "iruoy/fylla", "https://company.atlassian.net", "fylla: fylla#42\nhttps://github.com/iruoy/fylla/pull/42"},
+		{"kendo key", "PROJ-123", "PROJ", "fylla: PROJ-123"},
+		{"todoist numeric key", "123456", "", "fylla: 123456\nhttps://todoist.com/app/task/123456"},
+		{"github PR key", "fylla#42", "iruoy/fylla", "fylla: fylla#42\nhttps://github.com/iruoy/fylla/pull/42"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := BuildDescription(tt.key, tt.project, tt.jiraBaseURL)
+			got := BuildDescription(tt.key, tt.project)
 			if got != tt.want {
 				t.Errorf("BuildDescription() = %q, want %q", got, tt.want)
 			}
@@ -804,7 +798,7 @@ func Test_GCAL010_FetchFyllaEvents(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(t, server, []string{"primary"}, "fylla", "https://co.atlassian.net")
+		client := newTestClient(t, server, []string{"primary"}, "fylla")
 		events, err := client.FetchFyllaEvents(context.Background(), time.Now(), time.Now().Add(24*time.Hour))
 		if err != nil {
 			t.Fatalf("FetchFyllaEvents: %v", err)
@@ -830,7 +824,7 @@ func Test_GCAL010_FetchFyllaEvents(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(t, server, []string{"source-cal"}, "my-fylla-cal", "https://co.atlassian.net")
+		client := newTestClient(t, server, []string{"source-cal"}, "my-fylla-cal")
 		_, err := client.FetchFyllaEvents(context.Background(), time.Now(), time.Now().Add(24*time.Hour))
 		if err != nil {
 			t.Fatalf("FetchFyllaEvents: %v", err)
@@ -860,7 +854,7 @@ func Test_GCAL011_UpdateEvent(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(t, server, []string{"primary"}, "fylla", "https://co.atlassian.net")
+		client := newTestClient(t, server, []string{"primary"}, "fylla")
 		start := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 		end := time.Date(2025, 1, 20, 11, 0, 0, 0, time.UTC)
 		err := client.UpdateEvent(context.Background(), "evt-123", CreateEventInput{
@@ -899,7 +893,7 @@ func Test_GCAL012_DeleteEvent(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(t, server, []string{"primary"}, "fylla", "https://co.atlassian.net")
+		client := newTestClient(t, server, []string{"primary"}, "fylla")
 		err := client.DeleteEvent(context.Background(), "evt-to-delete")
 		if err != nil {
 			t.Fatalf("DeleteEvent: %v", err)

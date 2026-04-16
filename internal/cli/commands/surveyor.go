@@ -50,7 +50,7 @@ func (d defaultSurveyor) Password(message string) (string, error) {
 	return answer, err
 }
 
-// promptFallbackIssue asks the user to pick a Jira issue key from fallbacks or type one.
+// promptFallbackIssue asks the user to pick an issue key from fallbacks or type one.
 func promptFallbackIssue(s Surveyor, fallbacks []string) (string, error) {
 	options := make([]string, len(fallbacks))
 	copy(options, fallbacks)
@@ -58,16 +58,16 @@ func promptFallbackIssue(s Surveyor, fallbacks []string) (string, error) {
 
 	if len(fallbacks) == 0 {
 		// No fallbacks configured — just ask for manual input
-		return s.Input("Jira issue key:")
+		return s.Input("Issue key:")
 	}
 
-	choice, err := s.Select("Jira issue:", options)
+	choice, err := s.Select("Issue:", options)
 	if err != nil {
 		return "", err
 	}
 
 	if choice == "other (type manually)" {
-		return s.Input("Jira issue key:")
+		return s.Input("Issue key:")
 	}
 	return choice, nil
 }

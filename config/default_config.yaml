@@ -1,12 +1,4 @@
-providers: [jira]
-
-jira:
-  credentials: ""
-  url: https://company.atlassian.net
-  email: you@example.com
-  defaultJql: "assignee = currentUser() AND status = 'To Do'"
-  defaultProject: ""
-  doneTransitions: {}
+providers: [kendo]
 
 todoist:
   credentials: ""
@@ -42,6 +34,7 @@ scheduling:
   bufferMinutes: 15
   travelBufferMinutes: 30
   snapMinutes: [0, 15, 30, 45]
+  defaultEstimateMinutes: 60  # used when a task has no remaining estimate
 
 businessHours:
   - start: "09:00"

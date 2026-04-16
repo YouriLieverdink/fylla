@@ -29,9 +29,8 @@ func loadCalendarClient(ctx context.Context, cfg *config.Config) (CalendarClient
 	}
 
 	oauthCfg := creds.OAuthConfig()
-	baseURL := cfg.Jira.URL
 	client, err := calendar.NewGoogleClient(ctx, oauthCfg, creds.Token,
-		cfg.Calendar.SourceCalendars, cfg.Calendar.FyllaCalendar, baseURL)
+		cfg.Calendar.SourceCalendars, cfg.Calendar.FyllaCalendar)
 	if err != nil {
 		return nil, err
 	}

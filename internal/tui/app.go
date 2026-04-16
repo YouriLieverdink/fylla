@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -44,6 +45,8 @@ type confirmAction int
 const (
 	confirmNone confirmAction = iota
 	confirmDeleteTask
+	confirmBulkDone
+	confirmBulkDelete
 	confirmSyncApply
 	confirmSyncForce
 	confirmClearEvents
@@ -145,6 +148,16 @@ type model struct {
 	cachedTasks       []msg.ScoredTask
 	cachedFormOptions *msg.FormOptionsMsg
 	cachedFallback    []msg.FallbackIssue
+
+	// Progressive provider loading
+	partialTasks map[string][]msg.ScoredTask // provider → tasks
+
+	// Last form state for retry on error
+	lastAddForm  *components.Form
+	lastEditForm *components.Form
+	lastEditKey  string
+	lastEditProv string
+	lastEditPend *pendingEditData
 }
 
 func initialModel(deps Deps) model {
@@ -276,6 +289,18 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateTasksFilter(mssg)
 		}
 
+		// Escape in tasks view: exit multi-select, then clear filter
+		if m.activeTab == tabTasks && key.Matches(mssg, keys.Escape) {
+			if m.tasks.SelectMode {
+				m.tasks.ToggleSelectMode()
+				return m, nil
+			}
+			if m.tasks.HasFilter() {
+				m.tasks.ClearFilter()
+				return m, nil
+			}
+		}
+
 		// Quit
 		if key.Matches(mssg, keys.Quit) {
 			return m, tea.Quit
@@ -358,7 +383,51 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case msg.JiraKeyResolvedMsg:
+	case msg.TasksPartialMsg:
+		// Progressive loading: merge tasks from individual providers as they arrive.
+		// Each provider replaces its own slice — no reset needed.
+		if m.partialTasks == nil {
+			m.partialTasks = make(map[string][]msg.ScoredTask)
+		}
+		if mssg.Err == nil {
+			m.partialTasks[mssg.Provider] = mssg.Tasks
+		} else {
+			// On error, show toast and mark provider as reported
+			m.setToast(fmt.Sprintf("%s: %v", mssg.Provider, mssg.Err), true)
+			cmds = append(cmds, clearToastCmd())
+			if _, exists := m.partialTasks[mssg.Provider]; !exists {
+				m.partialTasks[mssg.Provider] = nil
+			}
+		}
+		// Merge all partial results into a single sorted list
+		var merged []msg.ScoredTask
+		for _, provTasks := range m.partialTasks {
+			merged = append(merged, provTasks...)
+		}
+		sort.Slice(merged, func(i, j int) bool {
+			return merged[i].Score > merged[j].Score
+		})
+		m.cachedTasks = merged
+		m.tasks.Tasks = merged
+		m.tasks.Err = nil
+		// Check if all providers have reported
+		if m.cb.Providers != nil {
+			allDone := true
+			for _, p := range m.cb.Providers() {
+				if _, reported := m.partialTasks[p]; !reported {
+					allDone = false
+					break
+				}
+			}
+			if allDone {
+				m.tasks.Loading = false
+			}
+		} else {
+			m.tasks.Loading = false
+		}
+		return m, tea.Batch(cmds...)
+
+	case msg.IssueKeyResolvedMsg:
 		// Timer start from GitHub PR: resolve to referenced issue or show fallback picker
 		if pending := m.pendingTimerStart; pending != nil {
 			m.pendingTimerStart = nil
@@ -556,18 +625,28 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, clearToastCmd())
 		return m, tea.Batch(cmds...)
 
+	case msg.BulkActionMsg:
+		if mssg.Err != nil {
+			m.setToast(fmt.Sprintf("Bulk %s error: %v", mssg.Action, mssg.Err), true)
+		} else {
+			count := len(mssg.Succeeded)
+			failCount := len(mssg.Failed)
+			if failCount > 0 {
+				m.setToast(fmt.Sprintf("Bulk %s: %d succeeded, %d failed", mssg.Action, count, failCount), true)
+			} else {
+				m.setToast(fmt.Sprintf("Bulk %s: %d tasks", mssg.Action, count), false)
+			}
+			cmds = append(cmds, m.refreshActiveView())
+		}
+		cmds = append(cmds, clearToastCmd())
+		return m, tea.Batch(cmds...)
+
 	case msg.TaskAddedMsg:
 		m.saving = ""
 		if mssg.Err != nil {
-			if m.formKind == formAddTask {
-				m.form.Error = fmt.Sprintf("Add error: %v", mssg.Err)
-				return m, nil
-			}
-			m.setToast(fmt.Sprintf("Add error: %v", mssg.Err), true)
+			m.setToast(fmt.Sprintf("Add failed: %v — press 'a' to retry", mssg.Err), true)
 		} else {
-			m.form.Active = false
-			m.formKind = formNone
-			m.formOptions = nil
+			m.lastAddForm = nil
 			m.setToast(fmt.Sprintf("Added %s: %s", mssg.Key, mssg.Summary), false)
 			cmds = append(cmds, m.refreshActiveView())
 		}
@@ -577,15 +656,10 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 	case msg.TaskEditedMsg:
 		m.saving = ""
 		if mssg.Err != nil {
-			if m.formKind == formEditTask {
-				m.form.Error = fmt.Sprintf("Edit error: %v", mssg.Err)
-				return m, nil
-			}
-			m.setToast(fmt.Sprintf("Edit error: %v", mssg.Err), true)
+			m.setToast(fmt.Sprintf("Edit failed: %v — press 'e' to retry", mssg.Err), true)
 		} else {
-			m.form.Active = false
-			m.formKind = formNone
-			m.pendingEdit = nil
+			m.lastEditForm = nil
+			m.lastEditPend = nil
 			m.setToast(fmt.Sprintf("Edited %s", mssg.TaskKey), false)
 			cmds = append(cmds, m.refreshActiveView())
 		}
@@ -596,6 +670,10 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		m.saving = ""
 		if mssg.Err != nil {
 			m.setToast(fmt.Sprintf("Stop error: %v", mssg.Err), true)
+			// timer.Stop() may have already modified state (e.g. resumed a
+			// paused timer) before the error occurred. Refresh so the TUI
+			// reflects the actual timer file.
+			cmds = append(cmds, timerStatusCmd(m.cb))
 		} else {
 			stoppedLabel := m.timerSummary
 			if stoppedLabel == "" {
@@ -814,10 +892,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 					cmds = append(cmds, loadLanesCmd(m.cb, provider, project))
 					cmds = append(cmds, loadSprintsCmd(m.cb, provider, project))
 				}
-				if provider == "jira" {
-					cmds = append(cmds, loadIssueTypesCmd(m.cb, provider, project))
-				}
-			} else {
+				} else {
 				m.form.ConvertToTextByLabel("Project", "Project key")
 			}
 		}
@@ -1001,7 +1076,7 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					section: t.Section,
 				}
 				m.saving = "Resolving issue..."
-				return m, resolveJiraKeyCmd(m.cb, t.Key)
+				return m, resolveIssueKeyCmd(m.cb, t.Key)
 			}
 			return m, startTimerCmd(m.cb, t.Key, t.Summary, t.Project, t.Section, t.Provider)
 		}
@@ -1017,8 +1092,22 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.confirmProvider = t.Provider
 		}
 	case key.Matches(mssg, keys.Search):
-		m.tasks.ToggleFilter()
+		if m.tasks.HasFilter() {
+			// Already filtered but not in input — clear filter
+			m.tasks.ClearFilter()
+		} else {
+			m.tasks.ToggleFilter()
+		}
 	case key.Matches(mssg, keys.Add):
+		// Restore last form on retry after failure
+		if m.lastAddForm != nil {
+			m.form = *m.lastAddForm
+			m.form.Active = true
+			m.form.Error = ""
+			m.formKind = formAddTask
+			m.lastAddForm = nil
+			return m, nil
+		}
 		if m.cachedFormOptions != nil {
 			m.formOptions = m.cachedFormOptions
 			m.form = buildAddForm(m.cachedFormOptions.Provider, m.cachedFormOptions)
@@ -1028,6 +1117,18 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.formKind = formAddTaskPending
 		return m, loadFormOptionsCmd(m.cb)
 	case key.Matches(mssg, keys.Edit):
+		// Restore last edit form on retry after failure
+		if m.lastEditForm != nil {
+			m.form = *m.lastEditForm
+			m.form.Active = true
+			m.form.Error = ""
+			m.formKind = formEditTask
+			m.formTaskKey = m.lastEditKey
+			m.formTaskProvider = m.lastEditProv
+			m.pendingEdit = m.lastEditPend
+			m.lastEditForm = nil
+			return m, nil
+		}
 		if t := m.tasks.SelectedTask(); t != nil {
 			ed := buildPendingEditData(t)
 			m.formTaskKey = t.Key
@@ -1061,18 +1162,47 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.scoreDetail = &bd
 			m.scoreTaskKey = t.Key
 		}
+	case key.Matches(mssg, keys.Space):
+		// Space always toggles selection, auto-entering multi-select mode
+		if !m.tasks.SelectMode {
+			m.tasks.ToggleSelectMode()
+		}
+		m.tasks.ToggleSelect()
+		m.tasks.CursorDown()
 	}
+
+	// In multi-select mode, override Done and Delete for bulk actions
+	if m.tasks.SelectMode && m.tasks.SelectionCount() > 0 {
+		switch {
+		case key.Matches(mssg, keys.Done):
+			taskKeys := m.tasks.SelectedKeys()
+			count := len(taskKeys)
+			m.confirm = components.NewConfirm(fmt.Sprintf("Mark %d tasks as done?", count))
+			m.confirmType = confirmBulkDone
+			return m, nil
+		case key.Matches(mssg, keys.Delete):
+			taskKeys := m.tasks.SelectedKeys()
+			count := len(taskKeys)
+			m.confirm = components.NewConfirm(fmt.Sprintf("Delete %d tasks?", count))
+			m.confirmType = confirmBulkDelete
+			return m, nil
+		}
+	}
+
 	return m, nil
 }
 
 func (m model) updateTasksFilter(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
-	case key.Matches(mssg, keys.Escape):
-		m.tasks.ClearFilter()
-	case key.Matches(mssg, keys.Enter):
+	case key.Matches(mssg, keys.Escape), key.Matches(mssg, keys.Enter):
+		// Exit filter input mode but keep the filter text
 		m.tasks.ToggleFilter()
 	case mssg.Type == tea.KeyBackspace:
 		m.tasks.BackspaceFilter()
+		// If backspace empties the filter, exit filter mode
+		if m.tasks.Filter == "" {
+			m.tasks.ToggleFilter()
+		}
 	case mssg.Type == tea.KeyRunes:
 		for _, r := range mssg.Runes {
 			m.tasks.AppendFilter(r)
@@ -1111,6 +1241,16 @@ func (m model) updateConfirm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case confirmDeleteWorklog:
 				m.confirmType = confirmNone
 				return m, deleteWorklogCmd(m.cb, m.formWorklogKey, m.confirmKey, m.formWorklogProvider)
+			case confirmBulkDone:
+				m.confirmType = confirmNone
+				taskKeys := m.tasks.SelectedKeys()
+				m.tasks.ToggleSelectMode()
+				return m, bulkDoneCmd(m.cb, taskKeys)
+			case confirmBulkDelete:
+				m.confirmType = confirmNone
+				taskKeys := m.tasks.SelectedKeys()
+				m.tasks.ToggleSelectMode()
+				return m, bulkDeleteCmd(m.cb, taskKeys)
 			}
 		}
 		m.confirmType = confirmNone
@@ -1320,10 +1460,21 @@ func (m model) updateTimer(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				fields = append([]components.FormFieldDef{issueField}, fields...)
 			}
 			m.form = components.NewForm(formTitle, fields)
+			if len(m.timer.Segments) > 0 {
+				var segLines []string
+				for i, seg := range m.timer.Segments {
+					line := fmt.Sprintf("seg %d: %s", i+1, styles.FormatDuration(seg.Duration))
+					if seg.Comment != "" {
+						line += " — " + seg.Comment
+					}
+					segLines = append(segLines, line)
+				}
+				m.form.Subtitle = strings.Join(segLines, "\n")
+			}
 			m.formKind = formStopTimer
-			// Auto-resolve Jira key from GitHub PR branch name
+			// Auto-resolve issue key from GitHub PR branch name
 			if strings.Contains(m.timerKey, "#") {
-				return m, resolveJiraKeyCmd(m.cb, m.timerKey)
+				return m, resolveIssueKeyCmd(m.cb, m.timerKey)
 			}
 			return m, nil
 		}
@@ -1376,7 +1527,7 @@ func (m *model) openTaskPicker(tasks []msg.ScoredTask, returnKind formKind) {
 		}
 	}
 	for _, t := range tasks {
-		if (returnKind == formStopTimer || returnKind == formAddWorklog) && !isJiraKeyPattern(t.Key) {
+		if (returnKind == formStopTimer || returnKind == formAddWorklog) && !isWorklogKeyPattern(t.Key) {
 			continue
 		}
 		items = append(items, components.PickerItem{
@@ -1407,7 +1558,7 @@ func (m *model) rebuildMyTaskPickerItems() {
 		tasks = []msg.ScoredTask{}
 	}
 	for _, t := range tasks {
-		if !isJiraKeyPattern(t.Key) {
+		if !isWorklogKeyPattern(t.Key) {
 			continue
 		}
 		items = append(items, components.PickerItem{
@@ -1426,7 +1577,7 @@ func (m *model) rebuildPickerItems(tasks []msg.ScoredTask) {
 	var items []components.PickerItem
 	worklogOnly := m.formKind == formStopTimer || m.formKind == formAddWorklog
 	for _, t := range tasks {
-		if worklogOnly && !isJiraKeyPattern(t.Key) {
+		if worklogOnly && !isWorklogKeyPattern(t.Key) {
 			continue
 		}
 		items = append(items, components.PickerItem{
@@ -1464,9 +1615,6 @@ func (m model) pickerSideEffect(label string) tea.Cmd {
 		if provider == "kendo" {
 			cmds = append(cmds, loadLanesCmd(m.cb, provider, project))
 			cmds = append(cmds, loadSprintsCmd(m.cb, provider, project))
-		}
-		if provider == "jira" {
-			cmds = append(cmds, loadIssueTypesCmd(m.cb, provider, project))
 		}
 		return tea.Batch(cmds...)
 	}
@@ -1596,10 +1744,7 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					cmds = append(cmds, loadLanesCmd(m.cb, provider, project))
 					cmds = append(cmds, loadSprintsCmd(m.cb, provider, project))
 				}
-				if provider == "jira" {
-					cmds = append(cmds, loadIssueTypesCmd(m.cb, provider, project))
-				}
-				return m, tea.Batch(cmds...)
+					return m, tea.Batch(cmds...)
 			}
 			return m, nil
 		}
@@ -1630,10 +1775,7 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					cmds = append(cmds, loadLanesCmd(m.cb, provider, project))
 					cmds = append(cmds, loadSprintsCmd(m.cb, provider, project))
 				}
-				if provider == "jira" {
-					cmds = append(cmds, loadIssueTypesCmd(m.cb, provider, project))
-				}
-				return m, tea.Batch(cmds...)
+					return m, tea.Batch(cmds...)
 			}
 			return m, nil
 		}
@@ -1706,15 +1848,20 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
+			// Close form immediately, save in background with status indicator
+			formCopy := m.form
+			m.lastAddForm = &formCopy
+			m.form.Active = false
+			m.formKind = formNone
 			m.saving = "Adding task"
 			return m, addTaskCmd(m.cb, provider, summary,
-				m.form.ValueByLabel("Project"), section,
-				m.form.ValueByLabel("Issue Type"),
-				m.form.ValueByLabel("Lane"),
-				m.form.ValueByLabel("Description"),
-				m.form.ValueByLabel("Estimate"),
-				m.form.ValueByLabel("Due Date"),
-				m.form.ValueByLabel("Priority"),
+				formCopy.ValueByLabel("Project"), section,
+				formCopy.ValueByLabel("Issue Type"),
+				formCopy.ValueByLabel("Lane"),
+				formCopy.ValueByLabel("Description"),
+				formCopy.ValueByLabel("Estimate"),
+				formCopy.ValueByLabel("Due Date"),
+				formCopy.ValueByLabel("Priority"),
 				parent,
 				sprintID,
 			)
@@ -1772,10 +1919,22 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if priority == "None" {
 				priority = ""
 			}
+			// Close form immediately, save in background
+			formCopy := m.form
+			m.lastEditForm = &formCopy
+			m.lastEditKey = m.formTaskKey
+			m.lastEditProv = m.formTaskProvider
+			if m.pendingEdit != nil {
+				editCopy := *m.pendingEdit
+				m.lastEditPend = &editCopy
+			}
+			m.form.Active = false
+			m.formKind = formNone
+			m.pendingEdit = nil
 			m.saving = "Saving task"
 			return m, editTaskCmd(m.cb, EditTaskParams{
-				TaskKey:      m.formTaskKey,
-				Provider:     m.formTaskProvider,
+				TaskKey:      m.lastEditKey,
+				Provider:     m.lastEditProv,
 				Summary:      m.form.ValueByLabel("Summary"),
 				Estimate:     m.form.ValueByLabel("Estimate"),
 				Due:          m.form.ValueByLabel("Due Date"),
@@ -2304,15 +2463,15 @@ func (m model) renderScoreBreakdown() string {
 func ptrSchedule(m schedule.Model) *schedule.Model { return &m }
 func ptrConfig(m configView.Model) *configView.Model { return &m }
 
-var jiraKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d+$`)
+var worklogKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d+$`)
 var issueKeyFromSummary = regexp.MustCompile(`[A-Z][A-Z0-9]+-\d+`)
 
-func isJiraKeyPattern(key string) bool {
-	return jiraKeyPattern.MatchString(key)
+func isWorklogKeyPattern(key string) bool {
+	return worklogKeyPattern.MatchString(key)
 }
 
 func needsWorklogIssue(key string) bool {
-	return key == "" || !isJiraKeyPattern(key)
+	return key == "" || !isWorklogKeyPattern(key)
 }
 
 func extractIssueKey(val string) string {
@@ -2378,18 +2537,7 @@ func buildAddForm(provider string, opts *msg.FormOptionsMsg) components.Form {
 		components.FormFieldDef{Label: "Summary", Placeholder: "Task summary"},
 		projectField,
 	)
-	if provider == "jira" {
-		if len(opts.IssueTypes) > 0 {
-			fields = append(fields, components.FormFieldDef{
-				Label: "Issue Type", Kind: components.FieldSelect,
-				Options: opts.IssueTypes, Value: opts.IssueTypes[0],
-			})
-		} else {
-			fields = append(fields, components.FormFieldDef{
-				Label: "Issue Type", Placeholder: "Loading issue types...",
-			})
-		}
-	} else if provider == "kendo" {
+	if provider == "kendo" {
 		kendoTypes := []string{"Feature", "Bug", "Task"}
 		if len(opts.IssueTypes) > 0 {
 			kendoTypes = opts.IssueTypes
@@ -2429,7 +2577,7 @@ func buildAddForm(provider string, opts *msg.FormOptionsMsg) components.Form {
 			})
 		}
 	}
-	if provider != "jira" && provider != "kendo" && provider != "github" {
+	if provider != "kendo" && provider != "github" {
 		if len(opts.Sections) > 0 {
 			sectionOptions := append([]string{"None"}, opts.Sections...)
 			fields = append(fields, components.FormFieldDef{
@@ -2446,7 +2594,7 @@ func buildAddForm(provider string, opts *msg.FormOptionsMsg) components.Form {
 		components.FormFieldDef{Label: "Due Date", Placeholder: "e.g. YYYY-MM-DD"},
 		components.FormFieldDef{Label: "Priority", Kind: components.FieldSelect, Options: []string{"Highest", "High", "Medium", "Low", "Lowest"}, Value: "Medium"},
 	)
-	if provider == "jira" || provider == "kendo" {
+	if provider == "kendo" {
 		epicOptions := []string{"None"}
 		for _, e := range opts.Epics {
 			epicOptions = append(epicOptions, e.Label)
@@ -2488,15 +2636,10 @@ func (m *model) rebuildAddFormForProvider() tea.Cmd {
 	m.form.FocusByLabel("Provider")
 	var cmds []tea.Cmd
 	cmds = append(cmds, loadProjectsCmd(m.cb, newProvider))
-	if newProvider == "jira" || newProvider == "kendo" {
-		cmds = append(cmds, loadEpicsCmd(m.cb, newProvider, m.form.ValueByLabel("Project")))
-	}
 	if newProvider == "kendo" {
+		cmds = append(cmds, loadEpicsCmd(m.cb, newProvider, m.form.ValueByLabel("Project")))
 		cmds = append(cmds, loadLanesCmd(m.cb, newProvider, m.form.ValueByLabel("Project")))
 		cmds = append(cmds, loadSprintsCmd(m.cb, newProvider, m.form.ValueByLabel("Project")))
-	}
-	if newProvider == "jira" {
-		cmds = append(cmds, loadIssueTypesCmd(m.cb, newProvider, m.form.ValueByLabel("Project")))
 	}
 	cmds = append(cmds, loadSectionsCmd(m.cb, newProvider, m.form.ValueByLabel("Project")))
 	return tea.Batch(cmds...)
@@ -2563,7 +2706,7 @@ func buildEditForm(taskKey, provider string, ed pendingEditData, epics []msg.Epi
 			Options: sectionOptions, Value: currentVal,
 		})
 	} else if epics == nil {
-		// No sections loaded and not Jira — show a text input
+		// No sections loaded — show a text input
 		fields = append(fields, components.FormFieldDef{
 			Label: "Section", Placeholder: "Section name", Value: ed.section,
 		})

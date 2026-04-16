@@ -393,8 +393,14 @@ func TestListTransitions(t *testing.T) {
 	if len(names) != 3 {
 		t.Fatalf("expected 3 lanes, got %d", len(names))
 	}
-	if names[0] != "To Do" || names[1] != "In Progress" || names[2] != "Done" {
-		t.Errorf("unexpected lanes: %v", names)
+	found := map[string]bool{}
+	for _, n := range names {
+		found[n] = true
+	}
+	for _, want := range []string{"To Do", "In Progress", "Done"} {
+		if !found[want] {
+			t.Errorf("missing lane %q in %v", want, names)
+		}
 	}
 }
 

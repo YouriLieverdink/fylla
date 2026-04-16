@@ -131,14 +131,6 @@ func (m *MultiTaskSource) UpdateSummary(ctx context.Context, issueKey string, su
 	return m.routeTo(issueKey).UpdateSummary(ctx, issueKey, summary)
 }
 
-func (m *MultiTaskSource) ResolveJiraKey(ctx context.Context, taskKey string) (string, error) {
-	src := m.routeTo(taskKey)
-	if resolver, ok := src.(JiraKeyResolver); ok {
-		return resolver.ResolveJiraKey(ctx, taskKey)
-	}
-	return "", fmt.Errorf("provider for %q does not support Jira key resolution", taskKey)
-}
-
 // multiFetcher implements TaskFetcher by concurrently querying multiple providers
 // and merging results.
 type multiFetcher struct {

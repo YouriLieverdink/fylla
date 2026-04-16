@@ -8,7 +8,7 @@ type Recurrence struct {
 	Days []int  // ISO weekdays: 1=Mon..7=Sun; empty = all applicable
 }
 
-// Task represents a schedulable task from any source (Jira, Todoist, etc.).
+// Task represents a schedulable task from any source (Kendo, Todoist, GitHub, etc.).
 type Task struct {
 	Key               string
 	Provider          string
@@ -17,7 +17,7 @@ type Task struct {
 	DueDate           *time.Time
 	OriginalEstimate  time.Duration
 	RemainingEstimate time.Duration
-	IssueType         string // Bug, Task, Story (Jira) or label (Todoist)
+	IssueType         string // Bug, Task, Feature (Kendo) or label (Todoist)
 	Created           time.Time
 	Project           string
 	Section           string

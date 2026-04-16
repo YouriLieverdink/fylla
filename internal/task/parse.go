@@ -269,7 +269,7 @@ func extractNotBeforeClause(text string, ref time.Time, dueDate *time.Time) (str
 // from a task summary string. Returns the cleaned summary and extracted values.
 // The dueDate is used to resolve relative not-before offsets (e.g. "-3d").
 // titleDue is non-nil when a "due <date>" clause was found in the summary text.
-// This is used by Jira/Todoist/Kendo clients when reading tasks back.
+// This is used by Todoist/Kendo clients when reading tasks back.
 func ExtractConstraints(summary string, ref time.Time, dueDate *time.Time) (cleaned string, notBefore *time.Time, notBeforeRaw string, upNext, noSplit bool, titleDue *time.Time) {
 	cleaned = summary
 

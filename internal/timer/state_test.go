@@ -18,7 +18,7 @@ func TestTIMER001_StartTimerStoresTaskKeyAndStartTime(t *testing.T) {
 		path := tmpPath(t)
 		now := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if err := Start("PROJ-123", "", "", "", now, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", "", now, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		ss, err := loadStack(path)
@@ -37,7 +37,7 @@ func TestTIMER001_StartTimerStoresTaskKeyAndStartTime(t *testing.T) {
 		path := tmpPath(t)
 		now := time.Date(2025, 6, 15, 14, 30, 0, 0, time.UTC)
 
-		if err := Start("ADMIN-42", "", "", "", now, path); err != nil {
+		if err := Start("ADMIN-42", "", "", "", "", now, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		ss, err := loadStack(path)
@@ -55,7 +55,7 @@ func TestTIMER002_TimerStatePersisted(t *testing.T) {
 		path := tmpPath(t)
 		now := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if err := Start("PROJ-123", "", "", "", now, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", "", now, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		if _, err := os.Stat(path); err != nil {
@@ -67,7 +67,7 @@ func TestTIMER002_TimerStatePersisted(t *testing.T) {
 		path := tmpPath(t)
 		now := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if err := Start("PROJ-123", "", "", "", now, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", "", now, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 
@@ -109,7 +109,7 @@ func TestTIMER002_TimerStatePersisted(t *testing.T) {
 		path := tmpPath(t)
 		now := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if err := Start("PROJ-123", "", "", "", now, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", "", now, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		ss, err := loadStack(path)
@@ -142,7 +142,7 @@ func TestTIMER003_StopTimerCalculatesElapsed(t *testing.T) {
 		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 		stop := start.Add(5 * time.Minute)
 
-		if err := Start("PROJ-123", "", "", "", start, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", "", start, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		result, err := Stop(stop, path)
@@ -159,7 +159,7 @@ func TestTIMER003_StopTimerCalculatesElapsed(t *testing.T) {
 		path := tmpPath(t)
 		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if err := Start("PROJ-123", "", "", "", start, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", "", start, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		if _, err := Stop(start.Add(10*time.Minute), path); err != nil {
@@ -182,7 +182,7 @@ func TestTIMER003_StopTimerCalculatesElapsed(t *testing.T) {
 		path := tmpPath(t)
 		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if err := Start("PROJ-456", "", "", "", start, path); err != nil {
+		if err := Start("PROJ-456", "", "", "", "", start, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		result, err := Stop(start.Add(30*time.Minute), path)
@@ -200,7 +200,7 @@ func TestTIMER004_StopPromptForDescription(t *testing.T) {
 		path := tmpPath(t)
 		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if err := Start("PROJ-123", "", "", "", start, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", "", start, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		result, err := Stop(start.Add(15*time.Minute), path)
@@ -219,7 +219,7 @@ func TestTIMER004_StopPromptForDescription(t *testing.T) {
 		path := tmpPath(t)
 		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if err := Start("PROJ-123", "", "", "", start, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", "", start, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		result, err := Stop(start.Add(7*time.Minute), path)
@@ -267,7 +267,7 @@ func TestSetComment(t *testing.T) {
 		path := tmpPath(t)
 		now := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if err := Start("PROJ-123", "", "", "", now, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", "", now, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		if err := SetComment("working on X", path); err != nil {
@@ -296,7 +296,7 @@ func TestSetStartTime(t *testing.T) {
 		path := tmpPath(t)
 		now := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if err := Start("PROJ-123", "", "", "", now, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", "", now, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		newStart := time.Date(2025, 6, 15, 9, 30, 0, 0, time.UTC)
@@ -316,7 +316,7 @@ func TestSetStartTime(t *testing.T) {
 		path := tmpPath(t)
 		now := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if err := Start("PROJ-123", "", "", "", now, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", "", now, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		newStart := time.Date(2025, 6, 15, 9, 30, 15, 0, time.UTC)
@@ -345,7 +345,7 @@ func TestSetStartTime(t *testing.T) {
 		path := tmpPath(t)
 		now := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if err := Start("PROJ-123", "", "", "", now, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", "", now, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		future := now.Add(time.Hour)
@@ -360,7 +360,7 @@ func TestStop_IncludesComment(t *testing.T) {
 	path := tmpPath(t)
 	start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-	if err := Start("PROJ-123", "", "", "", start, path); err != nil {
+	if err := Start("PROJ-123", "", "", "", "", start, path); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	if err := SetComment("did stuff", path); err != nil {
@@ -398,7 +398,7 @@ func TestTIMER006_StatusShowsRunningTaskAndElapsed(t *testing.T) {
 		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 		now := start.Add(83 * time.Minute) // 1h 23m
 
-		if err := Start("PROJ-123", "", "", "", start, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", "", start, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 		sr, err := Status(now, path)
@@ -431,7 +431,7 @@ func TestTIMER006_StatusShowsRunningTaskAndElapsed(t *testing.T) {
 		path := tmpPath(t)
 		start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-		if err := Start("PROJ-123", "", "", "", start, path); err != nil {
+		if err := Start("PROJ-123", "", "", "", "", start, path); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 
@@ -454,7 +454,7 @@ func TestInterrupt_SavesSegmentAndStartsAnonymous(t *testing.T) {
 	start := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 	interruptTime := start.Add(30 * time.Minute)
 
-	if err := Start("PROJ-123", "MyProject", "", "", start, path); err != nil {
+	if err := Start("PROJ-123", "MyProject", "", "", "", start, path); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	if err := SetComment("working on feature", path); err != nil {
@@ -514,7 +514,7 @@ func TestStop_WithSegments_ReturnsAllSegments(t *testing.T) {
 	t2 := t1.Add(15 * time.Minute)
 
 	// Start PROJ-123, interrupt, then stop anonymous
-	if err := Start("PROJ-123", "", "", "", t0, path); err != nil {
+	if err := Start("PROJ-123", "", "", "", "", t0, path); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	if err := Interrupt(t1, path); err != nil {
@@ -578,7 +578,7 @@ func TestStop_ResumesPausedTimerWithFreshStartTime(t *testing.T) {
 	t1 := t0.Add(30 * time.Minute)
 	t2 := t1.Add(15 * time.Minute)
 
-	if err := Start("PROJ-123", "", "", "", t0, path); err != nil {
+	if err := Start("PROJ-123", "", "", "", "", t0, path); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	if err := Interrupt(t1, path); err != nil {
@@ -607,7 +607,7 @@ func TestDoubleInterrupt_CreatesStackDepth3(t *testing.T) {
 	t1 := t0.Add(30 * time.Minute)
 	t2 := t1.Add(15 * time.Minute)
 
-	if err := Start("PROJ-123", "", "", "", t0, path); err != nil {
+	if err := Start("PROJ-123", "", "", "", "", t0, path); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	if err := Interrupt(t1, path); err != nil {
@@ -644,7 +644,7 @@ func TestAbort_DiscardsCurrentResumesPrevious(t *testing.T) {
 	t1 := t0.Add(30 * time.Minute)
 	t2 := t1.Add(15 * time.Minute)
 
-	if err := Start("PROJ-123", "MyProject", "", "", t0, path); err != nil {
+	if err := Start("PROJ-123", "MyProject", "", "", "", t0, path); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	if err := Interrupt(t1, path); err != nil {
@@ -683,7 +683,7 @@ func TestAbort_AtStackBottom_ClearsEverything(t *testing.T) {
 	t0 := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 	t1 := t0.Add(30 * time.Minute)
 
-	if err := Start("PROJ-123", "", "", "", t0, path); err != nil {
+	if err := Start("PROJ-123", "", "", "", "", t0, path); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	result, err := Abort(t1, path)
@@ -722,7 +722,7 @@ func TestSetComment_OnStack_SetsTopEntry(t *testing.T) {
 	t0 := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 	t1 := t0.Add(30 * time.Minute)
 
-	if err := Start("PROJ-123", "", "", "", t0, path); err != nil {
+	if err := Start("PROJ-123", "", "", "", "", t0, path); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	if err := Interrupt(t1, path); err != nil {
@@ -746,7 +746,7 @@ func TestSegmentComment_PreservedThroughInterrupt(t *testing.T) {
 	t0 := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 	t1 := t0.Add(30 * time.Minute)
 
-	if err := Start("PROJ-123", "", "", "", t0, path); err != nil {
+	if err := Start("PROJ-123", "", "", "", "", t0, path); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	if err := SetComment("doing feature X", path); err != nil {
@@ -775,7 +775,7 @@ func TestStatus_ReturnsPausedInfo(t *testing.T) {
 	t1 := t0.Add(30 * time.Minute)
 	t2 := t1.Add(15 * time.Minute)
 
-	if err := Start("PROJ-123", "MyProject", "Sprint 1", "", t0, path); err != nil {
+	if err := Start("PROJ-123", "MyProject", "Sprint 1", "", "", t0, path); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	if err := Interrupt(t1, path); err != nil {
@@ -810,10 +810,10 @@ func TestStart_ErrorsWhenTimerAlreadyRunning(t *testing.T) {
 	path := tmpPath(t)
 	t0 := time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)
 
-	if err := Start("PROJ-123", "", "", "", t0, path); err != nil {
+	if err := Start("PROJ-123", "", "", "", "", t0, path); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	err := Start("PROJ-456", "", "", "", t0.Add(5*time.Minute), path)
+	err := Start("PROJ-456", "", "", "", "", t0.Add(5*time.Minute), path)
 	if err == nil {
 		t.Error("expected error when timer already running")
 	}

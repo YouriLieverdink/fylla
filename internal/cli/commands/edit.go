@@ -78,7 +78,7 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 		r, err := RunEstimate(ctx, EstimateParams{
 			TaskKey:  p.TaskKey,
 			Duration: p.Estimate,
-			Jira:     p.Source,
+			Updater:  p.Source,
 			Getter:   p.Source,
 		})
 		if err != nil {
@@ -99,7 +99,7 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 		r, err := RunDueDate(ctx, DueDateParams{
 			TaskKey: p.TaskKey,
 			Date:    p.Due,
-			Jira:    p.Source,
+			Updater: p.Source,
 			Getter:  p.Source,
 		})
 		if err != nil {

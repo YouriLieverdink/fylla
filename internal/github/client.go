@@ -12,11 +12,10 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v68/github"
-	"github.com/iruoy/fylla/internal/prutil"
 	"github.com/iruoy/fylla/internal/task"
 )
 
-var jiraKeyPattern = regexp.MustCompile(`[A-Z][A-Z0-9]+-\d+`)
+var issueKeyPattern = regexp.MustCompile(`[A-Z][A-Z0-9]+-\d+`)
 
 // ErrUnsupported is returned for write operations that don't apply to PRs.
 var ErrUnsupported = errors.New("operation not supported for GitHub pull requests")
@@ -26,25 +25,55 @@ type Client struct {
 	client *gh.Client
 	query  string
 	Repos  []string // optional: only include PRs from these repos (e.g. "owner/repo")
+
+	rateMu    sync.Mutex
+	rateLimit gh.Rate // last known rate limit state
 }
 
 // NewClient creates a GitHub client with the given personal access token.
 func NewClient(token string) *Client {
+	httpClient := &http.Client{Timeout: 30 * time.Second}
 	return &Client{
-		client: gh.NewClient(nil).WithAuthToken(token),
+		client: gh.NewClient(httpClient).WithAuthToken(token),
 	}
+}
+
+// checkRateLimit pauses if we're close to the rate limit.
+// Should be called before any API request.
+func (c *Client) checkRateLimit() {
+	c.rateMu.Lock()
+	rate := c.rateLimit
+	c.rateMu.Unlock()
+
+	if rate.Remaining > 0 && rate.Remaining < 50 {
+		sleepUntil := rate.Reset.Time.Sub(time.Now())
+		if sleepUntil > 0 && sleepUntil < 5*time.Minute {
+			time.Sleep(sleepUntil)
+		}
+	}
+}
+
+// updateRateLimit records the rate limit info from a response.
+func (c *Client) updateRateLimit(resp *gh.Response) {
+	if resp == nil {
+		return
+	}
+	c.rateMu.Lock()
+	c.rateLimit = resp.Rate
+	c.rateMu.Unlock()
+}
+
+// RateRemaining returns the number of API requests remaining.
+func (c *Client) RateRemaining() int {
+	c.rateMu.Lock()
+	defer c.rateMu.Unlock()
+	return c.rateLimit.Remaining
 }
 
 // FetchTasks searches for open PRs requesting the user's review and returns them as tasks.
 func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, error) {
 	if query == "" {
 		query = "is:pr state:open review-requested:@me"
-	}
-
-	// Look up the authenticated user so we can detect prior reviews.
-	var myLogin string
-	if me, _, err := c.client.Users.Get(ctx, ""); err == nil {
-		myLogin = me.GetLogin()
 	}
 
 	// When repos are configured, add repo: qualifiers to narrow the search.
@@ -57,7 +86,9 @@ func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, err
 	var allIssues []*gh.Issue
 	opts := &gh.SearchOptions{ListOptions: gh.ListOptions{PerPage: 50}}
 	for {
+		c.checkRateLimit()
 		result, resp, err := c.client.Search.Issues(ctx, query, opts)
+		c.updateRateLimit(resp)
 		if err != nil {
 			return nil, fmt.Errorf("github search: %w", err)
 		}
@@ -68,14 +99,11 @@ func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, err
 		opts.Page = resp.NextPage
 	}
 
-	// Filter to actual PRs and parse issue metadata.
-	type issueInfo struct {
-		issue  *gh.Issue
-		owner  string
-		repo   string
-		number int
-	}
-	var infos []issueInfo
+	// Build tasks from search results. Use a flat estimate for all PRs
+	// to avoid extra API calls per PR (which made loading very slow).
+	const prEstimate = 30 * time.Minute
+
+	tasks := make([]task.Task, 0, len(allIssues))
 	for _, issue := range allIssues {
 		if issue.PullRequestLinks == nil {
 			continue
@@ -84,116 +112,21 @@ func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, err
 		if err != nil {
 			continue
 		}
-		infos = append(infos, issueInfo{issue, owner, repo, number})
-	}
-
-	// Fetch PR details concurrently for diff stats.
-	type prResult struct {
-		idx      int
-		estimate time.Duration
-	}
-	results := make([]prResult, len(infos))
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 10)
-	for i, info := range infos {
-		wg.Add(1)
-		go func(idx int, owner, repo string, number int) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			pr, _, err := c.client.PullRequests.Get(ctx, owner, repo, number)
-			if err != nil {
-				results[idx] = prResult{idx: idx, estimate: 30 * time.Minute}
-				return
-			}
-
-			est := prutil.EstimateFromLines(pr.GetAdditions(), pr.GetDeletions())
-			if myLogin != "" {
-				if delta, ok := c.deltaEstimate(ctx, owner, repo, number, pr.GetHead().GetSHA(), myLogin); ok {
-					est = delta
-				}
-			}
-			results[idx] = prResult{idx: idx, estimate: est}
-		}(i, info.owner, info.repo, info.number)
-	}
-	wg.Wait()
-
-	tasks := make([]task.Task, 0, len(infos))
-	for i, info := range infos {
-		key := fmt.Sprintf("%s#%d", info.repo, info.number)
-		t := task.Task{
+		key := fmt.Sprintf("%s#%d", repo, number)
+		tasks = append(tasks, task.Task{
 			Key:               key,
 			Provider:          "github",
-			Summary:           info.issue.GetTitle(),
+			Summary:           issue.GetTitle(),
 			Priority:          2,
-			Created:           info.issue.GetCreatedAt().Time,
-			Project:           fmt.Sprintf("%s/%s", info.owner, info.repo),
+			Created:           issue.GetCreatedAt().Time,
+			Project:           fmt.Sprintf("%s/%s", owner, repo),
 			IssueType:         "Pull Request",
-			OriginalEstimate:  results[i].estimate,
-			RemainingEstimate: results[i].estimate,
-		}
-		tasks = append(tasks, t)
+			OriginalEstimate:  prEstimate,
+			RemainingEstimate: prEstimate,
+		})
 	}
 
 	return tasks, nil
-}
-
-func (c *Client) deltaEstimate(ctx context.Context, owner, repo string, number int, headSHA, myLogin string) (time.Duration, bool) {
-	reviews, _, err := c.client.PullRequests.ListReviews(ctx, owner, repo, number, nil)
-	if err != nil {
-		return 0, false
-	}
-
-	var latest *gh.PullRequestReview
-	for _, r := range reviews {
-		if r.GetUser().GetLogin() != myLogin {
-			continue
-		}
-		if latest == nil || r.GetSubmittedAt().After(latest.GetSubmittedAt().Time) {
-			latest = r
-		}
-	}
-	if latest == nil {
-		return 0, false
-	}
-
-	if latest.GetCommitID() == headSHA {
-		return 15 * time.Minute, true
-	}
-
-	// Build set of files that belong to the PR itself.
-	prFiles := make(map[string]bool)
-	opts := &gh.ListOptions{PerPage: 100}
-	for {
-		files, resp, err := c.client.PullRequests.ListFiles(ctx, owner, repo, number, opts)
-		if err != nil {
-			return 0, false
-		}
-		for _, f := range files {
-			prFiles[f.GetFilename()] = true
-		}
-		if resp.NextPage == 0 {
-			break
-		}
-		opts.Page = resp.NextPage
-	}
-
-	// Compare commits since review, but only count lines in PR files.
-	// This filters out noise from rebases or merges of the base branch.
-	comparison, _, err := c.client.Repositories.CompareCommits(ctx, owner, repo, latest.GetCommitID(), headSHA, nil)
-	if err != nil {
-		return 0, false
-	}
-
-	var added, removed int
-	for _, f := range comparison.Files {
-		if prFiles[f.GetFilename()] {
-			added += f.GetAdditions()
-			removed += f.GetDeletions()
-		}
-	}
-	return prutil.EstimateFromLines(added, removed), true
 }
 
 func parseIssue(issue *gh.Issue) (owner, repo string, number int, err error) {
@@ -231,10 +164,10 @@ func extractRepoPath(url string) string {
 	return ""
 }
 
-// ResolveJiraKey fetches the PR identified by prKey (e.g. "repo#123") and
-// extracts a Jira issue key from its branch name or body. Returns empty string
-// when no key is found.
-func (c *Client) ResolveJiraKey(ctx context.Context, prKey string) (string, error) {
+// ResolveIssueKey fetches the PR identified by prKey (e.g. "repo#123") and
+// extracts an issue key (e.g. PROJ-123) from its branch name or body.
+// Returns empty string when no key is found.
+func (c *Client) ResolveIssueKey(ctx context.Context, prKey string) (string, error) {
 	owner, repo, number, err := parsePRKey(prKey, c.Repos)
 	if err != nil {
 		return "", fmt.Errorf("parse PR key %q: %w", prKey, err)
@@ -246,13 +179,13 @@ func (c *Client) ResolveJiraKey(ctx context.Context, prKey string) (string, erro
 	}
 
 	// Search branch name first, then title, then body.
-	if key := jiraKeyPattern.FindString(pr.GetHead().GetRef()); key != "" {
+	if key := issueKeyPattern.FindString(pr.GetHead().GetRef()); key != "" {
 		return key, nil
 	}
-	if key := jiraKeyPattern.FindString(pr.GetTitle()); key != "" {
+	if key := issueKeyPattern.FindString(pr.GetTitle()); key != "" {
 		return key, nil
 	}
-	if key := jiraKeyPattern.FindString(pr.GetBody()); key != "" {
+	if key := issueKeyPattern.FindString(pr.GetBody()); key != "" {
 		return key, nil
 	}
 	return "", nil

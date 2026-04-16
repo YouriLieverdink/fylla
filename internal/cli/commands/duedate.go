@@ -16,7 +16,7 @@ import (
 type DueDateParams struct {
 	TaskKey string
 	Date    string // raw date string, e.g. "2025-02-15", "+7d", "-3d"
-	Jira    DueDateUpdater
+	Updater DueDateUpdater
 	Getter  DueDateGetter
 }
 
@@ -55,7 +55,7 @@ func parseRelativeDays(s string) (int, error) {
 	return strconv.Atoi(matches[1])
 }
 
-// RunDueDate sets or adjusts the due date on a Jira issue.
+// RunDueDate sets or adjusts the due date on a task.
 func RunDueDate(ctx context.Context, p DueDateParams) (*DueDateResult, error) {
 	raw := strings.TrimSpace(p.Date)
 	if raw == "" {
@@ -94,7 +94,7 @@ func RunDueDate(ctx context.Context, p DueDateParams) (*DueDateResult, error) {
 		final = d
 	}
 
-	if err := p.Jira.UpdateDueDate(ctx, p.TaskKey, final); err != nil {
+	if err := p.Updater.UpdateDueDate(ctx, p.TaskKey, final); err != nil {
 		return nil, err
 	}
 

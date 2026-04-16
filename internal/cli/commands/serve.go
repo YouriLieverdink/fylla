@@ -30,7 +30,7 @@ func RunServe(ctx context.Context) error {
 	var fetcher TaskFetcher
 	if ms, ok := source.(*MultiTaskSource); ok {
 		fetcher = &multiFetcher{
-			queries: buildProviderQueries(cfg, "", ""),
+			queries: buildProviderQueries(cfg, ""),
 			sources: ms.sources,
 		}
 	} else {
@@ -62,7 +62,7 @@ func serveDefaultQuery(cfg *config.Config) string {
 	case "kendo":
 		return cfg.Kendo.DefaultFilter
 	default:
-		return cfg.Jira.DefaultJQL
+		return ""
 	}
 }
 
@@ -131,12 +131,12 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			_, err := RunDelete(ctx, DeleteParams{TaskKey: taskKey, Provider: provider, Deleter: source})
 			return err
 		},
-		StartTimer: func(taskKey, project, section, provider string) error {
+		StartTimer: func(taskKey, summary, project, section, provider string) error {
 			path, err := timer.DefaultPath()
 			if err != nil {
 				return err
 			}
-			return RunStart(StartParams{TaskKey: taskKey, Project: project, Section: section, Provider: provider, TimerPath: path, Now: time.Now()})
+			return RunStart(StartParams{TaskKey: taskKey, Summary: summary, Project: project, Section: section, Provider: provider, TimerPath: path, Now: time.Now()})
 		},
 		InterruptTimer: func() error {
 			path, err := timer.DefaultPath()
@@ -157,24 +157,11 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			if result == nil {
 				return nil, nil
 			}
-			summary, _ := routedSource(source, result.Provider).GetSummary(ctx, result.TaskKey)
-			project, section := result.Project, result.Section
-			if project == "" {
-				if tasks, err := fetcher.FetchTasks(ctx, query); err == nil {
-					for _, t := range tasks {
-						if t.Key == result.TaskKey {
-							project = t.Project
-							section = t.Section
-							break
-						}
-					}
-				}
-			}
 			info := &tui.TimerStatusInfo{
 				TaskKey:      result.TaskKey,
-				Summary:      summary,
-				Project:      project,
-				Section:      section,
+				Summary:      result.Summary,
+				Project:      result.Project,
+				Section:      result.Section,
 				Comment:      result.Comment,
 				StartTime:    result.StartTime,
 				Elapsed:      result.Elapsed,
@@ -345,8 +332,8 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			if err != nil {
 				return "", 0, "", err
 			}
-			var resolver JiraKeyResolver
-			if r, ok := source.(JiraKeyResolver); ok {
+			var resolver IssueKeyResolver
+			if r, ok := source.(IssueKeyResolver); ok {
 				resolver = r
 			}
 			result, err := RunStop(ctx, StopParams{
@@ -354,8 +341,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				RoundMinutes:     cfg.Worklog.RoundMinutes,
 				Now:              time.Now(),
 				Description:      description,
-				Jira:             source,
-				Estimate:         source,
+				Worklog:          source,
 				Cfg:              cfg,
 				Resolver:         resolver,
 				Completer:        source,
@@ -405,15 +391,12 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 					el = e
 				}
 			} else {
-				// Try source directly, then fall back to jira/kendo providers.
+				// Try source directly, then fall back to kendo provider.
 				if e, ok := source.(EpicLister); ok {
 					el = e
 				} else {
-					for _, name := range []string{"jira", "kendo"} {
-						if e, ok := routedSource(source, name).(EpicLister); ok {
-							el = e
-							break
-						}
+					if e, ok := routedSource(source, "kendo").(EpicLister); ok {
+						el = e
 					}
 				}
 			}
@@ -550,11 +533,70 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			}
 			return fmt.Errorf("provider does not support transitions")
 		},
-		ResolveJiraKey: func(prKey string) (string, error) {
-			if r, ok := source.(JiraKeyResolver); ok {
-				return r.ResolveJiraKey(ctx, prKey)
+		ResolveIssueKey: func(prKey string) (string, error) {
+			if r, ok := source.(IssueKeyResolver); ok {
+				return r.ResolveIssueKey(ctx, prKey)
 			}
 			return "", fmt.Errorf("no resolver available")
+		},
+		BulkDone: func(taskKeys []string) ([]string, map[string]error, error) {
+			result, err := RunBulk(ctx, BulkParams{
+				Action:   BulkDone,
+				TaskKeys: taskKeys,
+				Source:   source,
+			})
+			if err != nil {
+				return nil, nil, err
+			}
+			return result.Succeeded, result.Failed, nil
+		},
+		BulkDelete: func(taskKeys []string) ([]string, map[string]error, error) {
+			result, err := RunBulk(ctx, BulkParams{
+				Action:   BulkDelete,
+				TaskKeys: taskKeys,
+				Source:   source,
+			})
+			if err != nil {
+				return nil, nil, err
+			}
+			return result.Succeeded, result.Failed, nil
+		},
+		LoadTasksByProvider: func(provider string) ([]msg.ScoredTask, error) {
+			src := routedSource(source, provider)
+			queries := buildProviderQueries(cfg, "")
+			q := queries[provider]
+			result, err := RunList(ctx, ListParams{
+				Tasks: src,
+				Cfg:   cfg,
+				Query: q,
+				Now:   time.Now(),
+			})
+			if err != nil {
+				return nil, err
+			}
+			tasks := make([]msg.ScoredTask, len(result.Tasks))
+			for i, st := range result.Tasks {
+				tasks[i] = msg.ScoredTask{
+					Key:       st.Task.Key,
+					Provider:  st.Task.Provider,
+					Summary:   st.Task.Summary,
+					Priority:  st.Task.Priority,
+					DueDate:   st.Task.DueDate,
+					Estimate:  st.Task.RemainingEstimate,
+					IssueType: st.Task.IssueType,
+					Score:     st.Score,
+					Breakdown: mapBreakdown(st.Breakdown),
+					Project:   st.Task.Project,
+					Section:   st.Task.Section,
+					Status:       st.Task.Status,
+					UpNext:       st.Task.UpNext,
+					NoSplit:      st.Task.NoSplit,
+					NotBefore:    st.Task.NotBefore,
+					NotBeforeRaw: st.Task.NotBeforeRaw,
+					SprintID:     st.Task.SprintID,
+				}
+			}
+			return tasks, nil
 		},
 		SearchAllTasks: func(search string) ([]msg.ScoredTask, error) {
 			wp := worklogProvider(cfg)

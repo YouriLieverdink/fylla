@@ -18,6 +18,13 @@ type TasksLoadedMsg struct {
 	Err   error
 }
 
+// TasksPartialMsg carries tasks from a single provider, enabling progressive loading.
+type TasksPartialMsg struct {
+	Provider string
+	Tasks    []ScoredTask
+	Err      error
+}
+
 // TaskDoneMsg is sent after marking a task done.
 type TaskDoneMsg struct {
 	TaskKey string
@@ -161,8 +168,8 @@ type FormOptionsMsg struct {
 	Projects   []string
 	Sections   []string
 	Lanes      []string // lane names (Kendo issue type / board column)
-	IssueTypes []string // Jira issue type names
-	Provider   string   // primary provider name (e.g. "jira", "todoist")
+	IssueTypes []string // issue type names (e.g. Kendo types)
+	Provider   string   // primary provider name (e.g. "kendo", "todoist")
 	Providers  []string // all active provider names
 	Epics      []EpicOption
 	Sprints    []SprintOption
@@ -244,7 +251,7 @@ type FallbackLoadedMsg struct {
 	Issues []FallbackIssue
 }
 
-// FallbackIssue pairs a Jira key with its summary for display.
+// FallbackIssue pairs an issue key with its summary for display.
 type FallbackIssue struct {
 	Key     string
 	Summary string
@@ -265,10 +272,18 @@ type TransitionsLoadedMsg struct {
 	Err         error
 }
 
-// JiraKeyResolvedMsg carries the result of resolving a GitHub PR to a Jira key.
-type JiraKeyResolvedMsg struct {
+// IssueKeyResolvedMsg carries the result of resolving a GitHub PR to an issue key.
+type IssueKeyResolvedMsg struct {
 	Key string
 	Err error
+}
+
+// BulkActionMsg carries the result of a bulk operation.
+type BulkActionMsg struct {
+	Action    string
+	Succeeded []string
+	Failed    map[string]error
+	Err       error
 }
 
 // AllTasksLoadedMsg carries the result of searching all tasks (not just assigned).

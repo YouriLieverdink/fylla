@@ -43,27 +43,24 @@ func TestCFG001_DefaultPathAndAutoCreate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("LoadFrom: %v", err)
 		}
-		if cfg.Jira.URL == "" {
-			t.Error("expected non-empty Jira URL from defaults")
+		if len(cfg.ActiveProviders()) == 0 {
+			t.Error("expected non-empty providers from defaults")
 		}
 	})
 }
 
-func TestCFG002_JiraConfig(t *testing.T) {
+func TestCFG002_KendoConfig(t *testing.T) {
 	path := writeTestConfig(t)
 	cfg, err := LoadFrom(path)
 	if err != nil {
 		t.Fatalf("LoadFrom: %v", err)
 	}
 
-	if cfg.Jira.URL != "https://company.atlassian.net" {
-		t.Errorf("URL = %q", cfg.Jira.URL)
+	if cfg.Kendo.URL != "" {
+		t.Errorf("URL = %q, want empty from defaults", cfg.Kendo.URL)
 	}
-	if cfg.Jira.Email != "you@example.com" {
-		t.Errorf("Email = %q", cfg.Jira.Email)
-	}
-	if cfg.Jira.DefaultJQL != "assignee = currentUser() AND status = 'To Do'" {
-		t.Errorf("DefaultJQL = %q", cfg.Jira.DefaultJQL)
+	if cfg.Kendo.DefaultFilter != "" {
+		t.Errorf("DefaultFilter = %q, want empty from defaults", cfg.Kendo.DefaultFilter)
 	}
 }
 
@@ -185,7 +182,7 @@ func TestCFG007_Weights(t *testing.T) {
 func TestCFG009_ProviderCredentials(t *testing.T) {
 	t.Run("default path separate from config", func(t *testing.T) {
 		cfgPath, _ := DefaultPath()
-		credPath, _ := DefaultProviderCredentialsPath("jira")
+		credPath, _ := DefaultProviderCredentialsPath("kendo")
 		if cfgPath == credPath {
 			t.Error("credentials path should differ from config path")
 		}
@@ -195,13 +192,13 @@ func TestCFG009_ProviderCredentials(t *testing.T) {
 	})
 
 	t.Run("provider name in path", func(t *testing.T) {
-		jiraPath, _ := DefaultProviderCredentialsPath("jira")
+		kendoPath, _ := DefaultProviderCredentialsPath("kendo")
 		todoistPath, _ := DefaultProviderCredentialsPath("todoist")
-		if jiraPath == todoistPath {
-			t.Error("jira and todoist paths should differ")
+		if kendoPath == todoistPath {
+			t.Error("kendo and todoist paths should differ")
 		}
-		if filepath.Base(jiraPath) != "jira_credentials.json" {
-			t.Errorf("jira path = %q", filepath.Base(jiraPath))
+		if filepath.Base(kendoPath) != "kendo_credentials.json" {
+			t.Errorf("kendo path = %q", filepath.Base(kendoPath))
 		}
 		if filepath.Base(todoistPath) != "todoist_credentials.json" {
 			t.Errorf("todoist path = %q", filepath.Base(todoistPath))
@@ -280,11 +277,11 @@ func TestSet_ScalarValues(t *testing.T) {
 		},
 		{
 			name:  "string value",
-			key:   "jira.email",
-			value: "new@example.com",
+			key:   "kendo.url",
+			value: "https://new.kendo.nl",
 			check: func(t *testing.T, cfg *Config) {
-				if cfg.Jira.Email != "new@example.com" {
-					t.Errorf("Email = %q, want new@example.com", cfg.Jira.Email)
+				if cfg.Kendo.URL != "https://new.kendo.nl" {
+					t.Errorf("URL = %q, want https://new.kendo.nl", cfg.Kendo.URL)
 				}
 			},
 		},
@@ -461,9 +458,8 @@ func TestKeyPaths(t *testing.T) {
 	// Verify known leaf paths are present
 	expected := []string{
 		"providers",
-		"jira.url",
-		"jira.email",
-		"jira.defaultJql",
+		"kendo.url",
+		"kendo.defaultFilter",
 		"todoist.defaultFilter",
 		"calendar.sourceCalendars",
 		"calendar.fyllaCalendar",
@@ -497,7 +493,7 @@ func TestKeyPaths(t *testing.T) {
 	// Note: businessHours is now a sequence node, so it correctly appears as a leaf path
 	for _, p := range paths {
 		switch p {
-		case "jira", "todoist", "calendar", "scheduling", "weights":
+		case "kendo", "todoist", "calendar", "scheduling", "weights":
 			t.Errorf("section name %q should not be a leaf path", p)
 		}
 	}
@@ -528,7 +524,7 @@ func TestValidateProviders(t *testing.T) {
 
 	t.Run("single provider is valid", func(t *testing.T) {
 		cfg := validConfig()
-		cfg.Providers = []string{"jira"}
+		cfg.Providers = []string{"kendo"}
 		if err := cfg.Validate(); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -536,7 +532,7 @@ func TestValidateProviders(t *testing.T) {
 
 	t.Run("multiple providers is valid", func(t *testing.T) {
 		cfg := validConfig()
-		cfg.Providers = []string{"jira", "todoist"}
+		cfg.Providers = []string{"kendo", "todoist"}
 		if err := cfg.Validate(); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -552,7 +548,7 @@ func TestValidateProviders(t *testing.T) {
 
 	t.Run("duplicate provider is invalid", func(t *testing.T) {
 		cfg := validConfig()
-		cfg.Providers = []string{"jira", "jira"}
+		cfg.Providers = []string{"kendo", "kendo"}
 		if err := cfg.Validate(); err == nil {
 			t.Error("expected error for duplicate provider")
 		}
@@ -620,18 +616,18 @@ func TestDailyTargetFor(t *testing.T) {
 
 func TestActiveProviders(t *testing.T) {
 	t.Run("uses Providers when set", func(t *testing.T) {
-		cfg := Config{Providers: []string{"jira", "todoist"}}
+		cfg := Config{Providers: []string{"kendo", "todoist"}}
 		got := cfg.ActiveProviders()
-		if len(got) != 2 || got[0] != "jira" || got[1] != "todoist" {
-			t.Errorf("ActiveProviders() = %v, want [jira todoist]", got)
+		if len(got) != 2 || got[0] != "kendo" || got[1] != "todoist" {
+			t.Errorf("ActiveProviders() = %v, want [kendo todoist]", got)
 		}
 	})
 
-	t.Run("defaults to jira", func(t *testing.T) {
+	t.Run("defaults to kendo", func(t *testing.T) {
 		cfg := Config{}
 		got := cfg.ActiveProviders()
-		if len(got) != 1 || got[0] != "jira" {
-			t.Errorf("ActiveProviders() = %v, want [jira]", got)
+		if len(got) != 1 || got[0] != "kendo" {
+			t.Errorf("ActiveProviders() = %v, want [kendo]", got)
 		}
 	})
 
@@ -641,29 +637,28 @@ func TestSetMultiIn(t *testing.T) {
 	t.Run("updates multiple keys in one call", func(t *testing.T) {
 		path := writeTestConfig(t)
 		cfg, err := SetMultiIn(path, map[string]string{
-			"jira.url":   "https://new.atlassian.net",
-			"jira.email": "new@example.com",
+			"kendo.url":           "https://new.kendo.nl",
+			"kendo.defaultFilter": "assignee = me",
 		})
 		if err != nil {
 			t.Fatalf("SetMultiIn: %v", err)
 		}
-		if cfg.Jira.URL != "https://new.atlassian.net" {
-			t.Errorf("URL = %q, want https://new.atlassian.net", cfg.Jira.URL)
+		if cfg.Kendo.URL != "https://new.kendo.nl" {
+			t.Errorf("URL = %q, want https://new.kendo.nl", cfg.Kendo.URL)
 		}
-		if cfg.Jira.Email != "new@example.com" {
-			t.Errorf("Email = %q, want new@example.com", cfg.Jira.Email)
+		if cfg.Kendo.DefaultFilter != "assignee = me" {
+			t.Errorf("DefaultFilter = %q, want assignee = me", cfg.Kendo.DefaultFilter)
 		}
 	})
 
 	t.Run("flow-style arrays remain flow-style", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "config.yaml")
-		original := `providers: [jira]
-jira:
+		original := `providers: [kendo]
+kendo:
   credentials: ""
-  url: https://company.atlassian.net
-  email: you@example.com
-  defaultJql: "assignee = currentUser() AND status = 'To Do'"
+  url: https://company.kendo.nl
+  defaultFilter: ""
 calendar:
   credentials: ""
   sourceCalendars: [primary]
@@ -687,7 +682,7 @@ weights:
 		}
 
 		_, err := SetMultiIn(path, map[string]string{
-			"jira.email": "updated@example.com",
+			"kendo.defaultFilter": "updated filter",
 		})
 		if err != nil {
 			t.Fatalf("SetMultiIn: %v", err)
@@ -711,11 +706,10 @@ weights:
 		dir := t.TempDir()
 		path := filepath.Join(dir, "config.yaml")
 		// Minimal config without todoist or github sections
-		original := `jira:
+		original := `kendo:
   credentials: ""
-  url: https://company.atlassian.net
-  email: you@example.com
-  defaultJql: "assignee = currentUser() AND status = 'To Do'"
+  url: https://company.kendo.nl
+  defaultFilter: ""
 calendar:
   credentials: ""
   sourceCalendars: [primary]
@@ -739,7 +733,7 @@ weights:
 		}
 
 		_, err := SetMultiIn(path, map[string]string{
-			"jira.url": "https://updated.atlassian.net",
+			"kendo.url": "https://updated.kendo.nl",
 		})
 		if err != nil {
 			t.Fatalf("SetMultiIn: %v", err)
@@ -762,11 +756,10 @@ weights:
 	t.Run("creates missing keys", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "config.yaml")
-		original := `jira:
+		original := `kendo:
   credentials: ""
   url: ""
-  email: ""
-  defaultJql: "assignee = currentUser()"
+  defaultFilter: ""
 calendar:
   credentials: ""
   sourceCalendars: [primary]

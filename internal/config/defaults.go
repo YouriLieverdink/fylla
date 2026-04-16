@@ -1,16 +1,28 @@
 package config
 
-var defaultConfigYAML = []byte(`providers: [jira]
-
-jira:
-  credentials: ""
-  url: https://company.atlassian.net
-  email: you@example.com
-  defaultJql: "assignee = currentUser() AND status = 'To Do'"
+var defaultConfigYAML = []byte(`providers: [kendo]
 
 todoist:
   credentials: ""
   defaultFilter: "today | overdue"
+  defaultProject: ""
+
+github:
+  credentials: ""
+  defaultQuery: "is:pr state:open review-requested:@me"
+  repos: []
+
+local:
+  storePath: ""
+  defaultFilter: ""
+  defaultProject: ""
+
+kendo:
+  credentials: ""
+  url: ""
+  defaultFilter: ""
+  defaultProject: ""
+  doneLane: ""
 
 calendar:
   credentials: ""
@@ -20,7 +32,11 @@ calendar:
 scheduling:
   windowDays: 5
   minTaskDurationMinutes: 25
+  maxTaskDurationMinutes: 0
   bufferMinutes: 15
+  travelBufferMinutes: 30
+  snapMinutes: [0, 15, 30, 45]
+  defaultEstimateMinutes: 60
 
 businessHours:
   - start: "09:00"
@@ -32,6 +48,16 @@ projectRules:
     - start: "09:00"
       end: "10:00"
       workDays: [1, 2, 3, 4, 5]
+
+worklog:
+  provider: ""
+  fallbackIssues: []
+  roundMinutes: 1
+
+efficiency:
+  weeklyHours: 40
+  dailyHours: 8
+  target: 0.7
 
 weights:
   priority: 0.45

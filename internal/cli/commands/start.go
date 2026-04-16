@@ -14,13 +14,14 @@ type StartParams struct {
 	Project   string
 	Section   string
 	Provider  string
+	Summary   string
 	TimerPath string
 	Now       time.Time
 }
 
 // RunStart begins a timer for the specified task.
 func RunStart(p StartParams) error {
-	return timer.Start(p.TaskKey, p.Project, p.Section, p.Provider, p.Now, p.TimerPath)
+	return timer.Start(p.TaskKey, p.Project, p.Section, p.Provider, p.Summary, p.Now, p.TimerPath)
 }
 
 // PrintStartResult writes the start confirmation to the given writer.

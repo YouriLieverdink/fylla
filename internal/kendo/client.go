@@ -23,18 +23,15 @@ type Client struct {
 	UserID     int
 	DoneLane   string
 
+	projectsMu   sync.Mutex
 	projects     []project
-	projectsOnce sync.Once
-	projectsErr  error
+	projectsDone bool
 
-	userOnce sync.Once
-	userErr  error
+	userMu   sync.Mutex
+	userDone bool
 
-	lanesMu    sync.Mutex
-	lanesCache map[int]map[int]string // projectID → laneID → name
-
-	epicsMu    sync.Mutex
-	epicsCache map[int]map[int]string // projectID → epicID → title
+	lanesCache sync.Map // projectID (int) → map[int]string
+	epicsCache sync.Map // projectID (int) → map[int]string
 }
 
 // NewClient creates a Kendo client with the given credentials.
@@ -130,83 +127,126 @@ type timeEntryJSON struct {
 	ProjectID    int    `json:"project_id"`
 }
 
+// maxRetries is the number of retry attempts for rate-limited requests.
+const maxRetries = 3
+
 func (c *Client) do(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
-	var reqBody io.Reader
+	var bodyBytes []byte
 	if body != nil {
-		data, err := json.Marshal(body)
+		var err error
+		bodyBytes, err = json.Marshal(body)
 		if err != nil {
 			return nil, fmt.Errorf("marshal request: %w", err)
 		}
-		reqBody = bytes.NewReader(data)
 	}
-
-	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+c.Token)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
 
 	client := c.HTTPClient
 	if client == nil {
 		client = http.DefaultClient
 	}
-	return client.Do(req)
+
+	var resp *http.Response
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		var reqBody io.Reader
+		if bodyBytes != nil {
+			reqBody = bytes.NewReader(bodyBytes)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, reqBody)
+		if err != nil {
+			return nil, fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
+
+		resp, err = client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.StatusCode != http.StatusTooManyRequests || attempt == maxRetries {
+			return resp, nil
+		}
+
+		// Rate limited — parse Retry-After header or use exponential backoff
+		resp.Body.Close()
+		wait := retryDelay(resp, attempt)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(wait):
+		}
+	}
+	return resp, nil
+}
+
+// retryDelay calculates how long to wait before retrying a 429 response.
+func retryDelay(resp *http.Response, attempt int) time.Duration {
+	if ra := resp.Header.Get("Retry-After"); ra != "" {
+		if secs, err := strconv.Atoi(ra); err == nil && secs > 0 {
+			return time.Duration(secs) * time.Second
+		}
+	}
+	// Exponential backoff: 1s, 2s, 4s
+	return time.Duration(1<<uint(attempt)) * time.Second
 }
 
 func (c *Client) loadProjects(ctx context.Context) error {
-	c.projectsOnce.Do(func() {
-		resp, err := c.do(ctx, http.MethodGet, "/api/projects", nil)
-		if err != nil {
-			c.projectsErr = fmt.Errorf("fetch projects: %w", err)
-			return
-		}
-		defer resp.Body.Close()
+	c.projectsMu.Lock()
+	defer c.projectsMu.Unlock()
 
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			c.projectsErr = fmt.Errorf("kendo list projects: status %d: %s", resp.StatusCode, string(body))
-			return
-		}
+	if c.projectsDone {
+		return nil
+	}
 
-		if err := json.NewDecoder(resp.Body).Decode(&c.projects); err != nil {
-			c.projectsErr = fmt.Errorf("decode projects: %w", err)
-			return
-		}
-	})
-	return c.projectsErr
+	resp, err := c.do(ctx, http.MethodGet, "/api/projects", nil)
+	if err != nil {
+		return fmt.Errorf("fetch projects: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("kendo list projects: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&c.projects); err != nil {
+		return fmt.Errorf("decode projects: %w", err)
+	}
+
+	c.projectsDone = true
+	return nil
 }
 
 func (c *Client) fetchUserID(ctx context.Context) error {
-	c.userOnce.Do(func() {
-		if c.UserID != 0 {
-			return
-		}
+	c.userMu.Lock()
+	defer c.userMu.Unlock()
 
-		resp, err := c.do(ctx, http.MethodGet, "/api/auth/user", nil)
-		if err != nil {
-			c.userErr = fmt.Errorf("fetch user: %w", err)
-			return
-		}
-		defer resp.Body.Close()
+	if c.userDone || c.UserID != 0 {
+		return nil
+	}
 
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			c.userErr = fmt.Errorf("kendo user: status %d: %s", resp.StatusCode, string(body))
-			return
-		}
+	resp, err := c.do(ctx, http.MethodGet, "/api/auth/user", nil)
+	if err != nil {
+		return fmt.Errorf("fetch user: %w", err)
+	}
+	defer resp.Body.Close()
 
-		var result struct {
-			ID int `json:"id"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			c.userErr = fmt.Errorf("decode user: %w", err)
-			return
-		}
-		c.UserID = result.ID
-	})
-	return c.userErr
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("kendo user: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		ID int `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decode user: %w", err)
+	}
+	c.UserID = result.ID
+	c.userDone = true
+	return nil
 }
 
 // fetchIssue retrieves the full issue state for a given key.
@@ -467,6 +507,11 @@ func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, err
 		return nil, err
 	}
 
+	// Default to current user's tasks when no query specified
+	if query == "" || query == "*" {
+		query = "assignee_id=me"
+	}
+
 	// Parse filter if query contains key=value pairs
 	var filter issueFilter
 	if isFilterQuery(query) {
@@ -502,9 +547,10 @@ func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, err
 		}
 	}
 
+	// Fetch issues from all projects sequentially to avoid 429 rate limits.
+	// Lanes and epics are cached per project after first fetch.
 	var allTasks []task.Task
 	for _, pid := range projectIDs {
-		// Fetch lanes for this project to map laneID → name
 		laneMap, err := c.fetchLaneMap(ctx, pid)
 		if err != nil {
 			return nil, err
@@ -528,14 +574,9 @@ func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, err
 		}
 		resp.Body.Close()
 
+		// Quick filter before fetching epics — skip project entirely if no issues match
 		doneLaneID := c.doneLaneIDFromMap(laneMap)
-
-		epicMap, err := c.fetchEpicMap(ctx, pid)
-		if err != nil {
-			return nil, err
-		}
-
-		code := c.projectCodeByID(pid)
+		var matching []issueJSON
 		for _, issue := range issues {
 			if issue.LaneID == doneLaneID {
 				continue
@@ -546,6 +587,20 @@ func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, err
 			if textSearch && !issueMatchesText(issue, query) {
 				continue
 			}
+			matching = append(matching, issue)
+		}
+		if len(matching) == 0 {
+			continue
+		}
+
+		// Only fetch epics if we have matching issues (avoids unnecessary API call)
+		epicMap, err := c.fetchEpicMap(ctx, pid)
+		if err != nil {
+			return nil, err
+		}
+
+		code := c.projectCodeByID(pid)
+		for _, issue := range matching {
 			allTasks = append(allTasks, parseIssue(issue, code, laneMap[issue.LaneID], epicMap))
 		}
 	}
@@ -730,14 +785,9 @@ func (c *Client) ListSprints(ctx context.Context, project string) ([]SprintOptio
 
 // fetchEpicMap returns a map of epic ID → title for the given project.
 func (c *Client) fetchEpicMap(ctx context.Context, projectID int) (map[int]string, error) {
-	c.epicsMu.Lock()
-	if c.epicsCache != nil {
-		if m, ok := c.epicsCache[projectID]; ok {
-			c.epicsMu.Unlock()
-			return m, nil
-		}
+	if cached, ok := c.epicsCache.Load(projectID); ok {
+		return cached.(map[int]string), nil
 	}
-	c.epicsMu.Unlock()
 
 	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/epics", projectID), nil)
 	if err != nil {
@@ -759,13 +809,7 @@ func (c *Client) fetchEpicMap(ctx context.Context, projectID int) (map[int]strin
 		m[e.ID] = e.Title
 	}
 
-	c.epicsMu.Lock()
-	if c.epicsCache == nil {
-		c.epicsCache = make(map[int]map[int]string)
-	}
-	c.epicsCache[projectID] = m
-	c.epicsMu.Unlock()
-
+	c.epicsCache.Store(projectID, m)
 	return m, nil
 }
 
@@ -800,14 +844,9 @@ func (c *Client) projectIDForName(ctx context.Context, project string) (int, err
 }
 
 func (c *Client) fetchLaneMap(ctx context.Context, projectID int) (map[int]string, error) {
-	c.lanesMu.Lock()
-	if c.lanesCache != nil {
-		if m, ok := c.lanesCache[projectID]; ok {
-			c.lanesMu.Unlock()
-			return m, nil
-		}
+	if cached, ok := c.lanesCache.Load(projectID); ok {
+		return cached.(map[int]string), nil
 	}
-	c.lanesMu.Unlock()
 
 	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/lanes", projectID), nil)
 	if err != nil {
@@ -830,13 +869,7 @@ func (c *Client) fetchLaneMap(ctx context.Context, projectID int) (map[int]strin
 		m[l.ID] = l.Title
 	}
 
-	c.lanesMu.Lock()
-	if c.lanesCache == nil {
-		c.lanesCache = make(map[int]map[int]string)
-	}
-	c.lanesCache[projectID] = m
-	c.lanesMu.Unlock()
-
+	c.lanesCache.Store(projectID, m)
 	return m, nil
 }
 

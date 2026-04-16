@@ -16,12 +16,11 @@ type GoogleClient struct {
 	Service         *googlecalendar.Service
 	SourceCalendars []string
 	FyllaCalendar   string
-	JiraBaseURL     string
 	KendoBaseURL    string
 }
 
 // NewGoogleClient creates a GoogleClient using the given OAuth2 token.
-func NewGoogleClient(ctx context.Context, cfg *oauth2.Config, token *oauth2.Token, sourceCalendars []string, fyllaCalendar, jiraBaseURL string) (*GoogleClient, error) {
+func NewGoogleClient(ctx context.Context, cfg *oauth2.Config, token *oauth2.Token, sourceCalendars []string, fyllaCalendar string) (*GoogleClient, error) {
 	src := cfg.TokenSource(ctx, token)
 	svc, err := googlecalendar.NewService(ctx, option.WithTokenSource(src))
 	if err != nil {
@@ -31,7 +30,6 @@ func NewGoogleClient(ctx context.Context, cfg *oauth2.Config, token *oauth2.Toke
 		Service:         svc,
 		SourceCalendars: sourceCalendars,
 		FyllaCalendar:   fyllaCalendar,
-		JiraBaseURL:     jiraBaseURL,
 	}, nil
 }
 
@@ -224,22 +222,17 @@ func BuildDoneTitle(title string) string {
 
 // DescriptionParams holds the parameters for building a calendar event description.
 type DescriptionParams struct {
-	TaskKey    string
-	Project    string
-	Provider   string
-	JiraURL    string
-	KendoURL   string
+	TaskKey  string
+	Project  string
+	Provider string
+	KendoURL string
 }
 
 // BuildDescription constructs the calendar event description for a Fylla task.
-// It infers the source from the task key prefix: GH# for GitHub,
-// numeric for Todoist, otherwise Jira. The project field is used for
-// GitHub URLs since the key only contains the repo name (not the owner).
-func BuildDescription(taskKey, project, jiraBaseURL string) string {
+func BuildDescription(taskKey, project string) string {
 	return BuildDescriptionWithProvider(DescriptionParams{
 		TaskKey: taskKey,
 		Project: project,
-		JiraURL: jiraBaseURL,
 	})
 }
 
@@ -247,7 +240,7 @@ func BuildDescription(taskKey, project, jiraBaseURL string) string {
 // with explicit provider info embedded in the marker.
 func BuildDescriptionWithProvider(p DescriptionParams) string {
 	marker := fyllaMarker
-	if p.Provider != "" && p.Provider != "jira" {
+	if p.Provider != "" {
 		marker = "fylla:" + p.Provider
 	}
 
@@ -266,7 +259,7 @@ func BuildDescriptionWithProvider(p DescriptionParams) string {
 	if p.Provider == "kendo" && p.KendoURL != "" {
 		return fmt.Sprintf("%s %s\n%s", marker, p.TaskKey, kendoIssueURL(p.KendoURL, p.TaskKey))
 	}
-	return fmt.Sprintf("%s %s\n%s/browse/%s", marker, p.TaskKey, p.JiraURL, p.TaskKey)
+	return fmt.Sprintf("%s %s", marker, p.TaskKey)
 }
 
 func kendoIssueURL(baseURL, taskKey string) string {
@@ -407,7 +400,6 @@ func (c *GoogleClient) UpdateEvent(ctx context.Context, eventID string, input Cr
 		TaskKey:  input.TaskKey,
 		Project:  input.Project,
 		Provider: input.Provider,
-		JiraURL:  c.JiraBaseURL,
 		KendoURL: c.KendoBaseURL,
 	})
 
@@ -456,7 +448,6 @@ func (c *GoogleClient) CreateEvent(ctx context.Context, input CreateEventInput) 
 		TaskKey:  input.TaskKey,
 		Project:  input.Project,
 		Provider: input.Provider,
-		JiraURL:  c.JiraBaseURL,
 		KendoURL: c.KendoBaseURL,
 	})
 

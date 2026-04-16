@@ -227,15 +227,6 @@ func buildRows(cfg *config.Config) []configRow {
 	rows = append(rows, configRow{Kind: rowSection, Label: "Providers"})
 	rows = append(rows, configRow{Kind: rowSetting, Label: "providers", Key: "providers", Value: formatStringSlice(cfg.Providers)})
 
-	// Jira
-	rows = append(rows, configRow{Kind: rowSection, Label: "Jira"})
-	rows = append(rows, configRow{Kind: rowSetting, Label: "url", Key: "jira.url", Value: cfg.Jira.URL})
-	rows = append(rows, configRow{Kind: rowSetting, Label: "email", Key: "jira.email", Value: cfg.Jira.Email})
-	rows = append(rows, configRow{Kind: rowSetting, Label: "defaultJql", Key: "jira.defaultJql", Value: cfg.Jira.DefaultJQL})
-	rows = append(rows, configRow{Kind: rowSetting, Label: "defaultProject", Key: "jira.defaultProject", Value: cfg.Jira.DefaultProject})
-	rows = append(rows, configRow{Kind: rowSetting, Label: "doneTransitions", Key: "jira.doneTransitions", Value: formatStringMap(cfg.Jira.DoneTransitions)})
-	rows = append(rows, configRow{Kind: rowSetting, Label: "credentials", Key: "jira.credentials", Value: cfg.Jira.Credentials})
-
 	// Todoist
 	rows = append(rows, configRow{Kind: rowSection, Label: "Todoist"})
 	rows = append(rows, configRow{Kind: rowSetting, Label: "defaultFilter", Key: "todoist.defaultFilter", Value: cfg.Todoist.DefaultFilter})

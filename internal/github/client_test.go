@@ -30,14 +30,6 @@ func TestFetchTasks(t *testing.T) {
 			}
 			json.NewEncoder(w).Encode(resp)
 		})
-		mux.HandleFunc("/repos/iruoy/fylla/pulls/42", func(w http.ResponseWriter, r *http.Request) {
-			resp := map[string]interface{}{
-				"additions": 30,
-				"deletions": 10,
-			}
-			json.NewEncoder(w).Encode(resp)
-		})
-
 		server := httptest.NewServer(mux)
 		defer server.Close()
 
@@ -69,301 +61,9 @@ func TestFetchTasks(t *testing.T) {
 		if task.Project != "iruoy/fylla" {
 			t.Errorf("project = %q, want 'iruoy/fylla'", task.Project)
 		}
-		// 30+10=40 lines → 15m estimate
-		if task.RemainingEstimate.Minutes() != 15 {
-			t.Errorf("estimate = %v, want 15m", task.RemainingEstimate)
-		}
-	})
-
-	t.Run("large PR gets longer estimate", func(t *testing.T) {
-		mux := http.NewServeMux()
-		mux.HandleFunc("/search/issues", func(w http.ResponseWriter, r *http.Request) {
-			resp := map[string]interface{}{
-				"total_count": 1,
-				"items": []map[string]interface{}{
-					{
-						"number":         10,
-						"title":          "Big refactor",
-						"created_at":     "2025-01-10T08:00:00Z",
-						"repository_url": "https://api.github.com/repos/org/repo",
-						"pull_request": map[string]interface{}{
-							"url": "https://api.github.com/repos/org/repo/pulls/10",
-						},
-					},
-				},
-			}
-			json.NewEncoder(w).Encode(resp)
-		})
-		mux.HandleFunc("/repos/org/repo/pulls/10", func(w http.ResponseWriter, r *http.Request) {
-			resp := map[string]interface{}{
-				"additions": 600,
-				"deletions": 200,
-			}
-			json.NewEncoder(w).Encode(resp)
-		})
-
-		server := httptest.NewServer(mux)
-		defer server.Close()
-
-		client := NewClient("test-token")
-		client.SetHTTPClient(server.Client())
-		client.SetBaseURL(server.URL + "/")
-
-		tasks, err := client.FetchTasks(context.Background(), "is:pr state:open review-requested:@me")
-		if err != nil {
-			t.Fatalf("FetchTasks: %v", err)
-		}
-		if len(tasks) != 1 {
-			t.Fatalf("expected 1 task, got %d", len(tasks))
-		}
-		// 600+200=800 lines → 1h estimate
-		if tasks[0].RemainingEstimate.Minutes() != 60 {
-			t.Errorf("estimate = %v, want 1h", tasks[0].RemainingEstimate)
-		}
-	})
-
-	t.Run("uses delta estimate when user has prior review", func(t *testing.T) {
-		mux := http.NewServeMux()
-		mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode(map[string]interface{}{"login": "reviewer"})
-		})
-		mux.HandleFunc("/search/issues", func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"total_count": 1,
-				"items": []map[string]interface{}{
-					{
-						"number":         42,
-						"title":          "Fix login bug",
-						"created_at":     "2025-01-15T10:00:00Z",
-						"repository_url": "https://api.github.com/repos/iruoy/fylla",
-						"pull_request":   map[string]interface{}{"url": "https://api.github.com/repos/iruoy/fylla/pulls/42"},
-					},
-				},
-			})
-		})
-		mux.HandleFunc("/repos/iruoy/fylla/pulls/42", func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"additions": 600,
-				"deletions": 200,
-				"head":      map[string]interface{}{"sha": "newsha"},
-			})
-		})
-		mux.HandleFunc("/repos/iruoy/fylla/pulls/42/reviews", func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode([]map[string]interface{}{
-				{
-					"user":         map[string]interface{}{"login": "reviewer"},
-					"submitted_at": "2025-01-14T10:00:00Z",
-					"commit_id":    "oldsha",
-				},
-			})
-		})
-		mux.HandleFunc("/repos/iruoy/fylla/pulls/42/files", func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode([]map[string]interface{}{
-				{"filename": "main.go"},
-			})
-		})
-		mux.HandleFunc("/repos/iruoy/fylla/compare/oldsha...newsha", func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"files": []map[string]interface{}{
-					{"filename": "main.go", "additions": 10, "deletions": 5},
-					{"filename": "unrelated.go", "additions": 500, "deletions": 300},
-				},
-			})
-		})
-
-		server := httptest.NewServer(mux)
-		defer server.Close()
-
-		client := NewClient("test-token")
-		client.SetHTTPClient(server.Client())
-		client.SetBaseURL(server.URL + "/")
-
-		tasks, err := client.FetchTasks(context.Background(), "is:pr state:open review-requested:@me")
-		if err != nil {
-			t.Fatalf("FetchTasks: %v", err)
-		}
-		if len(tasks) != 1 {
-			t.Fatalf("expected 1 task, got %d", len(tasks))
-		}
-		// Only main.go is a PR file: 10+5=15 lines → 15m, unrelated.go is filtered out
-		if tasks[0].RemainingEstimate.Minutes() != 15 {
-			t.Errorf("estimate = %v, want 15m (delta-based)", tasks[0].RemainingEstimate)
-		}
-	})
-
-	t.Run("falls back when no prior review", func(t *testing.T) {
-		mux := http.NewServeMux()
-		mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode(map[string]interface{}{"login": "reviewer"})
-		})
-		mux.HandleFunc("/search/issues", func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"total_count": 1,
-				"items": []map[string]interface{}{
-					{
-						"number":         42,
-						"title":          "Fix login bug",
-						"created_at":     "2025-01-15T10:00:00Z",
-						"repository_url": "https://api.github.com/repos/iruoy/fylla",
-						"pull_request":   map[string]interface{}{"url": "https://api.github.com/repos/iruoy/fylla/pulls/42"},
-					},
-				},
-			})
-		})
-		mux.HandleFunc("/repos/iruoy/fylla/pulls/42", func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"additions": 600,
-				"deletions": 200,
-				"head":      map[string]interface{}{"sha": "newsha"},
-			})
-		})
-		mux.HandleFunc("/repos/iruoy/fylla/pulls/42/reviews", func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode([]map[string]interface{}{
-				{
-					"user":         map[string]interface{}{"login": "someone-else"},
-					"submitted_at": "2025-01-14T10:00:00Z",
-					"commit_id":    "oldsha",
-				},
-			})
-		})
-
-		server := httptest.NewServer(mux)
-		defer server.Close()
-
-		client := NewClient("test-token")
-		client.SetHTTPClient(server.Client())
-		client.SetBaseURL(server.URL + "/")
-
-		tasks, err := client.FetchTasks(context.Background(), "is:pr state:open review-requested:@me")
-		if err != nil {
-			t.Fatalf("FetchTasks: %v", err)
-		}
-		if len(tasks) != 1 {
-			t.Fatalf("expected 1 task, got %d", len(tasks))
-		}
-		// No prior review by "reviewer" → full estimate: 600+200=800 → 1h
-		if tasks[0].RemainingEstimate.Minutes() != 60 {
-			t.Errorf("estimate = %v, want 1h (full PR)", tasks[0].RemainingEstimate)
-		}
-	})
-
-	t.Run("15min estimate when no changes since review", func(t *testing.T) {
-		mux := http.NewServeMux()
-		mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode(map[string]interface{}{"login": "reviewer"})
-		})
-		mux.HandleFunc("/search/issues", func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"total_count": 1,
-				"items": []map[string]interface{}{
-					{
-						"number":         42,
-						"title":          "Fix login bug",
-						"created_at":     "2025-01-15T10:00:00Z",
-						"repository_url": "https://api.github.com/repos/iruoy/fylla",
-						"pull_request":   map[string]interface{}{"url": "https://api.github.com/repos/iruoy/fylla/pulls/42"},
-					},
-				},
-			})
-		})
-		mux.HandleFunc("/repos/iruoy/fylla/pulls/42", func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"additions": 600,
-				"deletions": 200,
-				"head":      map[string]interface{}{"sha": "samesha"},
-			})
-		})
-		mux.HandleFunc("/repos/iruoy/fylla/pulls/42/reviews", func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode([]map[string]interface{}{
-				{
-					"user":         map[string]interface{}{"login": "reviewer"},
-					"submitted_at": "2025-01-14T10:00:00Z",
-					"commit_id":    "samesha",
-				},
-			})
-		})
-
-		server := httptest.NewServer(mux)
-		defer server.Close()
-
-		client := NewClient("test-token")
-		client.SetHTTPClient(server.Client())
-		client.SetBaseURL(server.URL + "/")
-
-		tasks, err := client.FetchTasks(context.Background(), "is:pr state:open review-requested:@me")
-		if err != nil {
-			t.Fatalf("FetchTasks: %v", err)
-		}
-		if len(tasks) != 1 {
-			t.Fatalf("expected 1 task, got %d", len(tasks))
-		}
-		// Same SHA → 15m minimum
-		if tasks[0].RemainingEstimate.Minutes() != 15 {
-			t.Errorf("estimate = %v, want 15m (no changes since review)", tasks[0].RemainingEstimate)
-		}
-	})
-
-	t.Run("falls back when compare fails", func(t *testing.T) {
-		mux := http.NewServeMux()
-		mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode(map[string]interface{}{"login": "reviewer"})
-		})
-		mux.HandleFunc("/search/issues", func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"total_count": 1,
-				"items": []map[string]interface{}{
-					{
-						"number":         42,
-						"title":          "Fix login bug",
-						"created_at":     "2025-01-15T10:00:00Z",
-						"repository_url": "https://api.github.com/repos/iruoy/fylla",
-						"pull_request":   map[string]interface{}{"url": "https://api.github.com/repos/iruoy/fylla/pulls/42"},
-					},
-				},
-			})
-		})
-		mux.HandleFunc("/repos/iruoy/fylla/pulls/42", func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"additions": 600,
-				"deletions": 200,
-				"head":      map[string]interface{}{"sha": "newsha"},
-			})
-		})
-		mux.HandleFunc("/repos/iruoy/fylla/pulls/42/reviews", func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode([]map[string]interface{}{
-				{
-					"user":         map[string]interface{}{"login": "reviewer"},
-					"submitted_at": "2025-01-14T10:00:00Z",
-					"commit_id":    "oldsha",
-				},
-			})
-		})
-		mux.HandleFunc("/repos/iruoy/fylla/pulls/42/files", func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode([]map[string]interface{}{
-				{"filename": "main.go"},
-			})
-		})
-		mux.HandleFunc("/repos/iruoy/fylla/compare/oldsha...newsha", func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, "internal error", http.StatusInternalServerError)
-		})
-
-		server := httptest.NewServer(mux)
-		defer server.Close()
-
-		client := NewClient("test-token")
-		client.SetHTTPClient(server.Client())
-		client.SetBaseURL(server.URL + "/")
-
-		tasks, err := client.FetchTasks(context.Background(), "is:pr state:open review-requested:@me")
-		if err != nil {
-			t.Fatalf("FetchTasks: %v", err)
-		}
-		if len(tasks) != 1 {
-			t.Fatalf("expected 1 task, got %d", len(tasks))
-		}
-		// Compare failed → full estimate: 600+200=800 → 1h
-		if tasks[0].RemainingEstimate.Minutes() != 60 {
-			t.Errorf("estimate = %v, want 1h (fallback)", tasks[0].RemainingEstimate)
+		// Flat 30m estimate for all PRs
+		if task.RemainingEstimate.Minutes() != 30 {
+			t.Errorf("estimate = %v, want 30m", task.RemainingEstimate)
 		}
 	})
 
@@ -439,7 +139,7 @@ func TestParsePRKey(t *testing.T) {
 	}
 }
 
-func TestResolveJiraKey(t *testing.T) {
+func TestResolveIssueKey(t *testing.T) {
 	t.Run("extracts key from branch name", func(t *testing.T) {
 		mux := http.NewServeMux()
 		mux.HandleFunc("/repos/iruoy/fylla/pulls/42", func(w http.ResponseWriter, r *http.Request) {
@@ -460,9 +160,9 @@ func TestResolveJiraKey(t *testing.T) {
 		client.SetBaseURL(server.URL + "/")
 		client.Repos = []string{"iruoy/fylla"}
 
-		key, err := client.ResolveJiraKey(context.Background(), "fylla#42")
+		key, err := client.ResolveIssueKey(context.Background(), "fylla#42")
 		if err != nil {
-			t.Fatalf("ResolveJiraKey: %v", err)
+			t.Fatalf("ResolveIssueKey: %v", err)
 		}
 		if key != "PROJ-123" {
 			t.Errorf("key = %q, want PROJ-123", key)
@@ -489,9 +189,9 @@ func TestResolveJiraKey(t *testing.T) {
 		client.SetBaseURL(server.URL + "/")
 		client.Repos = []string{"iruoy/fylla"}
 
-		key, err := client.ResolveJiraKey(context.Background(), "fylla#10")
+		key, err := client.ResolveIssueKey(context.Background(), "fylla#10")
 		if err != nil {
-			t.Fatalf("ResolveJiraKey: %v", err)
+			t.Fatalf("ResolveIssueKey: %v", err)
 		}
 		if key != "TEAM-456" {
 			t.Errorf("key = %q, want TEAM-456", key)
@@ -503,7 +203,7 @@ func TestResolveJiraKey(t *testing.T) {
 		mux.HandleFunc("/repos/iruoy/fylla/pulls/5", func(w http.ResponseWriter, r *http.Request) {
 			resp := map[string]interface{}{
 				"head": map[string]interface{}{
-					"ref": "fix/no-jira-key",
+					"ref": "fix/no-issue-key",
 				},
 				"body": "Just a fix, no ticket reference",
 			}
@@ -518,9 +218,9 @@ func TestResolveJiraKey(t *testing.T) {
 		client.SetBaseURL(server.URL + "/")
 		client.Repos = []string{"iruoy/fylla"}
 
-		key, err := client.ResolveJiraKey(context.Background(), "fylla#5")
+		key, err := client.ResolveIssueKey(context.Background(), "fylla#5")
 		if err != nil {
-			t.Fatalf("ResolveJiraKey: %v", err)
+			t.Fatalf("ResolveIssueKey: %v", err)
 		}
 		if key != "" {
 			t.Errorf("key = %q, want empty", key)

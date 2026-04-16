@@ -7,21 +7,19 @@ import (
 
 	"github.com/iruoy/fylla/internal/config"
 	"github.com/iruoy/fylla/internal/github"
-	"github.com/iruoy/fylla/internal/jira"
 	"github.com/iruoy/fylla/internal/kendo"
 	"github.com/iruoy/fylla/internal/local"
 	"github.com/iruoy/fylla/internal/todoist"
 )
 
 var (
-	jiraKeyRe          = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d+$`)
-	localKeyRe         = regexp.MustCompile(`^L-\d+$`)
-	jiraProjectPrefixRe = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d*$`)
+	kendoKeyRe = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d+$`)
+	localKeyRe = regexp.MustCompile(`^L-\d+$`)
 )
 
-// isJiraKey returns true if key matches the Jira issue key pattern (e.g. PROJ-123).
-func isJiraKey(key string) bool {
-	return jiraKeyRe.MatchString(key)
+// isKendoKey returns true if key matches the Kendo issue key pattern (e.g. PROJ-123).
+func isKendoKey(key string) bool {
+	return kendoKeyRe.MatchString(key)
 }
 
 // isGitHubKey returns true if key matches the GitHub PR key format (e.g. repo#123).
@@ -42,23 +40,17 @@ func providerForKey(key string) string {
 	if isLocalKey(key) {
 		return "local"
 	}
-	if isJiraKey(key) {
-		return "jira"
+	if isKendoKey(key) {
+		return "kendo"
 	}
 	return "todoist"
 }
 
 // buildProviderQueries builds per-provider query strings from CLI flags and config defaults.
-func buildProviderQueries(cfg *config.Config, jqlFlag, filterFlag string) map[string]string {
+func buildProviderQueries(cfg *config.Config, filterFlag string) map[string]string {
 	queries := make(map[string]string)
 	for _, p := range cfg.ActiveProviders() {
 		switch p {
-		case "jira":
-			q := jqlFlag
-			if q == "" {
-				q = cfg.Jira.DefaultJQL
-			}
-			queries["jira"] = q
 		case "todoist":
 			q := filterFlag
 			if q == "" {
@@ -80,20 +72,6 @@ func buildProviderQueries(cfg *config.Config, jqlFlag, filterFlag string) map[st
 	return queries
 }
 
-func jiraSearchJQL(search string) string {
-	if search == "" {
-		return "status != Done ORDER BY updated DESC"
-	}
-	if isJiraKey(search) {
-		return fmt.Sprintf("key = %q", search)
-	}
-	upper := strings.ToUpper(search)
-	if jiraProjectPrefixRe.MatchString(upper) {
-		return fmt.Sprintf("key >= %q AND key <= %q AND status != Done ORDER BY key ASC", upper, upper+"\uffff")
-	}
-	return fmt.Sprintf("status != Done AND text ~ %q ORDER BY updated DESC", search)
-}
-
 // buildSearchAllQuery returns a broad query for single-provider mode.
 func buildSearchAllQuery(cfg *config.Config, search string) string {
 	return searchQueryForProvider(cfg.ActiveProviders()[0], search)
@@ -102,8 +80,6 @@ func buildSearchAllQuery(cfg *config.Config, search string) string {
 // searchQueryForProvider returns a search query for a specific provider.
 func searchQueryForProvider(provider, search string) string {
 	switch provider {
-	case "jira":
-		return jiraSearchJQL(search)
 	case "kendo":
 		if search != "" {
 			return search
@@ -143,17 +119,6 @@ func loadTaskSource() (TaskSource, *config.Config, error) {
 				return nil, nil, fmt.Errorf("todoist token not set: run 'fylla auth todoist --token TOKEN'")
 			}
 			sources["todoist"] = todoist.NewClient(creds.Token)
-		case "jira":
-			if cfg.Jira.Credentials == "" {
-				return nil, nil, fmt.Errorf("jira not configured: run 'fylla auth jira'")
-			}
-			creds, err := config.LoadProviderCredentials(cfg.Jira.Credentials)
-			if err != nil {
-				return nil, nil, fmt.Errorf("load jira credentials: %w", err)
-			}
-			client := jira.NewClient(cfg.Jira.URL, cfg.Jira.Email, creds.Token)
-			client.DoneTransitions = cfg.Jira.DoneTransitions
-			sources["jira"] = client
 		case "github":
 			if cfg.GitHub.Credentials == "" {
 				return nil, nil, fmt.Errorf("github not configured: run 'fylla auth github'")

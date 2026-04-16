@@ -18,8 +18,10 @@ func defaultProject(cfg *config.Config, provider string) string {
 		return cfg.Todoist.DefaultProject
 	case "local":
 		return cfg.Local.DefaultProject
+	case "kendo":
+		return cfg.Kendo.DefaultProject
 	default:
-		return cfg.Jira.DefaultProject
+		return ""
 	}
 }
 
@@ -90,7 +92,7 @@ func BuildCreateInput(p AddParams) (task.CreateInput, error) {
 // RequiredFields returns the list of field names that need prompting.
 // In inline mode (args provided), only project is prompted if missing.
 // In interactive mode (no args), all empty fields are prompted.
-// The provider parameter controls provider-specific fields (e.g. issueType for Jira only).
+// The provider parameter controls provider-specific fields (e.g. issueType for Kendo).
 func RequiredFields(p AddParams, provider string) []string {
 	var fields []string
 	if p.Project == "" {
@@ -99,7 +101,7 @@ func RequiredFields(p AddParams, provider string) []string {
 	if p.Inline {
 		return fields
 	}
-	if (provider == "jira" || provider == "kendo") && p.IssueType == "" {
+	if provider == "kendo" && p.IssueType == "" {
 		fields = append(fields, "issueType")
 	}
 	if p.Summary == "" {
@@ -119,9 +121,6 @@ func RequiredFields(p AddParams, provider string) []string {
 	}
 	if (provider == "todoist" || provider == "local") && p.Section == "" {
 		fields = append(fields, "section")
-	}
-	if provider == "jira" && p.Parent == "" {
-		fields = append(fields, "parent")
 	}
 	return fields
 }

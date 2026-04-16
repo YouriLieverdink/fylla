@@ -6,7 +6,6 @@ import (
 
 	"github.com/iruoy/fylla/internal/calendar"
 	"github.com/iruoy/fylla/internal/github"
-	"github.com/iruoy/fylla/internal/jira"
 	"github.com/iruoy/fylla/internal/kendo"
 	"github.com/iruoy/fylla/internal/local"
 	"github.com/iruoy/fylla/internal/task"
@@ -33,7 +32,6 @@ type TaskSource interface {
 
 // Compile-time checks that all clients satisfy TaskSource.
 var (
-	_ TaskSource = (*jira.Client)(nil)
 	_ TaskSource = (*todoist.Client)(nil)
 	_ TaskSource = (*github.Client)(nil)
 	_ TaskSource = (*local.Client)(nil)
@@ -70,7 +68,7 @@ type TaskDeleter interface {
 	DeleteTask(ctx context.Context, taskKey string) error
 }
 
-// WorklogPoster abstracts Jira worklog posting for testing.
+// WorklogPoster abstracts worklog posting for testing.
 type WorklogPoster interface {
 	PostWorklog(ctx context.Context, issueKey string, timeSpent time.Duration, description string, started time.Time) error
 }
@@ -195,7 +193,7 @@ type Transitioner interface {
 	TransitionTask(ctx context.Context, taskKey, target string) error
 }
 
-// JiraKeyResolver resolves a non-Jira task key (e.g. GitHub PR) to a Jira issue key.
-type JiraKeyResolver interface {
-	ResolveJiraKey(ctx context.Context, taskKey string) (string, error)
+// IssueKeyResolver resolves a non-native task key (e.g. GitHub PR) to a worklog-compatible issue key.
+type IssueKeyResolver interface {
+	ResolveIssueKey(ctx context.Context, taskKey string) (string, error)
 }

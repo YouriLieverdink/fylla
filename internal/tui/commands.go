@@ -63,7 +63,7 @@ type EditTaskParams struct {
 	HadSprint    bool
 }
 
-// FallbackIssue pairs a Jira key with its summary for display.
+// FallbackIssue pairs an issue key with its summary for display.
 type FallbackIssue struct {
 	Key     string
 	Summary string
@@ -75,7 +75,7 @@ type Callbacks struct {
 	LoadTasks   func() ([]msg.ScoredTask, error)
 	DoneTask    func(taskKey, provider string) error
 	DeleteTask  func(taskKey, provider string) error
-	StartTimer     func(taskKey, project, section, provider string) error
+	StartTimer     func(taskKey, summary, project, section, provider string) error
 	InterruptTimer func() error
 	TimerStatus    func() (*TimerStatusInfo, error)
 	SaveTimerComment   func(comment string) error
@@ -108,8 +108,11 @@ type Callbacks struct {
 	MoveTask         func(taskKey, provider, target string) error
 	ListIssueTypes   func(provider, project string) ([]string, error)
 	ListSprints      func(provider, project string) ([]msg.SprintOption, error)
-	ResolveJiraKey   func(prKey string) (string, error)
-	SearchAllTasks   func(query string) ([]msg.ScoredTask, error)
+	ResolveIssueKey       func(prKey string) (string, error)
+	SearchAllTasks        func(query string) ([]msg.ScoredTask, error)
+	LoadTasksByProvider   func(provider string) ([]msg.ScoredTask, error)
+	BulkDone             func(taskKeys []string) (succeeded []string, failed map[string]error, err error)
+	BulkDelete           func(taskKeys []string) (succeeded []string, failed map[string]error, err error)
 }
 
 func loadTodayCmd(cb Callbacks) tea.Cmd {
@@ -120,9 +123,45 @@ func loadTodayCmd(cb Callbacks) tea.Cmd {
 }
 
 func loadTasksCmd(cb Callbacks) tea.Cmd {
+	// When per-provider loading is available with multiple providers,
+	// fire one command per provider so results trickle in progressively.
+	if cb.LoadTasksByProvider != nil && cb.Providers != nil {
+		providers := cb.Providers()
+		if len(providers) > 1 {
+			cmds := make([]tea.Cmd, len(providers))
+			for i, p := range providers {
+				provider := p // capture
+				cmds[i] = func() tea.Msg {
+					tasks, err := cb.LoadTasksByProvider(provider)
+					return msg.TasksPartialMsg{Provider: provider, Tasks: tasks, Err: err}
+				}
+			}
+			return tea.Batch(cmds...)
+		}
+	}
 	return func() tea.Msg {
 		tasks, err := cb.LoadTasks()
 		return msg.TasksLoadedMsg{Tasks: tasks, Err: err}
+	}
+}
+
+func bulkDoneCmd(cb Callbacks, taskKeys []string) tea.Cmd {
+	return func() tea.Msg {
+		if cb.BulkDone == nil {
+			return msg.BulkActionMsg{Action: "done", Err: fmt.Errorf("bulk done not available")}
+		}
+		succeeded, failed, err := cb.BulkDone(taskKeys)
+		return msg.BulkActionMsg{Action: "done", Succeeded: succeeded, Failed: failed, Err: err}
+	}
+}
+
+func bulkDeleteCmd(cb Callbacks, taskKeys []string) tea.Cmd {
+	return func() tea.Msg {
+		if cb.BulkDelete == nil {
+			return msg.BulkActionMsg{Action: "delete", Err: fmt.Errorf("bulk delete not available")}
+		}
+		succeeded, failed, err := cb.BulkDelete(taskKeys)
+		return msg.BulkActionMsg{Action: "delete", Succeeded: succeeded, Failed: failed, Err: err}
 	}
 }
 
@@ -142,7 +181,7 @@ func deleteTaskCmd(cb Callbacks, taskKey, provider string) tea.Cmd {
 
 func startTimerCmd(cb Callbacks, taskKey, summary, project, section, provider string) tea.Cmd {
 	return func() tea.Msg {
-		err := cb.StartTimer(taskKey, project, section, provider)
+		err := cb.StartTimer(taskKey, summary, project, section, provider)
 		return msg.TimerStartedMsg{TaskKey: taskKey, Summary: summary, Project: project, Section: section, Err: err}
 	}
 }
@@ -300,7 +339,7 @@ func loadFormOptionsCmd(cb Callbacks) tea.Cmd {
 			}
 		}
 		var epics []msg.EpicOption
-		if cb.ListEpics != nil && (provider == "jira" || provider == "kendo") {
+		if cb.ListEpics != nil && (provider == "kendo") {
 			project := ""
 			if len(projects) > 0 {
 				project = projects[0]
@@ -324,7 +363,7 @@ func loadFormOptionsCmd(cb Callbacks) tea.Cmd {
 			}
 		}
 		var issueTypes []string
-		if cb.ListIssueTypes != nil && (provider == "jira" || provider == "kendo") {
+		if cb.ListIssueTypes != nil && (provider == "kendo") {
 			project := ""
 			if len(projects) > 0 {
 				project = projects[0]
@@ -518,13 +557,13 @@ func moveTaskCmd(cb Callbacks, taskKey, provider, target string) tea.Cmd {
 	}
 }
 
-func resolveJiraKeyCmd(cb Callbacks, prKey string) tea.Cmd {
+func resolveIssueKeyCmd(cb Callbacks, prKey string) tea.Cmd {
 	return func() tea.Msg {
-		if cb.ResolveJiraKey == nil {
-			return msg.JiraKeyResolvedMsg{Err: fmt.Errorf("no resolver available")}
+		if cb.ResolveIssueKey == nil {
+			return msg.IssueKeyResolvedMsg{Err: fmt.Errorf("no resolver available")}
 		}
-		key, err := cb.ResolveJiraKey(prKey)
-		return msg.JiraKeyResolvedMsg{Key: key, Err: err}
+		key, err := cb.ResolveIssueKey(prKey)
+		return msg.IssueKeyResolvedMsg{Key: key, Err: err}
 	}
 }
 

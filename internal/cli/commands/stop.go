@@ -12,18 +12,18 @@ import (
 
 // StopParams holds inputs for the stop command.
 type StopParams struct {
-	TimerPath     string
-	RoundMinutes  int
-	Now           time.Time
-	Description   string
-	Jira          WorklogPoster
-	Estimate      EstimateGetter
-	Cfg           *config.Config
-	Resolver      JiraKeyResolver
-	Survey        Surveyor
-	Completer     TaskCompleter
+	TimerPath        string
+	RoundMinutes     int
+	Now              time.Time
+	Description      string
+	Worklog          WorklogPoster
+	Estimate         EstimateGetter
+	Cfg              *config.Config
+	Resolver         IssueKeyResolver
+	Survey           Surveyor
+	Completer        TaskCompleter
 	Done             bool
-	FallbackIssue    string // pre-resolved Jira key for non-Jira tasks (used by TUI)
+	FallbackIssue    string // pre-resolved issue key for non-worklog tasks (used by TUI)
 	FallbackProvider string // provider of the fallback issue (used by TUI)
 }
 
@@ -77,7 +77,7 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 		}
 
 		// Post worklog
-		routed := routedSource(p.Jira, worklogProvider)
+		routed := routedSource(p.Worklog, worklogProvider)
 		if err := routed.PostWorklog(ctx, worklogKey, rounded, desc, seg.StartTime); err != nil {
 			return nil, fmt.Errorf("post worklog: %w", err)
 		}
@@ -117,20 +117,20 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 	return result, nil
 }
 
-// resolveGitHubToJira resolves a GitHub PR key to a Jira issue key. It first
-// tries to extract a Jira key from the PR's branch name or body. If none is
+// resolveGitHubToIssue resolves a GitHub PR key to a worklog issue key. It first
+// tries to extract an issue key from the PR's branch name or body. If none is
 // found, it prompts the user to pick from configured fallback issues.
-func resolveGitHubToJira(ctx context.Context, resolver JiraKeyResolver, survey Surveyor, prKey string, cfg *config.Config) (string, error) {
-	jiraKey, err := resolver.ResolveJiraKey(ctx, prKey)
+func resolveGitHubToIssue(ctx context.Context, resolver IssueKeyResolver, survey Surveyor, prKey string, cfg *config.Config) (string, error) {
+	issueKey, err := resolver.ResolveIssueKey(ctx, prKey)
 	if err != nil {
 		// API error — fall through to fallback prompt
-		jiraKey = ""
+		issueKey = ""
 	}
 
-	if jiraKey != "" && survey != nil {
+	if issueKey != "" && survey != nil {
 		// Let the user confirm or change the resolved key
 		confirmed, err := survey.InputWithDefault(
-			fmt.Sprintf("Jira issue for %s:", prKey), jiraKey)
+			fmt.Sprintf("Issue for %s:", prKey), issueKey)
 		if err != nil {
 			return "", err
 		}
@@ -139,7 +139,7 @@ func resolveGitHubToJira(ctx context.Context, resolver JiraKeyResolver, survey S
 
 	// No key found — prompt fallback
 	if survey == nil {
-		return "", fmt.Errorf("no Jira key found for %s and no interactive prompt available", prKey)
+		return "", fmt.Errorf("no issue key found for %s and no interactive prompt available", prKey)
 	}
 
 	var fallbacks []string
@@ -182,14 +182,20 @@ func resolveToFallbackIssue(survey Surveyor, cfg *config.Config) (string, error)
 }
 
 // resolveWorklogTarget determines the worklog key and provider for a timer stop.
-// It handles GitHub keys, local keys, anonymous timers, non-Jira keys with Jira
-// worklog provider, and explicit fallback overrides.
+// It handles GitHub keys, local keys, anonymous timers, and explicit fallback overrides.
 func resolveWorklogTarget(ctx context.Context, taskKey, provider string, p StopParams) (string, string, error) {
 	// Check if the key needs fallback resolution.
+	// A key needs fallback when it's empty, from a non-worklog provider
+	// (e.g. GitHub PR, local task), or when it doesn't match the worklog
+	// provider's key format (e.g. Todoist numeric key with Kendo worklog provider).
+	worklogProv := provider
+	if worklogProv == "" {
+		worklogProv = p.Cfg.Worklog.Provider
+	}
 	needsFallback := taskKey == "" ||
 		isGitHubKey(taskKey) ||
 		isLocalKey(taskKey) ||
-		(!isJiraKey(taskKey) && p.Cfg.Worklog.Provider == "jira" && provider != "kendo")
+		(!isKendoKey(taskKey) && worklogProv == "kendo")
 
 	// Pre-resolved fallback takes priority.
 	if p.FallbackIssue != "" {
@@ -200,8 +206,8 @@ func resolveWorklogTarget(ctx context.Context, taskKey, provider string, p StopP
 		if needsFallback {
 			return p.FallbackIssue, fbProvider, nil
 		}
-		// Jira-to-Jira override: allow switching to a different Jira issue.
-		if isJiraKey(p.FallbackIssue) && isJiraKey(taskKey) && p.FallbackIssue != taskKey {
+		// Override: allow switching to a different issue.
+		if isKendoKey(p.FallbackIssue) && isKendoKey(taskKey) && p.FallbackIssue != taskKey {
 			return p.FallbackIssue, fbProvider, nil
 		}
 	}
@@ -212,7 +218,7 @@ func resolveWorklogTarget(ctx context.Context, taskKey, provider string, p StopP
 
 	// GitHub: try branch/body resolution first.
 	if isGitHubKey(taskKey) && p.Resolver != nil {
-		resolved, err := resolveGitHubToJira(ctx, p.Resolver, p.Survey, taskKey, p.Cfg)
+		resolved, err := resolveGitHubToIssue(ctx, p.Resolver, p.Survey, taskKey, p.Cfg)
 		if err == nil && resolved != "" {
 			return resolved, provider, nil
 		}

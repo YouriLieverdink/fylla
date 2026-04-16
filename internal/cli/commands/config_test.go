@@ -8,10 +8,9 @@ import (
 	"testing"
 )
 
-const testConfigYAML = `jira:
-  url: https://company.atlassian.net
-  email: you@example.com
-  defaultJql: "assignee = currentUser() AND status = 'To Do'"
+const testConfigYAML = `kendo:
+  url: https://company.kendo.nl
+  defaultFilter: "assignee = me"
 calendar:
   sourceCalendars: [primary]
   fyllaCalendar: fylla
@@ -53,7 +52,7 @@ func TestCLI020_config_show(t *testing.T) {
 			t.Fatalf("RunConfigShow: %v", err)
 		}
 
-		sections := []string{"jira:", "calendar:", "scheduling:", "businessHours:", "projectRules:", "weights:"}
+		sections := []string{"kendo:", "calendar:", "scheduling:", "businessHours:", "projectRules:", "weights:"}
 		for _, section := range sections {
 			if !strings.Contains(yamlText, section) {
 				t.Errorf("output missing section %q", section)
@@ -83,9 +82,9 @@ func TestCLI020_config_show(t *testing.T) {
 
 	t.Run("PrintConfigShow writes to writer", func(t *testing.T) {
 		var buf bytes.Buffer
-		PrintConfigShow(&buf, "jira:\n  url: test\n")
-		if !strings.Contains(buf.String(), "jira:") {
-			t.Errorf("output = %q, want to contain jira:", buf.String())
+		PrintConfigShow(&buf, "kendo:\n  url: test\n")
+		if !strings.Contains(buf.String(), "kendo:") {
+			t.Errorf("output = %q, want to contain kendo:", buf.String())
 		}
 	})
 
@@ -212,15 +211,15 @@ func TestCLI022_config_set(t *testing.T) {
 		path := writeTestConfig(t)
 		cfg, err := RunConfigSet(ConfigSetParams{
 			ConfigPath: path,
-			Key:        "jira.email",
-			Value:      "new@example.com",
+			Key:        "kendo.url",
+			Value:      "https://new.kendo.nl",
 		})
 		if err != nil {
 			t.Fatalf("RunConfigSet: %v", err)
 		}
 
-		if cfg.Jira.Email != "new@example.com" {
-			t.Errorf("email = %q, want 'new@example.com'", cfg.Jira.Email)
+		if cfg.Kendo.URL != "https://new.kendo.nl" {
+			t.Errorf("url = %q, want 'https://new.kendo.nl'", cfg.Kendo.URL)
 		}
 	})
 }

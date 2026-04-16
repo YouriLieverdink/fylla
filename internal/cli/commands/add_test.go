@@ -70,9 +70,9 @@ func TestCLI017_add_interactive_creation(t *testing.T) {
 		}
 	})
 
-	t.Run("interactive mode requires all fields for jira", func(t *testing.T) {
-		fields := RequiredFields(AddParams{}, "jira")
-		expected := []string{"project", "issueType", "summary", "description", "estimate", "dueDate", "priority", "parent"}
+	t.Run("interactive mode requires all fields for kendo", func(t *testing.T) {
+		fields := RequiredFields(AddParams{}, "kendo")
+		expected := []string{"project", "issueType", "summary", "description", "estimate", "dueDate", "priority"}
 		if len(fields) != len(expected) {
 			t.Fatalf("fields = %v, want %v", fields, expected)
 		}
@@ -140,7 +140,7 @@ func TestCLI017_add_interactive_creation(t *testing.T) {
 
 func TestCLI018_add_inline_mode(t *testing.T) {
 	t.Run("inline mode only prompts project", func(t *testing.T) {
-		fields := RequiredFields(AddParams{Inline: true, Summary: "Task"}, "jira")
+		fields := RequiredFields(AddParams{Inline: true, Summary: "Task"}, "kendo")
 		expected := []string{"project"}
 		if len(fields) != len(expected) {
 			t.Fatalf("fields = %v, want %v", fields, expected)
@@ -153,7 +153,7 @@ func TestCLI018_add_inline_mode(t *testing.T) {
 	})
 
 	t.Run("inline mode skips project prompt when pre-selected", func(t *testing.T) {
-		fields := RequiredFields(AddParams{Inline: true, Project: "PROJ", Summary: "Task"}, "jira")
+		fields := RequiredFields(AddParams{Inline: true, Project: "PROJ", Summary: "Task"}, "kendo")
 		if len(fields) != 0 {
 			t.Fatalf("fields = %v, want empty", fields)
 		}
@@ -224,7 +224,7 @@ func TestCLI018_add_inline_mode(t *testing.T) {
 
 func TestRequiredFields_interactive_populated(t *testing.T) {
 	t.Run("summary populated skips summary prompt", func(t *testing.T) {
-		fields := RequiredFields(AddParams{Summary: "Already set"}, "jira")
+		fields := RequiredFields(AddParams{Summary: "Already set"}, "kendo")
 		for _, f := range fields {
 			if f == "summary" {
 				t.Error("summary should not be in required fields when already set")
@@ -233,7 +233,7 @@ func TestRequiredFields_interactive_populated(t *testing.T) {
 	})
 
 	t.Run("estimate populated skips estimate prompt", func(t *testing.T) {
-		fields := RequiredFields(AddParams{Estimate: "2h"}, "jira")
+		fields := RequiredFields(AddParams{Estimate: "2h"}, "kendo")
 		for _, f := range fields {
 			if f == "estimate" {
 				t.Error("estimate should not be in required fields when already set")
@@ -242,7 +242,7 @@ func TestRequiredFields_interactive_populated(t *testing.T) {
 	})
 
 	t.Run("due date populated skips due date prompt", func(t *testing.T) {
-		fields := RequiredFields(AddParams{DueDate: "2025-02-15"}, "jira")
+		fields := RequiredFields(AddParams{DueDate: "2025-02-15"}, "kendo")
 		for _, f := range fields {
 			if f == "dueDate" {
 				t.Error("dueDate should not be in required fields when already set")
@@ -251,7 +251,7 @@ func TestRequiredFields_interactive_populated(t *testing.T) {
 	})
 
 	t.Run("priority populated skips priority prompt", func(t *testing.T) {
-		fields := RequiredFields(AddParams{Priority: "High"}, "jira")
+		fields := RequiredFields(AddParams{Priority: "High"}, "kendo")
 		for _, f := range fields {
 			if f == "priority" {
 				t.Error("priority should not be in required fields when already set")
@@ -262,7 +262,7 @@ func TestRequiredFields_interactive_populated(t *testing.T) {
 
 func TestCLI019_add_project_preselect(t *testing.T) {
 	t.Run("project flag skips project prompt", func(t *testing.T) {
-		fields := RequiredFields(AddParams{Project: "PROJ"}, "jira")
+		fields := RequiredFields(AddParams{Project: "PROJ"}, "kendo")
 		for _, f := range fields {
 			if f == "project" {
 				t.Error("project should not be in required fields when pre-selected")
@@ -293,7 +293,7 @@ func TestCLI019_add_project_preselect(t *testing.T) {
 	})
 
 	t.Run("project flag with inline mode", func(t *testing.T) {
-		fields := RequiredFields(AddParams{Project: "PROJ", Inline: true}, "jira")
+		fields := RequiredFields(AddParams{Project: "PROJ", Inline: true}, "kendo")
 		if len(fields) != 0 {
 			t.Fatalf("fields = %v, want empty", fields)
 		}

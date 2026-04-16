@@ -23,6 +23,7 @@ type StackEntry struct {
 	Project   string    `json:"project,omitempty"`
 	Section   string    `json:"section,omitempty"`
 	Provider  string    `json:"provider,omitempty"`
+	Summary   string    `json:"summary,omitempty"`
 	Comment   string    `json:"comment,omitempty"`
 	Segments  []Segment `json:"segments,omitempty"`
 }
@@ -36,6 +37,7 @@ type StackState struct {
 type ResumedInfo struct {
 	TaskKey string
 	Project string
+	Summary string
 }
 
 // StopResult holds the computed values when a timer is stopped.
@@ -44,6 +46,7 @@ type StopResult struct {
 	Provider string
 	Project  string
 	Section  string
+	Summary  string
 	Segments []Segment
 	Resumed  *ResumedInfo
 }
@@ -66,6 +69,7 @@ type StatusResult struct {
 	Provider     string
 	Project      string
 	Section      string
+	Summary      string
 	Comment      string
 	StartTime    time.Time     // start of current segment
 	Elapsed      time.Duration // current segment elapsed
@@ -80,6 +84,7 @@ type PausedInfo struct {
 	Provider     string
 	Project      string
 	Section      string
+	Summary      string
 	SegmentCount int
 }
 
@@ -130,7 +135,7 @@ func saveStack(ss *StackState, path string) error {
 }
 
 // Start creates a new timer. Errors if a timer is already running.
-func Start(taskKey, project, section, provider string, now time.Time, path string) error {
+func Start(taskKey, project, section, provider, summary string, now time.Time, path string) error {
 	ss, err := loadStack(path)
 	if err != nil {
 		return err
@@ -145,6 +150,7 @@ func Start(taskKey, project, section, provider string, now time.Time, path strin
 			Project:   project,
 			Section:   section,
 			Provider:  provider,
+			Summary:   summary,
 		}},
 	}
 	return saveStack(ss, path)
@@ -203,6 +209,7 @@ func Stop(now time.Time, path string) (*StopResult, error) {
 		Provider: active.Provider,
 		Project:  active.Project,
 		Section:  active.Section,
+		Summary:  active.Summary,
 		Segments: segments,
 	}
 
@@ -216,6 +223,7 @@ func Stop(now time.Time, path string) (*StopResult, error) {
 		result.Resumed = &ResumedInfo{
 			TaskKey: ss.Stack[0].TaskKey,
 			Project: ss.Stack[0].Project,
+			Summary: ss.Stack[0].Summary,
 		}
 	}
 
@@ -258,6 +266,7 @@ func Status(now time.Time, path string) (*StatusResult, error) {
 		Provider:     active.Provider,
 		Project:      active.Project,
 		Section:      active.Section,
+		Summary:      active.Summary,
 		Comment:      active.Comment,
 		StartTime:    active.StartTime,
 		Elapsed:      elapsed,
@@ -271,6 +280,7 @@ func Status(now time.Time, path string) (*StatusResult, error) {
 			Provider:     entry.Provider,
 			Project:      entry.Project,
 			Section:      entry.Section,
+			Summary:      entry.Summary,
 			SegmentCount: len(entry.Segments),
 		})
 	}
@@ -301,6 +311,7 @@ func Abort(now time.Time, path string) (*AbortResult, error) {
 		result.Resumed = &ResumedInfo{
 			TaskKey: ss.Stack[0].TaskKey,
 			Project: ss.Stack[0].Project,
+			Summary: ss.Stack[0].Summary,
 		}
 	}
 

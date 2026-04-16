@@ -139,7 +139,7 @@ var statusAbbrev = map[string]string{
 	"on hold":     "OH",
 }
 
-// AbbrevStatus returns a short abbreviation for a Jira-style status.
+// AbbrevStatus returns a short abbreviation for a task status.
 func AbbrevStatus(status string) string {
 	if a, ok := statusAbbrev[strings.ToLower(status)]; ok {
 		return HintStyle.Render(a)

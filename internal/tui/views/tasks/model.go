@@ -11,14 +11,16 @@ import (
 
 // Model is the tasks view model.
 type Model struct {
-	Tasks   []msg.ScoredTask
-	Cursor  int
-	Loading bool
-	Err     error
-	Width   int
-	Height  int
-	Filter  string
+	Tasks      []msg.ScoredTask
+	Cursor     int
+	Loading    bool
+	Err        error
+	Width      int
+	Height     int
+	Filter     string
 	filterMode bool
+	Selected   map[string]bool // multi-select: key → selected
+	SelectMode bool            // true when multi-select is active
 }
 
 // New creates a new tasks model.
@@ -61,13 +63,58 @@ func (m *Model) IsFilterMode() bool {
 	return m.filterMode
 }
 
-// ToggleFilter enters or exits filter mode.
+// ToggleFilter enters or exits filter input mode.
+// Exiting preserves the filter text so the list stays filtered.
 func (m *Model) ToggleFilter() {
 	m.filterMode = !m.filterMode
-	if !m.filterMode {
-		m.Filter = ""
+	if m.filterMode {
 		m.Cursor = 0
 	}
+}
+
+// HasFilter returns true if a non-empty filter is active.
+func (m *Model) HasFilter() bool {
+	return m.Filter != ""
+}
+
+// ToggleSelect toggles the selection of the currently focused task.
+func (m *Model) ToggleSelect() {
+	t := m.SelectedTask()
+	if t == nil {
+		return
+	}
+	if m.Selected == nil {
+		m.Selected = make(map[string]bool)
+	}
+	if m.Selected[t.Key] {
+		delete(m.Selected, t.Key)
+	} else {
+		m.Selected[t.Key] = true
+	}
+}
+
+// ToggleSelectMode enters or exits multi-select mode.
+func (m *Model) ToggleSelectMode() {
+	m.SelectMode = !m.SelectMode
+	if !m.SelectMode {
+		m.Selected = nil
+	} else if m.Selected == nil {
+		m.Selected = make(map[string]bool)
+	}
+}
+
+// SelectedKeys returns the keys of all selected tasks.
+func (m *Model) SelectedKeys() []string {
+	keys := make([]string, 0, len(m.Selected))
+	for k := range m.Selected {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// SelectionCount returns the number of selected tasks.
+func (m *Model) SelectionCount() int {
+	return len(m.Selected)
 }
 
 // ClearFilter clears the filter and exits filter mode.
@@ -132,10 +179,10 @@ func (m *Model) splitPoint(filtered []msg.ScoredTask) int {
 
 // View renders the tasks view.
 func (m Model) View() string {
-	if m.Loading {
+	if m.Loading && len(m.Tasks) == 0 {
 		return "  Loading tasks..."
 	}
-	if m.Err != nil {
+	if m.Err != nil && len(m.Tasks) == 0 {
 		return styles.ErrStyle.Render(fmt.Sprintf("  Error: %v", m.Err))
 	}
 
@@ -143,9 +190,13 @@ func (m Model) View() string {
 
 	var b strings.Builder
 
-	title := fmt.Sprintf("  Tasks (%d)", len(m.Tasks))
+	loadingSuffix := ""
+	if m.Loading && len(m.Tasks) > 0 {
+		loadingSuffix = " ..."
+	}
+	title := fmt.Sprintf("  Tasks (%d)%s", len(m.Tasks), loadingSuffix)
 	if m.Filter != "" {
-		title = fmt.Sprintf("  Tasks (%d/%d) filter: %s", len(filtered), len(m.Tasks), m.Filter)
+		title = fmt.Sprintf("  Tasks (%d/%d) filter: %s%s", len(filtered), len(m.Tasks), m.Filter, loadingSuffix)
 	}
 	b.WriteString(styles.HeaderFmt.Render(title))
 	b.WriteString("\n\n")
@@ -268,7 +319,18 @@ func (m Model) View() string {
 				line = styles.SelectedStyle.Render(line)
 			}
 
+			// Multi-select checkbox
+			check := ""
+			if m.SelectMode {
+				if m.Selected != nil && m.Selected[t.Key] {
+					check = "[x] "
+				} else {
+					check = "[ ] "
+				}
+			}
+
 			b.WriteString(cursor)
+			b.WriteString(check)
 			b.WriteString(dot)
 			b.WriteString(line)
 			b.WriteString("\n")
@@ -282,9 +344,17 @@ func (m Model) View() string {
 
 	b.WriteString("\n")
 	if m.filterMode {
-		b.WriteString(styles.HintStyle.Render("  Type to filter, Esc to clear"))
+		b.WriteString(styles.HintStyle.Render("  Type to filter, Enter/Esc to confirm"))
+	} else if m.SelectMode {
+		count := m.SelectionCount()
+		hints := fmt.Sprintf("  space:toggle  d:done %d  D:delete %d  Esc:exit select", count, count)
+		b.WriteString(styles.HintStyle.Render(hints))
 	} else {
-		hints := "j/k:navigate  t/enter:timer  d:done  D:delete  m:move  a:add  e:edit  S:snooze  /:filter  r:refresh"
+		filterHint := "/:filter"
+		if m.HasFilter() {
+			filterHint = "/:clear filter"
+		}
+		hints := fmt.Sprintf("j/k:navigate  t/enter:timer  d:done  D:delete  m:move  a:add  e:edit  S:snooze  space:select  %s  r:refresh", filterHint)
 		b.WriteString(styles.HintStyle.Render("  " + hints))
 	}
 

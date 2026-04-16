@@ -128,7 +128,7 @@ func CompositeScoreBreakdown(t task.Task, w config.WeightsConfig, now time.Time)
 	return bd
 }
 
-// PriorityScore maps Jira priority (1-5) to a 0-100 score.
+// PriorityScore maps priority (1-5) to a 0-100 score.
 // Highest(1)=100, High(2)=80, Medium(3)=60, Low(4)=40, Lowest(5)=20.
 func PriorityScore(priority int) float64 {
 	if priority < 1 {

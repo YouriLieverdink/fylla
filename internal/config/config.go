@@ -8,7 +8,6 @@ import (
 // Config represents the fylla configuration file.
 type Config struct {
 	Providers     []string                         `yaml:"providers"`
-	Jira          JiraConfig                       `yaml:"jira"`
 	Todoist       TodoistConfig                    `yaml:"todoist"`
 	GitHub        GitHubConfig                     `yaml:"github"`
 	Local         LocalConfig                      `yaml:"local"`
@@ -23,22 +22,12 @@ type Config struct {
 }
 
 // ActiveProviders returns the list of configured providers.
-// It returns Providers if set, and defaults to ["jira"].
+// It returns Providers if set, and defaults to ["kendo"].
 func (c *Config) ActiveProviders() []string {
 	if len(c.Providers) > 0 {
 		return c.Providers
 	}
-	return []string{"jira"}
-}
-
-// JiraConfig holds Jira connection settings.
-type JiraConfig struct {
-	Credentials     string            `yaml:"credentials"`
-	URL             string            `yaml:"url"`
-	Email           string            `yaml:"email"`
-	DefaultJQL      string            `yaml:"defaultJql"`
-	DefaultProject  string            `yaml:"defaultProject"`
-	DoneTransitions map[string]string `yaml:"doneTransitions"`
+	return []string{"kendo"}
 }
 
 // TodoistConfig holds Todoist connection settings.
@@ -80,12 +69,13 @@ type CalendarConfig struct {
 
 // SchedulingConfig holds scheduling parameters.
 type SchedulingConfig struct {
-	WindowDays             int   `yaml:"windowDays"`
-	MinTaskDurationMinutes int   `yaml:"minTaskDurationMinutes"`
-	MaxTaskDurationMinutes int   `yaml:"maxTaskDurationMinutes"`
-	BufferMinutes          int   `yaml:"bufferMinutes"`
-	TravelBufferMinutes    int   `yaml:"travelBufferMinutes"`
-	SnapMinutes            []int `yaml:"snapMinutes"`
+	WindowDays              int   `yaml:"windowDays"`
+	MinTaskDurationMinutes  int   `yaml:"minTaskDurationMinutes"`
+	MaxTaskDurationMinutes  int   `yaml:"maxTaskDurationMinutes"`
+	BufferMinutes           int   `yaml:"bufferMinutes"`
+	TravelBufferMinutes     int   `yaml:"travelBufferMinutes"`
+	SnapMinutes             []int `yaml:"snapMinutes"`
+	DefaultEstimateMinutes  int   `yaml:"defaultEstimateMinutes"`
 }
 
 // BusinessHoursConfig holds default business hours.
@@ -126,9 +116,9 @@ func (c *Config) Validate() error {
 		seen := make(map[string]bool)
 		for _, p := range c.Providers {
 			switch p {
-			case "jira", "todoist", "github", "local", "kendo":
+			case "todoist", "github", "local", "kendo":
 			default:
-				return fmt.Errorf("unknown provider %q (must be 'jira', 'todoist', 'github', 'local', or 'kendo')", p)
+				return fmt.Errorf("unknown provider %q (must be 'todoist', 'github', 'local', or 'kendo')", p)
 			}
 			if seen[p] {
 				return fmt.Errorf("duplicate provider %q", p)

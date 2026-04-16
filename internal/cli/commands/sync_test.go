@@ -76,10 +76,10 @@ func (m *mockTaskFetcher) FetchTasks(_ context.Context, query string) ([]task.Ta
 // testConfig returns a standard config for testing.
 func testConfig() *config.Config {
 	return &config.Config{
-		Jira: config.JiraConfig{
-			URL:        "https://test.atlassian.net",
-			Email:      "test@example.com",
-			DefaultJQL: "assignee = currentUser()",
+		Providers: []string{"kendo"},
+		Kendo: config.KendoConfig{
+			URL:           "https://test.kendo.nl",
+			DefaultFilter: "assignee = me",
 		},
 		Calendar: config.CalendarConfig{
 			SourceCalendars: []string{"primary"},
@@ -219,7 +219,7 @@ func TestSYNC001_delete_existing_fylla_events(t *testing.T) {
 	})
 }
 
-func TestSYNC002_fetch_jira_tasks_using_jql(t *testing.T) {
+func TestSYNC002_fetch_tasks_using_query(t *testing.T) {
 	now := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
 	start := now
 	end := now.AddDate(0, 0, 5)
@@ -1019,14 +1019,14 @@ func TestCLI005_sync_dry_run(t *testing.T) {
 	})
 }
 
-func TestCLI006_sync_jql_override(t *testing.T) {
+func TestCLI006_sync_filter_override(t *testing.T) {
 	now := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
 
-	t.Run("--jql overrides default JQL", func(t *testing.T) {
+	t.Run("--filter overrides default filter", func(t *testing.T) {
 		cfg := testConfig()
-		cfg.Jira.DefaultJQL = "assignee = currentUser()"
+		cfg.Kendo.DefaultFilter = "assignee = me"
 
-		query, _, _, _, err := BuildSyncParams(SyncFlags{JQL: "project = MYPROJ"}, cfg, now)
+		query, _, _, _, err := BuildSyncParams(SyncFlags{Filter: "project = MYPROJ"}, cfg, now)
 		if err != nil {
 			t.Fatalf("BuildSyncParams: %v", err)
 		}
@@ -1035,15 +1035,15 @@ func TestCLI006_sync_jql_override(t *testing.T) {
 		}
 	})
 
-	t.Run("default JQL used when --jql not set", func(t *testing.T) {
+	t.Run("default filter used when --filter not set", func(t *testing.T) {
 		cfg := testConfig()
-		cfg.Jira.DefaultJQL = "assignee = currentUser()"
+		cfg.Kendo.DefaultFilter = "assignee = me"
 
 		query, _, _, _, err := BuildSyncParams(SyncFlags{}, cfg, now)
 		if err != nil {
 			t.Fatalf("BuildSyncParams: %v", err)
 		}
-		if query != "assignee = currentUser()" {
+		if query != "assignee = me" {
 			t.Errorf("query = %q, want default", query)
 		}
 	})
@@ -1057,7 +1057,7 @@ func TestCLI006_sync_jql_override(t *testing.T) {
 		}
 
 		cfg := testConfig()
-		query, start, end, _, err := BuildSyncParams(SyncFlags{JQL: "project = MYPROJ"}, cfg, now)
+		query, start, end, _, err := BuildSyncParams(SyncFlags{Filter: "project = MYPROJ"}, cfg, now)
 		if err != nil {
 			t.Fatalf("BuildSyncParams: %v", err)
 		}

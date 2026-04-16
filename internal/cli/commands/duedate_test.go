@@ -41,7 +41,7 @@ func TestDueDate_sets_absolute(t *testing.T) {
 		result, err := RunDueDate(context.Background(), DueDateParams{
 			TaskKey: "PROJ-123",
 			Date:    "2025-03-15",
-			Jira:    updater,
+			Updater: updater,
 		})
 		if err != nil {
 			t.Fatalf("RunDueDate: %v", err)
@@ -86,7 +86,7 @@ func TestDueDate_sets_absolute(t *testing.T) {
 		_, err := RunDueDate(context.Background(), DueDateParams{
 			TaskKey: "PROJ-123",
 			Date:    "!!@@##",
-			Jira:    updater,
+			Updater: updater,
 		})
 		if err == nil {
 			t.Fatal("expected error for unparseable date")
@@ -98,22 +98,22 @@ func TestDueDate_sets_absolute(t *testing.T) {
 		_, err := RunDueDate(context.Background(), DueDateParams{
 			TaskKey: "PROJ-123",
 			Date:    "",
-			Jira:    updater,
+			Updater: updater,
 		})
 		if err == nil {
 			t.Fatal("expected error for empty date")
 		}
 	})
 
-	t.Run("returns error from Jira update", func(t *testing.T) {
-		updater := &mockDueDateUpdater{err: fmt.Errorf("jira error")}
+	t.Run("returns error from updater", func(t *testing.T) {
+		updater := &mockDueDateUpdater{err: fmt.Errorf("update error")}
 		_, err := RunDueDate(context.Background(), DueDateParams{
 			TaskKey: "PROJ-123",
 			Date:    "2025-03-15",
-			Jira:    updater,
+			Updater: updater,
 		})
 		if err == nil {
-			t.Fatal("expected error from Jira")
+			t.Fatal("expected error from updater")
 		}
 	})
 }
@@ -126,7 +126,7 @@ func TestDueDate_relative_adjustments(t *testing.T) {
 		result, err := RunDueDate(context.Background(), DueDateParams{
 			TaskKey: "PROJ-123",
 			Date:    "+7d",
-			Jira:    updater,
+			Updater: updater,
 			Getter:  getter,
 		})
 		if err != nil {
@@ -146,7 +146,7 @@ func TestDueDate_relative_adjustments(t *testing.T) {
 		result, err := RunDueDate(context.Background(), DueDateParams{
 			TaskKey: "PROJ-123",
 			Date:    "-3d",
-			Jira:    updater,
+			Updater: updater,
 			Getter:  getter,
 		})
 		if err != nil {
@@ -165,7 +165,7 @@ func TestDueDate_relative_adjustments(t *testing.T) {
 		result, err := RunDueDate(context.Background(), DueDateParams{
 			TaskKey: "PROJ-123",
 			Date:    "+7d",
-			Jira:    updater,
+			Updater: updater,
 			Getter:  getter,
 		})
 		if err != nil {
@@ -182,11 +182,11 @@ func TestDueDate_relative_adjustments(t *testing.T) {
 
 	t.Run("returns error when getter fails", func(t *testing.T) {
 		updater := &mockDueDateUpdater{}
-		getter := &mockDueDateGetter{err: fmt.Errorf("jira error")}
+		getter := &mockDueDateGetter{err: fmt.Errorf("fetch error")}
 		_, err := RunDueDate(context.Background(), DueDateParams{
 			TaskKey: "PROJ-123",
 			Date:    "+7d",
-			Jira:    updater,
+			Updater: updater,
 			Getter:  getter,
 		})
 		if err == nil {
@@ -200,7 +200,7 @@ func TestDueDate_relative_adjustments(t *testing.T) {
 		_, err := RunDueDate(context.Background(), DueDateParams{
 			TaskKey: "PROJ-123",
 			Date:    "+invalid",
-			Jira:    updater,
+			Updater: updater,
 			Getter:  getter,
 		})
 		if err == nil {

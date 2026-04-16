@@ -10,7 +10,7 @@ import (
 	"github.com/iruoy/fylla/internal/task"
 )
 
-func TestIsJiraKey(t *testing.T) {
+func TestIsKendoKey(t *testing.T) {
 	tests := []struct {
 		key  string
 		want bool
@@ -28,8 +28,8 @@ func TestIsJiraKey(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.key, func(t *testing.T) {
-			if got := isJiraKey(tt.key); got != tt.want {
-				t.Errorf("isJiraKey(%q) = %v, want %v", tt.key, got, tt.want)
+			if got := isKendoKey(tt.key); got != tt.want {
+				t.Errorf("isKendoKey(%q) = %v, want %v", tt.key, got, tt.want)
 			}
 		})
 	}
@@ -40,8 +40,8 @@ func TestProviderForKey(t *testing.T) {
 		key  string
 		want string
 	}{
-		{"PROJ-123", "jira"},
-		{"AB-1", "jira"},
+		{"PROJ-123", "kendo"},
+		{"AB-1", "kendo"},
 		{"123456", "todoist"},
 		{"8765432101", "todoist"},
 	}
@@ -125,18 +125,18 @@ func (m *mockSource) UpdateSummary(_ context.Context, _ string, summary string) 
 	return nil
 }
 
-func TestMultiTaskSource_RoutesJiraKeys(t *testing.T) {
-	jiraSrc := &mockSource{name: "jira"}
+func TestMultiTaskSource_RoutesKendoKeys(t *testing.T) {
+	kendoSrc := &mockSource{name: "kendo"}
 	todoistSrc := &mockSource{name: "todoist"}
 	ms := NewMultiTaskSource(
-		map[string]TaskSource{"jira": jiraSrc, "todoist": todoistSrc},
-		[]string{"jira", "todoist"},
+		map[string]TaskSource{"kendo": kendoSrc, "todoist": todoistSrc},
+		[]string{"kendo", "todoist"},
 	)
 
-	t.Run("CompleteTask routes to jira", func(t *testing.T) {
+	t.Run("CompleteTask routes to kendo", func(t *testing.T) {
 		ms.CompleteTask(context.Background(), "PROJ-123")
-		if jiraSrc.completedKey != "PROJ-123" {
-			t.Errorf("expected jira to handle PROJ-123, got %q", jiraSrc.completedKey)
+		if kendoSrc.completedKey != "PROJ-123" {
+			t.Errorf("expected kendo to handle PROJ-123, got %q", kendoSrc.completedKey)
 		}
 	})
 
@@ -147,10 +147,10 @@ func TestMultiTaskSource_RoutesJiraKeys(t *testing.T) {
 		}
 	})
 
-	t.Run("DeleteTask routes to jira", func(t *testing.T) {
+	t.Run("DeleteTask routes to kendo", func(t *testing.T) {
 		ms.DeleteTask(context.Background(), "TEST-42")
-		if jiraSrc.deletedKey != "TEST-42" {
-			t.Errorf("expected jira to handle TEST-42, got %q", jiraSrc.deletedKey)
+		if kendoSrc.deletedKey != "TEST-42" {
+			t.Errorf("expected kendo to handle TEST-42, got %q", kendoSrc.deletedKey)
 		}
 	})
 
@@ -163,8 +163,8 @@ func TestMultiTaskSource_RoutesJiraKeys(t *testing.T) {
 
 	t.Run("CreateTask defaults to first provider", func(t *testing.T) {
 		key, _ := ms.CreateTask(context.Background(), task.CreateInput{Summary: "test"})
-		if key != "jira-NEW" {
-			t.Errorf("CreateTask returned %q, want jira-NEW", key)
+		if key != "kendo-NEW" {
+			t.Errorf("CreateTask returned %q, want kendo-NEW", key)
 		}
 	})
 
@@ -186,9 +186,9 @@ func (f *failingSource) FetchTasks(_ context.Context, _ string) ([]task.Task, er
 
 func TestMultiFetcher_ConcurrentFetch(t *testing.T) {
 	t.Run("merges results from multiple providers", func(t *testing.T) {
-		jiraSrc := &mockSource{
-			name:  "jira",
-			tasks: []task.Task{{Key: "PROJ-1", Summary: "Jira task"}},
+		kendoSrc := &mockSource{
+			name:  "kendo",
+			tasks: []task.Task{{Key: "PROJ-1", Summary: "Kendo task"}},
 		}
 		todoistSrc := &mockSource{
 			name:  "todoist",
@@ -196,8 +196,8 @@ func TestMultiFetcher_ConcurrentFetch(t *testing.T) {
 		}
 
 		mf := &multiFetcher{
-			queries: map[string]string{"jira": "assignee=me", "todoist": "today"},
-			sources: map[string]TaskSource{"jira": jiraSrc, "todoist": todoistSrc},
+			queries: map[string]string{"kendo": "assignee=me", "todoist": "today"},
+			sources: map[string]TaskSource{"kendo": kendoSrc, "todoist": todoistSrc},
 		}
 
 		tasks, err := mf.FetchTasks(context.Background(), "")
@@ -218,15 +218,15 @@ func TestMultiFetcher_ConcurrentFetch(t *testing.T) {
 	})
 
 	t.Run("partial failure returns error with partial tasks", func(t *testing.T) {
-		jiraSrc := &mockSource{
-			name:  "jira",
-			tasks: []task.Task{{Key: "PROJ-1", Summary: "Jira task"}},
+		kendoSrc := &mockSource{
+			name:  "kendo",
+			tasks: []task.Task{{Key: "PROJ-1", Summary: "Kendo task"}},
 		}
 		failSrc := &failingSource{}
 
 		mf := &multiFetcher{
-			queries: map[string]string{"jira": "assignee=me", "todoist": "today"},
-			sources: map[string]TaskSource{"jira": jiraSrc, "todoist": failSrc},
+			queries: map[string]string{"kendo": "assignee=me", "todoist": "today"},
+			sources: map[string]TaskSource{"kendo": kendoSrc, "todoist": failSrc},
 		}
 
 		tasks, err := mf.FetchTasks(context.Background(), "")
@@ -246,8 +246,8 @@ func TestMultiFetcher_ConcurrentFetch(t *testing.T) {
 		failSrc2 := &failingSource{}
 
 		mf := &multiFetcher{
-			queries: map[string]string{"jira": "q1", "todoist": "q2"},
-			sources: map[string]TaskSource{"jira": failSrc1, "todoist": failSrc2},
+			queries: map[string]string{"kendo": "q1", "todoist": "q2"},
+			sources: map[string]TaskSource{"kendo": failSrc1, "todoist": failSrc2},
 		}
 
 		_, err := mf.FetchTasks(context.Background(), "")
@@ -258,46 +258,46 @@ func TestMultiFetcher_ConcurrentFetch(t *testing.T) {
 }
 
 func TestBuildProviderQueries(t *testing.T) {
-	t.Run("single jira provider uses JQL flag", func(t *testing.T) {
-		cfg := &config.Config{Providers: []string{"jira"}, Jira: config.JiraConfig{DefaultJQL: "default jql"}}
-		queries := buildProviderQueries(cfg, "custom jql", "")
-		if queries["jira"] != "custom jql" {
-			t.Errorf("jira query = %q, want custom jql", queries["jira"])
+	t.Run("single kendo provider uses filter flag", func(t *testing.T) {
+		cfg := &config.Config{Providers: []string{"kendo"}, Kendo: config.KendoConfig{DefaultFilter: "default filter"}}
+		queries := buildProviderQueries(cfg, "custom filter")
+		if queries["kendo"] != "custom filter" {
+			t.Errorf("kendo query = %q, want custom filter", queries["kendo"])
 		}
 	})
 
-	t.Run("single jira provider falls back to config default", func(t *testing.T) {
-		cfg := &config.Config{Providers: []string{"jira"}, Jira: config.JiraConfig{DefaultJQL: "default jql"}}
-		queries := buildProviderQueries(cfg, "", "")
-		if queries["jira"] != "default jql" {
-			t.Errorf("jira query = %q, want default jql", queries["jira"])
+	t.Run("single kendo provider falls back to config default", func(t *testing.T) {
+		cfg := &config.Config{Providers: []string{"kendo"}, Kendo: config.KendoConfig{DefaultFilter: "default filter"}}
+		queries := buildProviderQueries(cfg, "")
+		if queries["kendo"] != "default filter" {
+			t.Errorf("kendo query = %q, want default filter", queries["kendo"])
 		}
 	})
 
 	t.Run("multi-provider builds separate queries", func(t *testing.T) {
 		cfg := &config.Config{
-			Providers: []string{"jira", "todoist"},
-			Jira:      config.JiraConfig{DefaultJQL: "assignee = me"},
+			Providers: []string{"kendo", "todoist"},
+			Kendo:     config.KendoConfig{DefaultFilter: "assignee = me"},
 			Todoist:   config.TodoistConfig{DefaultFilter: "today | overdue"},
 		}
-		queries := buildProviderQueries(cfg, "", "")
-		if queries["jira"] != "assignee = me" {
-			t.Errorf("jira query = %q", queries["jira"])
+		queries := buildProviderQueries(cfg, "")
+		if queries["kendo"] != "assignee = me" {
+			t.Errorf("kendo query = %q", queries["kendo"])
 		}
 		if queries["todoist"] != "today | overdue" {
 			t.Errorf("todoist query = %q", queries["todoist"])
 		}
 	})
 
-	t.Run("flags override config defaults", func(t *testing.T) {
+	t.Run("filter flag overrides config defaults", func(t *testing.T) {
 		cfg := &config.Config{
-			Providers: []string{"jira", "todoist"},
-			Jira:      config.JiraConfig{DefaultJQL: "default"},
+			Providers: []string{"kendo", "todoist"},
+			Kendo:     config.KendoConfig{DefaultFilter: "default"},
 			Todoist:   config.TodoistConfig{DefaultFilter: "default"},
 		}
-		queries := buildProviderQueries(cfg, "custom jql", "custom filter")
-		if queries["jira"] != "custom jql" {
-			t.Errorf("jira query = %q, want custom jql", queries["jira"])
+		queries := buildProviderQueries(cfg, "custom filter")
+		if queries["kendo"] != "custom filter" {
+			t.Errorf("kendo query = %q, want custom filter", queries["kendo"])
 		}
 		if queries["todoist"] != "custom filter" {
 			t.Errorf("todoist query = %q, want custom filter", queries["todoist"])

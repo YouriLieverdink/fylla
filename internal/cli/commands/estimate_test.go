@@ -41,7 +41,7 @@ func TestCLI015_estimate_sets_remaining(t *testing.T) {
 		result, err := RunEstimate(context.Background(), EstimateParams{
 			TaskKey:  "PROJ-123",
 			Duration: "4h",
-			Jira:     updater,
+			Updater:  updater,
 		})
 		if err != nil {
 			t.Fatalf("RunEstimate: %v", err)
@@ -70,7 +70,7 @@ func TestCLI015_estimate_sets_remaining(t *testing.T) {
 		result, err := RunEstimate(context.Background(), EstimateParams{
 			TaskKey:  "PROJ-456",
 			Duration: "30m",
-			Jira:     updater,
+			Updater:  updater,
 		})
 		if err != nil {
 			t.Fatalf("RunEstimate: %v", err)
@@ -104,22 +104,22 @@ func TestCLI015_estimate_sets_remaining(t *testing.T) {
 		_, err := RunEstimate(context.Background(), EstimateParams{
 			TaskKey:  "PROJ-123",
 			Duration: "invalid",
-			Jira:     updater,
+			Updater:  updater,
 		})
 		if err == nil {
 			t.Fatal("expected error for invalid duration")
 		}
 	})
 
-	t.Run("returns error from Jira update", func(t *testing.T) {
-		updater := &mockEstimateUpdater{err: fmt.Errorf("jira error")}
+	t.Run("returns error from updater", func(t *testing.T) {
+		updater := &mockEstimateUpdater{err: fmt.Errorf("update error")}
 		_, err := RunEstimate(context.Background(), EstimateParams{
 			TaskKey:  "PROJ-123",
 			Duration: "4h",
-			Jira:     updater,
+			Updater:  updater,
 		})
 		if err == nil {
-			t.Fatal("expected error from Jira")
+			t.Fatal("expected error from updater")
 		}
 	})
 
@@ -128,7 +128,7 @@ func TestCLI015_estimate_sets_remaining(t *testing.T) {
 		result, err := RunEstimate(context.Background(), EstimateParams{
 			TaskKey:  "PROJ-123",
 			Duration: "1h30m",
-			Jira:     updater,
+			Updater:  updater,
 		})
 		if err != nil {
 			t.Fatalf("RunEstimate: %v", err)
@@ -147,7 +147,7 @@ func TestCLI016_estimate_relative_adjustments(t *testing.T) {
 		result, err := RunEstimate(context.Background(), EstimateParams{
 			TaskKey:  "PROJ-123",
 			Duration: "+2h",
-			Jira:     updater,
+			Updater:  updater,
 			Getter:   getter,
 		})
 		if err != nil {
@@ -168,7 +168,7 @@ func TestCLI016_estimate_relative_adjustments(t *testing.T) {
 		result, err := RunEstimate(context.Background(), EstimateParams{
 			TaskKey:  "PROJ-123",
 			Duration: "-1h",
-			Jira:     updater,
+			Updater:  updater,
 			Getter:   getter,
 		})
 		if err != nil {
@@ -186,7 +186,7 @@ func TestCLI016_estimate_relative_adjustments(t *testing.T) {
 		result, err := RunEstimate(context.Background(), EstimateParams{
 			TaskKey:  "PROJ-123",
 			Duration: "-2h",
-			Jira:     updater,
+			Updater:  updater,
 			Getter:   getter,
 		})
 		if err != nil {
@@ -204,7 +204,7 @@ func TestCLI016_estimate_relative_adjustments(t *testing.T) {
 		result, err := RunEstimate(context.Background(), EstimateParams{
 			TaskKey:  "PROJ-123",
 			Duration: "+30m",
-			Jira:     updater,
+			Updater:  updater,
 			Getter:   getter,
 		})
 		if err != nil {
@@ -219,11 +219,11 @@ func TestCLI016_estimate_relative_adjustments(t *testing.T) {
 
 	t.Run("returns error when getter fails", func(t *testing.T) {
 		updater := &mockEstimateUpdater{}
-		getter := &mockEstimateGetter{err: fmt.Errorf("jira error")}
+		getter := &mockEstimateGetter{err: fmt.Errorf("fetch error")}
 		_, err := RunEstimate(context.Background(), EstimateParams{
 			TaskKey:  "PROJ-123",
 			Duration: "+2h",
-			Jira:     updater,
+			Updater:  updater,
 			Getter:   getter,
 		})
 		if err == nil {
@@ -237,7 +237,7 @@ func TestCLI016_estimate_relative_adjustments(t *testing.T) {
 		_, err := RunEstimate(context.Background(), EstimateParams{
 			TaskKey:  "PROJ-123",
 			Duration: "+invalid",
-			Jira:     updater,
+			Updater:  updater,
 			Getter:   getter,
 		})
 		if err == nil {
@@ -251,7 +251,7 @@ func TestCLI016_estimate_relative_adjustments(t *testing.T) {
 		result, err := RunEstimate(context.Background(), EstimateParams{
 			TaskKey:  "PROJ-123",
 			Duration: "-30m",
-			Jira:     updater,
+			Updater:  updater,
 			Getter:   getter,
 		})
 		if err != nil {

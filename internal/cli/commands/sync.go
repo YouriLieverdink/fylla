@@ -51,7 +51,6 @@ type SyncResult struct {
 // SyncFlags holds the parsed CLI flags for the sync command.
 type SyncFlags struct {
 	DryRun bool
-	JQL    string
 	Filter string
 	Days   int
 	From   string
@@ -75,11 +74,13 @@ func BuildSyncParams(flags SyncFlags, cfg *config.Config, now time.Time) (query 
 		if query == "" {
 			query = cfg.Local.DefaultFilter
 		}
-	default:
-		query = flags.JQL
+	case "kendo":
+		query = flags.Filter
 		if query == "" {
-			query = cfg.Jira.DefaultJQL
+			query = cfg.Kendo.DefaultFilter
 		}
+	default:
+		query = flags.Filter
 	}
 
 	// Date range: --from/--to take precedence over --days over config windowDays
@@ -474,12 +475,13 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 	// Step 6: Allocate tasks to slots
 	progress(p.Progress, "Scheduling %d tasks into available slots...", len(sorted))
 	allocations, unscheduled := scheduler.Allocate(sorted, slotsByProject, scheduler.AllocateConfig{
-		MinTaskDurationMinutes: p.Cfg.Scheduling.MinTaskDurationMinutes,
-		MaxTaskDurationMinutes: p.Cfg.Scheduling.MaxTaskDurationMinutes,
-		BufferMinutes:          p.Cfg.Scheduling.BufferMinutes,
-		SnapMinutes:            p.Cfg.Scheduling.SnapMinutes,
-		Weights:                p.Cfg.Weights,
-		Now:                    p.Now,
+		MinTaskDurationMinutes:  p.Cfg.Scheduling.MinTaskDurationMinutes,
+		MaxTaskDurationMinutes:  p.Cfg.Scheduling.MaxTaskDurationMinutes,
+		BufferMinutes:           p.Cfg.Scheduling.BufferMinutes,
+		SnapMinutes:             p.Cfg.Scheduling.SnapMinutes,
+		DefaultEstimateMinutes:  p.Cfg.Scheduling.DefaultEstimateMinutes,
+		Weights:                 p.Cfg.Weights,
+		Now:                     p.Now,
 	})
 
 	// Step 7: Apply schedule to calendar

@@ -35,7 +35,7 @@ func ParseDuration(s string) (time.Duration, error) {
 type EstimateParams struct {
 	TaskKey  string
 	Duration string // raw duration string, e.g. "4h", "+2h", "-1h"
-	Jira     EstimateUpdater
+	Updater  EstimateUpdater
 	Getter   EstimateGetter
 }
 
@@ -45,7 +45,7 @@ type EstimateResult struct {
 	Duration time.Duration
 }
 
-// RunEstimate sets or adjusts the remaining estimate on a Jira issue.
+// RunEstimate sets or adjusts the remaining estimate on a task.
 func RunEstimate(ctx context.Context, p EstimateParams) (*EstimateResult, error) {
 	raw := strings.TrimSpace(p.Duration)
 	if raw == "" {
@@ -84,7 +84,7 @@ func RunEstimate(ctx context.Context, p EstimateParams) (*EstimateResult, error)
 		final = dur
 	}
 
-	if err := p.Jira.UpdateEstimate(ctx, p.TaskKey, final); err != nil {
+	if err := p.Updater.UpdateEstimate(ctx, p.TaskKey, final); err != nil {
 		return nil, err
 	}
 

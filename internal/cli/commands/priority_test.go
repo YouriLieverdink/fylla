@@ -158,7 +158,7 @@ func TestPriority_relative_adjustments(t *testing.T) {
 
 	t.Run("returns error when getter fails", func(t *testing.T) {
 		updater := &mockPriorityUpdater{}
-		getter := &mockPriorityGetter{err: fmt.Errorf("jira error")}
+		getter := &mockPriorityGetter{err: fmt.Errorf("fetch error")}
 		_, err := RunPriority(context.Background(), PriorityParams{
 			TaskKey:  "PROJ-123",
 			Priority: "+1",
@@ -209,7 +209,7 @@ func TestPriority_invalid_input(t *testing.T) {
 	})
 
 	t.Run("returns error from updater", func(t *testing.T) {
-		updater := &mockPriorityUpdater{err: fmt.Errorf("jira error")}
+		updater := &mockPriorityUpdater{err: fmt.Errorf("update error")}
 		_, err := RunPriority(context.Background(), PriorityParams{
 			TaskKey:  "PROJ-123",
 			Priority: "High",

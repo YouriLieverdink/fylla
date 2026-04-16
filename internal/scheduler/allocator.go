@@ -10,8 +10,9 @@ import (
 	"github.com/iruoy/fylla/internal/task"
 )
 
-// defaultEstimate is used when a task has no remaining estimate.
-const defaultEstimate = time.Hour
+// DefaultEstimate is used when a task has no remaining estimate
+// and no config override is set.
+const DefaultEstimate = time.Hour
 
 // Allocation represents a task assigned to a time slot.
 type Allocation struct {
@@ -32,12 +33,13 @@ type UnscheduledTask struct {
 
 // AllocateConfig holds parameters for the allocation algorithm.
 type AllocateConfig struct {
-	MinTaskDurationMinutes int
-	MaxTaskDurationMinutes int
-	BufferMinutes          int
-	SnapMinutes            []int
-	Weights                config.WeightsConfig
-	Now                    time.Time
+	MinTaskDurationMinutes  int
+	MaxTaskDurationMinutes  int
+	BufferMinutes           int
+	SnapMinutes             []int
+	DefaultEstimateMinutes  int
+	Weights                 config.WeightsConfig
+	Now                     time.Time
 }
 
 // Allocate assigns sorted tasks to available free slots using a first-fit algorithm.
@@ -58,6 +60,11 @@ func Allocate(tasks []ScoredTask, slotsByProject map[string][]calendar.Slot, cfg
 		maxDur = time.Duration(cfg.MaxTaskDurationMinutes) * time.Minute
 	}
 
+	defaultEst := DefaultEstimate
+	if cfg.DefaultEstimateMinutes > 0 {
+		defaultEst = time.Duration(cfg.DefaultEstimateMinutes) * time.Minute
+	}
+
 	queue := make([]ScoredTask, len(tasks))
 	copy(queue, tasks)
 
@@ -72,7 +79,7 @@ func Allocate(tasks []ScoredTask, slotsByProject map[string][]calendar.Slot, cfg
 
 		estimate := st.Task.RemainingEstimate
 		if estimate <= 0 {
-			estimate = defaultEstimate
+			estimate = defaultEst
 		}
 
 		slots := projectSlots(slotsByProject, st.Task.Project)

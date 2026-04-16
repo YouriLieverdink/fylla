@@ -36,6 +36,7 @@ type StatusResult struct {
 	Provider     string
 	Project      string
 	Section      string
+	Summary      string
 	StartTime    time.Time
 	Elapsed      time.Duration
 	TotalElapsed time.Duration
@@ -58,6 +59,7 @@ func RunStatus(p StatusParams) (*StatusResult, error) {
 		Provider:     sr.Provider,
 		Project:      sr.Project,
 		Section:      sr.Section,
+		Summary:      sr.Summary,
 		StartTime:    sr.StartTime,
 		Elapsed:      sr.Elapsed,
 		TotalElapsed: sr.TotalElapsed,

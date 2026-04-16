@@ -12,7 +12,7 @@ import (
 type PickerItem struct {
 	Key      string
 	Label    string // displayed text (e.g. "PROJ-123  Fix the bug")
-	Provider string // task provider (e.g. "jira", "kendo")
+	Provider string // task provider (e.g. "kendo", "github")
 }
 
 // Picker mode constants.
