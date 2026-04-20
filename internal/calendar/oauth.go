@@ -104,9 +104,9 @@ func EnsureValidToken(ctx context.Context, creds *GoogleCredentials) error {
 	return nil
 }
 
-// TokenPath returns the default path for the Google credentials file.
+// TokenPath returns the active profile's Google credentials file path.
 func TokenPath() (string, error) {
-	dir, err := config.ConfigDir()
+	dir, err := config.ProfileDir()
 	if err != nil {
 		return "", err
 	}

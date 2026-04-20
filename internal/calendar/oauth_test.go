@@ -406,13 +406,16 @@ func TestGCAL002_GoogleCredentials(t *testing.T) {
 		}
 	})
 
-	t.Run("TokenPath returns path in config directory", func(t *testing.T) {
+	t.Run("TokenPath returns path under active profile dir", func(t *testing.T) {
 		path, err := TokenPath()
 		if err != nil {
 			t.Fatalf("TokenPath: %v", err)
 		}
-		if !strings.HasSuffix(path, filepath.Join("fylla", "google_credentials.json")) {
-			t.Errorf("path = %q, want to end with fylla/google_credentials.json", path)
+		if filepath.Base(path) != "google_credentials.json" {
+			t.Errorf("path = %q, want basename google_credentials.json", path)
+		}
+		if filepath.Base(filepath.Dir(filepath.Dir(path))) != "profiles" {
+			t.Errorf("path = %q, want grandparent profiles", path)
 		}
 	})
 }

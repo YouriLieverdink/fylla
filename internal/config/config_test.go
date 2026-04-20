@@ -9,7 +9,7 @@ import (
 )
 
 func TestCFG001_DefaultPathAndAutoCreate(t *testing.T) {
-	t.Run("DefaultPath ends with fylla/config.yaml", func(t *testing.T) {
+	t.Run("DefaultPath ends with profiles/<active>/config.yaml", func(t *testing.T) {
 		path, err := DefaultPath()
 		if err != nil {
 			t.Fatalf("DefaultPath() error: %v", err)
@@ -17,9 +17,13 @@ func TestCFG001_DefaultPathAndAutoCreate(t *testing.T) {
 		if filepath.Base(path) != "config.yaml" {
 			t.Errorf("expected config.yaml, got %s", filepath.Base(path))
 		}
-		parent := filepath.Base(filepath.Dir(path))
-		if parent != "fylla" {
-			t.Errorf("expected fylla dir, got %s", parent)
+		profile := filepath.Base(filepath.Dir(path))
+		if profile != ActiveProfile() {
+			t.Errorf("expected profile dir %s, got %s", ActiveProfile(), profile)
+		}
+		grand := filepath.Base(filepath.Dir(filepath.Dir(path)))
+		if grand != "profiles" {
+			t.Errorf("expected profiles dir, got %s", grand)
 		}
 	})
 
@@ -320,6 +324,7 @@ func TestSet_KeyNotFound(t *testing.T) {
 func TestValidate(t *testing.T) {
 	validConfig := func() Config {
 		return Config{
+			Providers: []string{"local"},
 			Scheduling: SchedulingConfig{
 				WindowDays:             5,
 				MinTaskDurationMinutes: 25,
@@ -554,11 +559,11 @@ func TestValidateProviders(t *testing.T) {
 		}
 	})
 
-	t.Run("empty providers is valid (uses fallback)", func(t *testing.T) {
+	t.Run("empty providers is invalid", func(t *testing.T) {
 		cfg := validConfig()
 		cfg.Providers = nil
-		if err := cfg.Validate(); err != nil {
-			t.Errorf("unexpected error: %v", err)
+		if err := cfg.Validate(); err == nil {
+			t.Error("expected error for empty providers")
 		}
 	})
 }
@@ -623,11 +628,10 @@ func TestActiveProviders(t *testing.T) {
 		}
 	})
 
-	t.Run("defaults to kendo", func(t *testing.T) {
+	t.Run("empty when not configured", func(t *testing.T) {
 		cfg := Config{}
-		got := cfg.ActiveProviders()
-		if len(got) != 1 || got[0] != "kendo" {
-			t.Errorf("ActiveProviders() = %v, want [kendo]", got)
+		if got := cfg.ActiveProviders(); len(got) != 0 {
+			t.Errorf("ActiveProviders() = %v, want []", got)
 		}
 	})
 
@@ -757,11 +761,9 @@ weights:
 		dir := t.TempDir()
 		path := filepath.Join(dir, "config.yaml")
 		original := `kendo:
-  credentials: ""
   url: ""
   defaultFilter: ""
 calendar:
-  credentials: ""
   sourceCalendars: [primary]
   fyllaCalendar: fylla
 scheduling:
@@ -783,13 +785,13 @@ weights:
 		}
 
 		cfg, err := SetMultiIn(path, map[string]string{
-			"github.credentials": "/tmp/github_credentials.json",
+			"github.defaultQuery": "is:pr state:closed",
 		})
 		if err != nil {
 			t.Fatalf("SetMultiIn: %v", err)
 		}
-		if cfg.GitHub.Credentials != "/tmp/github_credentials.json" {
-			t.Errorf("GitHub.Credentials = %q", cfg.GitHub.Credentials)
+		if cfg.GitHub.DefaultQuery != "is:pr state:closed" {
+			t.Errorf("GitHub.DefaultQuery = %q", cfg.GitHub.DefaultQuery)
 		}
 	})
 }

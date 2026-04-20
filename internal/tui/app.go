@@ -38,6 +38,7 @@ type Deps struct {
 	EfficiencyTarget        float64
 	WorkDays                []int // ISO weekday numbers (1=Mon..7=Sun)
 	WorklogProvider         string
+	ProfileName             string
 }
 
 type confirmAction int
@@ -146,6 +147,7 @@ type model struct {
 	saving       string // non-empty shows spinner in status bar with this label
 
 	worklogProvider string
+	profileName     string
 
 	// Background prefetch cache
 	cachedTasks       []msg.ScoredTask
@@ -177,6 +179,7 @@ func initialModel(deps Deps) model {
 		config:          ptrConfig(configView.New()),
 		spinner:         s,
 		worklogProvider: deps.WorklogProvider,
+		profileName:     deps.ProfileName,
 	}
 }
 
@@ -2287,7 +2290,11 @@ func (m model) View() string {
 		return m.renderHelp()
 	}
 
-	tabBar := components.RenderTabBar(components.TabNames(), m.activeTab, m.width)
+	rightLabel := ""
+	if m.profileName != "" {
+		rightLabel = "profile: " + m.profileName
+	}
+	tabBar := components.RenderTabBar(components.TabNames(), m.activeTab, m.width, rightLabel)
 
 	contentHeight := m.height - lipgloss.Height(tabBar) - 3
 	var content string

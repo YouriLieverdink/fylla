@@ -1,14 +1,12 @@
 package config
 
-var defaultConfigYAML = []byte(`providers: [kendo]
+var defaultConfigYAML = []byte(`providers: [local]
 
 todoist:
-  credentials: ""
   defaultFilter: "today | overdue"
   defaultProject: ""
 
 github:
-  credentials: ""
   defaultQuery: "is:pr state:open review-requested:@me"
   repos: []
 
@@ -18,14 +16,12 @@ local:
   defaultProject: ""
 
 kendo:
-  credentials: ""
   url: ""
   defaultFilter: ""
   defaultProject: ""
   doneLane: ""
 
 calendar:
-  credentials: ""
   sourceCalendars: [primary]
   fyllaCalendar: fylla
 

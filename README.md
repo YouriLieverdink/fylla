@@ -50,27 +50,30 @@ go install github.com/iruoy/fylla/cmd/fylla@latest
 
 ## Authentication
 
-Set up your task source(s) and Google Calendar credentials:
+All `auth` commands **require an explicit `--profile <name>` flag** — environment
+variables and the stored pointer are not honored here, so credentials always
+land in the profile you named on the command line.
 
 ```bash
-# Jira
-fylla auth jira --url https://company.atlassian.net --email you@example.com --token YOUR_API_TOKEN
-
 # Todoist
-fylla auth todoist --token YOUR_API_TOKEN
+fylla --profile work auth todoist --token YOUR_API_TOKEN
 
 # GitHub
-fylla auth github --token YOUR_GITHUB_PAT
+fylla --profile work auth github --token YOUR_GITHUB_PAT
 
-# Kendo
-fylla auth kendo --url https://yourapp.kendo.dev --token YOUR_API_TOKEN
+# Kendo (also writes kendo.url into the profile's config.yaml)
+fylla --profile work auth kendo --url https://yourapp.kendo.dev --token YOUR_API_TOKEN
 
-# Google Calendar (required for scheduling)
-fylla auth google --client-credentials path/to/client_credentials.json
+# Google Calendar (optional — enables sync / timeline / worklog calendar features)
+fylla --profile work auth google --client-credentials path/to/client_credentials.json
 ```
 
-Each `auth` command stores the token in a per-provider credential file and saves
-the file path to config, so subsequent commands need no credential flags.
+Credentials are written to
+`~/.config/fylla/profiles/<name>/<provider>_credentials.json`.
+
+Calendar is optional: fylla runs without Google credentials. Calendar-
+dependent features (sync, today timeline, clear, worklog posting from
+calendar events) return a clear error if triggered without auth.
 
 ### Required permissions
 
@@ -112,21 +115,31 @@ these scopes automatically:
 
 ## Configuration
 
-Default config path:
+Fylla stores all state under per-profile directories. The root layout is:
 
-- `~/.config/fylla/config.yaml`
+```
+~/.config/fylla/
+  current                     # plain text, holds the active profile name
+  profiles/
+    default/
+      config.yaml
+      timer.json              # running timer state
+      kendo_credentials.json
+      todoist_credentials.json
+      github_credentials.json
+      jira_credentials.json
+      google_credentials.json # Google OAuth client config + tokens
+    work/
+      ...
+```
 
-Per-provider credential files (created by `fylla auth`):
+On first run after upgrading from a pre-profile install, fylla migrates the
+legacy flat layout (`~/.config/fylla/config.yaml`, credential files, and
+`timer.json`) into `profiles/default/` automatically.
 
-- `~/.config/fylla/jira_credentials.json`
-- `~/.config/fylla/todoist_credentials.json`
-- `~/.config/fylla/github_credentials.json`
-- `~/.config/fylla/kendo_credentials.json`
-
-Other data files:
-
-- `~/.config/fylla/google_credentials.json` (Google OAuth client config + access/refresh token)
-- `~/.config/fylla/timer.json` (running timer state)
+Credential paths are resolved by convention — there are no `credentials:`
+fields in `config.yaml`. Each provider uses
+`profiles/<active>/<provider>_credentials.json`.
 
 ### Multi-provider config example
 
@@ -134,7 +147,6 @@ Other data files:
 providers: [jira, todoist, github, kendo]
 
 jira:
-  credentials: ~/.config/fylla/jira_credentials.json  # set by fylla auth jira
   url: https://company.atlassian.net
   email: you@example.com
   defaultJql: "assignee = currentUser() AND status = 'To Do'"
@@ -142,24 +154,20 @@ jira:
   doneTransitions: {}
 
 todoist:
-  credentials: ~/.config/fylla/todoist_credentials.json  # set by fylla auth todoist
   defaultFilter: "today | overdue"
   defaultProject: Inbox
 
 github:
-  credentials: ~/.config/fylla/github_credentials.json  # set by fylla auth github
   defaultQuery: "is:pr state:open review-requested:@me"  # customize search query
   repos: []                                              # optional: limit to specific repos
 
 kendo:
-  credentials: ~/.config/fylla/kendo_credentials.json  # set by fylla auth kendo
   url: https://yourapp.kendo.dev
   defaultFilter: ""                                    # project name/prefix to filter by
   defaultProject: ""                                   # default project for task creation
   doneLane: done                                       # lane name for completing tasks
 
 calendar:
-  credentials: ~/.config/fylla/google_credentials.json  # set by fylla auth google
   sourceCalendars: [primary]
   fyllaCalendar: fylla
 
@@ -205,15 +213,64 @@ weights:
 providers: [jira]
 
 jira:
-  credentials: ~/.config/fylla/jira_credentials.json
   url: https://company.atlassian.net
   email: you@example.com
   defaultJql: "assignee = currentUser() AND status = 'To Do'"
 
 calendar:
-  credentials: path/to/client_credentials.json
   sourceCalendars: [primary]
   fyllaCalendar: fylla
+```
+
+## Profiles
+
+Profiles let you keep multiple isolated configurations — for example one for
+work (pointing at a work Kendo instance, work Google account) and one for
+personal projects. Each profile has its own `config.yaml`, credentials, and
+timer state under `profiles/<name>/`.
+
+### Commands
+
+```bash
+fylla profile list                    # list profiles; current marked with *
+fylla profile current                 # print the active profile name
+fylla profile use <name>              # set the stored default profile
+fylla profile create <name>           # create a new profile from the template
+fylla profile create <name> --from X  # copy profile X (config + credentials)
+fylla profile delete <name>           # delete a profile (with confirmation)
+fylla profile delete <name> --force   # skip prompt and allow deleting current
+```
+
+### Selecting the active profile
+
+At launch, fylla picks the active profile using this precedence (highest first):
+
+1. `--profile <name>` flag
+2. `FYLLA_PROFILE=<name>` environment variable
+3. `~/.config/fylla/current` pointer file
+4. Literal `default`
+
+`--profile` and `FYLLA_PROFILE` are ephemeral overrides — they do not change
+the stored pointer. Use `fylla profile use <name>` to change the default.
+
+A flag or env var pointing at a non-existent profile is a hard error. A
+stale pointer file falls back to `default` if it exists.
+
+Profile names must match `^\w+$` (letters, digits, underscores). The names
+`config`, `credentials`, `current`, and `profiles`, and any name starting
+with `.`, are reserved.
+
+Switching profiles requires restarting fylla — the TUI does not swap
+configurations at runtime.
+
+### Example
+
+```bash
+fylla profile create work               # seed from template
+fylla --profile work                    # launch TUI with the work profile
+FYLLA_PROFILE=work fylla                # same, via env
+fylla profile use work                  # make work the default from now on
+fylla profile create client --from work # fork work into a client profile
 ```
 
 ## Shell Completion
@@ -463,7 +520,6 @@ tracks the provider explicitly on each task and calendar event (via the
 providers: [kendo]
 
 kendo:
-  credentials: ~/.config/fylla/kendo_credentials.json
   url: https://yourapp.kendo.dev
   defaultFilter: ""       # project name/prefix to filter issues
   defaultProject: WEB     # default project for fylla task add

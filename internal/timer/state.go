@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/iruoy/fylla/internal/config"
 )
 
 // Segment represents a completed time segment within a timer stack entry.
@@ -88,13 +90,13 @@ type PausedInfo struct {
 	SegmentCount int
 }
 
-// DefaultPath returns the default timer state file path (~/.config/fylla/timer.json).
+// DefaultPath returns the active profile's timer state file path.
 func DefaultPath() (string, error) {
-	dir, err := os.UserConfigDir()
+	dir, err := config.ProfileDir()
 	if err != nil {
-		return "", fmt.Errorf("config dir: %w", err)
+		return "", fmt.Errorf("profile dir: %w", err)
 	}
-	return filepath.Join(dir, "fylla", "timer.json"), nil
+	return filepath.Join(dir, "timer.json"), nil
 }
 
 func loadStack(path string) (*StackState, error) {

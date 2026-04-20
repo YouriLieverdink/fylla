@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -14,6 +15,8 @@ import (
 	"github.com/iruoy/fylla/internal/tui"
 	"github.com/iruoy/fylla/internal/tui/msg"
 )
+
+var errCalendarNotConfigured = errors.New("calendar not configured: run 'fylla auth google --client-credentials <path>'")
 
 // RunServe starts the interactive TUI dashboard.
 func RunServe(ctx context.Context) error {
@@ -51,6 +54,7 @@ func RunServe(ctx context.Context) error {
 		EfficiencyTarget:        cfg.Efficiency.Target,
 		WorkDays:                collectWorkDays(cfg),
 		WorklogProvider:         worklogProvider(cfg),
+		ProfileName:             config.ActiveProfile(),
 	})
 }
 
@@ -69,6 +73,9 @@ func serveDefaultQuery(cfg *config.Config) string {
 func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher, source TaskSource, cfg *config.Config, cfgPath, query string) tui.Callbacks {
 	return tui.Callbacks{
 		LoadToday: func() ([]msg.FyllaEvent, error) {
+			if cal == nil {
+				return nil, nil
+			}
 			result, err := RunToday(ctx, TodayParams{Cal: cal, Now: time.Now()})
 			if err != nil {
 				return nil, err
@@ -195,6 +202,9 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			return timer.SetStartTime(startTime, time.Now(), path)
 		},
 		SyncPreview: func() (*msg.SyncResult, error) {
+			if cal == nil {
+				return nil, errCalendarNotConfigured
+			}
 			now := time.Now()
 			start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 			end := start.AddDate(0, 0, cfg.Scheduling.WindowDays-1).Add(24*time.Hour - time.Nanosecond)
@@ -208,6 +218,9 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			return convertSyncResult(result), nil
 		},
 		SyncApply: func(force bool) (*msg.SyncResult, error) {
+			if cal == nil {
+				return nil, errCalendarNotConfigured
+			}
 			now := time.Now()
 			start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 			end := start.AddDate(0, 0, cfg.Scheduling.WindowDays-1).Add(24*time.Hour - time.Nanosecond)
@@ -221,6 +234,9 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			return convertSyncResult(result), nil
 		},
 		ClearEvents: func() (int, error) {
+			if cal == nil {
+				return 0, errCalendarNotConfigured
+			}
 			now := time.Now()
 			start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 			end := start.AddDate(0, 0, cfg.Scheduling.WindowDays-1).Add(24*time.Hour - time.Nanosecond)

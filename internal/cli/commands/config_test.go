@@ -8,7 +8,8 @@ import (
 	"testing"
 )
 
-const testConfigYAML = `kendo:
+const testConfigYAML = `providers: [kendo]
+kendo:
   url: https://company.kendo.nl
   defaultFilter: "assignee = me"
 calendar:

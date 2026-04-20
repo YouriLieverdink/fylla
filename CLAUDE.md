@@ -23,12 +23,13 @@ go run ./cmd/fylla          # Run
 ### Multi-Provider System
 Fylla supports multiple task providers (Todoist, GitHub, Kendo) simultaneously via the `providers` array in config. Key concepts:
 
-- **Config:** `providers: [kendo, todoist, github]` — configures which task providers to use, defaults to `["kendo"]` when unset
+- **Config:** `providers: [kendo, todoist, github]` — configures which task providers to use. At least one is required (validated at load); the default template seeds `[local]` so fresh profiles work without credentials
 - **Provider routing:** `isKendoKey()` / `isGitHubKey()` / `providerForKey()` infers provider from task key format (`PROJ-123` → Kendo, numeric → Todoist, `repo#123` → GitHub)
 - **MultiTaskSource:** wraps multiple `TaskSource` instances, routes key-based operations to the correct provider. `routeToWithProvider()` uses the explicit provider name when available, falling back to key-based inference
 - **multiFetcher:** concurrent fetch from all providers, merges results, handles partial failures
 - **Progressive loading:** TUI fires per-provider fetch commands via `LoadTasksByProvider`, results trickle in as each provider responds (`TasksPartialMsg`), merged and sorted incrementally
-- **Per-provider credentials:** each provider stores credentials in a separate file (`todoist_credentials.json`, `github_credentials.json`, `kendo_credentials.json`), path saved in config (`todoist.credentials`, `github.credentials`, `kendo.credentials`)
+- **Per-provider credentials:** each provider stores credentials in a separate file under the active profile dir (`profiles/<name>/<provider>_credentials.json`). Paths resolve by convention via `config.DefaultProviderCredentialsPath("<provider>")` — there are no credential path fields in `Config`.
+- **Profiles:** fylla supports multiple isolated config profiles under `~/.config/fylla/profiles/<name>/`. The active profile is chosen at startup with precedence `--profile` flag > `FYLLA_PROFILE` env > `~/.config/fylla/current` pointer file > literal `default`. `config.RootDir()` returns the root; `config.ProfileDir()` returns the active profile dir. `config.MigrateLegacyLayout()` moves pre-profile state into `profiles/default/` on first run. Subcommands live in `internal/cli/commands/profile.go`
 - **Calendar descriptions:** `BuildDescriptionWithProvider()` constructs event descriptions with provider-aware markers (`fylla:kendo` for Kendo, etc.) and correct URLs. `TaskKeyAndProviderFromDescription()` extracts both the task key and provider from event descriptions
 - **Done marker:** `DoneMarker` (`✓ `) prefix on calendar event titles indicates completed work. `ParseTitle` strips it and sets `Done bool`. Used by `timer stop` to mark events as done.
 - **Past event preservation:** `reconcile()` takes a `now` parameter and skips events whose end time is before `now`, preserving them as a calendar record

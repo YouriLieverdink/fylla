@@ -22,31 +22,24 @@ type Config struct {
 }
 
 // ActiveProviders returns the list of configured providers.
-// It returns Providers if set, and defaults to ["kendo"].
 func (c *Config) ActiveProviders() []string {
-	if len(c.Providers) > 0 {
-		return c.Providers
-	}
-	return []string{"kendo"}
+	return c.Providers
 }
 
 // TodoistConfig holds Todoist connection settings.
 type TodoistConfig struct {
-	Credentials    string `yaml:"credentials"`
 	DefaultFilter  string `yaml:"defaultFilter"`
 	DefaultProject string `yaml:"defaultProject"`
 }
 
 // GitHubConfig holds GitHub PR review settings.
 type GitHubConfig struct {
-	Credentials  string   `yaml:"credentials"`
 	DefaultQuery string   `yaml:"defaultQuery"`
 	Repos        []string `yaml:"repos"`
 }
 
 // KendoConfig holds Kendo connection settings.
 type KendoConfig struct {
-	Credentials    string `yaml:"credentials"`
 	URL            string `yaml:"url"`
 	DefaultFilter  string `yaml:"defaultFilter"`
 	DefaultProject string `yaml:"defaultProject"`
@@ -62,7 +55,6 @@ type LocalConfig struct {
 
 // CalendarConfig holds Google Calendar settings.
 type CalendarConfig struct {
-	Credentials     string   `yaml:"credentials"`
 	SourceCalendars []string `yaml:"sourceCalendars"`
 	FyllaCalendar   string   `yaml:"fyllaCalendar"`
 }
@@ -111,20 +103,20 @@ type WeightsConfig struct {
 
 // Validate checks config invariants and returns an error if any are violated.
 func (c *Config) Validate() error {
-	// Validate providers if set
-	if len(c.Providers) > 0 {
-		seen := make(map[string]bool)
-		for _, p := range c.Providers {
-			switch p {
-			case "todoist", "github", "local", "kendo":
-			default:
-				return fmt.Errorf("unknown provider %q (must be 'todoist', 'github', 'local', or 'kendo')", p)
-			}
-			if seen[p] {
-				return fmt.Errorf("duplicate provider %q", p)
-			}
-			seen[p] = true
+	if len(c.Providers) == 0 {
+		return fmt.Errorf("providers: at least one provider must be configured (set 'providers' in config.yaml)")
+	}
+	seen := make(map[string]bool)
+	for _, p := range c.Providers {
+		switch p {
+		case "todoist", "github", "local", "kendo":
+		default:
+			return fmt.Errorf("unknown provider %q (must be 'todoist', 'github', 'local', or 'kendo')", p)
 		}
+		if seen[p] {
+			return fmt.Errorf("duplicate provider %q", p)
+		}
+		seen[p] = true
 	}
 
 	// Weights must sum to 1.0 (with float tolerance)

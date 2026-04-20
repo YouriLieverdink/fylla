@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -11,8 +12,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ConfigDir returns the fylla config directory following XDG conventions.
-func ConfigDir() (string, error) {
+// RootDir returns the fylla config root directory following XDG conventions.
+// This directory holds the profile pointer file and the profiles/ subdirectory.
+func RootDir() (string, error) {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
 		return filepath.Join(xdg, "fylla"), nil
 	}
@@ -23,9 +25,96 @@ func ConfigDir() (string, error) {
 	return filepath.Join(home, ".config", "fylla"), nil
 }
 
-// DefaultPath returns the default config file path (~/.config/fylla/config.yaml).
+// DefaultProfileName is the name of the profile created during migration
+// and used as the bootstrap profile on fresh installs.
+const DefaultProfileName = "default"
+
+// pointerFile is the filename of the current-profile pointer under RootDir.
+const pointerFile = "current"
+
+// profilesDir is the subdirectory under RootDir holding per-profile state.
+const profilesDir = "profiles"
+
+// activeProfile holds the resolved profile name for the current process.
+// It is set once at startup (by the CLI layer) via SetActiveProfile and
+// read thereafter. When unset, ActiveProfile falls back to DefaultProfileName.
+var activeProfile string
+
+// profileNameRe restricts profile names to word characters only.
+var profileNameRe = regexp.MustCompile(`^\w+$`)
+
+// reservedProfileNames cannot be used as profile names to avoid collisions
+// with other files under RootDir.
+var reservedProfileNames = map[string]bool{
+	"config":      true,
+	"credentials": true,
+	"current":     true,
+	"profiles":    true,
+}
+
+// ValidateProfileName returns an error if name is not a legal profile name.
+func ValidateProfileName(name string) error {
+	if name == "" {
+		return fmt.Errorf("profile name cannot be empty")
+	}
+	if strings.HasPrefix(name, ".") {
+		return fmt.Errorf("profile name cannot start with '.'")
+	}
+	if reservedProfileNames[name] {
+		return fmt.Errorf("profile name %q is reserved", name)
+	}
+	if !profileNameRe.MatchString(name) {
+		return fmt.Errorf("profile name %q invalid: only word characters (a-z A-Z 0-9 _) allowed", name)
+	}
+	return nil
+}
+
+// SetActiveProfile sets the process-wide active profile name.
+// The name must have been validated by the caller.
+func SetActiveProfile(name string) {
+	activeProfile = name
+}
+
+// ActiveProfile returns the active profile name, falling back to
+// DefaultProfileName if SetActiveProfile has not been called.
+func ActiveProfile() string {
+	if activeProfile == "" {
+		return DefaultProfileName
+	}
+	return activeProfile
+}
+
+// ProfileDir returns the directory for the active profile, e.g.
+// ~/.config/fylla/profiles/<active>/.
+func ProfileDir() (string, error) {
+	root, err := RootDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, profilesDir, ActiveProfile()), nil
+}
+
+// ProfileDirFor returns the directory for the given profile name.
+func ProfileDirFor(name string) (string, error) {
+	root, err := RootDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, profilesDir, name), nil
+}
+
+// PointerPath returns the path to the current-profile pointer file.
+func PointerPath() (string, error) {
+	root, err := RootDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, pointerFile), nil
+}
+
+// DefaultPath returns the active profile's config.yaml path.
 func DefaultPath() (string, error) {
-	dir, err := ConfigDir()
+	dir, err := ProfileDir()
 	if err != nil {
 		return "", err
 	}
@@ -48,8 +137,9 @@ func LoadFrom(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// EnsurePath creates the default config file from defaults if it does not exist,
-// and returns its path. It does not parse or validate the file contents.
+// EnsurePath creates the active profile's config.yaml from defaults if it
+// does not exist, and returns its path. It does not parse or validate the
+// file contents.
 func EnsurePath() (string, error) {
 	path, err := DefaultPath()
 	if err != nil {
@@ -67,7 +157,8 @@ func EnsurePath() (string, error) {
 	return path, nil
 }
 
-// Load reads the config from the default path, creating it from defaults if missing.
+// Load reads the config from the active profile path, creating it from
+// defaults if missing.
 func Load() (*Config, error) {
 	path, err := EnsurePath()
 	if err != nil {
@@ -85,7 +176,7 @@ func SaveTo(cfg *Config, path string) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-// Save writes the config to the default path.
+// Save writes the config to the active profile path.
 func Save(cfg *Config) error {
 	path, err := DefaultPath()
 	if err != nil {
@@ -173,7 +264,8 @@ func SetIn(path, key, value string) (*Config, error) {
 	return &cfg, nil
 }
 
-// Set updates a value at the given dotted key path in the default config file.
+// Set updates a value at the given dotted key path in the active profile's
+// config file.
 func Set(key, value string) (*Config, error) {
 	path, err := DefaultPath()
 	if err != nil {

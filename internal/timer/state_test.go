@@ -92,7 +92,7 @@ func TestTIMER002_TimerStatePersisted(t *testing.T) {
 		}
 	})
 
-	t.Run("default path is under fylla config dir", func(t *testing.T) {
+	t.Run("default path is under active profile dir", func(t *testing.T) {
 		p, err := DefaultPath()
 		if err != nil {
 			t.Fatalf("DefaultPath: %v", err)
@@ -100,8 +100,8 @@ func TestTIMER002_TimerStatePersisted(t *testing.T) {
 		if filepath.Base(p) != "timer.json" {
 			t.Errorf("expected timer.json, got %s", filepath.Base(p))
 		}
-		if filepath.Base(filepath.Dir(p)) != "fylla" {
-			t.Errorf("expected fylla dir, got %s", filepath.Base(filepath.Dir(p)))
+		if filepath.Base(filepath.Dir(filepath.Dir(p))) != "profiles" {
+			t.Errorf("expected profiles dir, got %s", filepath.Base(filepath.Dir(filepath.Dir(p))))
 		}
 	})
 

@@ -108,27 +108,29 @@ func loadTaskSource() (TaskSource, *config.Config, error) {
 	for _, p := range providers {
 		switch p {
 		case "todoist":
-			if cfg.Todoist.Credentials == "" {
-				return nil, nil, fmt.Errorf("todoist not configured: run 'fylla auth todoist'")
+			path, err := config.DefaultProviderCredentialsPath("todoist")
+			if err != nil {
+				return nil, nil, fmt.Errorf("todoist credentials path: %w", err)
 			}
-			creds, err := config.LoadProviderCredentials(cfg.Todoist.Credentials)
+			creds, err := config.LoadProviderCredentials(path)
 			if err != nil {
 				return nil, nil, fmt.Errorf("load todoist credentials: %w", err)
 			}
 			if creds.Token == "" {
-				return nil, nil, fmt.Errorf("todoist token not set: run 'fylla auth todoist --token TOKEN'")
+				return nil, nil, fmt.Errorf("todoist not configured: run 'fylla auth todoist --token TOKEN'")
 			}
 			sources["todoist"] = todoist.NewClient(creds.Token)
 		case "github":
-			if cfg.GitHub.Credentials == "" {
-				return nil, nil, fmt.Errorf("github not configured: run 'fylla auth github'")
+			path, err := config.DefaultProviderCredentialsPath("github")
+			if err != nil {
+				return nil, nil, fmt.Errorf("github credentials path: %w", err)
 			}
-			creds, err := config.LoadProviderCredentials(cfg.GitHub.Credentials)
+			creds, err := config.LoadProviderCredentials(path)
 			if err != nil {
 				return nil, nil, fmt.Errorf("load github credentials: %w", err)
 			}
 			if creds.Token == "" {
-				return nil, nil, fmt.Errorf("github token not set: run 'fylla auth github --token TOKEN'")
+				return nil, nil, fmt.Errorf("github not configured: run 'fylla auth github --token TOKEN'")
 			}
 			client := github.NewClient(creds.Token)
 			client.Repos = cfg.GitHub.Repos
@@ -139,15 +141,16 @@ func loadTaskSource() (TaskSource, *config.Config, error) {
 			client.DefaultProject = cfg.Local.DefaultProject
 			sources["local"] = client
 		case "kendo":
-			if cfg.Kendo.Credentials == "" {
-				return nil, nil, fmt.Errorf("kendo not configured: run 'fylla auth kendo'")
+			path, err := config.DefaultProviderCredentialsPath("kendo")
+			if err != nil {
+				return nil, nil, fmt.Errorf("kendo credentials path: %w", err)
 			}
-			creds, err := config.LoadProviderCredentials(cfg.Kendo.Credentials)
+			creds, err := config.LoadProviderCredentials(path)
 			if err != nil {
 				return nil, nil, fmt.Errorf("load kendo credentials: %w", err)
 			}
 			if creds.Token == "" {
-				return nil, nil, fmt.Errorf("kendo token not set: run 'fylla auth kendo --url URL --token TOKEN'")
+				return nil, nil, fmt.Errorf("kendo not configured: run 'fylla auth kendo --url URL --token TOKEN'")
 			}
 			client := kendo.NewClient(cfg.Kendo.URL, creds.Token)
 			client.DoneLane = cfg.Kendo.DoneLane

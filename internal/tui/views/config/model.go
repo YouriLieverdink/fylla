@@ -231,13 +231,11 @@ func buildRows(cfg *config.Config) []configRow {
 	rows = append(rows, configRow{Kind: rowSection, Label: "Todoist"})
 	rows = append(rows, configRow{Kind: rowSetting, Label: "defaultFilter", Key: "todoist.defaultFilter", Value: cfg.Todoist.DefaultFilter})
 	rows = append(rows, configRow{Kind: rowSetting, Label: "defaultProject", Key: "todoist.defaultProject", Value: cfg.Todoist.DefaultProject})
-	rows = append(rows, configRow{Kind: rowSetting, Label: "credentials", Key: "todoist.credentials", Value: cfg.Todoist.Credentials})
 
 	// GitHub
 	rows = append(rows, configRow{Kind: rowSection, Label: "GitHub"})
 	rows = append(rows, configRow{Kind: rowSetting, Label: "defaultQuery", Key: "github.defaultQuery", Value: cfg.GitHub.DefaultQuery})
 	rows = append(rows, configRow{Kind: rowSetting, Label: "repos", Key: "github.repos", Value: formatStringSlice(cfg.GitHub.Repos)})
-	rows = append(rows, configRow{Kind: rowSetting, Label: "credentials", Key: "github.credentials", Value: cfg.GitHub.Credentials})
 
 	// Local
 	rows = append(rows, configRow{Kind: rowSection, Label: "Local"})
@@ -251,13 +249,11 @@ func buildRows(cfg *config.Config) []configRow {
 	rows = append(rows, configRow{Kind: rowSetting, Label: "defaultFilter", Key: "kendo.defaultFilter", Value: cfg.Kendo.DefaultFilter})
 	rows = append(rows, configRow{Kind: rowSetting, Label: "defaultProject", Key: "kendo.defaultProject", Value: cfg.Kendo.DefaultProject})
 	rows = append(rows, configRow{Kind: rowSetting, Label: "doneLane", Key: "kendo.doneLane", Value: cfg.Kendo.DoneLane})
-	rows = append(rows, configRow{Kind: rowSetting, Label: "credentials", Key: "kendo.credentials", Value: cfg.Kendo.Credentials})
 
 	// Calendar
 	rows = append(rows, configRow{Kind: rowSection, Label: "Calendar"})
 	rows = append(rows, configRow{Kind: rowSetting, Label: "sourceCalendars", Key: "calendar.sourceCalendars", Value: formatStringSlice(cfg.Calendar.SourceCalendars)})
 	rows = append(rows, configRow{Kind: rowSetting, Label: "fyllaCalendar", Key: "calendar.fyllaCalendar", Value: cfg.Calendar.FyllaCalendar})
-	rows = append(rows, configRow{Kind: rowSetting, Label: "credentials", Key: "calendar.credentials", Value: cfg.Calendar.Credentials})
 
 	// Scheduling
 	rows = append(rows, configRow{Kind: rowSection, Label: "Scheduling"})

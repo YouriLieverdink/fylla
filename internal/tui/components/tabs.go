@@ -16,6 +16,10 @@ var (
 				Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"}).
 				Padding(0, 2)
 
+	rightBadgeStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.AdaptiveColor{Light: "#666666", Dark: "#999999"}).
+			Padding(0, 2)
+
 	tabBarStyle = lipgloss.NewStyle().
 			BorderBottom(true).
 			BorderStyle(lipgloss.NormalBorder()).
@@ -23,7 +27,8 @@ var (
 )
 
 // RenderTabBar renders a tab bar with the given labels and active index.
-func RenderTabBar(tabs []string, active int, width int) string {
+// If rightLabel is non-empty it is rendered right-aligned within the bar.
+func RenderTabBar(tabs []string, active int, width int, rightLabel string) string {
 	var rendered []string
 	for i, tab := range tabs {
 		label := tab
@@ -33,7 +38,16 @@ func RenderTabBar(tabs []string, active int, width int) string {
 			rendered = append(rendered, inactiveTabStyle.Render(label))
 		}
 	}
-	row := lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
+	left := lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
+	if rightLabel == "" {
+		return tabBarStyle.Width(width).Render(left)
+	}
+	right := rightBadgeStyle.Render(rightLabel)
+	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
+	if gap < 1 {
+		gap = 1
+	}
+	row := left + strings.Repeat(" ", gap) + right
 	return tabBarStyle.Width(width).Render(row)
 }
 

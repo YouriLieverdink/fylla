@@ -12,9 +12,10 @@ type ProviderCredentials struct {
 	Token string `json:"token"`
 }
 
-// DefaultProviderCredentialsPath returns ~/.config/fylla/<provider>_credentials.json.
+// DefaultProviderCredentialsPath returns the active profile's credentials
+// file path for the given provider.
 func DefaultProviderCredentialsPath(provider string) (string, error) {
-	dir, err := ConfigDir()
+	dir, err := ProfileDir()
 	if err != nil {
 		return "", err
 	}
