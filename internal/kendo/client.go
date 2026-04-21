@@ -627,8 +627,15 @@ func (c *Client) CreateTask(ctx context.Context, input task.CreateInput) (string
 		issueType = 2
 	}
 
+	title := input.Summary
+	if input.DueDate != nil {
+		if mods := task.BuildModifiers(input.DueDate.Format("2006-01-02"), "", false, false); mods != "" {
+			title = strings.TrimSpace(title) + " " + mods
+		}
+	}
+
 	payload := map[string]interface{}{
-		"title":       input.Summary,
+		"title":       title,
 		"description": input.Description,
 		"priority":    2, // default medium
 		"type":        issueType,
