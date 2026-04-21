@@ -153,6 +153,7 @@ type model struct {
 	cachedTasks       []msg.ScoredTask
 	cachedFormOptions *msg.FormOptionsMsg
 	cachedFallback    []msg.FallbackIssue
+	cachedSync        *msg.SyncResult
 
 	// Progressive provider loading
 	partialTasks map[string][]msg.ScoredTask // provider → tasks
@@ -791,6 +792,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.schedule.Result = mssg.Result
 			m.schedule.Err = nil
+			m.cachedSync = mssg.Result
 		}
 		return m, nil
 
@@ -2143,6 +2145,12 @@ func (m *model) switchTab(tab int) (tea.Model, tea.Cmd) {
 		m.tasks.Loading = false
 		m.tasks.Err = nil
 		return *m, loadTasksCmd(m.cb) // background refresh
+	}
+	if tab == tabSchedule && m.cachedSync != nil {
+		m.schedule.Result = m.cachedSync
+		m.schedule.Loading = false
+		m.schedule.Err = nil
+		return *m, syncPreviewCmd(m.cb) // background refresh
 	}
 	return *m, m.refreshActiveView()
 }

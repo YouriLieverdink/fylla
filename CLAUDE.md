@@ -46,6 +46,12 @@ Fylla supports multiple task providers (Todoist, GitHub, Kendo) simultaneously v
 ### Scheduling
 - `defaultEstimateMinutes` in config controls the fallback estimate when a task has no remaining estimate (default: 60 minutes)
 - Configurable via `scheduling.defaultEstimateMinutes` in config.yaml
+- `providerTimeoutSeconds` bounds each provider's fetch call (default: 15s). On timeout the `multiFetcher` serves the stale cache entry if present and attaches a warning instead of blocking.
+- `taskCacheTTLSeconds` controls the shared `TaskCache` TTL (default: 30s). Cache is populated by both `multiFetcher` and `LoadTasksByProvider`, so the schedule tab reuses tasks fetched for the tasks tab without a second round-trip. Mutations on `MultiTaskSource` (create/complete/delete/update*) invalidate the affected provider's entry.
+- `TaskCache.FetchOrShare` provides singleflight semantics: concurrent `FetchTasks` calls for the same provider share one in-flight call instead of issuing duplicates. Used by both `multiFetcher` and `cachedFetcher`, so switching to the schedule tab while the tasks tab is still loading reuses the in-flight fetch rather than starting a second one.
+- `previewTimeoutSeconds` bounds the whole `SyncPreview` (default: 20s) so the schedule tab cannot hang indefinitely even if a provider ignores its per-call deadline.
+- `multiFetcher` returns `ErrPartialProviders` when some providers fail; `RunSync` proceeds with partial tasks and surfaces warnings via `SyncResult.Warnings`. `SyncApply` does NOT degrade — a missing provider would cause reconcile to delete its events.
+- TUI caches the last `SyncResult` in `m.cachedSync`: switching to the schedule tab renders the cached result instantly and fires a background refresh (mirrors `m.cachedTasks`).
 
 ### GitHub Rate Limiting
 - Client tracks `X-RateLimit-Remaining` and `X-RateLimit-Reset` from API responses

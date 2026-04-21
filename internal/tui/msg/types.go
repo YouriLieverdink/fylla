@@ -86,6 +86,7 @@ type SyncResult struct {
 	Updated        int
 	Deleted        int
 	Unchanged      int
+	Warnings       []string
 }
 
 // Allocation represents a scheduled task allocation.

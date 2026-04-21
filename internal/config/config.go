@@ -68,6 +68,9 @@ type SchedulingConfig struct {
 	TravelBufferMinutes     int   `yaml:"travelBufferMinutes"`
 	SnapMinutes             []int `yaml:"snapMinutes"`
 	DefaultEstimateMinutes  int   `yaml:"defaultEstimateMinutes"`
+	ProviderTimeoutSeconds  int   `yaml:"providerTimeoutSeconds"`
+	TaskCacheTTLSeconds     int   `yaml:"taskCacheTTLSeconds"`
+	PreviewTimeoutSeconds   int   `yaml:"previewTimeoutSeconds"`
 }
 
 // BusinessHoursConfig holds default business hours.

@@ -178,6 +178,9 @@ scheduling:
   bufferMinutes: 15
   travelBufferMinutes: 30
   snapMinutes: [0, 15, 30, 45]
+  providerTimeoutSeconds: 15      # per-provider fetch timeout; 0 = disabled
+  taskCacheTTLSeconds: 30         # shared task cache TTL (tasks + schedule tabs)
+  previewTimeoutSeconds: 20       # hard deadline for schedule-tab refresh
 
 businessHours:
   - start: "09:00"

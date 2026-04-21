@@ -30,14 +30,33 @@ func RunServe(ctx context.Context) error {
 		return err
 	}
 
+	cacheTTL := time.Duration(cfg.Scheduling.TaskCacheTTLSeconds) * time.Second
+	if cacheTTL <= 0 {
+		cacheTTL = 30 * time.Second
+	}
+	cache := NewTaskCache(cacheTTL)
+
+	providerTimeout := time.Duration(cfg.Scheduling.ProviderTimeoutSeconds) * time.Second
+	if providerTimeout <= 0 {
+		providerTimeout = 15 * time.Second
+	}
+
 	var fetcher TaskFetcher
 	if ms, ok := source.(*MultiTaskSource); ok {
+		ms.SetCache(cache)
 		fetcher = &multiFetcher{
 			queries: buildProviderQueries(cfg, ""),
 			sources: ms.sources,
+			cache:   cache,
+			timeout: providerTimeout,
 		}
 	} else {
-		fetcher = source
+		fetcher = &cachedFetcher{
+			inner:    source,
+			cache:    cache,
+			provider: cfg.ActiveProviders()[0],
+			timeout:  providerTimeout,
+		}
 	}
 
 	cfgPath, err := config.DefaultPath()
@@ -48,7 +67,7 @@ func RunServe(ctx context.Context) error {
 	query := serveDefaultQuery(cfg)
 
 	return tui.Run(tui.Deps{
-		CB:                      buildCallbacks(ctx, cal, fetcher, source, cfg, cfgPath, query),
+		CB:                      buildCallbacks(ctx, cal, fetcher, source, cache, cfg, cfgPath, query),
 		DailyHours:              cfg.Efficiency.DailyHours,
 		WeeklyHours:             cfg.Efficiency.WeeklyHours,
 		EfficiencyTarget:        cfg.Efficiency.Target,
@@ -70,7 +89,15 @@ func serveDefaultQuery(cfg *config.Config) string {
 	}
 }
 
-func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher, source TaskSource, cfg *config.Config, cfgPath, query string) tui.Callbacks {
+func syncPreviewDeadline(cfg *config.Config) time.Duration {
+	s := cfg.Scheduling.PreviewTimeoutSeconds
+	if s <= 0 {
+		s = 20
+	}
+	return time.Duration(s) * time.Second
+}
+
+func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher, source TaskSource, cache *TaskCache, cfg *config.Config, cfgPath, query string) tui.Callbacks {
 	return tui.Callbacks{
 		LoadToday: func() ([]msg.FyllaEvent, error) {
 			if cal == nil {
@@ -103,6 +130,9 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				Query: query,
 				Now:   time.Now(),
 			})
+			if err != nil && errors.Is(err, ErrPartialProviders) {
+				err = nil
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -205,13 +235,18 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			if cal == nil {
 				return nil, errCalendarNotConfigured
 			}
+			previewCtx, cancel := context.WithTimeout(ctx, syncPreviewDeadline(cfg))
+			defer cancel()
 			now := time.Now()
 			start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 			end := start.AddDate(0, 0, cfg.Scheduling.WindowDays-1).Add(24*time.Hour - time.Nanosecond)
-			result, err := RunSync(ctx, SyncParams{
+			result, err := RunSync(previewCtx, SyncParams{
 				Cal: cal, Tasks: fetcher, Cfg: cfg, Query: query,
 				Now: now, Start: start, End: end, DryRun: true,
 			})
+			if err != nil && errors.Is(err, ErrPartialProviders) {
+				err = nil
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -605,12 +640,25 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			src := routedSource(source, provider)
 			queries := buildProviderQueries(cfg, "")
 			q := queries[provider]
+			providerTimeout := time.Duration(cfg.Scheduling.ProviderTimeoutSeconds) * time.Second
+			if providerTimeout <= 0 {
+				providerTimeout = 15 * time.Second
+			}
+			cachedSrc := &cachedFetcher{
+				inner:    src,
+				cache:    cache,
+				provider: provider,
+				timeout:  providerTimeout,
+			}
 			result, err := RunList(ctx, ListParams{
-				Tasks: src,
+				Tasks: cachedSrc,
 				Cfg:   cfg,
 				Query: q,
 				Now:   time.Now(),
 			})
+			if err != nil && errors.Is(err, ErrPartialProviders) {
+				err = nil
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -727,6 +775,7 @@ func convertSyncResult(r *SyncResult) *msg.SyncResult {
 		Updated:   r.Updated,
 		Deleted:   r.Deleted,
 		Unchanged: r.Unchanged,
+		Warnings:  r.Warnings,
 	}
 	for _, a := range r.Allocations {
 		result.Allocations = append(result.Allocations, msg.Allocation{

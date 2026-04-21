@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -46,6 +47,7 @@ type SyncResult struct {
 	Updated     int
 	Deleted     int
 	Unchanged   int
+	Warnings    []string
 }
 
 // SyncFlags holds the parsed CLI flags for the sync command.
@@ -421,8 +423,13 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 	// Step 1: Fetch tasks
 	progress(p.Progress, "Fetching tasks...")
 	tasks, err := p.Tasks.FetchTasks(ctx, p.Query)
+	var warnings []string
 	if err != nil {
-		return nil, fmt.Errorf("fetch tasks: %w", err)
+		if errors.Is(err, ErrPartialProviders) {
+			warnings = append(warnings, err.Error())
+		} else {
+			return nil, fmt.Errorf("fetch tasks: %w", err)
+		}
 	}
 
 	// Step 2: Expand recurring tasks into instances within the scheduling window
@@ -561,6 +568,7 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 		Updated:     updated,
 		Deleted:     deleted,
 		Unchanged:   unchanged,
+		Warnings:    warnings,
 	}, nil
 }
 
