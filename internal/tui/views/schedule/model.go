@@ -24,6 +24,7 @@ type Model struct {
 }
 
 type scheduleEntry struct {
+	TaskKey    string
 	Start      time.Time
 	End        time.Time
 	Summary    string
@@ -71,7 +72,8 @@ func (m *Model) buildEntries() {
 	}
 	for _, a := range m.Result.Allocations {
 		m.entries = append(m.entries, scheduleEntry{
-			Start: a.Start, End: a.End, Summary: a.Summary,
+			TaskKey: a.TaskKey,
+			Start:   a.Start, End: a.End, Summary: a.Summary,
 			Project: a.Project, Section: a.Section, AtRisk: a.AtRisk,
 		})
 	}
@@ -134,7 +136,7 @@ func (m *Model) View() string {
 		for _, a := range atRisk {
 			dot := styles.FormatProjectDot(a.Project)
 			line := styles.AtRiskStyle.Render(fmt.Sprintf("%s%s (%s - %s)",
-				styles.FormatPrefix(a.Project, a.Section), a.Summary,
+				styles.FormatPrefixWithKey(a.Project, a.Section, a.TaskKey), a.Summary,
 				a.Start.Format("15:04"), a.End.Format("15:04")))
 			lines = append(lines, displayLine{entryIdx: -1, header: "  " + dot + line})
 		}
@@ -148,7 +150,7 @@ func (m *Model) View() string {
 			dot := styles.FormatProjectDot(u.Project)
 			est := styles.FormatDurationOrDash(u.Estimate)
 			line := styles.WarnStyle.Render(fmt.Sprintf("%s%s  %s  (%s)",
-				styles.FormatPrefix(u.Project, u.Section), u.Summary, est, u.Reason))
+				styles.FormatPrefixWithKey(u.Project, u.Section, u.TaskKey), u.Summary, est, u.Reason))
 			lines = append(lines, displayLine{entryIdx: -1, header: "  " + dot + line})
 		}
 		lines = append(lines, displayLine{entryIdx: -1}) // blank separator
@@ -212,7 +214,7 @@ func (m *Model) View() string {
 
 		dot := styles.FormatProjectDot(e.Project)
 		timeRange := fmt.Sprintf("%s - %s", e.Start.Format("15:04"), e.End.Format("15:04"))
-		prefix := styles.FormatPrefix(e.Project, e.Section)
+		prefix := styles.FormatPrefixWithKey(e.Project, e.Section, e.TaskKey)
 		line := fmt.Sprintf("%s  %s%s", timeRange, prefix, e.Summary)
 
 		switch {

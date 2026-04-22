@@ -21,10 +21,49 @@ func FormatPrefix(project, section string) string {
 	return ""
 }
 
+// FormatPrefixWithKey formats a project/section prefix and appends an issue/PR
+// number for GitHub-style projects when available from taskKey.
+func FormatPrefixWithKey(project, section, taskKey string) string {
+	short := abbreviateProject(withIssueNumber(project, taskKey))
+	if short != "" && section != "" {
+		return short + "/" + section + ": "
+	}
+	if short != "" {
+		return short + ": "
+	}
+	return ""
+}
+
 // abbreviateProject returns the project name as-is. GitHub tasks use
 // `owner/repo` form and the org is worth keeping for disambiguation.
 func abbreviateProject(project string) string {
 	return project
+}
+
+func withIssueNumber(project, taskKey string) string {
+	if strings.Contains(project, "#") {
+		return project
+	}
+	if !looksLikeGitHubProject(project) {
+		return project
+	}
+
+	i := strings.LastIndex(taskKey, "#")
+	if i < 0 || i == len(taskKey)-1 {
+		return project
+	}
+	num := taskKey[i+1:]
+	for _, r := range num {
+		if r < '0' || r > '9' {
+			return project
+		}
+	}
+	return project + "#" + num
+}
+
+func looksLikeGitHubProject(project string) bool {
+	i := strings.Index(project, "/")
+	return i > 0 && i < len(project)-1 && strings.Count(project, "/") == 1
 }
 
 // PadOrTruncate pads or truncates s (ANSI-aware) to exactly the given width.

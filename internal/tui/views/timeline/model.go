@@ -97,7 +97,7 @@ func (m Model) View() string {
 			if e.AtRisk {
 				prefix = "[LATE] "
 			}
-			taskLabel := styles.FormatPrefix(e.Project, e.Section) + e.Summary
+			taskLabel := styles.FormatPrefixWithKey(e.Project, e.Section, e.TaskKey) + e.Summary
 			label = fmt.Sprintf("%s  %s%s  %s", timeRange, prefix, taskLabel, durStr)
 			if e.Status != "" {
 				label += styles.HintStyle.Render(fmt.Sprintf(" [%s]", e.Status))

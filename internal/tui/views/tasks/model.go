@@ -338,7 +338,7 @@ func (m Model) View() string {
 				labelWidth = 20
 			}
 
-			prefix := styles.FormatPrefix(t.Project, t.Section)
+			prefix := styles.FormatPrefixWithKey(t.Project, t.Section, t.Key)
 			summaryWidth := labelWidth - len(prefix)
 			if summaryWidth < 10 {
 				summaryWidth = 10
