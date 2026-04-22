@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/iruoy/fylla/internal/task"
 )
@@ -67,7 +68,52 @@ func TestFetchTasks(t *testing.T) {
 		}
 	})
 
-	t.Run("skips non-PR issues", func(t *testing.T) {
+	t.Run("parses inline clauses from title", func(t *testing.T) {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/search/issues", func(w http.ResponseWriter, r *http.Request) {
+			resp := map[string]interface{}{
+				"total_count": 1,
+				"items": []map[string]interface{}{
+					{
+						"number":         7,
+						"title":          "Important thing [2h] {2026-05-01} (priority:p1)",
+						"created_at":     "2025-01-15T10:00:00Z",
+						"repository_url": "https://api.github.com/repos/iruoy/fylla",
+					},
+				},
+			}
+			json.NewEncoder(w).Encode(resp)
+		})
+		server := httptest.NewServer(mux)
+		defer server.Close()
+
+		client := NewClient("test-token")
+		client.SetHTTPClient(server.Client())
+		client.SetBaseURL(server.URL + "/")
+
+		tasks, err := client.FetchTasks(context.Background(), "is:issue")
+		if err != nil {
+			t.Fatalf("FetchTasks: %v", err)
+		}
+		if len(tasks) != 1 {
+			t.Fatalf("expected 1 task, got %d", len(tasks))
+		}
+		got := tasks[0]
+		if got.Summary != "Important thing" {
+			t.Errorf("summary = %q, want 'Important thing'", got.Summary)
+		}
+		if got.Priority != 1 {
+			t.Errorf("priority = %d, want 1", got.Priority)
+		}
+		if got.RemainingEstimate != 2*time.Hour {
+			t.Errorf("estimate = %v, want 2h", got.RemainingEstimate)
+		}
+		if got.DueDate == nil || got.DueDate.Format("2006-01-02") != "2026-05-01" {
+			t.Errorf("due = %v, want 2026-05-01", got.DueDate)
+		}
+	})
+
+	t.Run("includes non-PR issues as Issue type", func(t *testing.T) {
 		mux := http.NewServeMux()
 		mux.HandleFunc("/search/issues", func(w http.ResponseWriter, r *http.Request) {
 			resp := map[string]interface{}{
@@ -92,12 +138,18 @@ func TestFetchTasks(t *testing.T) {
 		client.SetHTTPClient(server.Client())
 		client.SetBaseURL(server.URL + "/")
 
-		tasks, err := client.FetchTasks(context.Background(), "is:pr state:open review-requested:@me")
+		tasks, err := client.FetchTasks(context.Background(), "is:issue state:open assignee:@me")
 		if err != nil {
 			t.Fatalf("FetchTasks: %v", err)
 		}
-		if len(tasks) != 0 {
-			t.Errorf("expected 0 tasks, got %d", len(tasks))
+		if len(tasks) != 1 {
+			t.Fatalf("expected 1 task, got %d", len(tasks))
+		}
+		if tasks[0].IssueType != "Issue" {
+			t.Errorf("issueType = %q, want Issue", tasks[0].IssueType)
+		}
+		if tasks[0].Key != "repo#1" {
+			t.Errorf("key = %q, want repo#1", tasks[0].Key)
 		}
 	})
 }
@@ -114,6 +166,7 @@ func TestParsePRKey(t *testing.T) {
 	}{
 		{"fylla#42", "iruoy", "fylla", 42, false},
 		{"backend#7", "org", "backend", 7, false},
+		{"someone/anyrepo#9", "someone", "anyrepo", 9, false},
 		{"unknown#1", "", "", 0, true},
 		{"nohash", "", "", 0, true},
 		{"repo#abc", "", "", 0, true},
@@ -317,19 +370,214 @@ func TestUnsupportedOperations(t *testing.T) {
 	client := NewClient("token")
 	ctx := context.Background()
 
-	if err := client.CompleteTask(ctx, "r#1"); err == nil {
-		t.Error("CompleteTask should return error")
-	}
-	if err := client.DeleteTask(ctx, "r#1"); err == nil {
-		t.Error("DeleteTask should return error")
-	}
 	if err := client.UpdateEstimate(ctx, "r#1", 0); err == nil {
 		t.Error("UpdateEstimate should return error")
 	}
 	if err := client.UpdatePriority(ctx, "r#1", 1); err == nil {
 		t.Error("UpdatePriority should return error")
 	}
-	if err := client.UpdateSummary(ctx, "r#1", "x"); err == nil {
-		t.Error("UpdateSummary should return error")
+}
+
+func TestCloseOperations(t *testing.T) {
+	mux := http.NewServeMux()
+	var lastReq map[string]interface{}
+	currentTitle := "original title"
+	mux.HandleFunc("/repos/iruoy/fylla/issues/5", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]interface{}{"number": 5, "title": currentTitle})
+		case http.MethodPatch:
+			lastReq = map[string]interface{}{}
+			json.NewDecoder(r.Body).Decode(&lastReq)
+			if t, ok := lastReq["title"].(string); ok {
+				currentTitle = t
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"number": 5, "state": "closed"})
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := NewClient("test-token")
+	client.SetHTTPClient(server.Client())
+	client.SetBaseURL(server.URL + "/")
+	client.Repos = []string{"iruoy/fylla"}
+
+	t.Run("CompleteTask closes with completed reason", func(t *testing.T) {
+		if err := client.CompleteTask(context.Background(), "fylla#5"); err != nil {
+			t.Fatalf("CompleteTask: %v", err)
+		}
+		if lastReq["state"] != "closed" || lastReq["state_reason"] != "completed" {
+			t.Errorf("req = %v, want state=closed reason=completed", lastReq)
+		}
+	})
+
+	t.Run("DeleteTask closes with not_planned reason", func(t *testing.T) {
+		if err := client.DeleteTask(context.Background(), "fylla#5"); err != nil {
+			t.Fatalf("DeleteTask: %v", err)
+		}
+		if lastReq["state"] != "closed" || lastReq["state_reason"] != "not_planned" {
+			t.Errorf("req = %v, want state=closed reason=not_planned", lastReq)
+		}
+	})
+
+	t.Run("UpdateSummary patches title", func(t *testing.T) {
+		if err := client.UpdateSummary(context.Background(), "fylla#5", "new title"); err != nil {
+			t.Fatalf("UpdateSummary: %v", err)
+		}
+		if lastReq["title"] != "new title" {
+			t.Errorf("req = %v, want title=new title", lastReq)
+		}
+	})
+
+	t.Run("accepts owner/repo#N key form", func(t *testing.T) {
+		c := NewClient("test-token")
+		c.SetHTTPClient(server.Client())
+		c.SetBaseURL(server.URL + "/")
+		if err := c.CompleteTask(context.Background(), "iruoy/fylla#5"); err != nil {
+			t.Fatalf("CompleteTask with owner/repo: %v", err)
+		}
+	})
+}
+
+func TestMetadataOperations(t *testing.T) {
+	mux := http.NewServeMux()
+	title := "Do thing [15m] (priority:p3)"
+	mux.HandleFunc("/repos/iruoy/fylla/issues/9", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]interface{}{"number": 9, "title": title})
+		case http.MethodPatch:
+			var req map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&req)
+			if t, ok := req["title"].(string); ok {
+				title = t
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"number": 9, "title": title})
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := NewClient("test-token")
+	client.SetHTTPClient(server.Client())
+	client.SetBaseURL(server.URL + "/")
+	client.Repos = []string{"iruoy/fylla"}
+
+	ctx := context.Background()
+
+	t.Run("UpdatePriority preserves estimate and summary", func(t *testing.T) {
+		if err := client.UpdatePriority(ctx, "fylla#9", 1); err != nil {
+			t.Fatalf("UpdatePriority: %v", err)
+		}
+		if title != "Do thing [15m] (priority:p1)" {
+			t.Errorf("title = %q", title)
+		}
+	})
+
+	t.Run("UpdateEstimate mutates in place", func(t *testing.T) {
+		if err := client.UpdateEstimate(ctx, "fylla#9", time.Hour); err != nil {
+			t.Fatalf("UpdateEstimate: %v", err)
+		}
+		if title != "Do thing [1h] (priority:p1)" {
+			t.Errorf("title = %q", title)
+		}
+	})
+
+	t.Run("UpdateDueDate adds due token", func(t *testing.T) {
+		due := time.Date(2026, 5, 10, 0, 0, 0, 0, time.UTC)
+		if err := client.UpdateDueDate(ctx, "fylla#9", due); err != nil {
+			t.Fatalf("UpdateDueDate: %v", err)
+		}
+		if title != "Do thing [1h] (priority:p1) {2026-05-10}" {
+			t.Errorf("title = %q", title)
+		}
+	})
+
+	t.Run("RemoveDueDate strips due token", func(t *testing.T) {
+		if err := client.RemoveDueDate(ctx, "fylla#9"); err != nil {
+			t.Fatalf("RemoveDueDate: %v", err)
+		}
+		if title != "Do thing [1h] (priority:p1)" {
+			t.Errorf("title = %q", title)
+		}
+	})
+
+	t.Run("UpdateSummary preserves metadata", func(t *testing.T) {
+		if err := client.UpdateSummary(ctx, "fylla#9", "New summary"); err != nil {
+			t.Fatalf("UpdateSummary: %v", err)
+		}
+		if title != "New summary [1h] (priority:p1)" {
+			t.Errorf("title = %q", title)
+		}
+	})
+
+	t.Run("GetSummary strips metadata", func(t *testing.T) {
+		s, err := client.GetSummary(ctx, "fylla#9")
+		if err != nil {
+			t.Fatalf("GetSummary: %v", err)
+		}
+		if s != "New summary" {
+			t.Errorf("summary = %q", s)
+		}
+	})
+
+	t.Run("GetPriority reads meta", func(t *testing.T) {
+		p, err := client.GetPriority(ctx, "fylla#9")
+		if err != nil {
+			t.Fatalf("GetPriority: %v", err)
+		}
+		if p != 1 {
+			t.Errorf("priority = %d, want 1", p)
+		}
+	})
+
+	t.Run("GetEstimate reads meta", func(t *testing.T) {
+		d, err := client.GetEstimate(ctx, "fylla#9")
+		if err != nil {
+			t.Fatalf("GetEstimate: %v", err)
+		}
+		if d != time.Hour {
+			t.Errorf("estimate = %v, want 1h", d)
+		}
+	})
+}
+
+func TestCreateTaskEmbedsMetadata(t *testing.T) {
+	var lastTitle string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/iruoy/fylla/issues", func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]interface{}
+		json.NewDecoder(r.Body).Decode(&req)
+		lastTitle, _ = req["title"].(string)
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]interface{}{"number": 100})
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := NewClient("test-token")
+	client.SetHTTPClient(server.Client())
+	client.SetBaseURL(server.URL + "/")
+	client.Repos = []string{"iruoy/fylla"}
+
+	due := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	_, err := client.CreateTask(context.Background(), task.CreateInput{
+		Project:  "fylla",
+		Summary:  "New bug",
+		Priority: "Highest",
+		Estimate: 90 * time.Minute,
+		DueDate:  &due,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	want := "New bug [1h30m] {2026-06-01} (priority:p1)"
+	if lastTitle != want {
+		t.Errorf("title = %q, want %q", lastTitle, want)
 	}
 }

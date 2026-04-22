@@ -100,6 +100,64 @@ func TestSetTitleEstimate(t *testing.T) {
 	}
 }
 
+func TestSetTitleDueDate(t *testing.T) {
+	d := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	cases := []struct{ in, want string }{
+		{"Fix bug", "Fix bug {2026-05-01}"},
+		{"Fix bug {2025-01-01}", "Fix bug {2026-05-01}"},
+	}
+	for _, tc := range cases {
+		if got := SetTitleDueDate(tc.in, d); got != tc.want {
+			t.Errorf("SetTitleDueDate(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+	if got := RemoveTitleDueDate("Fix bug {2026-05-01}"); got != "Fix bug" {
+		t.Errorf("RemoveTitleDueDate = %q", got)
+	}
+}
+
+func TestTitlePriority(t *testing.T) {
+	cases := []struct {
+		in    string
+		level int
+		rest  string
+	}{
+		{"Fix bug (priority:p1)", 1, "Fix bug"},
+		{"(priority:p3) Urgent", 3, "Urgent"},
+		{"no priority here", 0, "no priority here"},
+		{"Fix bug (priority:p9)", 0, "Fix bug (priority:p9)"},
+	}
+	for _, tc := range cases {
+		level, rest := ParseTitlePriority(tc.in)
+		if level != tc.level || rest != tc.rest {
+			t.Errorf("ParseTitlePriority(%q) = (%d, %q), want (%d, %q)", tc.in, level, rest, tc.level, tc.rest)
+		}
+	}
+
+	if got := SetTitlePriority("Fix bug", 2); got != "Fix bug (priority:p2)" {
+		t.Errorf("SetTitlePriority append = %q", got)
+	}
+	if got := SetTitlePriority("Fix bug (priority:p5)", 1); got != "Fix bug (priority:p1)" {
+		t.Errorf("SetTitlePriority replace = %q", got)
+	}
+	if got := RemoveTitlePriority("Fix bug (priority:p2)"); got != "Fix bug" {
+		t.Errorf("RemoveTitlePriority = %q", got)
+	}
+}
+
+func TestPriorityNameToLevel(t *testing.T) {
+	cases := map[string]int{
+		"Highest": 1, "High": 2, "Medium": 3, "Low": 4, "Lowest": 5,
+		"p1": 1, "urgent": 1, "trivial": 5, "normal": 3,
+		"": 0, "bogus": 0,
+	}
+	for in, want := range cases {
+		if got := PriorityNameToLevel(in); got != want {
+			t.Errorf("PriorityNameToLevel(%q) = %d, want %d", in, got, want)
+		}
+	}
+}
+
 func TestParseInput(t *testing.T) {
 	// Use a fixed reference time for deterministic date assertions
 	ref := time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC)

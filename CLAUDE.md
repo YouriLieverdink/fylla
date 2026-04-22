@@ -24,7 +24,7 @@ go run ./cmd/fylla          # Run
 Fylla supports multiple task providers (Todoist, GitHub, Kendo) simultaneously via the `providers` array in config. Key concepts:
 
 - **Config:** `providers: [kendo, todoist, github]` — configures which task providers to use. At least one is required (validated at load); the default template seeds `[local]` so fresh profiles work without credentials
-- **Provider routing:** `isKendoKey()` / `isGitHubKey()` / `providerForKey()` infers provider from task key format (`PROJ-123` → Kendo, numeric → Todoist, `repo#123` → GitHub)
+- **Provider routing:** `isKendoKey()` / `isGitHubKey()` / `providerForKey()` infers provider from task key format (`PROJ-123` → Kendo, numeric → Todoist, `repo#123` or `owner/repo#123` → GitHub)
 - **MultiTaskSource:** wraps multiple `TaskSource` instances, routes key-based operations to the correct provider. `routeToWithProvider()` uses the explicit provider name when available, falling back to key-based inference
 - **multiFetcher:** concurrent fetch from all providers, merges results, handles partial failures
 - **Progressive loading:** TUI fires per-provider fetch commands via `LoadTasksByProvider`, results trickle in as each provider responds (`TasksPartialMsg`), merged and sorted incrementally
@@ -52,6 +52,12 @@ Fylla supports multiple task providers (Todoist, GitHub, Kendo) simultaneously v
 - `previewTimeoutSeconds` bounds the whole `SyncPreview` (default: 20s) so the schedule tab cannot hang indefinitely even if a provider ignores its per-call deadline.
 - `multiFetcher` returns `ErrPartialProviders` when some providers fail; `RunSync` proceeds with partial tasks and surfaces warnings via `SyncResult.Warnings`. `SyncApply` does NOT degrade — a missing provider would cause reconcile to delete its events.
 - TUI caches the last `SyncResult` in `m.cachedSync`: switching to the schedule tab renders the cached result instantly and fires a background refresh (mirrors `m.cachedTasks`).
+
+### GitHub Provider
+- `github.defaultQuery` is passed verbatim to the Search Issues API. Any qualifiers work (`is:pr`, `is:issue`, `author:@me`, `-user:work-org`, `repo:x/y`, etc.). `FetchTasks` returns both issues and PRs; `IssueType` is `"Issue"` or `"Pull Request"` based on the presence of the `pull_request` field.
+- `github.repos` is optional. When populated it auto-appends `repo:owner/repo` qualifiers to the query and provides short-name resolution (`fylla#42` → `iruoy/fylla`). Leave empty to control scope purely via query — task keys then use the short repo name discovered from results. Keys in `owner/repo#N` form are also accepted everywhere.
+- **Title metadata:** priority, estimate, and due date are encoded into the issue title using the same inline clauses as other providers — `[30m]`/`[1h30m]` (estimate via `task.ParseTitleEstimate`/`SetTitleEstimate`), `{YYYY-MM-DD}` (due via `task.ParseTitleDueDate`/`SetTitleDueDate`/`RemoveTitleDueDate`), and `(priority:pN)` (standalone, via `task.ParseTitlePriority`/`SetTitlePriority`/`RemoveTitlePriority`). `FetchTasks` strips all three clauses from the title for `Task.Summary` and populates `Priority`/`RemainingEstimate`/`DueDate` accordingly. `UpdateEstimate`/`UpdateDueDate`/`UpdatePriority` each GET the current title, apply the matching setter, and PATCH — other clauses are preserved.
+- Write ops: `CreateTask` appends estimate/due/priority clauses to the title (accepts `Project` as short name or `owner/repo`); `CompleteTask` closes with `state_reason=completed`; `DeleteTask` closes with `state_reason=not_planned`; `UpdateSummary` rewrites the non-clause portion while re-applying any existing estimate/due/priority. `PostWorklog` returns `ErrUnsupported`.
 
 ### GitHub Rate Limiting
 - Client tracks `X-RateLimit-Remaining` and `X-RateLimit-Reset` from API responses

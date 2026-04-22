@@ -17,14 +17,14 @@ import (
 
 var issueKeyPattern = regexp.MustCompile(`[A-Z][A-Z0-9]+-\d+`)
 
-// ErrUnsupported is returned for write operations that don't apply to PRs.
-var ErrUnsupported = errors.New("operation not supported for GitHub pull requests")
+// ErrUnsupported is returned for operations GitHub doesn't model natively (estimates, priority, due dates, worklog).
+var ErrUnsupported = errors.New("operation not supported for GitHub issues/pull requests")
 
-// Client handles fetching pull requests needing review from GitHub.
+// Client handles fetching issues and pull requests from GitHub.
 type Client struct {
 	client *gh.Client
 	query  string
-	Repos  []string // optional: only include PRs from these repos (e.g. "owner/repo")
+	Repos  []string // optional: narrows search and enables short-name key resolution (e.g. "owner/repo")
 
 	rateMu    sync.Mutex
 	rateLimit gh.Rate // last known rate limit state
@@ -70,7 +70,7 @@ func (c *Client) RateRemaining() int {
 	return c.rateLimit.Remaining
 }
 
-// FetchTasks searches for open PRs requesting the user's review and returns them as tasks.
+// FetchTasks searches for open issues and PRs matching the query and returns them as tasks.
 func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, error) {
 	if query == "" {
 		query = "is:pr state:open review-requested:@me"
@@ -99,30 +99,43 @@ func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, err
 		opts.Page = resp.NextPage
 	}
 
-	// Build tasks from search results. Use a flat estimate for all PRs
-	// to avoid extra API calls per PR (which made loading very slow).
-	const prEstimate = 30 * time.Minute
+	// Flat estimate avoids an extra API call per item.
+	const flatEstimate = 30 * time.Minute
 
 	tasks := make([]task.Task, 0, len(allIssues))
 	for _, issue := range allIssues {
-		if issue.PullRequestLinks == nil {
-			continue
-		}
 		owner, repo, number, err := parseIssue(issue)
 		if err != nil {
 			continue
+		}
+		issueType := "Issue"
+		if issue.PullRequestLinks != nil {
+			issueType = "Pull Request"
+		}
+		summary := issue.GetTitle()
+		est, summary := task.ParseTitleEstimate(summary)
+		due, summary := task.ParseTitleDueDate(summary)
+		pri, summary := task.ParseTitlePriority(summary)
+		priority := 2
+		if pri > 0 {
+			priority = pri
+		}
+		estimate := flatEstimate
+		if est > 0 {
+			estimate = est
 		}
 		key := fmt.Sprintf("%s#%d", repo, number)
 		tasks = append(tasks, task.Task{
 			Key:               key,
 			Provider:          "github",
-			Summary:           issue.GetTitle(),
-			Priority:          2,
+			Summary:           summary,
+			Priority:          priority,
+			DueDate:           due,
 			Created:           issue.GetCreatedAt().Time,
 			Project:           fmt.Sprintf("%s/%s", owner, repo),
-			IssueType:         "Pull Request",
-			OriginalEstimate:  prEstimate,
-			RemainingEstimate: prEstimate,
+			IssueType:         issueType,
+			OriginalEstimate:  estimate,
+			RemainingEstimate: estimate,
 		})
 	}
 
@@ -191,32 +204,38 @@ func (c *Client) ResolveIssueKey(ctx context.Context, prKey string) (string, err
 	return "", nil
 }
 
-// resolveRepo maps a short repo name to its owner and repo using the
-// configured repos list (e.g. "fylla" → "iruoy", "fylla").
-func resolveRepo(repoName string, repos []string) (string, string, error) {
+// splitProject returns owner, repo. Accepts "owner/repo" directly, otherwise
+// resolves the short name via the configured repos list.
+func splitProject(project string, repos []string) (string, string, error) {
+	if strings.Contains(project, "/") {
+		parts := strings.SplitN(project, "/", 2)
+		if parts[0] == "" || parts[1] == "" {
+			return "", "", fmt.Errorf("invalid project %q, want owner/repo", project)
+		}
+		return parts[0], parts[1], nil
+	}
 	for _, r := range repos {
 		parts := strings.SplitN(r, "/", 2)
-		if len(parts) == 2 && parts[1] == repoName {
+		if len(parts) == 2 && parts[1] == project {
 			return parts[0], parts[1], nil
 		}
 	}
-	return "", "", fmt.Errorf("repo %q not found in configured repos", repoName)
+	return "", "", fmt.Errorf("repo %q not found in configured repos (use 'owner/repo' form or add to github.repos)", project)
 }
 
-// parsePRKey splits "repo#123" into owner, repo, number using the configured
-// repos list to resolve the owner.
+// parsePRKey splits "repo#123" or "owner/repo#123" into owner, repo, number.
 func parsePRKey(key string, repos []string) (string, string, int, error) {
-	idx := strings.Index(key, "#")
+	idx := strings.LastIndex(key, "#")
 	if idx < 0 {
 		return "", "", 0, fmt.Errorf("missing '#' in key")
 	}
-	repoName := key[:idx]
+	projectPart := key[:idx]
 	num, err := strconv.Atoi(key[idx+1:])
 	if err != nil {
-		return "", "", 0, fmt.Errorf("invalid PR number: %w", err)
+		return "", "", 0, fmt.Errorf("invalid issue number: %w", err)
 	}
 
-	owner, repo, err := resolveRepo(repoName, repos)
+	owner, repo, err := splitProject(projectPart, repos)
 	if err != nil {
 		return "", "", 0, err
 	}
@@ -224,13 +243,21 @@ func parsePRKey(key string, repos []string) (string, string, int, error) {
 }
 
 func (c *Client) CreateTask(ctx context.Context, input task.CreateInput) (string, error) {
-	owner, repo, err := resolveRepo(input.Project, c.Repos)
+	owner, repo, err := splitProject(input.Project, c.Repos)
 	if err != nil {
 		return "", fmt.Errorf("github create issue: %w", err)
 	}
-	req := &gh.IssueRequest{
-		Title: &input.Summary,
+	title := input.Summary
+	if input.Estimate > 0 {
+		title = task.SetTitleEstimate(title, input.Estimate)
 	}
+	if input.DueDate != nil {
+		title = task.SetTitleDueDate(title, *input.DueDate)
+	}
+	if level := task.PriorityNameToLevel(input.Priority); level > 0 {
+		title = task.SetTitlePriority(title, level)
+	}
+	req := &gh.IssueRequest{Title: &title}
 	if input.Description != "" {
 		req.Body = &input.Description
 	}
@@ -253,52 +280,167 @@ func (c *Client) ListProjects(_ context.Context) ([]string, error) {
 	return projects, nil
 }
 
-func (c *Client) CompleteTask(_ context.Context, _ string) error {
-	return fmt.Errorf("github: %w", ErrUnsupported)
+// closeIssue closes an issue or PR with the given state_reason ("completed" or "not_planned").
+func (c *Client) closeIssue(ctx context.Context, taskKey, reason string) error {
+	owner, repo, number, err := parsePRKey(taskKey, c.Repos)
+	if err != nil {
+		return fmt.Errorf("parse key %q: %w", taskKey, err)
+	}
+	state := "closed"
+	req := &gh.IssueRequest{State: &state, StateReason: &reason}
+	c.checkRateLimit()
+	_, resp, err := c.client.Issues.Edit(ctx, owner, repo, number, req)
+	c.updateRateLimit(resp)
+	if err != nil {
+		return fmt.Errorf("github close %s: %w", taskKey, err)
+	}
+	return nil
 }
 
-func (c *Client) DeleteTask(_ context.Context, _ string) error {
-	return fmt.Errorf("github: %w", ErrUnsupported)
+func (c *Client) CompleteTask(ctx context.Context, taskKey string) error {
+	return c.closeIssue(ctx, taskKey, "completed")
+}
+
+func (c *Client) DeleteTask(ctx context.Context, taskKey string) error {
+	return c.closeIssue(ctx, taskKey, "not_planned")
 }
 
 func (c *Client) PostWorklog(_ context.Context, _ string, _ time.Duration, _ string, _ time.Time) error {
 	return fmt.Errorf("github: %w", ErrUnsupported)
 }
 
-func (c *Client) GetEstimate(_ context.Context, _ string) (time.Duration, error) {
-	return 0, fmt.Errorf("github: %w", ErrUnsupported)
+// issueHandle identifies a GitHub issue or PR for mutation.
+type issueHandle struct {
+	owner  string
+	repo   string
+	number int
 }
 
-func (c *Client) UpdateEstimate(_ context.Context, _ string, _ time.Duration) error {
-	return fmt.Errorf("github: %w", ErrUnsupported)
+// fetchTitle loads the current title and returns it with an issueHandle for follow-up writes.
+func (c *Client) fetchTitle(ctx context.Context, taskKey string) (string, issueHandle, error) {
+	owner, repo, number, err := parsePRKey(taskKey, c.Repos)
+	if err != nil {
+		return "", issueHandle{}, fmt.Errorf("parse key %q: %w", taskKey, err)
+	}
+	h := issueHandle{owner, repo, number}
+	c.checkRateLimit()
+	issue, resp, err := c.client.Issues.Get(ctx, owner, repo, number)
+	c.updateRateLimit(resp)
+	if err != nil {
+		return "", h, fmt.Errorf("github get %s: %w", taskKey, err)
+	}
+	return issue.GetTitle(), h, nil
 }
 
-func (c *Client) GetDueDate(_ context.Context, _ string) (*time.Time, error) {
-	return nil, nil
+// writeTitle PATCHes the issue title.
+func (c *Client) writeTitle(ctx context.Context, taskKey string, h issueHandle, title string) error {
+	req := &gh.IssueRequest{Title: &title}
+	c.checkRateLimit()
+	_, resp, err := c.client.Issues.Edit(ctx, h.owner, h.repo, h.number, req)
+	c.updateRateLimit(resp)
+	if err != nil {
+		return fmt.Errorf("github update %s: %w", taskKey, err)
+	}
+	return nil
 }
 
-func (c *Client) UpdateDueDate(_ context.Context, _ string, _ time.Time) error {
-	return fmt.Errorf("github: %w", ErrUnsupported)
+func (c *Client) GetEstimate(ctx context.Context, taskKey string) (time.Duration, error) {
+	title, _, err := c.fetchTitle(ctx, taskKey)
+	if err != nil {
+		return 0, err
+	}
+	d, _ := task.ParseTitleEstimate(title)
+	return d, nil
 }
 
-func (c *Client) RemoveDueDate(_ context.Context, _ string) error {
-	return fmt.Errorf("github: %w", ErrUnsupported)
+func (c *Client) UpdateEstimate(ctx context.Context, taskKey string, d time.Duration) error {
+	title, h, err := c.fetchTitle(ctx, taskKey)
+	if err != nil {
+		return err
+	}
+	return c.writeTitle(ctx, taskKey, h, task.SetTitleEstimate(title, d))
 }
 
-func (c *Client) GetPriority(_ context.Context, _ string) (int, error) {
-	return 2, nil // High default
+func (c *Client) GetDueDate(ctx context.Context, taskKey string) (*time.Time, error) {
+	title, _, err := c.fetchTitle(ctx, taskKey)
+	if err != nil {
+		return nil, err
+	}
+	due, _ := task.ParseTitleDueDate(title)
+	return due, nil
 }
 
-func (c *Client) UpdatePriority(_ context.Context, _ string, _ int) error {
-	return fmt.Errorf("github: %w", ErrUnsupported)
+func (c *Client) UpdateDueDate(ctx context.Context, taskKey string, due time.Time) error {
+	title, h, err := c.fetchTitle(ctx, taskKey)
+	if err != nil {
+		return err
+	}
+	return c.writeTitle(ctx, taskKey, h, task.SetTitleDueDate(title, due))
 }
 
-func (c *Client) GetSummary(_ context.Context, _ string) (string, error) {
-	return "", fmt.Errorf("github: %w", ErrUnsupported)
+func (c *Client) RemoveDueDate(ctx context.Context, taskKey string) error {
+	title, h, err := c.fetchTitle(ctx, taskKey)
+	if err != nil {
+		return err
+	}
+	return c.writeTitle(ctx, taskKey, h, task.RemoveTitleDueDate(title))
 }
 
-func (c *Client) UpdateSummary(_ context.Context, _ string, _ string) error {
-	return fmt.Errorf("github: %w", ErrUnsupported)
+func (c *Client) GetPriority(ctx context.Context, taskKey string) (int, error) {
+	title, _, err := c.fetchTitle(ctx, taskKey)
+	if err != nil {
+		return 0, err
+	}
+	level, _ := task.ParseTitlePriority(title)
+	if level == 0 {
+		return 2, nil // High default
+	}
+	return level, nil
+}
+
+func (c *Client) UpdatePriority(ctx context.Context, taskKey string, level int) error {
+	if level < 1 || level > 5 {
+		return fmt.Errorf("github: priority must be 1..5, got %d", level)
+	}
+	title, h, err := c.fetchTitle(ctx, taskKey)
+	if err != nil {
+		return err
+	}
+	return c.writeTitle(ctx, taskKey, h, task.SetTitlePriority(title, level))
+}
+
+// GetSummary returns the issue title with estimate/due/priority clauses stripped.
+func (c *Client) GetSummary(ctx context.Context, taskKey string) (string, error) {
+	title, _, err := c.fetchTitle(ctx, taskKey)
+	if err != nil {
+		return "", err
+	}
+	_, title = task.ParseTitleEstimate(title)
+	_, title = task.ParseTitleDueDate(title)
+	_, title = task.ParseTitlePriority(title)
+	return title, nil
+}
+
+// UpdateSummary rewrites the title while preserving existing estimate, due date, and priority clauses.
+func (c *Client) UpdateSummary(ctx context.Context, taskKey string, summary string) error {
+	title, h, err := c.fetchTitle(ctx, taskKey)
+	if err != nil {
+		return err
+	}
+	est, _ := task.ParseTitleEstimate(title)
+	due, _ := task.ParseTitleDueDate(title)
+	pri, _ := task.ParseTitlePriority(title)
+	newTitle := summary
+	if est > 0 {
+		newTitle = task.SetTitleEstimate(newTitle, est)
+	}
+	if due != nil {
+		newTitle = task.SetTitleDueDate(newTitle, *due)
+	}
+	if pri > 0 {
+		newTitle = task.SetTitlePriority(newTitle, pri)
+	}
+	return c.writeTitle(ctx, taskKey, h, newTitle)
 }
 
 // SetHTTPClient sets the underlying HTTP client (for testing).

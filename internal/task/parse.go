@@ -98,6 +98,69 @@ func SetTitleEstimate(text string, d time.Duration) string {
 	return text + " " + bracket
 }
 
+// SetTitleDueDate replaces or appends a {YYYY-MM-DD} due date in the text.
+func SetTitleDueDate(text string, t time.Time) string {
+	bracket := "{" + t.Format("2006-01-02") + "}"
+	if dueDateRe.MatchString(text) {
+		return strings.TrimSpace(dueDateRe.ReplaceAllString(text, bracket))
+	}
+	return strings.TrimSpace(text + " " + bracket)
+}
+
+// RemoveTitleDueDate strips any {YYYY-MM-DD} clause from the text.
+func RemoveTitleDueDate(text string) string {
+	cleaned := dueDateRe.ReplaceAllString(text, "")
+	return strings.TrimSpace(spacesRe.ReplaceAllString(cleaned, " "))
+}
+
+var standalonePriorityRe = regexp.MustCompile(`(?i)\(priority:(p[1-5])\)`)
+
+// ParseTitlePriority extracts a (priority:pN) clause. Returns 0 and the original text if none.
+func ParseTitlePriority(text string) (int, string) {
+	m := standalonePriorityRe.FindStringSubmatch(text)
+	if m == nil {
+		return 0, text
+	}
+	level, _ := strconv.Atoi(m[1][1:])
+	cleaned := strings.TrimSpace(spacesRe.ReplaceAllString(standalonePriorityRe.ReplaceAllString(text, ""), " "))
+	return level, cleaned
+}
+
+// SetTitlePriority replaces or appends a standalone (priority:pN) clause. Level must be 1..5.
+func SetTitlePriority(text string, level int) string {
+	if level < 1 || level > 5 {
+		return RemoveTitlePriority(text)
+	}
+	clause := fmt.Sprintf("(priority:p%d)", level)
+	if standalonePriorityRe.MatchString(text) {
+		return strings.TrimSpace(standalonePriorityRe.ReplaceAllString(text, clause))
+	}
+	return strings.TrimSpace(text + " " + clause)
+}
+
+// RemoveTitlePriority strips any standalone (priority:pN) clause.
+func RemoveTitlePriority(text string) string {
+	cleaned := standalonePriorityRe.ReplaceAllString(text, "")
+	return strings.TrimSpace(spacesRe.ReplaceAllString(cleaned, " "))
+}
+
+// PriorityNameToLevel maps a priority name or "pN" alias to a 1..5 level. Returns 0 when unrecognized.
+func PriorityNameToLevel(name string) int {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "highest", "urgent", "p1":
+		return 1
+	case "high", "p2":
+		return 2
+	case "medium", "normal", "p3":
+		return 3
+	case "low", "p4":
+		return 4
+	case "lowest", "trivial", "p5":
+		return 5
+	}
+	return 0
+}
+
 func formatBracketDuration(d time.Duration) string {
 	h := int(d.Hours())
 	m := int(d.Minutes()) % 60
