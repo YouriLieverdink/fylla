@@ -315,6 +315,15 @@ func (m Model) View() string {
 			if t.NotBefore != nil && t.NotBefore.After(time.Now()) {
 				tags += styles.HintStyle.Render(" ≥" + t.NotBefore.Format("Jan 2"))
 			}
+			if t.DueDate != nil {
+				days := t.DueDate.Sub(time.Now()).Hours() / 24
+				switch {
+				case days <= 0:
+					tags += styles.AtRiskStyle.Render(" ⚠ " + t.DueDate.Format("Jan 2"))
+				case days <= 3:
+					tags += styles.WarnStyle.Render(" ⚠ " + t.DueDate.Format("Jan 2"))
+				}
+			}
 
 			// Fixed parts: cursor(2) + dot(2) + rank(3) + gaps(6) + est(5) + score(5) = 23
 			// When multi-select is active, checkbox adds 4 chars: "[x] " or "[ ] "
