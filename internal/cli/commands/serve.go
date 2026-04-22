@@ -67,13 +67,13 @@ func RunServe(ctx context.Context) error {
 	query := serveDefaultQuery(cfg)
 
 	return tui.Run(tui.Deps{
-		CB:                      buildCallbacks(ctx, cal, fetcher, source, cache, cfg, cfgPath, query),
-		DailyHours:              cfg.Efficiency.DailyHours,
-		WeeklyHours:             cfg.Efficiency.WeeklyHours,
-		EfficiencyTarget:        cfg.Efficiency.Target,
-		WorkDays:                collectWorkDays(cfg),
-		WorklogProvider:         worklogProvider(cfg),
-		ProfileName:             config.ActiveProfile(),
+		CB:               buildCallbacks(ctx, cal, fetcher, source, cache, cfg, cfgPath, query),
+		DailyHours:       cfg.Efficiency.DailyHours,
+		WeeklyHours:      cfg.Efficiency.WeeklyHours,
+		EfficiencyTarget: cfg.Efficiency.Target,
+		WorkDays:         collectWorkDays(cfg),
+		WorklogProvider:  worklogProvider(cfg),
+		ProfileName:      config.ActiveProfile(),
 	})
 }
 
@@ -139,17 +139,17 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			tasks := make([]msg.ScoredTask, len(result.Tasks))
 			for i, st := range result.Tasks {
 				tasks[i] = msg.ScoredTask{
-					Key:       st.Task.Key,
-					Provider:  st.Task.Provider,
-					Summary:   st.Task.Summary,
-					Priority:  st.Task.Priority,
-					DueDate:   st.Task.DueDate,
-					Estimate:  st.Task.RemainingEstimate,
-					IssueType: st.Task.IssueType,
-					Score:     st.Score,
-					Breakdown: mapBreakdown(st.Breakdown),
-					Project:   st.Task.Project,
-					Section:   st.Task.Section,
+					Key:          st.Task.Key,
+					Provider:     st.Task.Provider,
+					Summary:      st.Task.Summary,
+					Priority:     st.Task.Priority,
+					DueDate:      st.Task.DueDate,
+					Estimate:     st.Task.RemainingEstimate,
+					IssueType:    st.Task.IssueType,
+					Score:        st.Score,
+					Breakdown:    mapBreakdown(st.Breakdown),
+					Project:      st.Task.Project,
+					Section:      st.Task.Section,
 					Status:       st.Task.Status,
 					UpNext:       st.Task.UpNext,
 					NoSplit:      st.Task.NoSplit,
@@ -167,6 +167,15 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 		DeleteTask: func(taskKey, provider string) error {
 			_, err := RunDelete(ctx, DeleteParams{TaskKey: taskKey, Provider: provider, Deleter: source})
 			return err
+		},
+		OpenTaskURL: func(taskKey, provider, project, issueType string) (string, error) {
+			var kendoResolver kendoProjectIDResolver
+			if provider == "kendo" {
+				if resolver, ok := any(routedSource(source, provider)).(kendoProjectIDResolver); ok {
+					kendoResolver = resolver
+				}
+			}
+			return openTaskInBrowser(ctx, cfg, taskKey, provider, project, issueType, kendoResolver)
 		},
 		StartTimer: func(taskKey, summary, project, section, provider string) error {
 			path, err := timer.DefaultPath()
@@ -507,15 +516,15 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			}, nil
 		},
 		LoadDashboard: func(month time.Time) ([]msg.WorklogEntry, error) {
-				since := month
-				until := month.AddDate(0, 1, -1)
-				routed := routedSource(source, worklogProvider(cfg))
-				if wf, ok := routed.(WorklogFetcher); ok {
-					return wf.FetchWorklogs(ctx, since, until)
-				}
-				return nil, fmt.Errorf("no worklog provider available")
-			},
-			LoadWorklogs: func(weekView bool, date time.Time) ([]msg.WorklogEntry, error) {
+			since := month
+			until := month.AddDate(0, 1, -1)
+			routed := routedSource(source, worklogProvider(cfg))
+			if wf, ok := routed.(WorklogFetcher); ok {
+				return wf.FetchWorklogs(ctx, since, until)
+			}
+			return nil, fmt.Errorf("no worklog provider available")
+		},
+		LoadWorklogs: func(weekView bool, date time.Time) ([]msg.WorklogEntry, error) {
 			var since, until time.Time
 			if weekView {
 				weekday := int(date.Weekday())
@@ -665,17 +674,17 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			tasks := make([]msg.ScoredTask, len(result.Tasks))
 			for i, st := range result.Tasks {
 				tasks[i] = msg.ScoredTask{
-					Key:       st.Task.Key,
-					Provider:  st.Task.Provider,
-					Summary:   st.Task.Summary,
-					Priority:  st.Task.Priority,
-					DueDate:   st.Task.DueDate,
-					Estimate:  st.Task.RemainingEstimate,
-					IssueType: st.Task.IssueType,
-					Score:     st.Score,
-					Breakdown: mapBreakdown(st.Breakdown),
-					Project:   st.Task.Project,
-					Section:   st.Task.Section,
+					Key:          st.Task.Key,
+					Provider:     st.Task.Provider,
+					Summary:      st.Task.Summary,
+					Priority:     st.Task.Priority,
+					DueDate:      st.Task.DueDate,
+					Estimate:     st.Task.RemainingEstimate,
+					IssueType:    st.Task.IssueType,
+					Score:        st.Score,
+					Breakdown:    mapBreakdown(st.Breakdown),
+					Project:      st.Task.Project,
+					Section:      st.Task.Section,
 					Status:       st.Task.Status,
 					UpNext:       st.Task.UpNext,
 					NoSplit:      st.Task.NoSplit,

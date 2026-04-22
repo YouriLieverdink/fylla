@@ -1497,9 +1497,9 @@ func TestProjectIDForKey(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("valid key", func(t *testing.T) {
-		pid, err := client.projectIDForKey(ctx, "IRUOY-0001")
+		pid, err := client.ProjectIDForKey(ctx, "IRUOY-0001")
 		if err != nil {
-			t.Fatalf("projectIDForKey: %v", err)
+			t.Fatalf("ProjectIDForKey: %v", err)
 		}
 		if pid != 1 {
 			t.Errorf("pid = %d, want 1", pid)
@@ -1507,14 +1507,14 @@ func TestProjectIDForKey(t *testing.T) {
 	})
 
 	t.Run("invalid key format", func(t *testing.T) {
-		_, err := client.projectIDForKey(ctx, "BADKEY")
+		_, err := client.ProjectIDForKey(ctx, "BADKEY")
 		if err == nil {
 			t.Fatal("expected error for invalid key")
 		}
 	})
 
 	t.Run("unknown project code", func(t *testing.T) {
-		_, err := client.projectIDForKey(ctx, "UNKNOWN-0001")
+		_, err := client.ProjectIDForKey(ctx, "UNKNOWN-0001")
 		if err == nil {
 			t.Fatal("expected error for unknown project code")
 		}

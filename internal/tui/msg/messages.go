@@ -37,6 +37,13 @@ type TaskDeletedMsg struct {
 	Err     error
 }
 
+// TaskOpenedMsg is sent after opening a task in the browser.
+type TaskOpenedMsg struct {
+	TaskKey string
+	URL     string
+	Err     error
+}
+
 // TaskAddedMsg is sent after adding a task.
 type TaskAddedMsg struct {
 	Key     string

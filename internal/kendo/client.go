@@ -310,6 +310,11 @@ func (c *Client) projectIDForKey(ctx context.Context, key string) (int, error) {
 	return 0, fmt.Errorf("no kendo project found for code %q", code)
 }
 
+// ProjectIDForKey returns the numeric project ID for a Kendo issue key.
+func (c *Client) ProjectIDForKey(ctx context.Context, key string) (int, error) {
+	return c.projectIDForKey(ctx, key)
+}
+
 // splitKey splits "PROJ-0001" into ("PROJ", "0001").
 func splitKey(key string) (string, string) {
 	i := strings.LastIndexByte(key, '-')

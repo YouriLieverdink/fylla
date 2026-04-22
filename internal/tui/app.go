@@ -33,13 +33,13 @@ const (
 
 // Deps holds the dependencies needed by the TUI.
 type Deps struct {
-	CB                      Callbacks
-	DailyHours              float64
-	WeeklyHours             float64
-	EfficiencyTarget        float64
-	WorkDays                []int // ISO weekday numbers (1=Mon..7=Sun)
-	WorklogProvider         string
-	ProfileName             string
+	CB               Callbacks
+	DailyHours       float64
+	WeeklyHours      float64
+	EfficiencyTarget float64
+	WorkDays         []int // ISO weekday numbers (1=Mon..7=Sun)
+	WorklogProvider  string
+	ProfileName      string
 }
 
 type confirmAction int
@@ -71,8 +71,8 @@ const (
 	formAddWorklog
 	formAddWorklogPending // waiting for tasks to load for picker
 	formEditWorklog
-	formMoveTaskPending      // waiting for transitions to load
-	formBulkMoveTaskPending  // waiting for transitions to load (bulk)
+	formMoveTaskPending     // waiting for transitions to load
+	formBulkMoveTaskPending // waiting for transitions to load (bulk)
 	formBulkSnoozeTask
 	formBulkEditTask
 	formTimerComment
@@ -87,65 +87,65 @@ type pendingTimerData struct {
 }
 
 type pendingEditData struct {
-	summary      string
-	estimate     string
-	dueDate      string
-	priority     string
-	upNext       string
-	noSplit      string
-	notBefore    string
-	parentKey    string // current parent key
-	section      string
-	sprintID     *int
+	summary   string
+	estimate  string
+	dueDate   string
+	priority  string
+	upNext    string
+	noSplit   string
+	notBefore string
+	parentKey string // current parent key
+	section   string
+	sprintID  *int
 }
 
 type model struct {
-	cb           Callbacks
-	activeTab    int
-	width        int
-	height       int
-	tasks        tasks.Model
-	schedule     *schedule.Model
-	timer        timerView.Model
-	worklog      worklog.Model
-	dashboard    dashboard.Model
-	config       *configView.Model
-	timerKey       string
-	timerSummary   string
-	timerComment   string
-	timerStartTime time.Time
-	timerElapsed   time.Duration
-	timerRunning   bool
-	panelFocused   bool
-	tickGen      int
-	toast        string
-	toastIsError bool
-	showHelp     bool
-	ready        bool
-	confirm      components.ConfirmDialog
-	confirmType  confirmAction
-	confirmKey      string
-	confirmProvider string
-	form         components.Form
-	picker       components.Picker
-	formKind         formKind
-	formConfigKey    string
-	formTaskKey      string
-	formTaskProvider string
+	cb                  Callbacks
+	activeTab           int
+	width               int
+	height              int
+	tasks               tasks.Model
+	schedule            *schedule.Model
+	timer               timerView.Model
+	worklog             worklog.Model
+	dashboard           dashboard.Model
+	config              *configView.Model
+	timerKey            string
+	timerSummary        string
+	timerComment        string
+	timerStartTime      time.Time
+	timerElapsed        time.Duration
+	timerRunning        bool
+	panelFocused        bool
+	tickGen             int
+	toast               string
+	toastIsError        bool
+	showHelp            bool
+	ready               bool
+	confirm             components.ConfirmDialog
+	confirmType         confirmAction
+	confirmKey          string
+	confirmProvider     string
+	form                components.Form
+	picker              components.Picker
+	formKind            formKind
+	formConfigKey       string
+	formTaskKey         string
+	formTaskProvider    string
 	formWorklogID       string
 	formWorklogKey      string
 	formWorklogProvider string
-	formOptions      *msg.FormOptionsMsg
-	pickerFieldLabel string
-	pendingEdit      *pendingEditData
-	pendingTimerStart *pendingTimerData
-	viewDetail      *msg.ViewResult
-	scoreDetail     *msg.ScoreBreakdown
-	scoreTaskKey    string
-	standupContent  string
-	standupLoading  bool
-	spinner      spinner.Model
-	saving       string // non-empty shows spinner in status bar with this label
+	formOptions         *msg.FormOptionsMsg
+	pickerFieldLabel    string
+	pendingEdit         *pendingEditData
+	pendingTimerStart   *pendingTimerData
+	viewDetail          *msg.ViewResult
+	scoreDetail         *msg.ScoreBreakdown
+	scoreTaskKey        string
+	standupContent      string
+	standupLoading      bool
+	spinner             spinner.Model
+	saving              string // non-empty shows spinner in status bar with this label
 
 	worklogProvider string
 	profileName     string
@@ -640,6 +640,15 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, clearToastCmd())
 		return m, tea.Batch(cmds...)
 
+	case msg.TaskOpenedMsg:
+		if mssg.Err != nil {
+			m.setToast(fmt.Sprintf("Open error: %v", mssg.Err), true)
+		} else {
+			m.setToast(fmt.Sprintf("Opened %s in browser", mssg.TaskKey), false)
+		}
+		cmds = append(cmds, clearToastCmd())
+		return m, tea.Batch(cmds...)
+
 	case msg.BulkActionMsg:
 		if mssg.Err != nil {
 			m.setToast(fmt.Sprintf("Bulk %s error: %v", mssg.Action, mssg.Err), true)
@@ -908,7 +917,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 					cmds = append(cmds, loadLanesCmd(m.cb, provider, project))
 					cmds = append(cmds, loadSprintsCmd(m.cb, provider, project))
 				}
-				} else {
+			} else {
 				m.form.ConvertToTextByLabel("Project", "Project key")
 			}
 		}
@@ -1095,6 +1104,10 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, resolveIssueKeyCmd(m.cb, t.Key)
 			}
 			return m, startTimerCmd(m.cb, t.Key, t.Summary, t.Project, t.Section, t.Provider)
+		}
+	case key.Matches(mssg, keys.Open):
+		if t := m.tasks.SelectedTask(); t != nil {
+			return m, openTaskURLCmd(m.cb, t.Key, t.Provider, t.Project, t.IssueType)
 		}
 	// In multi-select mode, bulk actions take priority over single-task actions
 	case key.Matches(mssg, keys.Done) && m.tasks.SelectMode && m.tasks.SelectionCount() > 0:
@@ -1790,7 +1803,7 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					cmds = append(cmds, loadLanesCmd(m.cb, provider, project))
 					cmds = append(cmds, loadSprintsCmd(m.cb, provider, project))
 				}
-					return m, tea.Batch(cmds...)
+				return m, tea.Batch(cmds...)
 			}
 			return m, nil
 		}
@@ -1821,7 +1834,7 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					cmds = append(cmds, loadLanesCmd(m.cb, provider, project))
 					cmds = append(cmds, loadSprintsCmd(m.cb, provider, project))
 				}
-					return m, tea.Batch(cmds...)
+				return m, tea.Batch(cmds...)
 			}
 			return m, nil
 		}
@@ -2156,7 +2169,6 @@ func (m *model) switchTab(tab int) (tea.Model, tea.Cmd) {
 	return *m, m.refreshActiveView()
 }
 
-
 func (m model) refreshActiveView() tea.Cmd {
 	switch m.activeTab {
 	case tabTasks:
@@ -2357,11 +2369,11 @@ func (m model) View() string {
 		loadingText = m.spinner.View() + " " + label
 	}
 	statusBar := components.StatusBar{
-		Toast:             m.toast,
-		ToastIsError:      m.toastIsError,
-		HelpHints:         hints,
-		Width:             m.width,
-		LoadingText:       loadingText,
+		Toast:        m.toast,
+		ToastIsError: m.toastIsError,
+		HelpHints:    hints,
+		Width:        m.width,
+		LoadingText:  loadingText,
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left,
@@ -2399,6 +2411,7 @@ func (m model) renderHelp() string {
 	b.WriteString("  D             Delete\n")
 	b.WriteString("  S             Snooze\n")
 	b.WriteString("  v             View details\n")
+	b.WriteString("  o             Open in browser\n")
 	b.WriteString("  V             Score breakdown\n")
 	b.WriteString("  t             Start timer\n")
 	b.WriteString("  /             Search\n\n")
@@ -2561,7 +2574,7 @@ func (m model) renderScoreBreakdown() string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 }
 
-func ptrSchedule(m schedule.Model) *schedule.Model { return &m }
+func ptrSchedule(m schedule.Model) *schedule.Model   { return &m }
 func ptrConfig(m configView.Model) *configView.Model { return &m }
 
 var worklogKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d+$`)

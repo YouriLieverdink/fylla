@@ -42,14 +42,14 @@ type PausedTimerInfo struct {
 
 // EditTaskParams holds all parameters for editing a task from the TUI.
 type EditTaskParams struct {
-	TaskKey   string
-	Provider  string
-	Summary   string
-	Estimate  string
-	Due       string
-	Priority  string
-	UpNext    *bool
-	NoSplit   *bool
+	TaskKey      string
+	Provider     string
+	Summary      string
+	Estimate     string
+	Due          string
+	Priority     string
+	UpNext       *bool
+	NoSplit      *bool
 	NotBefore    string
 	HadNotBefore bool
 	Parent       string
@@ -71,50 +71,51 @@ type FallbackIssue struct {
 
 // Callbacks holds function references that the TUI uses to invoke business logic.
 type Callbacks struct {
-	LoadToday   func() ([]msg.FyllaEvent, error)
-	LoadTasks   func() ([]msg.ScoredTask, error)
-	DoneTask    func(taskKey, provider string) error
-	DeleteTask  func(taskKey, provider string) error
-	StartTimer     func(taskKey, summary, project, section, provider string) error
-	InterruptTimer func() error
-	TimerStatus    func() (*TimerStatusInfo, error)
-	SaveTimerComment   func(comment string) error
-	SaveTimerStartTime func(startTime time.Time) error
-	SyncPreview func() (*msg.SyncResult, error)
-	SyncApply   func(force bool) (*msg.SyncResult, error)
-	ClearEvents func() (int, error)
-	LoadConfig  func() (*config.Config, error)
-	SetConfig   func(key, value string) error
-	AddTask      func(provider, summary, project, section, issueType, lane, description, estimate, dueDate, priority, parent string, sprintID *int) (key, summaryOut string, err error)
-	EditTask     func(params EditTaskParams) error
-	StopTimer    func(description string, done bool, fallbackIssue, fallbackProvider string) (taskKey string, elapsed time.Duration, resumedKey string, err error)
-	AbortTimer   func() (taskKey string, resumedKey string, err error)
-	ListProjects func(provider string) ([]string, error)
-	ListSections func(provider, project string) ([]string, error)
-	ListLanes    func(provider, project string) ([]string, error)
-	ListEpics    func(provider, project string) ([]msg.EpicOption, error)
-	GetParent    func(taskKey, provider string) (string, error)
-	Provider     func() string
-	Providers    func() []string
-	SnoozeTask   func(taskKey, target string) error
-	ViewTask     func(taskKey string) (*msg.ViewResult, error)
-	LoadWorklogs   func(weekView bool, date time.Time) ([]msg.WorklogEntry, error)
-	LoadDashboard  func(month time.Time) ([]msg.WorklogEntry, error)
-	UpdateWorklog  func(issueKey, worklogID, provider string, timeSpent time.Duration, description string, started time.Time) error
-	DeleteWorklog  func(issueKey, worklogID, provider string) error
-	AddWorklog     func(issueKey, provider string, timeSpent time.Duration, description string, started time.Time) error
-	FallbackIssues   func() []FallbackIssue
-	ListTransitions  func(taskKey, provider string) ([]string, error)
-	MoveTask         func(taskKey, provider, target string) error
-	ListIssueTypes   func(provider, project string) ([]string, error)
-	ListSprints      func(provider, project string) ([]msg.SprintOption, error)
-	ResolveIssueKey       func(prKey string) (string, error)
-	SearchAllTasks        func(query string) ([]msg.ScoredTask, error)
-	LoadTasksByProvider   func(provider string) ([]msg.ScoredTask, error)
-	BulkDone             func(taskKeys []string) (succeeded []string, failed map[string]error, err error)
-	BulkDelete           func(taskKeys []string) (succeeded []string, failed map[string]error, err error)
-	BulkMove             func(taskKeys []string, target string) (succeeded []string, failed map[string]error, err error)
-	BulkSnooze           func(taskKeys []string, target string) (succeeded []string, failed map[string]error, err error)
+	LoadToday           func() ([]msg.FyllaEvent, error)
+	LoadTasks           func() ([]msg.ScoredTask, error)
+	DoneTask            func(taskKey, provider string) error
+	DeleteTask          func(taskKey, provider string) error
+	OpenTaskURL         func(taskKey, provider, project, issueType string) (string, error)
+	StartTimer          func(taskKey, summary, project, section, provider string) error
+	InterruptTimer      func() error
+	TimerStatus         func() (*TimerStatusInfo, error)
+	SaveTimerComment    func(comment string) error
+	SaveTimerStartTime  func(startTime time.Time) error
+	SyncPreview         func() (*msg.SyncResult, error)
+	SyncApply           func(force bool) (*msg.SyncResult, error)
+	ClearEvents         func() (int, error)
+	LoadConfig          func() (*config.Config, error)
+	SetConfig           func(key, value string) error
+	AddTask             func(provider, summary, project, section, issueType, lane, description, estimate, dueDate, priority, parent string, sprintID *int) (key, summaryOut string, err error)
+	EditTask            func(params EditTaskParams) error
+	StopTimer           func(description string, done bool, fallbackIssue, fallbackProvider string) (taskKey string, elapsed time.Duration, resumedKey string, err error)
+	AbortTimer          func() (taskKey string, resumedKey string, err error)
+	ListProjects        func(provider string) ([]string, error)
+	ListSections        func(provider, project string) ([]string, error)
+	ListLanes           func(provider, project string) ([]string, error)
+	ListEpics           func(provider, project string) ([]msg.EpicOption, error)
+	GetParent           func(taskKey, provider string) (string, error)
+	Provider            func() string
+	Providers           func() []string
+	SnoozeTask          func(taskKey, target string) error
+	ViewTask            func(taskKey string) (*msg.ViewResult, error)
+	LoadWorklogs        func(weekView bool, date time.Time) ([]msg.WorklogEntry, error)
+	LoadDashboard       func(month time.Time) ([]msg.WorklogEntry, error)
+	UpdateWorklog       func(issueKey, worklogID, provider string, timeSpent time.Duration, description string, started time.Time) error
+	DeleteWorklog       func(issueKey, worklogID, provider string) error
+	AddWorklog          func(issueKey, provider string, timeSpent time.Duration, description string, started time.Time) error
+	FallbackIssues      func() []FallbackIssue
+	ListTransitions     func(taskKey, provider string) ([]string, error)
+	MoveTask            func(taskKey, provider, target string) error
+	ListIssueTypes      func(provider, project string) ([]string, error)
+	ListSprints         func(provider, project string) ([]msg.SprintOption, error)
+	ResolveIssueKey     func(prKey string) (string, error)
+	SearchAllTasks      func(query string) ([]msg.ScoredTask, error)
+	LoadTasksByProvider func(provider string) ([]msg.ScoredTask, error)
+	BulkDone            func(taskKeys []string) (succeeded []string, failed map[string]error, err error)
+	BulkDelete          func(taskKeys []string) (succeeded []string, failed map[string]error, err error)
+	BulkMove            func(taskKeys []string, target string) (succeeded []string, failed map[string]error, err error)
+	BulkSnooze          func(taskKeys []string, target string) (succeeded []string, failed map[string]error, err error)
 }
 
 func loadTodayCmd(cb Callbacks) tea.Cmd {
@@ -226,6 +227,16 @@ func deleteTaskCmd(cb Callbacks, taskKey, provider string) tea.Cmd {
 	return func() tea.Msg {
 		err := cb.DeleteTask(taskKey, provider)
 		return msg.TaskDeletedMsg{TaskKey: taskKey, Err: err}
+	}
+}
+
+func openTaskURLCmd(cb Callbacks, taskKey, provider, project, issueType string) tea.Cmd {
+	return func() tea.Msg {
+		if cb.OpenTaskURL == nil {
+			return msg.TaskOpenedMsg{TaskKey: taskKey, Err: fmt.Errorf("open in browser not available")}
+		}
+		openedURL, err := cb.OpenTaskURL(taskKey, provider, project, issueType)
+		return msg.TaskOpenedMsg{TaskKey: taskKey, URL: openedURL, Err: err}
 	}
 }
 
@@ -632,7 +643,6 @@ func pickerSearchDebounceCmd(query string) tea.Cmd {
 		return msg.PickerSearchDebounceMsg{Query: query}
 	})
 }
-
 
 func clearToastCmd() tea.Cmd {
 	return tea.Tick(3*time.Second, func(time.Time) tea.Msg {
