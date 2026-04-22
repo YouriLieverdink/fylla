@@ -785,13 +785,13 @@ weights:
 		}
 
 		cfg, err := SetMultiIn(path, map[string]string{
-			"github.defaultQuery": "is:pr state:closed",
+			"github.defaultQueries": "[is:pr state:closed]",
 		})
 		if err != nil {
 			t.Fatalf("SetMultiIn: %v", err)
 		}
-		if cfg.GitHub.DefaultQuery != "is:pr state:closed" {
-			t.Errorf("GitHub.DefaultQuery = %q", cfg.GitHub.DefaultQuery)
+		if len(cfg.GitHub.DefaultQueries) != 1 || cfg.GitHub.DefaultQueries[0] != "is:pr state:closed" {
+			t.Errorf("GitHub.DefaultQueries = %q", cfg.GitHub.DefaultQueries)
 		}
 	})
 }

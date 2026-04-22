@@ -13,9 +13,25 @@ import (
 
 	gh "github.com/google/go-github/v68/github"
 	"github.com/iruoy/fylla/internal/task"
+	"golang.org/x/sync/errgroup"
 )
 
 var issueKeyPattern = regexp.MustCompile(`[A-Z][A-Z0-9]+-\d+`)
+
+// splitQueries splits a newline-separated query blob into individual non-empty queries.
+func splitQueries(blob string) []string {
+	if blob == "" {
+		return nil
+	}
+	var out []string
+	for _, line := range strings.Split(blob, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
+}
 
 // ErrUnsupported is returned for operations GitHub doesn't model natively (estimates, priority, due dates, worklog).
 var ErrUnsupported = errors.New("operation not supported for GitHub issues/pull requests")
@@ -71,32 +87,54 @@ func (c *Client) RateRemaining() int {
 }
 
 // FetchTasks searches for open issues and PRs matching the query and returns them as tasks.
+// Multiple queries may be passed as newline-separated strings; results are merged and deduped by key.
 func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, error) {
-	if query == "" {
-		query = "is:pr state:open review-requested:@me"
+	queries := splitQueries(query)
+	if len(queries) == 0 {
+		queries = []string{"is:pr state:open review-requested:@me"}
 	}
 
-	// When repos are configured, add repo: qualifiers to narrow the search.
-	if len(c.Repos) > 0 {
-		for _, r := range c.Repos {
-			query += " repo:" + r
-		}
-	}
-
+	var mu sync.Mutex
+	seen := make(map[int64]struct{})
 	var allIssues []*gh.Issue
-	opts := &gh.SearchOptions{ListOptions: gh.ListOptions{PerPage: 50}}
-	for {
-		c.checkRateLimit()
-		result, resp, err := c.client.Search.Issues(ctx, query, opts)
-		c.updateRateLimit(resp)
-		if err != nil {
-			return nil, fmt.Errorf("github search: %w", err)
+
+	g, gctx := errgroup.WithContext(ctx)
+	for _, q := range queries {
+		q := q
+		// When repos are configured, add repo: qualifiers to narrow the search.
+		if len(c.Repos) > 0 {
+			for _, r := range c.Repos {
+				q += " repo:" + r
+			}
 		}
-		allIssues = append(allIssues, result.Issues...)
-		if resp.NextPage == 0 {
-			break
-		}
-		opts.Page = resp.NextPage
+		g.Go(func() error {
+			opts := &gh.SearchOptions{ListOptions: gh.ListOptions{PerPage: 50}}
+			for {
+				c.checkRateLimit()
+				result, resp, err := c.client.Search.Issues(gctx, q, opts)
+				c.updateRateLimit(resp)
+				if err != nil {
+					return fmt.Errorf("github search: %w", err)
+				}
+				mu.Lock()
+				for _, issue := range result.Issues {
+					id := issue.GetID()
+					if _, ok := seen[id]; ok {
+						continue
+					}
+					seen[id] = struct{}{}
+					allIssues = append(allIssues, issue)
+				}
+				mu.Unlock()
+				if resp.NextPage == 0 {
+					return nil
+				}
+				opts.Page = resp.NextPage
+			}
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 
 	// Flat estimate avoids an extra API call per item.

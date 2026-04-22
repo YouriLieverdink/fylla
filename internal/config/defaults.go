@@ -7,7 +7,8 @@ todoist:
   defaultProject: ""
 
 github:
-  defaultQuery: "is:pr state:open review-requested:@me"
+  defaultQueries:
+    - "is:pr state:open review-requested:@me"
   repos: []
 
 local:

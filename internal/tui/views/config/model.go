@@ -234,7 +234,7 @@ func buildRows(cfg *config.Config) []configRow {
 
 	// GitHub
 	rows = append(rows, configRow{Kind: rowSection, Label: "GitHub"})
-	rows = append(rows, configRow{Kind: rowSetting, Label: "defaultQuery", Key: "github.defaultQuery", Value: cfg.GitHub.DefaultQuery})
+	rows = append(rows, configRow{Kind: rowSetting, Label: "defaultQueries", Key: "github.defaultQueries", Value: formatStringSlice(cfg.GitHub.DefaultQueries)})
 	rows = append(rows, configRow{Kind: rowSetting, Label: "repos", Key: "github.repos", Value: formatStringSlice(cfg.GitHub.Repos)})
 
 	// Local

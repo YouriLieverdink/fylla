@@ -300,6 +300,12 @@ func (m Model) View() string {
 
 			// Build compact tags.
 			var tags string
+			switch t.IssueType {
+			case "Pull Request":
+				tags += styles.PRTagStyle.Render(" PR")
+			case "Issue":
+				tags += styles.IssueTagStyle.Render(" IS")
+			}
 			if t.Status != "" {
 				tags += " " + styles.AbbrevStatus(t.Status)
 			}

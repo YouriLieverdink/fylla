@@ -22,6 +22,8 @@ var (
 	TimerBig      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#43BF6D", Dark: "#73F59F"})
 	TaskStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"})
 	YamlStyle     = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#333333", Dark: "#CCCCCC"})
+	PRTagStyle    = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#8E24AA", Dark: "#BA68C8"})
+	IssueTagStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#1E88E5", Dark: "#64B5F6"})
 
 	projectPalette = []lipgloss.AdaptiveColor{
 		{Light: "#1E88E5", Dark: "#42A5F5"}, // blue

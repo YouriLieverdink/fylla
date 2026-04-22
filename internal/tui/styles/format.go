@@ -21,14 +21,9 @@ func FormatPrefix(project, section string) string {
 	return ""
 }
 
-// abbreviateProject returns the last segment of a slash-separated project name.
+// abbreviateProject returns the project name as-is. GitHub tasks use
+// `owner/repo` form and the org is worth keeping for disambiguation.
 func abbreviateProject(project string) string {
-	if project == "" {
-		return ""
-	}
-	if i := strings.LastIndex(project, "/"); i >= 0 {
-		return project[i+1:]
-	}
 	return project
 }
 

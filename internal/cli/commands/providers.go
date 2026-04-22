@@ -58,7 +58,7 @@ func buildProviderQueries(cfg *config.Config, filterFlag string) map[string]stri
 			}
 			queries["todoist"] = q
 		case "github":
-			queries["github"] = cfg.GitHub.DefaultQuery
+			queries["github"] = strings.Join(cfg.GitHub.DefaultQueries, "\n")
 		case "local":
 			queries["local"] = cfg.Local.DefaultFilter
 		case "kendo":

@@ -13,6 +13,7 @@ require (
 	github.com/spf13/cobra v1.8.1
 	github.com/tj/go-naturaldate v1.3.0
 	golang.org/x/oauth2 v0.35.0
+	golang.org/x/sync v0.19.0
 	google.golang.org/api v0.265.0
 	gopkg.in/yaml.v3 v3.0.1
 )

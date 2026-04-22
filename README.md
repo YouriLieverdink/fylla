@@ -158,7 +158,8 @@ todoist:
   defaultProject: Inbox
 
 github:
-  defaultQuery: "is:pr state:open review-requested:@me"  # customize search query
+  defaultQueries:                                        # one or more GitHub search queries; results merged + deduped
+    - "is:pr state:open review-requested:@me"
   repos: []                                              # optional: limit to specific repos
 
 kendo:

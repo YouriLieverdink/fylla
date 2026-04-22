@@ -34,8 +34,8 @@ type TodoistConfig struct {
 
 // GitHubConfig holds GitHub PR review settings.
 type GitHubConfig struct {
-	DefaultQuery string   `yaml:"defaultQuery"`
-	Repos        []string `yaml:"repos"`
+	DefaultQueries []string `yaml:"defaultQueries"`
+	Repos          []string `yaml:"repos"`
 }
 
 // KendoConfig holds Kendo connection settings.
