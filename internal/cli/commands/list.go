@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -48,15 +49,20 @@ type ListResult struct {
 	Tasks []scheduler.ScoredTask
 }
 
-// RunList fetches and sorts tasks without scheduling.
+// RunList fetches and sorts tasks without scheduling. On ErrPartialProviders
+// it returns the partial task set alongside the wrapped error so callers can
+// degrade gracefully.
 func RunList(ctx context.Context, p ListParams) (*ListResult, error) {
 	tasks, err := p.Tasks.FetchTasks(ctx, p.Query)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrPartialProviders) {
 		return nil, fmt.Errorf("fetch tasks: %w", err)
 	}
 
 	sorted := scheduler.SortTasks(tasks, p.Cfg.Weights, p.Now)
 
+	if err != nil {
+		return &ListResult{Tasks: sorted}, fmt.Errorf("fetch tasks: %w", err)
+	}
 	return &ListResult{Tasks: sorted}, nil
 }
 
