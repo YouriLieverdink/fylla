@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -2858,10 +2859,18 @@ func parseStartedInput(s string, refDate time.Time) time.Time {
 
 // Run starts the TUI application.
 func Run(deps Deps) error {
+	logPath, restore, crashErr := setupCrashLog()
+	if crashErr == nil {
+		defer restore()
+	}
+
 	p := tea.NewProgram(
 		initialModel(deps),
 		tea.WithAltScreen(),
 	)
 	_, err := p.Run()
+	if err != nil && logPath != "" {
+		fmt.Fprintf(os.Stderr, "\nfylla crashed. Stack trace written to: %s\n", logPath)
+	}
 	return err
 }

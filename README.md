@@ -572,3 +572,12 @@ The total lines changed (additions + deletions) determine the calendar slot dura
 **GitHub:** `owner/repo#number` (e.g. `iruoy/fylla#42`)
 
 Calendar events link directly to the PR URL on GitHub.
+
+## Troubleshooting
+
+### TUI crashed with a panic
+
+Panic stack traces are appended to `~/.config/fylla/profiles/<active>/crash.log`
+on every run. If fylla exits with `program experienced a panic`, inspect that
+file — the stack captured from stderr is preserved there even if the terminal
+scrolls the output away.
