@@ -162,10 +162,16 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 		},
 		DoneTask: func(taskKey, provider string) error {
 			_, err := RunDone(ctx, DoneParams{TaskKey: taskKey, Provider: provider, Completer: source})
+			if err == nil {
+				cache.InvalidateAll()
+			}
 			return err
 		},
 		DeleteTask: func(taskKey, provider string) error {
 			_, err := RunDelete(ctx, DeleteParams{TaskKey: taskKey, Provider: provider, Deleter: source})
+			if err == nil {
+				cache.InvalidateAll()
+			}
 			return err
 		},
 		OpenTaskURL: func(taskKey, provider, project, issueType string) (string, error) {
@@ -320,6 +326,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			if err != nil {
 				return "", "", err
 			}
+			cache.InvalidateAll()
 			return result.Key, result.Summary, nil
 		},
 		EditTask: func(params tui.EditTaskParams) error {
@@ -330,6 +337,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				Estimate: params.Estimate,
 				Due:      params.Due,
 				Priority: params.Priority,
+				Project:  params.Project,
 				Parent:   params.Parent,
 				Section:  params.Section,
 				Source:   source,
@@ -347,6 +355,9 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			}
 			if params.Priority == "" && params.HadPriority {
 				ep.NoPriority = true
+			}
+			if params.Project == "" && params.HadProject {
+				ep.NoProject = true
 			}
 			if params.Parent == "" && params.HadParent {
 				ep.NoParent = true
@@ -374,6 +385,9 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				ep.NoSprint = true
 			}
 			_, err := RunEdit(ctx, ep)
+			if err == nil {
+				cache.InvalidateAll()
+			}
 			return err
 		},
 		AbortTimer: func() (string, string, error) {
@@ -494,6 +508,9 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				Target:  target,
 				Source:  source,
 			})
+			if err == nil {
+				cache.InvalidateAll()
+			}
 			return err
 		},
 		ViewTask: func(taskKey string) (*msg.ViewResult, error) {
@@ -589,7 +606,11 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 		},
 		MoveTask: func(taskKey, provider, target string) error {
 			if tr, ok := routedSourceFor(source, taskKey, provider).(Transitioner); ok {
-				return tr.TransitionTask(ctx, taskKey, target)
+				err := tr.TransitionTask(ctx, taskKey, target)
+				if err == nil {
+					cache.InvalidateAll()
+				}
+				return err
 			}
 			return fmt.Errorf("provider does not support transitions")
 		},
@@ -608,6 +629,9 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			if err != nil {
 				return nil, nil, err
 			}
+			if len(result.Succeeded) > 0 {
+				cache.InvalidateAll()
+			}
 			return result.Succeeded, result.Failed, nil
 		},
 		BulkDelete: func(taskKeys []string) ([]string, map[string]error, error) {
@@ -618,6 +642,9 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			})
 			if err != nil {
 				return nil, nil, err
+			}
+			if len(result.Succeeded) > 0 {
+				cache.InvalidateAll()
 			}
 			return result.Succeeded, result.Failed, nil
 		},
@@ -631,6 +658,9 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			if err != nil {
 				return nil, nil, err
 			}
+			if len(result.Succeeded) > 0 {
+				cache.InvalidateAll()
+			}
 			return result.Succeeded, result.Failed, nil
 		},
 		BulkSnooze: func(taskKeys []string, target string) ([]string, map[string]error, error) {
@@ -642,6 +672,9 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			})
 			if err != nil {
 				return nil, nil, err
+			}
+			if len(result.Succeeded) > 0 {
+				cache.InvalidateAll()
 			}
 			return result.Succeeded, result.Failed, nil
 		},

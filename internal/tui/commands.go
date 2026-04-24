@@ -52,11 +52,13 @@ type EditTaskParams struct {
 	NoSplit      *bool
 	NotBefore    string
 	HadNotBefore bool
+	Project      string
 	Parent       string
 	Section      string
 	HadDue       bool
 	HadEstimate  bool
 	HadPriority  bool
+	HadProject   bool
 	HadParent    bool
 	HadSection   bool
 	SprintID     *int
@@ -444,6 +446,13 @@ func loadEditFormOptionsCmd(cb Callbacks, project, taskKey, taskProvider string)
 		if provider == "" && cb.Provider != nil {
 			provider = cb.Provider()
 		}
+		var projects []string
+		if cb.ListProjects != nil {
+			p, err := cb.ListProjects(provider)
+			if err == nil {
+				projects = p
+			}
+		}
 		var epics []msg.EpicOption
 		if cb.ListEpics != nil {
 			e, err := cb.ListEpics(provider, project)
@@ -474,7 +483,7 @@ func loadEditFormOptionsCmd(cb Callbacks, project, taskKey, taskProvider string)
 				sprints = s
 			}
 		}
-		return msg.FormOptionsMsg{Provider: provider, Sections: sections, Epics: epics, ParentKey: parentKey, Sprints: sprints}
+		return msg.FormOptionsMsg{Provider: provider, Projects: projects, Sections: sections, Epics: epics, ParentKey: parentKey, Sprints: sprints}
 	}
 }
 

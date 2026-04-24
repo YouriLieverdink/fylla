@@ -82,6 +82,18 @@ func (c *TaskCache) Invalidate(provider string) {
 	delete(c.data, provider)
 }
 
+// InvalidateAll drops all cached entries.
+func (c *TaskCache) InvalidateAll() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for k := range c.data {
+		delete(c.data, k)
+	}
+}
+
 // FetchOrShare returns fresh cached tasks when available, otherwise collapses
 // concurrent calls for the same provider onto a single invocation of fetch.
 // The returned bool reports whether the result was served from fresh cache

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -21,9 +22,10 @@ type Client struct {
 	BaseURL    string
 	Token      string
 	HTTPClient *http.Client
-	projects   map[string]string          // id → name cache
-	sections   map[string]string          // id → name cache
-	sectionsByProject map[string][]string // project_id → []section names
+	projects          map[string]string          // id → name cache
+	sections          map[string]string          // id → name cache
+	sectionsByProject map[string][]string        // project_id → []section names
+	sectionProject    map[string]string          // section_id → project_id
 
 	projectsOnce sync.Once
 	projectsErr  error
@@ -207,9 +209,11 @@ func (c *Client) loadSections(ctx context.Context) error {
 
 		c.sections = make(map[string]string, len(page.Results))
 		c.sectionsByProject = make(map[string][]string)
+		c.sectionProject = make(map[string]string, len(page.Results))
 		for _, s := range page.Results {
 			c.sections[s.ID] = s.Name
 			c.sectionsByProject[s.ProjectID] = append(c.sectionsByProject[s.ProjectID], s.Name)
+			c.sectionProject[s.ID] = s.ProjectID
 		}
 	})
 	return c.sectionsErr
@@ -722,6 +726,126 @@ func (c *Client) UpdateSection(ctx context.Context, taskID, section string) erro
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("todoist update section: status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+func (c *Client) projectIDByName(name string) string {
+	for id, n := range c.projects {
+		if strings.EqualFold(n, name) {
+			return id
+		}
+	}
+	return ""
+}
+
+func (c *Client) sectionIDInProject(projectID, sectionName string) string {
+	for id, name := range c.sections {
+		if strings.EqualFold(name, sectionName) && c.sectionProject[id] == projectID {
+			return id
+		}
+	}
+	return ""
+}
+
+// ListTransitions returns available "Project" and "Project / Section" targets.
+func (c *Client) ListTransitions(ctx context.Context, taskKey string) ([]string, error) {
+	if err := c.loadProjects(ctx); err != nil {
+		return nil, err
+	}
+	if err := c.loadSections(ctx); err != nil {
+		return nil, err
+	}
+
+	var transitions []string
+	for id, name := range c.projects {
+		transitions = append(transitions, name)
+		for _, sec := range c.sectionsByProject[id] {
+			transitions = append(transitions, name+" / "+sec)
+		}
+	}
+	sort.Strings(transitions)
+	return transitions, nil
+}
+
+// TransitionTask moves a Todoist task to a different project/section.
+// Target format: "Project" or "Project / Section".
+func (c *Client) TransitionTask(ctx context.Context, taskKey, target string) error {
+	if err := c.loadProjects(ctx); err != nil {
+		return err
+	}
+	if err := c.loadSections(ctx); err != nil {
+		return err
+	}
+
+	payload := map[string]interface{}{}
+
+	if idx := strings.Index(target, " / "); idx > 0 {
+		projectName := target[:idx]
+		sectionName := target[idx+3:]
+		projectID := c.projectIDByName(projectName)
+		if projectID == "" {
+			return fmt.Errorf("project %q not found", projectName)
+		}
+		sectionID := c.sectionIDInProject(projectID, sectionName)
+		if sectionID == "" {
+			return fmt.Errorf("section %q not found in project %q", sectionName, projectName)
+		}
+		payload["section_id"] = sectionID
+	} else {
+		projectID := c.projectIDByName(target)
+		if projectID == "" {
+			return fmt.Errorf("project %q not found", target)
+		}
+		payload["project_id"] = projectID
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal move: %w", err)
+	}
+
+	resp, err := c.do(ctx, http.MethodPost, "/tasks/"+taskKey+"/move", strings.NewReader(string(data)))
+	if err != nil {
+		return fmt.Errorf("move task: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("todoist move task: status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+// UpdateProject moves a Todoist task to a different project.
+func (c *Client) UpdateProject(ctx context.Context, taskID, project string) error {
+	if err := c.loadProjects(ctx); err != nil {
+		return err
+	}
+
+	projectID := c.projectIDByName(project)
+	if projectID == "" {
+		return fmt.Errorf("project %q not found", project)
+	}
+
+	payload := map[string]interface{}{
+		"project_id": projectID,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal move: %w", err)
+	}
+
+	resp, err := c.do(ctx, http.MethodPost, "/tasks/"+taskID+"/move", strings.NewReader(string(data)))
+	if err != nil {
+		return fmt.Errorf("update project: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("todoist update project: status %d: %s", resp.StatusCode, string(body))
 	}
 	return nil
 }

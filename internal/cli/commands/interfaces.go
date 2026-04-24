@@ -173,6 +173,11 @@ type ParentGetter interface {
 	GetParent(ctx context.Context, issueKey string) (string, error)
 }
 
+// ProjectUpdater updates the project of a task.
+type ProjectUpdater interface {
+	UpdateProject(ctx context.Context, taskKey, project string) error
+}
+
 // SectionUpdater updates the section of a task.
 type SectionUpdater interface {
 	UpdateSection(ctx context.Context, taskKey, section string) error

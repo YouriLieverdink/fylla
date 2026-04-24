@@ -94,6 +94,7 @@ type pendingEditData struct {
 	upNext    string
 	noSplit   string
 	notBefore string
+	project   string
 	parentKey string // current parent key
 	section   string
 	sprintID  *int
@@ -624,6 +625,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		if mssg.Err != nil {
 			m.setToast(fmt.Sprintf("Done error: %v", mssg.Err), true)
 		} else {
+			m.removeTasksFromLists(mssg.TaskKey)
 			m.setToast(fmt.Sprintf("Marked %s as done", mssg.TaskKey), false)
 			cmds = append(cmds, m.refreshActiveView())
 		}
@@ -634,6 +636,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		if mssg.Err != nil {
 			m.setToast(fmt.Sprintf("Delete error: %v", mssg.Err), true)
 		} else {
+			m.removeTasksFromLists(mssg.TaskKey)
 			m.setToast(fmt.Sprintf("Deleted %s", mssg.TaskKey), false)
 			cmds = append(cmds, m.refreshActiveView())
 		}
@@ -660,6 +663,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.setToast(fmt.Sprintf("Bulk %s: %d tasks", mssg.Action, count), false)
 			}
+			m.removeTasksFromLists(mssg.Succeeded...)
 			cmds = append(cmds, m.refreshActiveView())
 		}
 		cmds = append(cmds, clearToastCmd())
@@ -861,7 +865,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.formKind == formEditTaskPending && m.pendingEdit != nil {
 			m.pendingEdit.parentKey = mssg.ParentKey
 			m.formOptions = &mssg
-			m.form = buildEditForm(m.formTaskKey, m.formTaskProvider, *m.pendingEdit, mssg.Epics, mssg.Sections, mssg.Sprints)
+			m.form = buildEditForm(m.formTaskKey, m.formTaskProvider, *m.pendingEdit, mssg.Projects, mssg.Epics, mssg.Sections, mssg.Sprints)
 			m.formKind = formEditTask
 			return m, nil
 		}
@@ -1951,6 +1955,13 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					parent = parent[:idx]
 				}
 			}
+			editProject := m.form.ValueByLabel("Project")
+			// Only send project if it actually changed
+			hadProject := m.pendingEdit != nil && m.pendingEdit.project != ""
+			if m.pendingEdit != nil && editProject == m.pendingEdit.project {
+				editProject = ""
+				hadProject = false
+			}
 			editSection := m.form.ValueByLabel("Section")
 			if editSection == "None" {
 				editSection = ""
@@ -2002,11 +2013,13 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				NoSplit:      noSplit,
 				NotBefore:    m.form.ValueByLabel("Not Before"),
 				HadNotBefore: hadNotBefore,
+				Project:      editProject,
 				Parent:       parent,
 				Section:      editSection,
 				HadDue:       hadDue,
 				HadEstimate:  hadEstimate,
 				HadPriority:  hadPriority,
+				HadProject:   hadProject,
 				HadParent:    hadParent,
 				HadSection:   hadSection,
 				SprintID:     sprintID,
@@ -2181,6 +2194,31 @@ func (m model) refreshActiveView() tea.Cmd {
 		return loadConfigCmd(m.cb)
 	}
 	return nil
+}
+
+// removeTasksFromLists filters out tasks with the given keys from the
+// cached task list and the visible tasks view, providing instant visual
+// feedback after mutations like done or delete.
+func (m *model) removeTasksFromLists(keys ...string) {
+	if len(keys) == 0 {
+		return
+	}
+	exclude := make(map[string]struct{}, len(keys))
+	for _, k := range keys {
+		exclude[k] = struct{}{}
+	}
+	filter := func(tasks []msg.ScoredTask) []msg.ScoredTask {
+		n := 0
+		for _, t := range tasks {
+			if _, ok := exclude[t.Key]; !ok {
+				tasks[n] = t
+				n++
+			}
+		}
+		return tasks[:n]
+	}
+	m.cachedTasks = filter(m.cachedTasks)
+	m.tasks.Tasks = filter(m.tasks.Tasks)
 }
 
 func (m model) panelWidth() int {
@@ -2597,6 +2635,7 @@ func extractIssueKey(val string) string {
 
 func buildPendingEditData(t *msg.ScoredTask) pendingEditData {
 	ed := pendingEditData{}
+	ed.project = t.Project
 	ed.section = t.Section
 	if t.Estimate > 0 {
 		h := int(t.Estimate.Hours())
@@ -2759,14 +2798,26 @@ func (m *model) rebuildAddFormForProvider() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func buildEditForm(taskKey, provider string, ed pendingEditData, epics []msg.EpicOption, sections []string, sprints []msg.SprintOption) components.Form {
+func buildEditForm(taskKey, provider string, ed pendingEditData, projects []string, epics []msg.EpicOption, sections []string, sprints []msg.SprintOption) components.Form {
 	fields := []components.FormFieldDef{
 		{Label: "Provider", Value: provider, Disabled: true},
-		{Label: "Summary", Placeholder: "Task summary", Value: ed.summary},
-		{Label: "Estimate", Placeholder: "e.g. 2h, 30m", Value: ed.estimate},
-		{Label: "Due Date", Placeholder: "e.g. YYYY-MM-DD", Value: ed.dueDate},
-		{Label: "Priority", Kind: components.FieldSelect, Options: []string{"None", "Highest", "High", "Medium", "Low", "Lowest"}, Value: ed.priority},
 	}
+	if len(projects) > 0 {
+		currentVal := ed.project
+		if currentVal == "" && len(projects) > 0 {
+			currentVal = projects[0]
+		}
+		fields = append(fields, components.FormFieldDef{
+			Label: "Project", Kind: components.FieldSelect,
+			Options: projects, Value: currentVal,
+		})
+	}
+	fields = append(fields,
+		components.FormFieldDef{Label: "Summary", Placeholder: "Task summary", Value: ed.summary},
+		components.FormFieldDef{Label: "Estimate", Placeholder: "e.g. 2h, 30m", Value: ed.estimate},
+		components.FormFieldDef{Label: "Due Date", Placeholder: "e.g. YYYY-MM-DD", Value: ed.dueDate},
+		components.FormFieldDef{Label: "Priority", Kind: components.FieldSelect, Options: []string{"None", "Highest", "High", "Medium", "Low", "Lowest"}, Value: ed.priority},
+	)
 	if provider == "kendo" && len(sprints) > 0 {
 		sprintOptions := make([]string, 0, len(sprints)+1)
 		currentVal := "Backlog"

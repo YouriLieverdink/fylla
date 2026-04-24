@@ -34,6 +34,8 @@ type EditParams struct {
 	NoNoSplit   bool
 	NotBefore   string
 	NoNotBefore bool
+	Project     string
+	NoProject   bool
 	Parent      string
 	NoParent    bool
 	Section     string
@@ -59,6 +61,8 @@ type EditResult struct {
 	NotBeforeSet     bool
 	NotBeforeRemoved bool
 	SummaryUpdated   bool
+	ProjectUpdated   bool
+	ProjectRemoved   bool
 	ParentUpdated    bool
 	ParentRemoved    bool
 	SectionUpdated   bool
@@ -133,6 +137,15 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 			return nil, fmt.Errorf("remove priority: %w", err)
 		}
 		result.PriorityRemoved = true
+	}
+
+	if p.Project != "" {
+		if pu, ok := p.Source.(ProjectUpdater); ok {
+			if err := pu.UpdateProject(ctx, p.TaskKey, p.Project); err != nil {
+				return nil, fmt.Errorf("update project: %w", err)
+			}
+			result.ProjectUpdated = true
+		}
 	}
 
 	if p.Parent != "" {
@@ -405,6 +418,12 @@ func PrintEditResult(w io.Writer, result *EditResult) {
 	}
 	if result.NotBeforeRemoved {
 		fmt.Fprintf(w, "%s not-before date removed\n", result.TaskKey)
+	}
+	if result.ProjectUpdated {
+		fmt.Fprintf(w, "%s project updated\n", result.TaskKey)
+	}
+	if result.ProjectRemoved {
+		fmt.Fprintf(w, "%s project removed\n", result.TaskKey)
 	}
 	if result.ParentUpdated {
 		fmt.Fprintf(w, "%s parent updated\n", result.TaskKey)
