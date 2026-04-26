@@ -78,7 +78,7 @@ func parseGoogleEvent(item *googlecalendar.Event) Event {
 	if item.Start != nil {
 		if item.Start.DateTime != "" {
 			if t, err := time.Parse(time.RFC3339, item.Start.DateTime); err == nil {
-				e.Start = t
+				e.Start = t.Local()
 			}
 		} else if item.Start.Date != "" {
 			if t, err := time.Parse("2006-01-02", item.Start.Date); err == nil {
@@ -91,7 +91,7 @@ func parseGoogleEvent(item *googlecalendar.Event) Event {
 	if item.End != nil {
 		if item.End.DateTime != "" {
 			if t, err := time.Parse(time.RFC3339, item.End.DateTime); err == nil {
-				e.End = t
+				e.End = t.Local()
 			}
 		} else if item.End.Date != "" {
 			if t, err := time.Parse("2006-01-02", item.End.Date); err == nil {

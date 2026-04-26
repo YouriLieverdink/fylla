@@ -122,6 +122,9 @@ func (m *Model) View() string {
 		for i, e := range m.entries {
 			day := e.Start.Format("Mon Jan 2")
 			if day != currentDay {
+				if currentDay != "" {
+					lines = append(lines, displayLine{entryIdx: -1}) // blank line between days
+				}
 				lines = append(lines, displayLine{entryIdx: -1, header: day})
 				currentDay = day
 			}
@@ -213,6 +216,9 @@ func (m *Model) View() string {
 		isSelected := dl.entryIdx == m.Cursor
 
 		dot := styles.FormatProjectDot(e.Project)
+		if dot == "" {
+			dot = "  " // align with colored dot + space
+		}
 		timeRange := fmt.Sprintf("%s - %s", e.Start.Format("15:04"), e.End.Format("15:04"))
 		prefix := styles.FormatPrefixWithKey(e.Project, e.Section, e.TaskKey)
 		line := fmt.Sprintf("%s  %s%s", timeRange, prefix, e.Summary)
