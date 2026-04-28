@@ -100,16 +100,27 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 
 	// For Kendo, due dates are stored in the title — handled in the summary section below.
 	if p.Due != "" && p.Provider != "kendo" {
-		r, err := RunDueDate(ctx, DueDateParams{
-			TaskKey: p.TaskKey,
-			Date:    p.Due,
-			Updater: p.Source,
-			Getter:  p.Source,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("due date: %w", err)
+		if isRecurrenceDueString(p.Due) {
+			dsu, ok := p.Source.(DueStringUpdater)
+			if !ok {
+				return nil, fmt.Errorf("due date: provider %q does not support recurring due dates", p.Provider)
+			}
+			if err := dsu.UpdateDueDateString(ctx, p.TaskKey, p.Due); err != nil {
+				return nil, fmt.Errorf("due date: %w", err)
+			}
+			result.DueDateResult = &DueDateResult{TaskKey: p.TaskKey, DueString: p.Due}
+		} else {
+			r, err := RunDueDate(ctx, DueDateParams{
+				TaskKey: p.TaskKey,
+				Date:    p.Due,
+				Updater: p.Source,
+				Getter:  p.Source,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("due date: %w", err)
+			}
+			result.DueDateResult = r
 		}
-		result.DueDateResult = r
 	}
 
 	if p.NoDue && p.Provider != "kendo" {
@@ -312,6 +323,12 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 	}
 
 	return result, nil
+}
+
+// isRecurrenceDueString reports whether s should be sent as a Todoist due_string
+// (recurrence) rather than parsed as a date.
+func isRecurrenceDueString(s string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(s)), "every")
 }
 
 // stripKeywords removes constraint keywords (upnext, nosplit, not before <date>, due <date>)

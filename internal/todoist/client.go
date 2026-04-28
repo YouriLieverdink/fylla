@@ -324,6 +324,7 @@ func (c *Client) parseTask(t todoistTask) task.Task {
 	// Parse Todoist native recurrence
 	if t.Due != nil && t.Due.IsRecurring && t.Due.String != "" {
 		result.Recurrence = parseTodoistRecurrence(t.Due.String)
+		result.RecurrenceRaw = t.Due.String
 	}
 
 	return result
@@ -411,7 +412,9 @@ func (c *Client) CreateTask(ctx context.Context, input task.CreateInput) (string
 		}
 	}
 
-	if input.DueDate != nil {
+	if input.DueString != "" {
+		payload["due_string"] = input.DueString
+	} else if input.DueDate != nil {
 		payload["due_date"] = input.DueDate.Format("2006-01-02")
 	}
 
@@ -574,6 +577,30 @@ func (c *Client) UpdateDueDate(ctx context.Context, taskID string, dueDate time.
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("todoist update due date: status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+// UpdateDueDateString sets the due date using Todoist's natural-language string.
+// Supports recurrence ("every monday") and ad-hoc phrasing ("tomorrow at 10am").
+func (c *Client) UpdateDueDateString(ctx context.Context, taskID string, dueString string) error {
+	payload := map[string]interface{}{
+		"due_string": dueString,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal update: %w", err)
+	}
+
+	resp, err := c.do(ctx, http.MethodPost, "/tasks/"+taskID, strings.NewReader(string(data)))
+	if err != nil {
+		return fmt.Errorf("update due string: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("todoist update due string: status %d: %s", resp.StatusCode, string(body))
 	}
 	return nil
 }

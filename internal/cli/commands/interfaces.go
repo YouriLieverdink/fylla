@@ -113,6 +113,12 @@ type DueDateRemover interface {
 	RemoveDueDate(ctx context.Context, issueKey string) error
 }
 
+// DueStringUpdater is an optional interface for providers that accept a raw
+// due-date string (recurrence or natural language) — currently Todoist.
+type DueStringUpdater interface {
+	UpdateDueDateString(ctx context.Context, issueKey string, dueString string) error
+}
+
 // PriorityGetter abstracts fetching the priority of a task.
 type PriorityGetter interface {
 	GetPriority(ctx context.Context, issueKey string) (int, error)

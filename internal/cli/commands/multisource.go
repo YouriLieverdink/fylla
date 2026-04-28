@@ -297,6 +297,19 @@ func (m *MultiTaskSource) UpdatePriority(ctx context.Context, issueKey string, p
 	return err
 }
 
+func (m *MultiTaskSource) UpdateDueDateString(ctx context.Context, issueKey string, dueString string) error {
+	src := m.routeTo(issueKey)
+	dsu, ok := src.(DueStringUpdater)
+	if !ok {
+		return fmt.Errorf("provider does not support recurring/natural-language due dates")
+	}
+	err := dsu.UpdateDueDateString(ctx, issueKey, dueString)
+	if err == nil {
+		m.invalidate(issueKey, "")
+	}
+	return err
+}
+
 func (m *MultiTaskSource) RemoveDueDate(ctx context.Context, issueKey string) error {
 	err := m.routeTo(issueKey).RemoveDueDate(ctx, issueKey)
 	if err == nil {

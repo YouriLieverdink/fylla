@@ -1146,7 +1146,7 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		count := m.tasks.SelectionCount()
 		m.form = components.NewForm(fmt.Sprintf("Edit %d tasks", count), []components.FormFieldDef{
 			{Label: "Estimate", Placeholder: "e.g. 2h, 30m"},
-			{Label: "Due Date", Placeholder: "e.g. 2025-03-01"},
+			{Label: "Due Date", Placeholder: "YYYY-MM-DD or 'every monday'"},
 			{Label: "Priority", Kind: components.FieldSelect, Options: []string{"—", "Highest", "High", "Medium", "Low", "Lowest"}, Value: "—"},
 			{Label: "Up Next", Kind: components.FieldSelect, Options: []string{"—", "Yes", "No"}, Value: "—"},
 			{Label: "No Split", Kind: components.FieldSelect, Options: []string{"—", "Yes", "No"}, Value: "—"},
@@ -2648,7 +2648,9 @@ func buildPendingEditData(t *msg.ScoredTask) pendingEditData {
 			ed.estimate = fmt.Sprintf("%dm", mins)
 		}
 	}
-	if t.DueDate != nil {
+	if t.RecurrenceRaw != "" {
+		ed.dueDate = t.RecurrenceRaw
+	} else if t.DueDate != nil {
 		ed.dueDate = t.DueDate.Format("2006-01-02")
 	}
 	ed.priority = styles.PriorityName(t.Priority)
@@ -2744,7 +2746,7 @@ func buildAddForm(provider string, opts *msg.FormOptionsMsg) components.Form {
 	fields = append(fields,
 		components.FormFieldDef{Label: "Description", Placeholder: "Description"},
 		components.FormFieldDef{Label: "Estimate", Placeholder: "e.g. 2h, 30m"},
-		components.FormFieldDef{Label: "Due Date", Placeholder: "e.g. YYYY-MM-DD"},
+		components.FormFieldDef{Label: "Due Date", Placeholder: "YYYY-MM-DD or 'every monday'"},
 		components.FormFieldDef{Label: "Priority", Kind: components.FieldSelect, Options: []string{"Highest", "High", "Medium", "Low", "Lowest"}, Value: "Medium"},
 	)
 	if provider == "kendo" {
@@ -2815,7 +2817,7 @@ func buildEditForm(taskKey, provider string, ed pendingEditData, projects []stri
 	fields = append(fields,
 		components.FormFieldDef{Label: "Summary", Placeholder: "Task summary", Value: ed.summary},
 		components.FormFieldDef{Label: "Estimate", Placeholder: "e.g. 2h, 30m", Value: ed.estimate},
-		components.FormFieldDef{Label: "Due Date", Placeholder: "e.g. YYYY-MM-DD", Value: ed.dueDate},
+		components.FormFieldDef{Label: "Due Date", Placeholder: "YYYY-MM-DD or 'every monday'", Value: ed.dueDate},
 		components.FormFieldDef{Label: "Priority", Kind: components.FieldSelect, Options: []string{"None", "Highest", "High", "Medium", "Low", "Lowest"}, Value: ed.priority},
 	)
 	if provider == "kendo" && len(sprints) > 0 {

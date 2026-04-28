@@ -22,8 +22,9 @@ type DueDateParams struct {
 
 // DueDateResult holds the output of a due date operation.
 type DueDateResult struct {
-	TaskKey string
-	DueDate time.Time
+	TaskKey   string
+	DueDate   time.Time
+	DueString string // populated for recurrence/natural-language updates instead of DueDate
 }
 
 var dateRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
@@ -106,6 +107,10 @@ func RunDueDate(ctx context.Context, p DueDateParams) (*DueDateResult, error) {
 
 // PrintDueDateResult writes the due date confirmation to the given writer.
 func PrintDueDateResult(w io.Writer, result *DueDateResult) {
+	if result.DueString != "" {
+		fmt.Fprintf(w, "Due date for %s set to %q\n", result.TaskKey, result.DueString)
+		return
+	}
 	fmt.Fprintf(w, "Due date for %s set to %s\n", result.TaskKey, result.DueDate.Format("2006-01-02"))
 }
 

@@ -79,11 +79,15 @@ func BuildCreateInput(p AddParams) (task.CreateInput, error) {
 	}
 
 	if p.DueDate != "" {
-		d, err := ParseDate(p.DueDate)
-		if err != nil {
-			return task.CreateInput{}, fmt.Errorf("parse due date: %w", err)
+		if isRecurrenceDueString(p.DueDate) {
+			input.DueString = p.DueDate
+		} else {
+			d, err := ParseDate(p.DueDate)
+			if err != nil {
+				return task.CreateInput{}, fmt.Errorf("parse due date: %w", err)
+			}
+			input.DueDate = &d
 		}
-		input.DueDate = &d
 	}
 
 	return input, nil

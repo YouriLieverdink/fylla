@@ -324,6 +324,9 @@ func (m Model) View() string {
 					tags += styles.WarnStyle.Render(" ⚠ " + t.DueDate.Format("Jan 2"))
 				}
 			}
+			if t.RecurrenceRaw != "" {
+				tags += styles.HintStyle.Render(" ⟳ " + t.RecurrenceRaw)
+			}
 
 			// Fixed parts: cursor(2) + dot(2) + rank(3) + gaps(6) + est(5) + score(5) = 23
 			// When multi-select is active, checkbox adds 4 chars: "[x] " or "[ ] "

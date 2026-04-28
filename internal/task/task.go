@@ -26,6 +26,7 @@ type Task struct {
 	UpNext            bool
 	NoSplit           bool
 	Recurrence        *Recurrence
+	RecurrenceRaw     string // human-readable recurrence (e.g. "every monday"), provider-native
 	Status            string
 	SprintID          *int
 }
@@ -39,6 +40,7 @@ type CreateInput struct {
 	Description string
 	Estimate    time.Duration
 	DueDate     *time.Time
+	DueString   string // raw recurrence/natural-language due (e.g. "every monday"), provider-native
 	Priority    string // Priority name (Highest, High, Medium, Low, Lowest)
 	Parent      string // Parent issue key (e.g. Epic key)
 	SprintID    *int   // Sprint/iteration ID (Kendo)

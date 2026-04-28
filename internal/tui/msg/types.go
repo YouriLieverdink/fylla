@@ -67,6 +67,7 @@ type ScoredTask struct {
 	NotBefore    *time.Time
 	NotBeforeRaw string
 	SprintID     *int
+	RecurrenceRaw string
 }
 
 // CalendarEvent represents a non-task calendar event (meeting, etc.).
