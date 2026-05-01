@@ -319,3 +319,25 @@ type DashboardLoadedMsg struct {
 
 // AutoRefreshMsg triggers an auto-refresh of the current view.
 type AutoRefreshMsg struct{}
+
+// TargetProgress carries the loaded progress for a single target.
+type TargetProgress struct {
+	Target      config.TargetConfig
+	Logged      time.Duration
+	PeriodLabel string
+	PeriodStart time.Time
+	PeriodEnd   time.Time
+	Err         error
+}
+
+// TargetsLoadedMsg carries the result of loading target progress.
+type TargetsLoadedMsg struct {
+	Items []TargetProgress
+	Err   error
+}
+
+// TargetSavedMsg is sent after a target add/update/delete persists to config.
+type TargetSavedMsg struct {
+	Action string // "add", "edit", "delete"
+	Err    error
+}

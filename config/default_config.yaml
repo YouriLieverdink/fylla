@@ -57,6 +57,17 @@ efficiency:
   dailyHours: 8
   target: 0.7
 
+targets: []
+# Soft hour goals per project. Each entry:
+#   project:   project code from the worklog provider (e.g. "PROJ")
+#   hours:     minimum hours to log in the period (e.g. 24)
+#   scope:     "me" (default) or "anyone"
+#   period:    "monthly" (default), "weekly", or "biweekly"
+#   anchor:    YYYY-MM-DD; required for biweekly (any date inside cycle 0).
+#              For weekly, anchor's weekday becomes the cycle start (default Mon).
+#   startDate: fixed-range override (paired with endDate; mutually exclusive with period)
+#   endDate:   fixed-range override
+
 weights:
   priority: 0.45
   dueDate: 0.30

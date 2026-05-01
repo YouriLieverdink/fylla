@@ -300,6 +300,79 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 		LoadConfig: func() (*config.Config, error) {
 			return config.LoadFrom(cfgPath)
 		},
+		WorklogProvider: func() string {
+			return worklogProvider(cfg)
+		},
+		LoadTargets: func() ([]msg.TargetProgress, error) {
+			provider := worklogProvider(cfg)
+			routed := routedSource(source, provider)
+			fetcher, ok := routed.(WorklogFetcher)
+			if !ok {
+				return nil, fmt.Errorf("worklog provider %q does not support fetching time entries", provider)
+			}
+			now := time.Now()
+			items := make([]msg.TargetProgress, len(cfg.Targets))
+			var wg sync.WaitGroup
+			for i, t := range cfg.Targets {
+				idx := i
+				target := t
+				since, until, err := target.ResolvePeriod(now)
+				items[idx] = msg.TargetProgress{
+					Target:      target,
+					PeriodLabel: target.PeriodLabel(now),
+					PeriodStart: since,
+					PeriodEnd:   until,
+				}
+				if err != nil {
+					items[idx].Err = err
+					continue
+				}
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					filter := task.WorklogFilter{Project: target.Project, UserScope: target.Scope}
+					entries, err := fetcher.FetchWorklogs(ctx, since, until, filter)
+					if err != nil {
+						items[idx].Err = err
+						return
+					}
+					var total time.Duration
+					for _, e := range entries {
+						total += e.TimeSpent
+					}
+					items[idx].Logged = total
+				}()
+			}
+			wg.Wait()
+			return items, nil
+		},
+		AddTarget: func(target config.TargetConfig) error {
+			cfg.Targets = append(cfg.Targets, target)
+			if err := cfg.Validate(); err != nil {
+				cfg.Targets = cfg.Targets[:len(cfg.Targets)-1]
+				return err
+			}
+			return config.SaveTo(cfg, cfgPath)
+		},
+		UpdateTarget: func(index int, target config.TargetConfig) error {
+			if index < 0 || index >= len(cfg.Targets) {
+				return fmt.Errorf("target index %d out of range", index)
+			}
+			prev := cfg.Targets[index]
+			cfg.Targets[index] = target
+			if err := cfg.Validate(); err != nil {
+				cfg.Targets[index] = prev
+				return err
+			}
+			return config.SaveTo(cfg, cfgPath)
+		},
+		DeleteTarget: func(index int) error {
+			if index < 0 || index >= len(cfg.Targets) {
+				return fmt.Errorf("target index %d out of range", index)
+			}
+			cfg.Targets = append(cfg.Targets[:index], cfg.Targets[index+1:]...)
+			return config.SaveTo(cfg, cfgPath)
+		},
 		SetConfig: func(key, value string) error {
 			_, err := RunConfigSet(ConfigSetParams{ConfigPath: cfgPath, Key: key, Value: value})
 			return err
@@ -538,7 +611,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			until := month.AddDate(0, 1, -1)
 			routed := routedSource(source, worklogProvider(cfg))
 			if wf, ok := routed.(WorklogFetcher); ok {
-				return wf.FetchWorklogs(ctx, since, until)
+				return wf.FetchWorklogs(ctx, since, until, task.WorklogFilter{})
 			}
 			return nil, fmt.Errorf("no worklog provider available")
 		},
@@ -557,7 +630,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			}
 			routed := routedSource(source, worklogProvider(cfg))
 			if wf, ok := routed.(WorklogFetcher); ok {
-				return wf.FetchWorklogs(ctx, since, until)
+				return wf.FetchWorklogs(ctx, since, until, task.WorklogFilter{})
 			}
 			return nil, fmt.Errorf("no worklog provider available")
 		},

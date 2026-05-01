@@ -823,7 +823,7 @@ func TestFetchWorklogs_Errors(t *testing.T) {
 		defer server.Close()
 
 		client := NewClient(server.URL, "test-token")
-		_, err := client.FetchWorklogs(context.Background(), time.Now(), time.Now())
+		_, err := client.FetchWorklogs(context.Background(), time.Now(), time.Now(), task.WorklogFilter{})
 		if err == nil {
 			t.Fatal("expected error when user endpoint fails")
 		}
@@ -839,7 +839,7 @@ func TestFetchWorklogs_Errors(t *testing.T) {
 		defer server.Close()
 
 		client := NewClient(server.URL, "test-token")
-		_, err := client.FetchWorklogs(context.Background(), time.Now(), time.Now())
+		_, err := client.FetchWorklogs(context.Background(), time.Now(), time.Now(), task.WorklogFilter{})
 		if err == nil {
 			t.Fatal("expected error when time entries endpoint fails")
 		}
@@ -867,7 +867,7 @@ func TestFetchWorklogs_Errors(t *testing.T) {
 		client := NewClient(server.URL, "test-token")
 		since := time.Date(2025, 1, 20, 0, 0, 0, 0, time.UTC)
 		until := time.Date(2025, 1, 20, 0, 0, 0, 0, time.UTC)
-		entries, err := client.FetchWorklogs(context.Background(), since, until)
+		entries, err := client.FetchWorklogs(context.Background(), since, until, task.WorklogFilter{})
 		if err != nil {
 			t.Fatalf("FetchWorklogs: %v", err)
 		}

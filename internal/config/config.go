@@ -19,6 +19,7 @@ type Config struct {
 	Weights       WeightsConfig                    `yaml:"weights"`
 	Worklog       WorklogConfig                    `yaml:"worklog"`
 	Efficiency    EfficiencyConfig                 `yaml:"efficiency"`
+	Targets       []TargetConfig                   `yaml:"targets"`
 }
 
 // ActiveProviders returns the list of configured providers.
@@ -94,6 +95,121 @@ type EfficiencyConfig struct {
 	Target      float64 `yaml:"target"` // 0.0–1.0, e.g. 0.7 = 70%
 }
 
+// TargetScopeMe counts only the current user's worklog entries.
+const TargetScopeMe = "me"
+
+// TargetScopeAnyone counts all users' worklog entries.
+const TargetScopeAnyone = "anyone"
+
+// Recurring period values for TargetConfig.Period.
+const (
+	TargetPeriodMonthly  = "monthly"
+	TargetPeriodWeekly   = "weekly"
+	TargetPeriodBiweekly = "biweekly"
+)
+
+// TargetConfig defines a soft hour goal scoped to a single project.
+//
+// Period selects a recurring window that resolves against "now":
+//   - monthly (default): calendar month
+//   - weekly: 7-day window starting on the anchor's weekday (default Monday)
+//   - biweekly: 14-day window aligned to Anchor (required)
+//
+// Set StartDate+EndDate (mutually exclusive with Period) to pin a fixed range.
+type TargetConfig struct {
+	Project   string  `yaml:"project"`
+	Hours     float64 `yaml:"hours"`
+	Scope     string  `yaml:"scope"`
+	Period    string  `yaml:"period,omitempty"`
+	Anchor    string  `yaml:"anchor,omitempty"`
+	StartDate string  `yaml:"startDate,omitempty"`
+	EndDate   string  `yaml:"endDate,omitempty"`
+}
+
+// ResolvePeriod returns the inclusive start and end dates for the target's
+// current cycle relative to now.
+func (t TargetConfig) ResolvePeriod(now time.Time) (time.Time, time.Time, error) {
+	loc := now.Location()
+	if t.StartDate != "" && t.EndDate != "" {
+		s, err := time.ParseInLocation("2006-01-02", t.StartDate, loc)
+		if err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("startDate: %w", err)
+		}
+		e, err := time.ParseInLocation("2006-01-02", t.EndDate, loc)
+		if err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("endDate: %w", err)
+		}
+		return s, e, nil
+	}
+
+	day := dayOf(now)
+
+	switch t.Period {
+	case "", TargetPeriodMonthly:
+		first := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, loc)
+		last := first.AddDate(0, 1, -1)
+		return first, last, nil
+
+	case TargetPeriodWeekly:
+		anchorWeekday := time.Monday
+		if t.Anchor != "" {
+			a, err := time.ParseInLocation("2006-01-02", t.Anchor, loc)
+			if err != nil {
+				return time.Time{}, time.Time{}, fmt.Errorf("anchor: %w", err)
+			}
+			anchorWeekday = a.Weekday()
+		}
+		offset := (int(day.Weekday()) - int(anchorWeekday) + 7) % 7
+		start := day.AddDate(0, 0, -offset)
+		end := start.AddDate(0, 0, 6)
+		return start, end, nil
+
+	case TargetPeriodBiweekly:
+		if t.Anchor == "" {
+			return time.Time{}, time.Time{}, fmt.Errorf("anchor: required for biweekly period")
+		}
+		a, err := time.ParseInLocation("2006-01-02", t.Anchor, loc)
+		if err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("anchor: %w", err)
+		}
+		anchor := dayOf(a)
+		days := int(day.Sub(anchor) / (24 * time.Hour))
+		// Floor toward negative infinity so cycles also resolve before the anchor.
+		cycle := days / 14
+		if days < 0 && days%14 != 0 {
+			cycle--
+		}
+		start := anchor.AddDate(0, 0, cycle*14)
+		end := start.AddDate(0, 0, 13)
+		return start, end, nil
+	}
+
+	return time.Time{}, time.Time{}, fmt.Errorf("unknown period %q", t.Period)
+}
+
+// PeriodLabel returns a human-readable label for the target's current cycle.
+func (t TargetConfig) PeriodLabel(now time.Time) string {
+	if t.StartDate != "" && t.EndDate != "" {
+		return t.StartDate + ".." + t.EndDate
+	}
+	switch t.Period {
+	case "", TargetPeriodMonthly:
+		return now.Format("January 2006")
+	case TargetPeriodWeekly, TargetPeriodBiweekly:
+		s, e, err := t.ResolvePeriod(now)
+		if err != nil {
+			return t.Period
+		}
+		return s.Format("Jan 2") + "–" + e.Format("Jan 2")
+	}
+	return t.Period
+}
+
+// dayOf truncates t to midnight in its location.
+func dayOf(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+}
+
 // WeightsConfig holds sorting algorithm weights.
 type WeightsConfig struct {
 	Priority  float64            `yaml:"priority"`
@@ -158,6 +274,59 @@ func (c *Config) Validate() error {
 		}
 		if e.Target < 0 || e.Target > 1 {
 			return fmt.Errorf("efficiency.target must be between 0.0 and 1.0")
+		}
+	}
+
+	// Targets
+	for i, t := range c.Targets {
+		prefix := fmt.Sprintf("targets[%d]", i)
+		if t.Project == "" {
+			return fmt.Errorf("%s.project: required", prefix)
+		}
+		if t.Hours <= 0 {
+			return fmt.Errorf("%s.hours: must be positive", prefix)
+		}
+		switch t.Scope {
+		case "", TargetScopeMe, TargetScopeAnyone:
+		default:
+			return fmt.Errorf("%s.scope: must be %q or %q", prefix, TargetScopeMe, TargetScopeAnyone)
+		}
+		switch t.Period {
+		case "", TargetPeriodMonthly, TargetPeriodWeekly, TargetPeriodBiweekly:
+		default:
+			return fmt.Errorf("%s.period: must be one of %q, %q, %q", prefix,
+				TargetPeriodMonthly, TargetPeriodWeekly, TargetPeriodBiweekly)
+		}
+		hasStart := t.StartDate != ""
+		hasEnd := t.EndDate != ""
+		hasFixed := hasStart || hasEnd
+		hasRecurring := t.Period != ""
+		if hasStart != hasEnd {
+			return fmt.Errorf("%s: startDate and endDate must be set together", prefix)
+		}
+		if hasFixed && hasRecurring {
+			return fmt.Errorf("%s: use either period or startDate/endDate, not both", prefix)
+		}
+		if hasStart {
+			s, err := time.Parse("2006-01-02", t.StartDate)
+			if err != nil {
+				return fmt.Errorf("%s.startDate: %w", prefix, err)
+			}
+			e, err := time.Parse("2006-01-02", t.EndDate)
+			if err != nil {
+				return fmt.Errorf("%s.endDate: %w", prefix, err)
+			}
+			if s.After(e) {
+				return fmt.Errorf("%s: startDate must be on or before endDate", prefix)
+			}
+		}
+		if t.Anchor != "" {
+			if _, err := time.Parse("2006-01-02", t.Anchor); err != nil {
+				return fmt.Errorf("%s.anchor: %w", prefix, err)
+			}
+		}
+		if t.Period == TargetPeriodBiweekly && t.Anchor == "" {
+			return fmt.Errorf("%s.anchor: required for biweekly period", prefix)
 		}
 	}
 

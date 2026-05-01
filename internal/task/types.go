@@ -2,6 +2,13 @@ package task
 
 import "time"
 
+// WorklogFilter narrows worklog fetches by project and user scope.
+// Empty Project means "all projects". Empty UserScope defaults to "me".
+type WorklogFilter struct {
+	Project   string
+	UserScope string // "me" or "anyone"
+}
+
 // WorklogEntry represents a single worklog entry from any provider.
 type WorklogEntry struct {
 	ID           string

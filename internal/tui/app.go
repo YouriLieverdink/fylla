@@ -5,6 +5,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,12 +13,14 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/iruoy/fylla/internal/config"
 	"github.com/iruoy/fylla/internal/tui/components"
 	"github.com/iruoy/fylla/internal/tui/msg"
 	"github.com/iruoy/fylla/internal/tui/styles"
 	configView "github.com/iruoy/fylla/internal/tui/views/config"
 	"github.com/iruoy/fylla/internal/tui/views/dashboard"
 	"github.com/iruoy/fylla/internal/tui/views/schedule"
+	"github.com/iruoy/fylla/internal/tui/views/targets"
 	"github.com/iruoy/fylla/internal/tui/views/tasks"
 	timerView "github.com/iruoy/fylla/internal/tui/views/timer"
 	"github.com/iruoy/fylla/internal/tui/views/worklog"
@@ -27,6 +30,7 @@ const (
 	tabTasks = iota
 	tabSchedule
 	tabWorklog
+	tabTargets
 	tabConfig
 	tabCount
 )
@@ -54,6 +58,7 @@ const (
 	confirmClearEvents
 	confirmAbortTimer
 	confirmDeleteWorklog
+	confirmDeleteTarget
 )
 
 type formKind int
@@ -71,6 +76,8 @@ const (
 	formAddWorklog
 	formAddWorklogPending // waiting for tasks to load for picker
 	formEditWorklog
+	formAddTarget
+	formEditTarget
 	formMoveTaskPending     // waiting for transitions to load
 	formBulkMoveTaskPending // waiting for transitions to load (bulk)
 	formBulkSnoozeTask
@@ -110,6 +117,9 @@ type model struct {
 	timer               timerView.Model
 	worklog             worklog.Model
 	dashboard           dashboard.Model
+	targets             targets.Model
+	targetEditIdx       int // index of target being edited (-1 for add)
+	cachedTargets       []msg.TargetProgress
 	config              *configView.Model
 	timerKey            string
 	timerSummary        string
@@ -179,6 +189,8 @@ func initialModel(deps Deps) model {
 		timer:           timerView.New(),
 		worklog:         worklog.New(deps.DailyHours, deps.WeeklyHours, deps.EfficiencyTarget),
 		dashboard:       dashboard.New(deps.DailyHours, deps.WeeklyHours, deps.EfficiencyTarget, deps.WorkDays),
+		targets:         targets.New(deps.WorklogProvider),
+		targetEditIdx:   -1,
 		config:          ptrConfig(configView.New()),
 		spinner:         s,
 		worklogProvider: deps.WorklogProvider,
@@ -342,6 +354,8 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(mssg, keys.Tab3):
 			return m.switchTab(tabWorklog)
 		case key.Matches(mssg, keys.Tab4):
+			return m.switchTab(tabTargets)
+		case key.Matches(mssg, keys.Tab5):
 			return m.switchTab(tabConfig)
 		case key.Matches(mssg, keys.NextTab):
 			return m.switchTab((m.activeTab + 1) % tabCount)
@@ -360,6 +374,8 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateSchedule(mssg)
 		case tabWorklog:
 			return m.updateWorklog(mssg)
+		case tabTargets:
+			return m.updateTargets(mssg)
 		case tabConfig:
 			return m.updateConfig(mssg)
 		}
@@ -925,6 +941,15 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 				m.form.ConvertToTextByLabel("Project", "Project key")
 			}
 		}
+		if m.form.Active && (m.formKind == formAddTarget || m.formKind == formEditTarget) {
+			if len(mssg.Projects) > 0 {
+				current := m.form.ValueByLabel("Project")
+				if current == "" {
+					current = mssg.Projects[0]
+				}
+				m.form.ConvertToSelectByLabel("Project", mssg.Projects, current)
+			}
+		}
 		return m, tea.Batch(cmds...)
 
 	case msg.SectionsLoadedMsg:
@@ -1073,6 +1098,29 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 	case msg.FallbackLoadedMsg:
 		m.cachedFallback = mssg.Issues
 		return m, nil
+
+	case msg.TargetsLoadedMsg:
+		m.targets.Loading = false
+		if mssg.Err != nil {
+			m.targets.Err = mssg.Err
+		} else {
+			m.targets.SetItems(mssg.Items)
+			m.cachedTargets = mssg.Items
+			m.targets.Err = nil
+		}
+		return m, nil
+
+	case msg.TargetSavedMsg:
+		m.saving = ""
+		if mssg.Err != nil {
+			m.setToast(fmt.Sprintf("Target %s error: %v", mssg.Action, mssg.Err), true)
+		} else {
+			m.setToast("Target "+mssg.Action+"ed", false)
+			m.targets.Loading = true
+			cmds = append(cmds, loadTargetsCmd(m.cb))
+		}
+		cmds = append(cmds, clearToastCmd())
+		return m, tea.Batch(cmds...)
 
 	case msg.AutoRefreshMsg:
 		return m, tea.Batch(cmds...)
@@ -1298,6 +1346,15 @@ func (m model) updateConfirm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case confirmDeleteWorklog:
 				m.confirmType = confirmNone
 				return m, deleteWorklogCmd(m.cb, m.formWorklogKey, m.confirmKey, m.formWorklogProvider)
+			case confirmDeleteTarget:
+				m.confirmType = confirmNone
+				idx, err := strconv.Atoi(m.confirmKey)
+				if err != nil {
+					m.setToast(fmt.Sprintf("Invalid target index: %v", err), true)
+					return m, clearToastCmd()
+				}
+				m.saving = "Deleting target"
+				return m, deleteTargetCmd(m.cb, idx)
 			case confirmBulkDone:
 				m.confirmType = confirmNone
 				taskKeys := m.tasks.SelectedKeys()
@@ -1425,6 +1482,107 @@ func (m model) updateDashboard(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, loadDashboardCmd(m.cb, m.dashboard.Month)
 	}
 	return m, nil
+}
+
+func (m model) updateTargets(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(mssg, keys.Up):
+		m.targets.CursorUp()
+	case key.Matches(mssg, keys.Down):
+		m.targets.CursorDown()
+	case key.Matches(mssg, keys.Refresh):
+		m.targets.Loading = true
+		return m, loadTargetsCmd(m.cb)
+	case key.Matches(mssg, keys.Add):
+		m.openTargetForm(-1)
+		return m, loadProjectsCmd(m.cb, m.worklogProvider)
+	case key.Matches(mssg, keys.Edit):
+		idx := m.targets.SelectedIndex()
+		if idx == -1 {
+			return m, nil
+		}
+		m.openTargetForm(idx)
+		return m, loadProjectsCmd(m.cb, m.worklogProvider)
+	case key.Matches(mssg, keys.Done):
+		idx := m.targets.SelectedIndex()
+		if idx == -1 {
+			return m, nil
+		}
+		sel := m.targets.Selected()
+		label := sel.Target.Project + " (" + sel.PeriodLabel + ")"
+		m.confirm = components.NewConfirm("Delete target for " + label + "?")
+		m.confirmType = confirmDeleteTarget
+		m.confirmKey = fmt.Sprintf("%d", idx)
+	case key.Matches(mssg, keys.Delete):
+		idx := m.targets.SelectedIndex()
+		if idx == -1 {
+			return m, nil
+		}
+		sel := m.targets.Selected()
+		label := sel.Target.Project + " (" + sel.PeriodLabel + ")"
+		m.confirm = components.NewConfirm("Delete target for " + label + "?")
+		m.confirmType = confirmDeleteTarget
+		m.confirmKey = fmt.Sprintf("%d", idx)
+	}
+	return m, nil
+}
+
+func (m *model) openTargetForm(idx int) {
+	scopeOptions := []string{"me", "anyone"}
+	periodOptions := []string{"monthly", "weekly", "biweekly", "fixed"}
+	var (
+		title     = "Add Target"
+		project   string
+		hours     string
+		scope     = "me"
+		period    = "monthly"
+		anchor    string
+		startDate string
+		endDate   string
+	)
+	if idx >= 0 && idx < len(m.targets.Items) {
+		title = "Edit Target"
+		t := m.targets.Items[idx].Target
+		project = t.Project
+		hours = strconv.FormatFloat(t.Hours, 'f', -1, 64)
+		if t.Scope != "" {
+			scope = t.Scope
+		}
+		anchor = t.Anchor
+		startDate = t.StartDate
+		endDate = t.EndDate
+		switch {
+		case t.StartDate != "" && t.EndDate != "":
+			period = "fixed"
+		case t.Period != "":
+			period = t.Period
+		}
+	}
+	projectField := components.FormFieldDef{
+		Label:       "Project",
+		Placeholder: "PROJ",
+		Value:       project,
+	}
+	if m.cachedFormOptions != nil && len(m.cachedFormOptions.Projects) > 0 {
+		projectField.Kind = components.FieldSelect
+		projectField.Options = m.cachedFormOptions.Projects
+	}
+	m.form = components.NewForm(title, []components.FormFieldDef{
+		projectField,
+		{Label: "Hours", Placeholder: "24", Value: hours},
+		{Label: "Scope", Kind: components.FieldSelect, Options: scopeOptions, Value: scope},
+		{Label: "Period", Kind: components.FieldSelect, Options: periodOptions, Value: period},
+		{Label: "Anchor", Placeholder: "YYYY-MM-DD (req. for biweekly)", Value: anchor},
+		{Label: "Start date", Placeholder: "YYYY-MM-DD (fixed)", Value: startDate},
+		{Label: "End date", Placeholder: "YYYY-MM-DD (fixed)", Value: endDate},
+	})
+	m.form.Subtitle = "Period=fixed → use Start/End dates. weekly/biweekly use Anchor (biweekly required)."
+	m.targetEditIdx = idx
+	if idx == -1 {
+		m.formKind = formAddTarget
+	} else {
+		m.formKind = formEditTarget
+	}
 }
 
 func (m model) updateConfig(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -2147,6 +2305,55 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.formKind = formNone
 			m.saving = "Saving config"
 			return m, setConfigCmd(m.cb, m.formConfigKey, cfgVal)
+		case formAddTarget, formEditTarget:
+			project := strings.TrimSpace(m.form.ValueByLabel("Project"))
+			hoursStr := strings.TrimSpace(m.form.ValueByLabel("Hours"))
+			scope := strings.TrimSpace(m.form.ValueByLabel("Scope"))
+			periodSel := strings.TrimSpace(m.form.ValueByLabel("Period"))
+			anchor := strings.TrimSpace(m.form.ValueByLabel("Anchor"))
+			startDate := strings.TrimSpace(m.form.ValueByLabel("Start date"))
+			endDate := strings.TrimSpace(m.form.ValueByLabel("End date"))
+			if project == "" || hoursStr == "" {
+				m.form.Error = "project and hours are required"
+				return m, nil
+			}
+			hours, err := strconv.ParseFloat(hoursStr, 64)
+			if err != nil || hours <= 0 {
+				m.form.Error = "hours must be a positive number"
+				return m, nil
+			}
+			target := config.TargetConfig{
+				Project: project,
+				Hours:   hours,
+				Scope:   scope,
+				Anchor:  anchor,
+			}
+			if periodSel == "fixed" {
+				target.StartDate = startDate
+				target.EndDate = endDate
+				target.Anchor = ""
+				if startDate == "" || endDate == "" {
+					m.form.Error = "fixed period requires Start date and End date"
+					return m, nil
+				}
+			} else {
+				target.Period = periodSel
+				if periodSel == config.TargetPeriodBiweekly && anchor == "" {
+					m.form.Error = "biweekly period requires Anchor (any date in cycle 0)"
+					return m, nil
+				}
+			}
+			editIdx := m.targetEditIdx
+			isAdd := m.formKind == formAddTarget
+			m.form.Active = false
+			m.formKind = formNone
+			m.targetEditIdx = -1
+			if isAdd {
+				m.saving = "Adding target"
+				return m, addTargetCmd(m.cb, target)
+			}
+			m.saving = "Updating target"
+			return m, updateTargetCmd(m.cb, editIdx, target)
 		}
 		m.form.Active = false
 		m.formKind = formNone
@@ -2179,6 +2386,12 @@ func (m *model) switchTab(tab int) (tea.Model, tea.Cmd) {
 		m.schedule.Err = nil
 		return *m, syncPreviewCmd(m.cb) // background refresh
 	}
+	if tab == tabTargets && m.cachedTargets != nil {
+		m.targets.SetItems(m.cachedTargets)
+		m.targets.Loading = false
+		m.targets.Err = nil
+		return *m, loadTargetsCmd(m.cb) // background refresh
+	}
 	return *m, m.refreshActiveView()
 }
 
@@ -2190,6 +2403,8 @@ func (m model) refreshActiveView() tea.Cmd {
 		return syncPreviewCmd(m.cb)
 	case tabWorklog:
 		return loadWorklogsCmd(m.cb, m.worklog.WeekView, m.worklog.Date)
+	case tabTargets:
+		return loadTargetsCmd(m.cb)
 	case tabConfig:
 		return loadConfigCmd(m.cb)
 	}
@@ -2240,6 +2455,7 @@ func (m *model) resizeViews(contentHeight int) {
 	m.schedule.SetSize(mainWidth, contentHeight)
 	m.worklog.SetSize(mainWidth, contentHeight)
 	m.dashboard.SetSize(mainWidth, contentHeight)
+	m.targets.SetSize(mainWidth, contentHeight)
 	m.config.SetSize(mainWidth, contentHeight)
 }
 
@@ -2263,6 +2479,10 @@ func (m model) isLoading() bool {
 		}
 	case tabWorklog:
 		if m.worklog.Loading {
+			return true
+		}
+	case tabTargets:
+		if m.targets.Loading {
 			return true
 		}
 	case tabConfig:
@@ -2289,6 +2509,10 @@ func (m model) loadingLabel() string {
 	case tabWorklog:
 		if m.worklog.Loading {
 			return "Loading worklogs"
+		}
+	case tabTargets:
+		if m.targets.Loading {
+			return "Loading targets"
 		}
 	case tabConfig:
 		if m.config.Loading {
@@ -2364,6 +2588,8 @@ func (m model) View() string {
 		content = m.schedule.View()
 	case tabWorklog:
 		content = m.worklog.View()
+	case tabTargets:
+		content = m.targets.View()
 	case tabConfig:
 		content = m.config.View()
 	}

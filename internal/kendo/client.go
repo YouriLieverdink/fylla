@@ -116,15 +116,71 @@ type sprintJSON struct {
 // SprintOption is an alias for the provider-neutral task.SprintOption type.
 type SprintOption = task.SprintOption
 
+// decodeTimeEntries decodes a /api/time-entries response, accepting either
+// a bare JSON array or a Laravel-resource–style paginated envelope:
+//
+//	{"data": [...], "meta": {"current_page": 1, "last_page": 3}}
+//	{"data": [...], "links": {"next": "..."}}
+//
+// hasEnvelope is true when the response uses an envelope (regardless of
+// whether more pages remain). hasMore is meaningful only for envelope
+// responses.
+func decodeTimeEntries(body []byte) (entries []timeEntryJSON, hasMore bool, hasEnvelope bool, err error) {
+	trimmed := body
+	for len(trimmed) > 0 && (trimmed[0] == ' ' || trimmed[0] == '\n' || trimmed[0] == '\r' || trimmed[0] == '\t') {
+		trimmed = trimmed[1:]
+	}
+	if len(trimmed) > 0 && trimmed[0] == '[' {
+		if err := json.Unmarshal(body, &entries); err != nil {
+			return nil, false, false, fmt.Errorf("decode time entries: %w", err)
+		}
+		return entries, false, false, nil
+	}
+
+	var env struct {
+		Data  []timeEntryJSON `json:"data"`
+		Meta  struct {
+			CurrentPage int `json:"current_page"`
+			LastPage    int `json:"last_page"`
+		} `json:"meta"`
+		Links struct {
+			Next *string `json:"next"`
+		} `json:"links"`
+	}
+	if err := json.Unmarshal(body, &env); err != nil {
+		return nil, false, false, fmt.Errorf("decode time entries envelope: %w", err)
+	}
+	more := false
+	if env.Links.Next != nil && *env.Links.Next != "" {
+		more = true
+	}
+	if env.Meta.LastPage > 0 && env.Meta.CurrentPage > 0 && env.Meta.CurrentPage < env.Meta.LastPage {
+		more = true
+	}
+	return env.Data, more, true, nil
+}
+
 type timeEntryJSON struct {
 	ID           int    `json:"id"`
 	UserID       int    `json:"user_id"`
 	MinutesSpent int    `json:"minutes_spent"`
 	Note         string `json:"note"`
 	StartedAt    string `json:"started_at"`
+	CreatedAt    string `json:"created_at"`
 	IssueTitle   string `json:"issue_title"`
 	IssueKey     string `json:"issue_key"`
 	ProjectID    int    `json:"project_id"`
+}
+
+// effectiveStarted returns the canonical timestamp for a time entry,
+// preferring started_at and falling back to created_at when started_at is
+// null/empty (the Kendo API returns null for entries logged without an
+// explicit start time).
+func (te timeEntryJSON) effectiveStarted() string {
+	if te.StartedAt != "" {
+		return te.StartedAt
+	}
+	return te.CreatedAt
 }
 
 // maxRetries is the number of retry attempts for rate-limited requests.
@@ -1181,8 +1237,11 @@ func (c *Client) UpdateSummary(ctx context.Context, issueKey string, summary str
 	})
 }
 
-// FetchWorklogs retrieves time entries for the current user in the given date range.
-func (c *Client) FetchWorklogs(ctx context.Context, since, until time.Time) ([]task.WorklogEntry, error) {
+// FetchWorklogs retrieves time entries in the given date range.
+// The filter narrows results by project (matched against project code) and
+// user scope ("me" → current user only, "anyone" → all users).
+// An empty UserScope is treated as "me" for backward compatibility.
+func (c *Client) FetchWorklogs(ctx context.Context, since, until time.Time, filter task.WorklogFilter) ([]task.WorklogEntry, error) {
 	if err := c.fetchUserID(ctx); err != nil {
 		return nil, fmt.Errorf("fetch worklogs: %w", err)
 	}
@@ -1193,29 +1252,83 @@ func (c *Client) FetchWorklogs(ctx context.Context, since, until time.Time) ([]t
 	sinceDate := time.Date(since.Year(), since.Month(), since.Day(), 0, 0, 0, 0, since.Location())
 	untilDate := time.Date(until.Year(), until.Month(), until.Day(), 23, 59, 59, 0, until.Location())
 
-	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/time-entries?start_date=%s&end_date=%s&user_id=%d",
-		since.Format("2006-01-02"), until.Format("2006-01-02"), c.UserID), nil)
-	if err != nil {
-		return nil, fmt.Errorf("fetch time entries: %w", err)
+	var projectID int
+	if filter.Project != "" {
+		for _, p := range c.projects {
+			if strings.EqualFold(p.Code, filter.Project) {
+				projectID = p.ID
+				break
+			}
+		}
+		if projectID == 0 {
+			return nil, fmt.Errorf("kendo fetch worklogs: unknown project code %q", filter.Project)
+		}
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("kendo fetch time entries: status %d: %s", resp.StatusCode, string(body))
+	scopeMe := filter.UserScope != "anyone"
+
+	basePath := fmt.Sprintf("/api/time-entries?start_date=%s&end_date=%s",
+		since.Format("2006-01-02"), until.Format("2006-01-02"))
+	if scopeMe {
+		basePath += fmt.Sprintf("&user_id=%d", c.UserID)
+	}
+	if projectID != 0 {
+		basePath += fmt.Sprintf("&project_id=%d", projectID)
 	}
 
+	const perPage = 200
 	var entries []timeEntryJSON
-	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
-		return nil, fmt.Errorf("decode time entries: %w", err)
+	seen := make(map[int]bool)
+	for page := 1; page <= 50; page++ {
+		path := fmt.Sprintf("%s&page=%d&per_page=%d", basePath, page, perPage)
+		resp, err := c.do(ctx, http.MethodGet, path, nil)
+		if err != nil {
+			return nil, fmt.Errorf("fetch time entries: %w", err)
+		}
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("read time entries: %w", readErr)
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("kendo fetch time entries: status %d: %s", resp.StatusCode, string(body))
+		}
+		pageEntries, hasMore, hasEnvelope, err := decodeTimeEntries(body)
+		if err != nil {
+			return nil, err
+		}
+		// Stop if the page is empty.
+		if len(pageEntries) == 0 {
+			break
+		}
+		// Dedupe by ID; if every entry is already seen the server is ignoring
+		// the page param and serving the same window — bail out.
+		newCount := 0
+		for _, te := range pageEntries {
+			if seen[te.ID] {
+				continue
+			}
+			seen[te.ID] = true
+			entries = append(entries, te)
+			newCount++
+		}
+		if newCount == 0 {
+			break
+		}
+		if hasEnvelope && !hasMore {
+			break
+		}
 	}
 
 	var allEntries []task.WorklogEntry
 	for _, te := range entries {
-		if te.UserID != c.UserID {
+		if scopeMe && te.UserID != c.UserID {
 			continue
 		}
-		started, err := time.Parse(time.RFC3339, te.StartedAt)
+		if projectID != 0 && te.ProjectID != projectID {
+			continue
+		}
+		started, err := time.Parse(time.RFC3339, te.effectiveStarted())
 		if err != nil {
 			continue
 		}

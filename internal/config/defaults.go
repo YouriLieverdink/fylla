@@ -56,6 +56,8 @@ efficiency:
   dailyHours: 8
   target: 0.7
 
+targets: []
+
 weights:
   priority: 0.45
   dueDate: 0.30

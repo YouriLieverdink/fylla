@@ -75,7 +75,7 @@ type WorklogPoster interface {
 
 // WorklogFetcher fetches worklogs from a provider.
 type WorklogFetcher interface {
-	FetchWorklogs(ctx context.Context, since, until time.Time) ([]task.WorklogEntry, error)
+	FetchWorklogs(ctx context.Context, since, until time.Time, filter task.WorklogFilter) ([]task.WorklogEntry, error)
 }
 
 // WorklogUpdater updates a worklog entry.

@@ -118,6 +118,11 @@ type Callbacks struct {
 	BulkDelete          func(taskKeys []string) (succeeded []string, failed map[string]error, err error)
 	BulkMove            func(taskKeys []string, target string) (succeeded []string, failed map[string]error, err error)
 	BulkSnooze          func(taskKeys []string, target string) (succeeded []string, failed map[string]error, err error)
+	WorklogProvider     func() string
+	LoadTargets         func() ([]msg.TargetProgress, error)
+	AddTarget           func(target config.TargetConfig) error
+	UpdateTarget        func(index int, target config.TargetConfig) error
+	DeleteTarget        func(index int) error
 }
 
 func loadTodayCmd(cb Callbacks) tea.Cmd {
@@ -565,6 +570,46 @@ func loadWorklogsCmd(cb Callbacks, weekView bool, date time.Time) tea.Cmd {
 	return func() tea.Msg {
 		entries, err := cb.LoadWorklogs(weekView, date)
 		return msg.WorklogsLoadedMsg{Entries: entries, Err: err}
+	}
+}
+
+func loadTargetsCmd(cb Callbacks) tea.Cmd {
+	return func() tea.Msg {
+		if cb.LoadTargets == nil {
+			return msg.TargetsLoadedMsg{Err: fmt.Errorf("targets not available")}
+		}
+		items, err := cb.LoadTargets()
+		return msg.TargetsLoadedMsg{Items: items, Err: err}
+	}
+}
+
+func addTargetCmd(cb Callbacks, target config.TargetConfig) tea.Cmd {
+	return func() tea.Msg {
+		if cb.AddTarget == nil {
+			return msg.TargetSavedMsg{Action: "add", Err: fmt.Errorf("add target not available")}
+		}
+		err := cb.AddTarget(target)
+		return msg.TargetSavedMsg{Action: "add", Err: err}
+	}
+}
+
+func updateTargetCmd(cb Callbacks, index int, target config.TargetConfig) tea.Cmd {
+	return func() tea.Msg {
+		if cb.UpdateTarget == nil {
+			return msg.TargetSavedMsg{Action: "edit", Err: fmt.Errorf("update target not available")}
+		}
+		err := cb.UpdateTarget(index, target)
+		return msg.TargetSavedMsg{Action: "edit", Err: err}
+	}
+}
+
+func deleteTargetCmd(cb Callbacks, index int) tea.Cmd {
+	return func() tea.Msg {
+		if cb.DeleteTarget == nil {
+			return msg.TargetSavedMsg{Action: "delete", Err: fmt.Errorf("delete target not available")}
+		}
+		err := cb.DeleteTarget(index)
+		return msg.TargetSavedMsg{Action: "delete", Err: err}
 	}
 }
 

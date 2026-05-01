@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/iruoy/fylla/internal/task"
 )
 
 func projectsResponse() []byte {
@@ -153,9 +155,9 @@ func TestParseIssueSummary(t *testing.T) {
 				Key:   "TEST-0001",
 				Title: tc.title,
 			}
-			task := parseIssue(issue, "TEST", "To Do", nil)
-			if task.Summary != tc.wantNon {
-				t.Errorf("parseIssue(%q).Summary = %q, want %q", tc.title, task.Summary, tc.wantNon)
+			parsed := parseIssue(issue, "TEST", "To Do", nil)
+			if parsed.Summary != tc.wantNon {
+				t.Errorf("parseIssue(%q).Summary = %q, want %q", tc.title, parsed.Summary, tc.wantNon)
 			}
 		})
 	}
@@ -272,7 +274,7 @@ func TestFetchWorklogs(t *testing.T) {
 		client := NewClient(server.URL, "test-token")
 		since := time.Date(2025, 1, 20, 0, 0, 0, 0, time.UTC)
 		until := time.Date(2025, 1, 20, 0, 0, 0, 0, time.UTC)
-		entries, err := client.FetchWorklogs(context.Background(), since, until)
+		entries, err := client.FetchWorklogs(context.Background(), since, until, task.WorklogFilter{})
 		if err != nil {
 			t.Fatalf("FetchWorklogs: %v", err)
 		}
@@ -289,6 +291,287 @@ func TestFetchWorklogs(t *testing.T) {
 			t.Errorf("Provider = %q, want kendo", entries[0].Provider)
 		}
 	})
+
+	t.Run("filters by project code", func(t *testing.T) {
+		var gotQuery string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/api/auth/user":
+				json.NewEncoder(w).Encode(map[string]interface{}{"id": 42})
+			case "/api/projects":
+				w.Write(projectsResponse())
+			case "/api/time-entries":
+				gotQuery = r.URL.RawQuery
+				json.NewEncoder(w).Encode([]timeEntryJSON{
+					{
+						ID: 1, UserID: 42, MinutesSpent: 60,
+						StartedAt: "2025-01-20T09:00:00Z", IssueKey: "IRUOY-0001", ProjectID: 1,
+					},
+					{
+						ID: 2, UserID: 42, MinutesSpent: 30,
+						StartedAt: "2025-01-20T11:00:00Z", IssueKey: "ADMIN-0001", ProjectID: 2,
+					},
+				})
+			default:
+				w.WriteHeader(http.StatusNotFound)
+			}
+		}))
+		defer server.Close()
+
+		client := NewClient(server.URL, "test-token")
+		since := time.Date(2025, 1, 20, 0, 0, 0, 0, time.UTC)
+		until := time.Date(2025, 1, 20, 0, 0, 0, 0, time.UTC)
+		entries, err := client.FetchWorklogs(context.Background(), since, until, task.WorklogFilter{Project: "IRUOY"})
+		if err != nil {
+			t.Fatalf("FetchWorklogs: %v", err)
+		}
+		if len(entries) != 1 {
+			t.Fatalf("got %d entries, want 1 (other project filtered)", len(entries))
+		}
+		if entries[0].IssueKey != "IRUOY-0001" {
+			t.Errorf("IssueKey = %q, want IRUOY-0001", entries[0].IssueKey)
+		}
+		if !contains(gotQuery, "project_id=1") {
+			t.Errorf("query = %q, expected project_id=1", gotQuery)
+		}
+	})
+
+	t.Run("anyone scope omits user_id", func(t *testing.T) {
+		var gotQuery string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/api/auth/user":
+				json.NewEncoder(w).Encode(map[string]interface{}{"id": 42})
+			case "/api/projects":
+				w.Write(projectsResponse())
+			case "/api/time-entries":
+				gotQuery = r.URL.RawQuery
+				json.NewEncoder(w).Encode([]timeEntryJSON{
+					{
+						ID: 1, UserID: 42, MinutesSpent: 60,
+						StartedAt: "2025-01-20T09:00:00Z", IssueKey: "IRUOY-0001", ProjectID: 1,
+					},
+					{
+						ID: 2, UserID: 99, MinutesSpent: 30,
+						StartedAt: "2025-01-20T11:00:00Z", IssueKey: "IRUOY-0002", ProjectID: 1,
+					},
+				})
+			}
+		}))
+		defer server.Close()
+
+		client := NewClient(server.URL, "test-token")
+		since := time.Date(2025, 1, 20, 0, 0, 0, 0, time.UTC)
+		until := time.Date(2025, 1, 20, 0, 0, 0, 0, time.UTC)
+		entries, err := client.FetchWorklogs(context.Background(), since, until, task.WorklogFilter{UserScope: "anyone"})
+		if err != nil {
+			t.Fatalf("FetchWorklogs: %v", err)
+		}
+		if len(entries) != 2 {
+			t.Fatalf("got %d entries, want 2 (both users included)", len(entries))
+		}
+		if contains(gotQuery, "user_id=") {
+			t.Errorf("query = %q, expected no user_id", gotQuery)
+		}
+	})
+
+	t.Run("bare array paginates until empty page", func(t *testing.T) {
+		page1 := []timeEntryJSON{
+			{ID: 1, UserID: 42, MinutesSpent: 60, StartedAt: "2026-04-10T09:00:00Z", IssueKey: "P-1", ProjectID: 1},
+			{ID: 2, UserID: 42, MinutesSpent: 60, StartedAt: "2026-04-11T09:00:00Z", IssueKey: "P-2", ProjectID: 1},
+		}
+		page2 := []timeEntryJSON{
+			{ID: 3, UserID: 42, MinutesSpent: 30, StartedAt: "2026-04-12T09:00:00Z", IssueKey: "P-3", ProjectID: 1},
+		}
+		var pages []string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/api/auth/user":
+				json.NewEncoder(w).Encode(map[string]interface{}{"id": 42})
+			case "/api/projects":
+				w.Write(projectsResponse())
+			case "/api/time-entries":
+				p := r.URL.Query().Get("page")
+				pages = append(pages, p)
+				switch p {
+				case "1":
+					json.NewEncoder(w).Encode(page1)
+				case "2":
+					json.NewEncoder(w).Encode(page2)
+				default:
+					json.NewEncoder(w).Encode([]timeEntryJSON{})
+				}
+			}
+		}))
+		defer server.Close()
+
+		client := NewClient(server.URL, "test-token")
+		since := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+		until := time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC)
+		entries, err := client.FetchWorklogs(context.Background(), since, until, task.WorklogFilter{})
+		if err != nil {
+			t.Fatalf("FetchWorklogs: %v", err)
+		}
+		if len(entries) != 3 {
+			t.Fatalf("got %d entries, want 3", len(entries))
+		}
+		if len(pages) != 3 || pages[0] != "1" || pages[1] != "2" || pages[2] != "3" {
+			t.Errorf("pages = %v, want [1 2 3]", pages)
+		}
+	})
+
+	t.Run("bare array stops on duplicate IDs (server ignores page)", func(t *testing.T) {
+		fixedPage := []timeEntryJSON{
+			{ID: 1, UserID: 42, MinutesSpent: 60, StartedAt: "2026-04-10T09:00:00Z", IssueKey: "P-1", ProjectID: 1},
+			{ID: 2, UserID: 42, MinutesSpent: 60, StartedAt: "2026-04-11T09:00:00Z", IssueKey: "P-2", ProjectID: 1},
+		}
+		callCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/api/auth/user":
+				json.NewEncoder(w).Encode(map[string]interface{}{"id": 42})
+			case "/api/projects":
+				w.Write(projectsResponse())
+			case "/api/time-entries":
+				callCount++
+				json.NewEncoder(w).Encode(fixedPage)
+			}
+		}))
+		defer server.Close()
+
+		client := NewClient(server.URL, "test-token")
+		since := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+		until := time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC)
+		entries, err := client.FetchWorklogs(context.Background(), since, until, task.WorklogFilter{})
+		if err != nil {
+			t.Fatalf("FetchWorklogs: %v", err)
+		}
+		if len(entries) != 2 {
+			t.Fatalf("got %d entries, want 2 (deduped)", len(entries))
+		}
+		if callCount != 2 {
+			t.Errorf("callCount = %d, want 2 (page 1 + page 2 detect dupes)", callCount)
+		}
+	})
+
+	t.Run("falls back to created_at when started_at is null", func(t *testing.T) {
+		// Kendo returns started_at: null for manually-logged entries; use
+		// created_at as the date filter and Started field source.
+		raw := `[
+			{"id":1,"user_id":42,"minutes_spent":60,"started_at":null,"created_at":"2026-04-10T09:00:00Z","issue_key":"P-1","project_id":1},
+			{"id":2,"user_id":42,"minutes_spent":30,"started_at":"2026-04-11T09:00:00Z","created_at":"2026-04-11T08:00:00Z","issue_key":"P-2","project_id":1},
+			{"id":3,"user_id":42,"minutes_spent":15,"started_at":null,"created_at":"2026-03-31T22:00:00Z","issue_key":"P-3","project_id":1}
+		]`
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/api/auth/user":
+				json.NewEncoder(w).Encode(map[string]interface{}{"id": 42})
+			case "/api/projects":
+				w.Write(projectsResponse())
+			case "/api/time-entries":
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(raw))
+			}
+		}))
+		defer server.Close()
+
+		client := NewClient(server.URL, "test-token")
+		since := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+		until := time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC)
+		entries, err := client.FetchWorklogs(context.Background(), since, until, task.WorklogFilter{})
+		if err != nil {
+			t.Fatalf("FetchWorklogs: %v", err)
+		}
+		// Entry 3 is filtered (created_at on March 31 UTC, before Apr 1 UTC sinceDate).
+		if len(entries) != 2 {
+			t.Fatalf("got %d entries, want 2 (third filtered by date)", len(entries))
+		}
+		var total time.Duration
+		for _, e := range entries {
+			total += e.TimeSpent
+		}
+		if total != 90*time.Minute {
+			t.Errorf("total = %v, want 1h30m", total)
+		}
+	})
+
+	t.Run("paginated envelope follows next page", func(t *testing.T) {
+		page1 := []timeEntryJSON{
+			{ID: 1, UserID: 42, MinutesSpent: 60, StartedAt: "2026-04-10T09:00:00Z", IssueKey: "IRUOY-0001", ProjectID: 1},
+			{ID: 2, UserID: 42, MinutesSpent: 30, StartedAt: "2026-04-11T09:00:00Z", IssueKey: "IRUOY-0002", ProjectID: 1},
+		}
+		page2 := []timeEntryJSON{
+			{ID: 3, UserID: 42, MinutesSpent: 45, StartedAt: "2026-04-12T09:00:00Z", IssueKey: "IRUOY-0003", ProjectID: 1},
+		}
+		var requestedPages []string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/api/auth/user":
+				json.NewEncoder(w).Encode(map[string]interface{}{"id": 42})
+			case "/api/projects":
+				w.Write(projectsResponse())
+			case "/api/time-entries":
+				p := r.URL.Query().Get("page")
+				requestedPages = append(requestedPages, p)
+				switch p {
+				case "1":
+					json.NewEncoder(w).Encode(map[string]interface{}{
+						"data": page1,
+						"meta": map[string]int{"current_page": 1, "last_page": 2},
+					})
+				case "2":
+					json.NewEncoder(w).Encode(map[string]interface{}{
+						"data": page2,
+						"meta": map[string]int{"current_page": 2, "last_page": 2},
+					})
+				default:
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}
+		}))
+		defer server.Close()
+
+		client := NewClient(server.URL, "test-token")
+		since := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+		until := time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC)
+		entries, err := client.FetchWorklogs(context.Background(), since, until, task.WorklogFilter{})
+		if err != nil {
+			t.Fatalf("FetchWorklogs: %v", err)
+		}
+		if len(entries) != 3 {
+			t.Fatalf("got %d entries, want 3 (both pages)", len(entries))
+		}
+		if len(requestedPages) != 2 || requestedPages[0] != "1" || requestedPages[1] != "2" {
+			t.Errorf("requested pages = %v, want [1 2]", requestedPages)
+		}
+	})
+
+	t.Run("unknown project errors", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/api/auth/user":
+				json.NewEncoder(w).Encode(map[string]interface{}{"id": 42})
+			case "/api/projects":
+				w.Write(projectsResponse())
+			}
+		}))
+		defer server.Close()
+
+		client := NewClient(server.URL, "test-token")
+		_, err := client.FetchWorklogs(context.Background(), time.Now(), time.Now(), task.WorklogFilter{Project: "NOPE"})
+		if err == nil {
+			t.Fatal("expected error for unknown project")
+		}
+	})
+}
+
+func contains(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
 }
 
 func TestUpdateWorklog(t *testing.T) {
