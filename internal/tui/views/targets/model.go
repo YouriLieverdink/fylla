@@ -19,6 +19,10 @@ type Model struct {
 	Width    int
 	Height   int
 	Provider string
+	// Offset is the relative cycle offset applied to recurring targets
+	// (0 = current period, -1 = previous, +1 = next). Fixed-range targets
+	// ignore the offset.
+	Offset int
 }
 
 // New creates a new targets model.
@@ -86,6 +90,12 @@ func (m Model) View() string {
 	if m.Provider != "" {
 		header = fmt.Sprintf("  Targets — %s", m.Provider)
 	}
+	switch {
+	case m.Offset < 0:
+		header += fmt.Sprintf("   ← %d cycle(s) back", -m.Offset)
+	case m.Offset > 0:
+		header += fmt.Sprintf("   → %d cycle(s) forward", m.Offset)
+	}
 	b.WriteString(styles.HeaderFmt.Render(header))
 	b.WriteString("\n\n")
 
@@ -110,7 +120,7 @@ func (m Model) View() string {
 	}
 
 	b.WriteString("\n")
-	hints := "j/k:navigate  a:add  e:edit  d:delete  r:refresh"
+	hints := "j/k:navigate  h/l:prev/next cycle  T:current  a:add  e:edit  d:delete  r:refresh"
 	b.WriteString(styles.HintStyle.Render("  " + hints))
 
 	return b.String()

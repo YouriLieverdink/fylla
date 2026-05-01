@@ -331,9 +331,12 @@ type TargetProgress struct {
 }
 
 // TargetsLoadedMsg carries the result of loading target progress.
+// Offset is the cycle offset that was used to compute the items
+// (0 = current period, -1 = previous, +1 = next).
 type TargetsLoadedMsg struct {
-	Items []TargetProgress
-	Err   error
+	Offset int
+	Items  []TargetProgress
+	Err    error
 }
 
 // TargetSavedMsg is sent after a target add/update/delete persists to config.

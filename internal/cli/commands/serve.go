@@ -303,7 +303,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 		WorklogProvider: func() string {
 			return worklogProvider(cfg)
 		},
-		LoadTargets: func() ([]msg.TargetProgress, error) {
+		LoadTargets: func(offset int) ([]msg.TargetProgress, error) {
 			provider := worklogProvider(cfg)
 			routed := routedSource(source, provider)
 			fetcher, ok := routed.(WorklogFetcher)
@@ -316,10 +316,11 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			for i, t := range cfg.Targets {
 				idx := i
 				target := t
-				since, until, err := target.ResolvePeriod(now)
+				cycleNow := shiftNowForCycle(now, target, offset)
+				since, until, err := target.ResolvePeriod(cycleNow)
 				items[idx] = msg.TargetProgress{
 					Target:      target,
-					PeriodLabel: target.PeriodLabel(now),
+					PeriodLabel: target.PeriodLabel(cycleNow),
 					PeriodStart: since,
 					PeriodEnd:   until,
 				}
@@ -868,6 +869,27 @@ func collectWorkDays(cfg *config.Config) []int {
 		days = append(days, d)
 	}
 	return days
+}
+
+// shiftNowForCycle returns now adjusted by `offset` cycles of the target's
+// period (negative = past, positive = future). For fixed-range and unknown
+// periods the offset is ignored.
+func shiftNowForCycle(now time.Time, t config.TargetConfig, offset int) time.Time {
+	if offset == 0 {
+		return now
+	}
+	if t.StartDate != "" && t.EndDate != "" {
+		return now
+	}
+	switch t.Period {
+	case "", config.TargetPeriodMonthly:
+		return now.AddDate(0, offset, 0)
+	case config.TargetPeriodWeekly:
+		return now.AddDate(0, 0, offset*7)
+	case config.TargetPeriodBiweekly:
+		return now.AddDate(0, 0, offset*14)
+	}
+	return now
 }
 
 func worklogProvider(cfg *config.Config) string {

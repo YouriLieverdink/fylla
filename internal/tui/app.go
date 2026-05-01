@@ -1100,12 +1100,18 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case msg.TargetsLoadedMsg:
+		// Drop stale results from a prior offset.
+		if mssg.Offset != m.targets.Offset {
+			return m, nil
+		}
 		m.targets.Loading = false
 		if mssg.Err != nil {
 			m.targets.Err = mssg.Err
 		} else {
 			m.targets.SetItems(mssg.Items)
-			m.cachedTargets = mssg.Items
+			if m.targets.Offset == 0 {
+				m.cachedTargets = mssg.Items
+			}
 			m.targets.Err = nil
 		}
 		return m, nil
@@ -1117,7 +1123,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.setToast("Target "+mssg.Action+"ed", false)
 			m.targets.Loading = true
-			cmds = append(cmds, loadTargetsCmd(m.cb))
+			cmds = append(cmds, loadTargetsCmd(m.cb, m.targets.Offset))
 		}
 		cmds = append(cmds, clearToastCmd())
 		return m, tea.Batch(cmds...)
@@ -1492,7 +1498,22 @@ func (m model) updateTargets(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.targets.CursorDown()
 	case key.Matches(mssg, keys.Refresh):
 		m.targets.Loading = true
-		return m, loadTargetsCmd(m.cb)
+		return m, loadTargetsCmd(m.cb, m.targets.Offset)
+	case key.Matches(mssg, keys.DatePrev):
+		m.targets.Offset--
+		m.targets.Loading = true
+		return m, loadTargetsCmd(m.cb, m.targets.Offset)
+	case key.Matches(mssg, keys.DateNext):
+		m.targets.Offset++
+		m.targets.Loading = true
+		return m, loadTargetsCmd(m.cb, m.targets.Offset)
+	case key.Matches(mssg, keys.GoToday):
+		if m.targets.Offset == 0 {
+			return m, nil
+		}
+		m.targets.Offset = 0
+		m.targets.Loading = true
+		return m, loadTargetsCmd(m.cb, m.targets.Offset)
 	case key.Matches(mssg, keys.Add):
 		m.openTargetForm(-1)
 		return m, loadProjectsCmd(m.cb, m.worklogProvider)
@@ -2390,7 +2411,7 @@ func (m *model) switchTab(tab int) (tea.Model, tea.Cmd) {
 		m.targets.SetItems(m.cachedTargets)
 		m.targets.Loading = false
 		m.targets.Err = nil
-		return *m, loadTargetsCmd(m.cb) // background refresh
+		return *m, loadTargetsCmd(m.cb, m.targets.Offset) // background refresh
 	}
 	return *m, m.refreshActiveView()
 }
@@ -2404,7 +2425,7 @@ func (m model) refreshActiveView() tea.Cmd {
 	case tabWorklog:
 		return loadWorklogsCmd(m.cb, m.worklog.WeekView, m.worklog.Date)
 	case tabTargets:
-		return loadTargetsCmd(m.cb)
+		return loadTargetsCmd(m.cb, m.targets.Offset)
 	case tabConfig:
 		return loadConfigCmd(m.cb)
 	}
