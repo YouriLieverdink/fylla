@@ -119,7 +119,8 @@ type Callbacks struct {
 	BulkMove            func(taskKeys []string, target string) (succeeded []string, failed map[string]error, err error)
 	BulkSnooze          func(taskKeys []string, target string) (succeeded []string, failed map[string]error, err error)
 	WorklogProvider     func() string
-	LoadTargets         func(offset int) ([]msg.TargetProgress, error)
+	LoadTargets         func(offsets []int) ([]msg.TargetProgress, error)
+	RefreshTarget       func(index, offset int) (msg.TargetProgress, error)
 	AddTarget           func(target config.TargetConfig) error
 	UpdateTarget        func(index int, target config.TargetConfig) error
 	DeleteTarget        func(index int) error
@@ -573,13 +574,23 @@ func loadWorklogsCmd(cb Callbacks, weekView bool, date time.Time) tea.Cmd {
 	}
 }
 
-func loadTargetsCmd(cb Callbacks, offset int) tea.Cmd {
+func loadTargetsCmd(cb Callbacks, offsets []int) tea.Cmd {
 	return func() tea.Msg {
 		if cb.LoadTargets == nil {
 			return msg.TargetsLoadedMsg{Err: fmt.Errorf("targets not available")}
 		}
-		items, err := cb.LoadTargets(offset)
-		return msg.TargetsLoadedMsg{Offset: offset, Items: items, Err: err}
+		items, err := cb.LoadTargets(offsets)
+		return msg.TargetsLoadedMsg{Items: items, Err: err}
+	}
+}
+
+func refreshTargetCmd(cb Callbacks, index, offset int) tea.Cmd {
+	return func() tea.Msg {
+		if cb.RefreshTarget == nil {
+			return msg.TargetRefreshedMsg{Index: index, Err: fmt.Errorf("refresh target not available")}
+		}
+		item, err := cb.RefreshTarget(index, offset)
+		return msg.TargetRefreshedMsg{Index: index, Item: item, Err: err}
 	}
 }
 

@@ -1100,19 +1100,34 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case msg.TargetsLoadedMsg:
-		// Drop stale results from a prior offset.
-		if mssg.Offset != m.targets.Offset {
-			return m, nil
-		}
 		m.targets.Loading = false
 		if mssg.Err != nil {
 			m.targets.Err = mssg.Err
 		} else {
 			m.targets.SetItems(mssg.Items)
-			if m.targets.Offset == 0 {
+			if m.targets.AllOffsetsZero() {
 				m.cachedTargets = mssg.Items
 			}
 			m.targets.Err = nil
+		}
+		return m, nil
+
+	case msg.TargetRefreshedMsg:
+		if m.targets.RefreshingIdx == mssg.Index {
+			m.targets.RefreshingIdx = -1
+		}
+		if mssg.Err != nil {
+			m.setToast(fmt.Sprintf("Target refresh error: %v", mssg.Err), true)
+			cmds = append(cmds, clearToastCmd())
+			return m, tea.Batch(cmds...)
+		}
+		m.targets.SetItem(mssg.Index, mssg.Item)
+		// Refresh invalidates the cache unless every row is back on its
+		// current cycle.
+		if m.targets.AllOffsetsZero() {
+			m.cachedTargets = m.targets.Items
+		} else {
+			m.cachedTargets = nil
 		}
 		return m, nil
 
@@ -1123,7 +1138,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.setToast("Target "+mssg.Action+"ed", false)
 			m.targets.Loading = true
-			cmds = append(cmds, loadTargetsCmd(m.cb, m.targets.Offset))
+			cmds = append(cmds, loadTargetsCmd(m.cb, m.targets.Offsets))
 		}
 		cmds = append(cmds, clearToastCmd())
 		return m, tea.Batch(cmds...)
@@ -1498,22 +1513,31 @@ func (m model) updateTargets(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.targets.CursorDown()
 	case key.Matches(mssg, keys.Refresh):
 		m.targets.Loading = true
-		return m, loadTargetsCmd(m.cb, m.targets.Offset)
+		return m, loadTargetsCmd(m.cb, m.targets.Offsets)
 	case key.Matches(mssg, keys.DatePrev):
-		m.targets.Offset--
-		m.targets.Loading = true
-		return m, loadTargetsCmd(m.cb, m.targets.Offset)
-	case key.Matches(mssg, keys.DateNext):
-		m.targets.Offset++
-		m.targets.Loading = true
-		return m, loadTargetsCmd(m.cb, m.targets.Offset)
-	case key.Matches(mssg, keys.GoToday):
-		if m.targets.Offset == 0 {
+		idx := m.targets.SelectedIndex()
+		if idx == -1 {
 			return m, nil
 		}
-		m.targets.Offset = 0
-		m.targets.Loading = true
-		return m, loadTargetsCmd(m.cb, m.targets.Offset)
+		m.targets.Offsets[idx]--
+		m.targets.RefreshingIdx = idx
+		return m, refreshTargetCmd(m.cb, idx, m.targets.Offsets[idx])
+	case key.Matches(mssg, keys.DateNext):
+		idx := m.targets.SelectedIndex()
+		if idx == -1 {
+			return m, nil
+		}
+		m.targets.Offsets[idx]++
+		m.targets.RefreshingIdx = idx
+		return m, refreshTargetCmd(m.cb, idx, m.targets.Offsets[idx])
+	case key.Matches(mssg, keys.GoToday):
+		idx := m.targets.SelectedIndex()
+		if idx == -1 || m.targets.Offsets[idx] == 0 {
+			return m, nil
+		}
+		m.targets.Offsets[idx] = 0
+		m.targets.RefreshingIdx = idx
+		return m, refreshTargetCmd(m.cb, idx, 0)
 	case key.Matches(mssg, keys.Add):
 		m.openTargetForm(-1)
 		return m, loadProjectsCmd(m.cb, m.worklogProvider)
@@ -2411,7 +2435,7 @@ func (m *model) switchTab(tab int) (tea.Model, tea.Cmd) {
 		m.targets.SetItems(m.cachedTargets)
 		m.targets.Loading = false
 		m.targets.Err = nil
-		return *m, loadTargetsCmd(m.cb, m.targets.Offset) // background refresh
+		return *m, loadTargetsCmd(m.cb, m.targets.Offsets) // background refresh
 	}
 	return *m, m.refreshActiveView()
 }
@@ -2425,7 +2449,7 @@ func (m model) refreshActiveView() tea.Cmd {
 	case tabWorklog:
 		return loadWorklogsCmd(m.cb, m.worklog.WeekView, m.worklog.Date)
 	case tabTargets:
-		return loadTargetsCmd(m.cb, m.targets.Offset)
+		return loadTargetsCmd(m.cb, m.targets.Offsets)
 	case tabConfig:
 		return loadConfigCmd(m.cb)
 	}

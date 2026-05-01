@@ -303,7 +303,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 		WorklogProvider: func() string {
 			return worklogProvider(cfg)
 		},
-		LoadTargets: func(offset int) ([]msg.TargetProgress, error) {
+		LoadTargets: func(offsets []int) ([]msg.TargetProgress, error) {
 			provider := worklogProvider(cfg)
 			routed := routedSource(source, provider)
 			fetcher, ok := routed.(WorklogFetcher)
@@ -314,38 +314,53 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			items := make([]msg.TargetProgress, len(cfg.Targets))
 			var wg sync.WaitGroup
 			for i, t := range cfg.Targets {
+				offset := 0
+				if i < len(offsets) {
+					offset = offsets[i]
+				}
 				idx := i
 				target := t
-				cycleNow := shiftNowForCycle(now, target, offset)
-				since, until, err := target.ResolvePeriod(cycleNow)
-				items[idx] = msg.TargetProgress{
-					Target:      target,
-					PeriodLabel: target.PeriodLabel(cycleNow),
-					PeriodStart: since,
-					PeriodEnd:   until,
-				}
-				if err != nil {
-					items[idx].Err = err
+				progress := buildTargetProgress(target, now, offset)
+				items[idx] = progress
+				if progress.Err != nil {
 					continue
 				}
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					filter := task.WorklogFilter{Project: target.Project, UserScope: target.Scope}
-					entries, err := fetcher.FetchWorklogs(ctx, since, until, filter)
+					logged, err := fetchTargetHours(ctx, fetcher, target, items[idx].PeriodStart, items[idx].PeriodEnd)
 					if err != nil {
 						items[idx].Err = err
 						return
 					}
-					var total time.Duration
-					for _, e := range entries {
-						total += e.TimeSpent
-					}
-					items[idx].Logged = total
+					items[idx].Logged = logged
 				}()
 			}
 			wg.Wait()
 			return items, nil
+		},
+		RefreshTarget: func(index, offset int) (msg.TargetProgress, error) {
+			if index < 0 || index >= len(cfg.Targets) {
+				return msg.TargetProgress{}, fmt.Errorf("target index %d out of range", index)
+			}
+			provider := worklogProvider(cfg)
+			routed := routedSource(source, provider)
+			fetcher, ok := routed.(WorklogFetcher)
+			if !ok {
+				return msg.TargetProgress{}, fmt.Errorf("worklog provider %q does not support fetching time entries", provider)
+			}
+			target := cfg.Targets[index]
+			progress := buildTargetProgress(target, time.Now(), offset)
+			if progress.Err != nil {
+				return progress, nil
+			}
+			logged, err := fetchTargetHours(ctx, fetcher, target, progress.PeriodStart, progress.PeriodEnd)
+			if err != nil {
+				progress.Err = err
+				return progress, nil
+			}
+			progress.Logged = logged
+			return progress, nil
 		},
 		AddTarget: func(target config.TargetConfig) error {
 			cfg.Targets = append(cfg.Targets, target)
@@ -869,6 +884,42 @@ func collectWorkDays(cfg *config.Config) []int {
 		days = append(days, d)
 	}
 	return days
+}
+
+// buildTargetProgress resolves a target's period at the given offset and
+// returns a TargetProgress populated with everything except Logged. The
+// caller is responsible for fetching worklog entries and summing their
+// duration into Logged.
+func buildTargetProgress(target config.TargetConfig, now time.Time, offset int) msg.TargetProgress {
+	cycleNow := shiftNowForCycle(now, target, offset)
+	progress := msg.TargetProgress{
+		Target:      target,
+		PeriodLabel: target.PeriodLabel(cycleNow),
+		Offset:      offset,
+	}
+	since, until, err := target.ResolvePeriod(cycleNow)
+	if err != nil {
+		progress.Err = err
+		return progress
+	}
+	progress.PeriodStart = since
+	progress.PeriodEnd = until
+	return progress
+}
+
+// fetchTargetHours sums worklog entry durations matching a target's filter
+// over the given window.
+func fetchTargetHours(ctx context.Context, fetcher WorklogFetcher, target config.TargetConfig, since, until time.Time) (time.Duration, error) {
+	filter := task.WorklogFilter{Project: target.Project, UserScope: target.Scope}
+	entries, err := fetcher.FetchWorklogs(ctx, since, until, filter)
+	if err != nil {
+		return 0, err
+	}
+	var total time.Duration
+	for _, e := range entries {
+		total += e.TimeSpent
+	}
+	return total, nil
 }
 
 // shiftNowForCycle returns now adjusted by `offset` cycles of the target's

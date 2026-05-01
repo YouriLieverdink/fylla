@@ -327,16 +327,21 @@ type TargetProgress struct {
 	PeriodLabel string
 	PeriodStart time.Time
 	PeriodEnd   time.Time
+	Offset      int // cycle offset used to compute this progress (0 = current)
 	Err         error
 }
 
 // TargetsLoadedMsg carries the result of loading target progress.
-// Offset is the cycle offset that was used to compute the items
-// (0 = current period, -1 = previous, +1 = next).
 type TargetsLoadedMsg struct {
-	Offset int
-	Items  []TargetProgress
-	Err    error
+	Items []TargetProgress
+	Err   error
+}
+
+// TargetRefreshedMsg carries the refreshed progress for a single target.
+type TargetRefreshedMsg struct {
+	Index int
+	Item  TargetProgress
+	Err   error
 }
 
 // TargetSavedMsg is sent after a target add/update/delete persists to config.

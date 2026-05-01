@@ -12,22 +12,23 @@ import (
 
 // Model is the targets view model.
 type Model struct {
-	Items    []msg.TargetProgress
-	Cursor   int
-	Loading  bool
-	Err      error
-	Width    int
-	Height   int
-	Provider string
-	// Offset is the relative cycle offset applied to recurring targets
-	// (0 = current period, -1 = previous, +1 = next). Fixed-range targets
-	// ignore the offset.
-	Offset int
+	Items   []msg.TargetProgress
+	Offsets []int // per-row cycle offset (0 = current period)
+	Cursor  int
+	// RefreshingIdx, if >= 0, marks a row whose progress is being refetched
+	// after a cycle change. The row keeps its previous bar/numbers visible
+	// with a subtle indicator until the new data arrives.
+	RefreshingIdx int
+	Loading       bool
+	Err           error
+	Width         int
+	Height        int
+	Provider      string
 }
 
 // New creates a new targets model.
 func New(provider string) Model {
-	return Model{Loading: true, Provider: provider}
+	return Model{Loading: true, Provider: provider, RefreshingIdx: -1}
 }
 
 // SetSize updates the view dimensions.
@@ -36,12 +37,42 @@ func (m *Model) SetSize(w, h int) {
 	m.Height = h
 }
 
-// SetItems replaces the current items.
+// SetItems replaces the current items, syncing the per-row Offsets slice.
 func (m *Model) SetItems(items []msg.TargetProgress) {
 	m.Items = items
+	if cap(m.Offsets) < len(items) {
+		m.Offsets = make([]int, len(items))
+	} else {
+		m.Offsets = m.Offsets[:len(items)]
+	}
+	for i, it := range items {
+		m.Offsets[i] = it.Offset
+	}
 	if m.Cursor >= len(items) {
 		m.Cursor = 0
 	}
+}
+
+// SetItem replaces a single row (e.g. after a single-target refresh) and
+// syncs its offset.
+func (m *Model) SetItem(index int, item msg.TargetProgress) {
+	if index < 0 || index >= len(m.Items) {
+		return
+	}
+	m.Items[index] = item
+	if index < len(m.Offsets) {
+		m.Offsets[index] = item.Offset
+	}
+}
+
+// AllOffsetsZero reports whether every row is on its current cycle.
+func (m Model) AllOffsetsZero() bool {
+	for _, o := range m.Offsets {
+		if o != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // CursorUp moves the selection up.
@@ -90,12 +121,6 @@ func (m Model) View() string {
 	if m.Provider != "" {
 		header = fmt.Sprintf("  Targets — %s", m.Provider)
 	}
-	switch {
-	case m.Offset < 0:
-		header += fmt.Sprintf("   ← %d cycle(s) back", -m.Offset)
-	case m.Offset > 0:
-		header += fmt.Sprintf("   → %d cycle(s) forward", m.Offset)
-	}
 	b.WriteString(styles.HeaderFmt.Render(header))
 	b.WriteString("\n\n")
 
@@ -136,7 +161,17 @@ func (m Model) renderItem(i int, item msg.TargetProgress) string {
 	if scope == "" {
 		scope = "me"
 	}
-	title := fmt.Sprintf("%s (%s) [%s]", item.Target.Project, item.PeriodLabel, scope)
+	suffix := ""
+	switch {
+	case item.Offset < 0:
+		suffix = fmt.Sprintf("  ←%d", -item.Offset)
+	case item.Offset > 0:
+		suffix = fmt.Sprintf("  →%d", item.Offset)
+	}
+	if i == m.RefreshingIdx {
+		suffix += " …"
+	}
+	title := fmt.Sprintf("%s (%s) [%s]%s", item.Target.Project, item.PeriodLabel, scope, suffix)
 	if i == m.Cursor {
 		title = styles.SelectedStyle.Render(title)
 	}
