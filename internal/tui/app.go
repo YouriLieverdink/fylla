@@ -1313,6 +1313,8 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.tasks.ToggleSelectMode()
 		}
 		m.tasks.ToggleSelect()
+	case key.Matches(mssg, keys.ViewToggle):
+		m.tasks.ToggleViewMode()
 	}
 
 	return m, nil

@@ -9,6 +9,12 @@ import (
 	"github.com/iruoy/fylla/internal/tui/styles"
 )
 
+// View modes for the tasks list.
+const (
+	ViewModeCompact  = "compact"
+	ViewModeDetailed = "detailed"
+)
+
 // Model is the tasks view model.
 type Model struct {
 	Tasks      []msg.ScoredTask
@@ -21,11 +27,21 @@ type Model struct {
 	filterMode bool
 	Selected   map[string]bool // multi-select: key → selected
 	SelectMode bool            // true when multi-select is active
+	ViewMode   string          // "compact" or "detailed"
 }
 
 // New creates a new tasks model.
 func New() Model {
-	return Model{Loading: true}
+	return Model{Loading: true, ViewMode: ViewModeCompact}
+}
+
+// ToggleViewMode flips between compact and detailed renderings.
+func (m *Model) ToggleViewMode() {
+	if m.ViewMode == ViewModeDetailed {
+		m.ViewMode = ViewModeCompact
+	} else {
+		m.ViewMode = ViewModeDetailed
+	}
 }
 
 // SetSize updates the view dimensions.
@@ -258,7 +274,11 @@ func (m Model) View() string {
 			}
 		}
 
-		visibleHeight := m.Height - 6
+		linesPerTask := 1
+		if m.ViewMode == ViewModeDetailed {
+			linesPerTask = 2
+		}
+		visibleHeight := (m.Height - 6) / linesPerTask
 		if visibleHeight < 3 {
 			visibleHeight = 3
 		}
@@ -293,70 +313,10 @@ func (m Model) View() string {
 			t := filtered[dl.taskIdx]
 			isSelected := dl.taskIdx == m.Cursor
 
-			dot := styles.FormatProjectDot(t.Project)
-			rank := fmt.Sprintf("%2d.", dl.taskIdx+1)
-			est := styles.FormatDurationPadded(t.Estimate)
-			score := fmt.Sprintf("%5.1f", t.Score)
-
-			// Build compact tags.
-			var tags string
-			switch t.IssueType {
-			case "Pull Request":
-				tags += styles.PRTagStyle.Render(" PR")
-			case "Issue":
-				tags += styles.IssueTagStyle.Render(" IS")
-			}
-			if t.Status != "" {
-				tags += " " + styles.AbbrevStatus(t.Status)
-			}
-			if t.UpNext {
-				tags += styles.UpNextStyle.Render(" ↑")
-			}
-			if t.NotBefore != nil && t.NotBefore.After(time.Now()) {
-				tags += styles.HintStyle.Render(" ≥" + t.NotBefore.Format("Jan 2"))
-			}
-			if t.DueDate != nil {
-				days := t.DueDate.Sub(time.Now()).Hours() / 24
-				switch {
-				case days <= 0:
-					tags += styles.AtRiskStyle.Render(" ⚠ " + t.DueDate.Format("Jan 2"))
-				case days <= 3:
-					tags += styles.WarnStyle.Render(" ⚠ " + t.DueDate.Format("Jan 2"))
-				}
-			}
-			if t.RecurrenceRaw != "" {
-				tags += styles.HintStyle.Render(" ⟳ " + t.RecurrenceRaw)
-			}
-
-			// Fixed parts: cursor(2) + dot(2) + rank(3) + gaps(6) + est(5) + score(5) = 23
-			// When multi-select is active, checkbox adds 4 chars: "[x] " or "[ ] "
-			fixedWidth := 23
-			if m.SelectMode {
-				fixedWidth += 4
-			}
-			// Tags and label share the remaining space.
-			tagsWidth := styles.StringWidth(tags)
-			labelWidth := m.Width - fixedWidth - tagsWidth
-			if labelWidth < 20 {
-				labelWidth = 20
-			}
-
-			prefix := styles.FormatPrefixWithKey(t.Project, t.Section, t.Key)
-			summaryWidth := labelWidth - len(prefix)
-			if summaryWidth < 10 {
-				summaryWidth = 10
-			}
-			label := styles.PadOrTruncate(prefix+styles.Truncate(t.Summary, summaryWidth), labelWidth)
-
-			line := fmt.Sprintf("%s  %s  %s  %s%s", rank, label, est, score, tags)
-
 			cursor := "  "
 			if isSelected {
 				cursor = "> "
-				line = styles.SelectedStyle.Render(line)
 			}
-
-			// Multi-select checkbox
 			check := ""
 			if m.SelectMode {
 				if m.Selected != nil && m.Selected[t.Key] {
@@ -366,11 +326,11 @@ func (m Model) View() string {
 				}
 			}
 
-			b.WriteString(cursor)
-			b.WriteString(check)
-			b.WriteString(dot)
-			b.WriteString(line)
-			b.WriteString("\n")
+			if m.ViewMode == ViewModeDetailed {
+				b.WriteString(m.renderTaskDetailed(t, dl.taskIdx, cursor, check, isSelected))
+			} else {
+				b.WriteString(m.renderTaskCompact(t, dl.taskIdx, cursor, check, isSelected))
+			}
 		}
 
 		if len(lines) > visibleHeight {
@@ -391,9 +351,149 @@ func (m Model) View() string {
 		if m.HasFilter() {
 			filterHint = "/:clear filter"
 		}
-		hints := fmt.Sprintf("j/k:navigate  t/enter:timer  d:done  D:delete  m:move  a:add  e:edit  S:snooze  space:select  %s  r:refresh", filterHint)
+		viewLabel := ".:detailed"
+		if m.ViewMode == ViewModeDetailed {
+			viewLabel = ".:compact"
+		}
+		hints := fmt.Sprintf("j/k:navigate  t/enter:timer  d:done  D:delete  m:move  a:add  e:edit  S:snooze  space:select  %s  %s  r:refresh", filterHint, viewLabel)
 		b.WriteString(styles.HintStyle.Render("  " + hints))
 	}
 
 	return b.String()
+}
+
+// renderTaskCompact renders a task as a single line with only essential info:
+// section + summary + estimate + critical-tags (up-next, near-due, not-before).
+// The project dot already encodes project identity, so the project name is
+// dropped to reduce visual noise.
+func (m Model) renderTaskCompact(t msg.ScoredTask, idx int, cursor, check string, isSelected bool) string {
+	dot := styles.FormatProjectDot(t.Project)
+	rank := fmt.Sprintf("%2d.", idx+1)
+	est := styles.FormatDurationPadded(t.Estimate)
+
+	prefix := ""
+	if t.Section != "" {
+		prefix = t.Section + ": "
+	} else if t.Project != "" {
+		prefix = t.Project + ": "
+	}
+
+	var tags string
+	if t.UpNext {
+		tags += styles.UpNextStyle.Render(" ↑")
+	}
+	if t.NotBefore != nil && t.NotBefore.After(time.Now()) {
+		tags += styles.HintStyle.Render(" ≥" + t.NotBefore.Format("Jan 2"))
+	}
+	if t.DueDate != nil {
+		days := t.DueDate.Sub(time.Now()).Hours() / 24
+		switch {
+		case days <= 0:
+			tags += styles.AtRiskStyle.Render(" ⚠ " + t.DueDate.Format("Jan 2"))
+		case days <= 3:
+			tags += styles.WarnStyle.Render(" ⚠ " + t.DueDate.Format("Jan 2"))
+		}
+	}
+
+	// Fixed parts: cursor(2) + dot(2) + rank(3) + gaps(4) + est(5) = 16
+	fixedWidth := 16
+	if m.SelectMode {
+		fixedWidth += 4
+	}
+	tagsWidth := styles.StringWidth(tags)
+	labelWidth := m.Width - fixedWidth - tagsWidth
+	if labelWidth < 20 {
+		labelWidth = 20
+	}
+	summaryWidth := labelWidth - len(prefix)
+	if summaryWidth < 10 {
+		summaryWidth = 10
+	}
+	label := styles.PadOrTruncate(prefix+styles.Truncate(t.Summary, summaryWidth), labelWidth)
+
+	line := fmt.Sprintf("%s  %s  %s%s", rank, label, est, tags)
+	if isSelected {
+		line = styles.SelectedStyle.Render(line)
+	}
+	return cursor + check + dot + line + "\n"
+}
+
+// renderTaskDetailed renders a task across two lines: the first carries the
+// full project/section prefix and summary, the second carries all metadata
+// (estimate, score, status, recurrence, due/not-before, type tags) indented
+// beneath it.
+func (m Model) renderTaskDetailed(t msg.ScoredTask, idx int, cursor, check string, isSelected bool) string {
+	dot := styles.FormatProjectDot(t.Project)
+	rank := fmt.Sprintf("%2d.", idx+1)
+	est := styles.FormatDurationOrDash(t.Estimate)
+	score := fmt.Sprintf("%.1f", t.Score)
+	prefix := styles.FormatPrefixWithKey(t.Project, t.Section, t.Key)
+
+	// Line 1: rank + prefix + summary, occupying remaining width.
+	// Fixed: cursor(2) + dot(2) + rank(3) + gap(2) = 9
+	fixedWidth := 9
+	if m.SelectMode {
+		fixedWidth += 4
+	}
+	summaryWidth := m.Width - fixedWidth - len(prefix)
+	if summaryWidth < 10 {
+		summaryWidth = 10
+	}
+	line1 := fmt.Sprintf("%s  %s%s", rank, prefix, styles.Truncate(t.Summary, summaryWidth))
+	if isSelected {
+		line1 = styles.SelectedStyle.Render(line1)
+	}
+
+	// Line 2: indented metadata.
+	indent := "        " // align under summary text
+	if m.SelectMode {
+		indent += "    "
+	}
+
+	var meta strings.Builder
+	meta.WriteString(est)
+	meta.WriteString("  ")
+	meta.WriteString(score)
+	switch t.IssueType {
+	case "Pull Request":
+		meta.WriteString("  ")
+		meta.WriteString(styles.PRTagStyle.Render("PR"))
+	case "Issue":
+		meta.WriteString("  ")
+		meta.WriteString(styles.IssueTagStyle.Render("IS"))
+	}
+	if t.Status != "" {
+		meta.WriteString("  ")
+		meta.WriteString(styles.AbbrevStatus(t.Status))
+	}
+	if t.UpNext {
+		meta.WriteString("  ")
+		meta.WriteString(styles.UpNextStyle.Render("↑"))
+	}
+	if t.NotBefore != nil && t.NotBefore.After(time.Now()) {
+		meta.WriteString("  ")
+		meta.WriteString(styles.HintStyle.Render("≥" + t.NotBefore.Format("Jan 2")))
+	}
+	if t.DueDate != nil {
+		days := t.DueDate.Sub(time.Now()).Hours() / 24
+		switch {
+		case days <= 0:
+			meta.WriteString("  ")
+			meta.WriteString(styles.AtRiskStyle.Render("⚠ " + t.DueDate.Format("Jan 2")))
+		case days <= 3:
+			meta.WriteString("  ")
+			meta.WriteString(styles.WarnStyle.Render("⚠ " + t.DueDate.Format("Jan 2")))
+		default:
+			meta.WriteString("  ")
+			meta.WriteString(styles.HintStyle.Render(t.DueDate.Format("Jan 2")))
+		}
+	}
+	if t.RecurrenceRaw != "" {
+		meta.WriteString("  ")
+		meta.WriteString(styles.HintStyle.Render("⟳ " + t.RecurrenceRaw))
+	}
+
+	line2 := indent + styles.HintStyle.Render(meta.String())
+
+	return cursor + check + dot + line1 + "\n" + line2 + "\n"
 }

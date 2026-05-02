@@ -44,6 +44,7 @@ type globalKeyMap struct {
 	Standup     key.Binding
 	MultiSelect key.Binding
 	Space       key.Binding
+	ViewToggle  key.Binding
 }
 
 var keys = globalKeyMap{
@@ -88,4 +89,5 @@ var keys = globalKeyMap{
 	Standup:     key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "standup")),
 	MultiSelect: key.NewBinding(key.WithKeys("ctrl+v"), key.WithHelp("ctrl+v", "multi-select")),
 	Space:       key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "toggle select")),
+	ViewToggle:  key.NewBinding(key.WithKeys("."), key.WithHelp(".", "compact/detailed")),
 }
