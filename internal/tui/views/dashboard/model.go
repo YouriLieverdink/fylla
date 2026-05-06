@@ -604,6 +604,11 @@ func (m Model) computeMonthStats() monthStats {
 		stats.dailyTotals[key] += e.TimeSpent
 		stats.logged += e.TimeSpent
 	}
+	for _, total := range stats.dailyTotals {
+		if total > 0 {
+			stats.loggedDays++
+		}
+	}
 
 	now := time.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
@@ -625,9 +630,7 @@ func (m Model) computeMonthStats() monthStats {
 				stats.workingDays++
 				stats.expected += target
 				key := d.Format("2006-01-02")
-				if stats.dailyTotals[key] > 0 {
-					stats.loggedDays++
-				} else if d.Before(today) {
+				if stats.dailyTotals[key] == 0 && d.Before(today) {
 					stats.missedDays++
 				}
 			}
