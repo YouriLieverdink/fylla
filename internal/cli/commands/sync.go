@@ -450,6 +450,11 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 	progress(p.Progress, "Finding free slots...")
 	slotsByProject := make(map[string][]calendar.Slot)
 
+	holidays, err := config.BuildHolidayIndex(p.Cfg.Holidays)
+	if err != nil {
+		return nil, fmt.Errorf("holiday index: %w", err)
+	}
+
 	defaultSlots, err := calendar.FindFreeSlots(
 		p.Now, p.Start, p.End, events,
 		p.Cfg.BusinessHours,
@@ -457,6 +462,7 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 		p.Cfg.Scheduling.MinTaskDurationMinutes,
 		p.Cfg.Scheduling.SnapMinutes,
 		p.Cfg.Scheduling.TravelBufferMinutes,
+		holidays,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("find default slots: %w", err)
@@ -472,6 +478,7 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 			p.Cfg.Scheduling.MinTaskDurationMinutes,
 			p.Cfg.Scheduling.SnapMinutes,
 			p.Cfg.Scheduling.TravelBufferMinutes,
+			holidays,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("find slots for project %s: %w", project, err)

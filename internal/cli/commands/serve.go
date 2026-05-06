@@ -66,12 +66,19 @@ func RunServe(ctx context.Context) error {
 
 	query := serveDefaultQuery(cfg)
 
+	holidays, err := config.BuildHolidayIndex(cfg.Holidays)
+	if err != nil {
+		return fmt.Errorf("holiday index: %w", err)
+	}
+
 	return tui.Run(tui.Deps{
 		CB:               buildCallbacks(ctx, cal, fetcher, source, cache, cfg, cfgPath, query),
 		DailyHours:       cfg.Efficiency.DailyHours,
 		WeeklyHours:      cfg.Efficiency.WeeklyHours,
 		EfficiencyTarget: cfg.Efficiency.Target,
 		WorkDays:         collectWorkDays(cfg),
+		BusinessHours:    cfg.BusinessHours,
+		Holidays:         holidays,
 		WorklogProvider:  worklogProvider(cfg),
 		ProfileName:      config.ActiveProfile(),
 	})

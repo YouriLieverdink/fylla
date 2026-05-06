@@ -203,6 +203,18 @@ efficiency:
   dailyHours: 8                   # daily hour target
   target: 0.7                     # target efficiency (0.0–1.0, 70% = 0.7)
 
+holidays:                         # days/windows blocked from work (subtracted from targets and scheduler)
+  - date: 2026-04-27              # full day off
+  - date: 2026-05-05
+    start: "13:00"                # afternoon off
+    end:   "17:00"
+  - date: 2026-05-06              # multiple non-overlapping ranges per date allowed
+    start: "09:00"
+    end:   "10:00"
+  - date: 2026-05-06
+    start: "16:00"
+    end:   "17:00"
+
 weights:
   priority: 0.45
   dueDate: 0.30
@@ -462,6 +474,32 @@ Efficiency is calculated as `posted worklogs / target hours`. The percentage
 is color-coded: green when at or above target, yellow when within 10% of
 target, red when below. In the week view, per-day efficiency is shown in each
 day header.
+
+### Holidays
+
+Use `holidays:` to record national holidays, sick days, vacations, or
+appointments that reduce expected hours for that date. Each entry needs a
+`date: YYYY-MM-DD`. Omit `start`/`end` for a full day off; set both (HH:MM)
+to block only part of the day. Multiple non-overlapping entries may share a
+date — useful for splitting a couple hours off morning and afternoon.
+
+```yaml
+holidays:
+  - date: 2026-04-27              # full day off
+  - date: 2026-05-05
+    start: "13:00"                # half-day, afternoon off
+    end:   "17:00"
+  - date: 2026-05-06
+    start: "09:00"                # 1h off morning + 1h off afternoon
+    end:   "10:00"
+  - date: 2026-05-06
+    start: "16:00"
+    end:   "17:00"
+```
+
+The worklog tab subtracts holiday hours from the daily/weekly target. The
+sync scheduler treats holiday ranges like out-of-office events — no tasks
+are auto-scheduled into them.
 
 ### Worklog provider routing
 

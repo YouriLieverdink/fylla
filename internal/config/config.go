@@ -20,6 +20,7 @@ type Config struct {
 	Worklog       WorklogConfig                    `yaml:"worklog"`
 	Efficiency    EfficiencyConfig                 `yaml:"efficiency"`
 	Targets       []TargetConfig                   `yaml:"targets"`
+	Holidays      []HolidayConfig                  `yaml:"holidays"`
 }
 
 // ActiveProviders returns the list of configured providers.
@@ -79,6 +80,15 @@ type BusinessHoursConfig struct {
 	Start    string `yaml:"start"`
 	End      string `yaml:"end"`
 	WorkDays []int  `yaml:"workDays"`
+}
+
+// HolidayConfig is a calendar date partially or fully blocked from work.
+// Empty Start+End marks the whole day off. Set both to block a HH:MM window.
+// Multiple entries may share the same Date for multiple non-overlapping blocks.
+type HolidayConfig struct {
+	Date  string `yaml:"date"`
+	Start string `yaml:"start,omitempty"`
+	End   string `yaml:"end,omitempty"`
 }
 
 // WorklogConfig holds worklog-related settings.
@@ -338,6 +348,11 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("scheduling.minTaskDurationMinutes must be positive")
 	}
 
+	// Holidays
+	if _, err := BuildHolidayIndex(c.Holidays); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -426,4 +441,171 @@ func (c *Config) BusinessHoursFor(projectKey string) []BusinessHoursConfig {
 		return windows
 	}
 	return c.BusinessHours
+}
+
+// TimeRange is an absolute [Start, End) interval.
+type TimeRange struct {
+	Start time.Time
+	End   time.Time
+}
+
+type holidayBlock struct {
+	startMin, endMin int // minutes from midnight
+}
+
+type holidayDay struct {
+	full   bool
+	blocks []holidayBlock
+}
+
+// HolidayIndex resolves holidays by date for fast lookup.
+// Build via BuildHolidayIndex; the zero value is a valid empty index.
+type HolidayIndex struct {
+	days map[string]holidayDay
+}
+
+// BuildHolidayIndex parses and validates a holiday list and returns a lookup index.
+func BuildHolidayIndex(holidays []HolidayConfig) (HolidayIndex, error) {
+	days := make(map[string]holidayDay)
+	for i, h := range holidays {
+		prefix := fmt.Sprintf("holidays[%d]", i)
+		if h.Date == "" {
+			return HolidayIndex{}, fmt.Errorf("%s.date: required", prefix)
+		}
+		if _, err := time.Parse("2006-01-02", h.Date); err != nil {
+			return HolidayIndex{}, fmt.Errorf("%s.date: %w", prefix, err)
+		}
+		if (h.Start == "") != (h.End == "") {
+			return HolidayIndex{}, fmt.Errorf("%s: start and end must be set together", prefix)
+		}
+		existing := days[h.Date]
+		if h.Start == "" {
+			if existing.full {
+				return HolidayIndex{}, fmt.Errorf("%s: duplicate full-day entry for %s", prefix, h.Date)
+			}
+			if len(existing.blocks) > 0 {
+				return HolidayIndex{}, fmt.Errorf("%s: full-day entry conflicts with partial entries on %s", prefix, h.Date)
+			}
+			existing.full = true
+			days[h.Date] = existing
+			continue
+		}
+		if existing.full {
+			return HolidayIndex{}, fmt.Errorf("%s: partial entry conflicts with full-day entry on %s", prefix, h.Date)
+		}
+		sH, sM, err := parseHHMM(h.Start)
+		if err != nil {
+			return HolidayIndex{}, fmt.Errorf("%s.start: %w", prefix, err)
+		}
+		eH, eM, err := parseHHMM(h.End)
+		if err != nil {
+			return HolidayIndex{}, fmt.Errorf("%s.end: %w", prefix, err)
+		}
+		sMin, eMin := sH*60+sM, eH*60+eM
+		if sMin >= eMin {
+			return HolidayIndex{}, fmt.Errorf("%s: start must be before end", prefix)
+		}
+		for _, b := range existing.blocks {
+			if sMin < b.endMin && eMin > b.startMin {
+				return HolidayIndex{}, fmt.Errorf("%s: overlapping ranges on %s", prefix, h.Date)
+			}
+		}
+		existing.blocks = append(existing.blocks, holidayBlock{sMin, eMin})
+		days[h.Date] = existing
+	}
+	return HolidayIndex{days: days}, nil
+}
+
+// IsFullDay reports whether the given date is fully blocked.
+func (idx HolidayIndex) IsFullDay(d time.Time) bool {
+	h, ok := idx.days[d.Format("2006-01-02")]
+	return ok && h.full
+}
+
+// HasHoliday reports whether any holiday entry covers the given date.
+func (idx HolidayIndex) HasHoliday(d time.Time) bool {
+	h, ok := idx.days[d.Format("2006-01-02")]
+	return ok && (h.full || len(h.blocks) > 0)
+}
+
+// BlocksOn returns the concrete time ranges blocked on date d, in d's location.
+// Full-day entries collapse to a single 00:00:00–23:59:59 block.
+func (idx HolidayIndex) BlocksOn(d time.Time) []TimeRange {
+	h, ok := idx.days[d.Format("2006-01-02")]
+	if !ok {
+		return nil
+	}
+	y, m, day := d.Date()
+	loc := d.Location()
+	if h.full {
+		return []TimeRange{{
+			Start: time.Date(y, m, day, 0, 0, 0, 0, loc),
+			End:   time.Date(y, m, day, 23, 59, 59, 0, loc),
+		}}
+	}
+	out := make([]TimeRange, 0, len(h.blocks))
+	for _, b := range h.blocks {
+		out = append(out, TimeRange{
+			Start: time.Date(y, m, day, b.startMin/60, b.startMin%60, 0, 0, loc),
+			End:   time.Date(y, m, day, b.endMin/60, b.endMin%60, 0, 0, loc),
+		})
+	}
+	return out
+}
+
+// EffectiveDailyHours returns the nominal daily hours minus the overlap between
+// holiday blocks and the business-hours windows for date's weekday.
+// Returns 0 for full-day holidays. Returns nominal when the date has no holiday.
+func (idx HolidayIndex) EffectiveDailyHours(date time.Time, nominal float64, biz []BusinessHoursConfig) float64 {
+	if idx.IsFullDay(date) {
+		return 0
+	}
+	h, ok := idx.days[date.Format("2006-01-02")]
+	if !ok || len(h.blocks) == 0 {
+		return nominal
+	}
+	iso := int(date.Weekday())
+	if iso == 0 {
+		iso = 7
+	}
+	var overlapMin int
+	for _, w := range biz {
+		active := false
+		for _, d := range w.WorkDays {
+			if d == iso {
+				active = true
+				break
+			}
+		}
+		if !active {
+			continue
+		}
+		sH, sM, err := parseHHMM(w.Start)
+		if err != nil {
+			continue
+		}
+		eH, eM, err := parseHHMM(w.End)
+		if err != nil {
+			continue
+		}
+		wsMin, weMin := sH*60+sM, eH*60+eM
+		for _, b := range h.blocks {
+			if b.startMin < weMin && b.endMin > wsMin {
+				ovS := b.startMin
+				if wsMin > ovS {
+					ovS = wsMin
+				}
+				ovE := b.endMin
+				if weMin < ovE {
+					ovE = weMin
+				}
+				overlapMin += ovE - ovS
+			}
+		}
+	}
+	eff := nominal - float64(overlapMin)/60
+	if eff < 0 {
+		eff = 0
+	}
+	return eff
 }

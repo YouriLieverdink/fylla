@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/iruoy/fylla/internal/config"
 	"github.com/iruoy/fylla/internal/tui/msg"
 	"github.com/iruoy/fylla/internal/tui/styles"
 )
@@ -24,11 +25,32 @@ type Model struct {
 	DailyHours       float64
 	WeeklyHours      float64
 	EfficiencyTarget float64
+	WorkDays         map[int]bool // ISO weekday (1=Mon..7=Sun)
+	BusinessHours    []config.BusinessHoursConfig
+	Holidays         config.HolidayIndex
 }
 
 // New creates a new worklog model.
-func New(dailyHours, weeklyHours, efficiencyTarget float64) Model {
-	return Model{Loading: true, Date: today(), DailyHours: dailyHours, WeeklyHours: weeklyHours, EfficiencyTarget: efficiencyTarget}
+func New(dailyHours, weeklyHours, efficiencyTarget float64, workDays []int, businessHours []config.BusinessHoursConfig, holidays config.HolidayIndex) Model {
+	wd := make(map[int]bool, len(workDays))
+	for _, d := range workDays {
+		wd[d] = true
+	}
+	if len(wd) == 0 {
+		for i := 1; i <= 5; i++ {
+			wd[i] = true
+		}
+	}
+	return Model{
+		Loading:          true,
+		Date:             today(),
+		DailyHours:       dailyHours,
+		WeeklyHours:      weeklyHours,
+		EfficiencyTarget: efficiencyTarget,
+		WorkDays:         wd,
+		BusinessHours:    businessHours,
+		Holidays:         holidays,
+	}
 }
 
 func today() time.Time {
@@ -160,6 +182,11 @@ func (m Model) View() string {
 			viewLabel = m.Date.Format("Mon Jan 2, 2006")
 		}
 	}
+	if !m.WeekView {
+		if mark := m.holidayLabel(m.Date); mark != "" {
+			viewLabel += "  " + mark
+		}
+	}
 	total := totalTime(sorted)
 	title := fmt.Sprintf("  Worklogs — %s (%d entries, %s)", viewLabel, len(sorted), styles.FormatDuration(total))
 	b.WriteString(styles.HeaderFmt.Render(title))
@@ -185,18 +212,64 @@ func (m Model) View() string {
 	return b.String()
 }
 
+// holidayLabel returns a short marker (e.g. "holiday" or "½ 4h off") if the
+// given date has any holiday entry, or "" otherwise.
+func (m Model) holidayLabel(date time.Time) string {
+	if m.Holidays.IsFullDay(date) {
+		return "holiday"
+	}
+	if !m.Holidays.HasHoliday(date) {
+		return ""
+	}
+	full := m.DailyHours
+	if full <= 0 {
+		return "partial off"
+	}
+	eff := m.Holidays.EffectiveDailyHours(date, full, m.BusinessHours)
+	off := full - eff
+	if off <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s off", styles.FormatDuration(time.Duration(off*float64(time.Hour))))
+}
+
 func (m Model) dailyTarget() time.Duration {
+	return m.dailyTargetFor(m.Date)
+}
+
+func (m Model) dailyTargetFor(date time.Time) time.Duration {
 	if m.DailyHours <= 0 {
 		return 0
 	}
-	return time.Duration(m.DailyHours * float64(time.Hour))
+	eff := m.Holidays.EffectiveDailyHours(date, m.DailyHours, m.BusinessHours)
+	return time.Duration(eff * float64(time.Hour))
 }
 
 func (m Model) weeklyTarget() time.Duration {
-	if m.WeeklyHours <= 0 {
-		return 0
+	if m.DailyHours <= 0 || len(m.WorkDays) == 0 {
+		if m.WeeklyHours <= 0 {
+			return 0
+		}
+		return time.Duration(m.WeeklyHours * float64(time.Hour))
 	}
-	return time.Duration(m.WeeklyHours * float64(time.Hour))
+	weekday := int(m.Date.Weekday())
+	if weekday == 0 {
+		weekday = 7
+	}
+	monday := time.Date(m.Date.Year(), m.Date.Month(), m.Date.Day()-weekday+1, 0, 0, 0, 0, m.Date.Location())
+	var total time.Duration
+	for i := 0; i < 7; i++ {
+		d := monday.AddDate(0, 0, i)
+		iso := int(d.Weekday())
+		if iso == 0 {
+			iso = 7
+		}
+		if !m.WorkDays[iso] {
+			continue
+		}
+		total += m.dailyTargetFor(d)
+	}
+	return total
 }
 
 func (m Model) efficiencyLine(total time.Duration) string {
@@ -297,23 +370,21 @@ func (m Model) renderDayView(b *strings.Builder, sorted []msg.WorklogEntry) {
 }
 
 func (m Model) renderWeekView(b *strings.Builder, sorted []msg.WorklogEntry) {
-	// Group by day
-	type dayGroup struct {
-		date    string
-		entries []msg.WorklogEntry
-	}
-	groups := make(map[string]*dayGroup)
-	var dayOrder []string
+	// Group entries by day
+	groups := make(map[string][]msg.WorklogEntry)
 	for _, e := range sorted {
 		day := e.Started.Format("2006-01-02")
-		if _, ok := groups[day]; !ok {
-			groups[day] = &dayGroup{date: day}
-			dayOrder = append(dayOrder, day)
-		}
-		groups[day].entries = append(groups[day].entries, e)
+		groups[day] = append(groups[day], e)
 	}
 
-	// Build display lines
+	// Build the full Mon–Sun day list anchored on m.Date so empty days still
+	// render with their target / holiday marker.
+	weekday := int(m.Date.Weekday())
+	if weekday == 0 {
+		weekday = 7
+	}
+	monday := time.Date(m.Date.Year(), m.Date.Month(), m.Date.Day()-weekday+1, 0, 0, 0, 0, m.Date.Location())
+
 	type displayLine struct {
 		entryIdx int // -1 for header/separator
 		header   string
@@ -322,19 +393,30 @@ func (m Model) renderWeekView(b *strings.Builder, sorted []msg.WorklogEntry) {
 	flatIdx := 0
 	entryToFlat := make(map[int]int) // sorted index -> flat index
 
-	for _, day := range dayOrder {
-		g := groups[day]
-		t, _ := time.Parse("2006-01-02", g.date)
-		dayTotal := totalTime(g.entries)
+	for i := 0; i < 7; i++ {
+		t := monday.AddDate(0, 0, i)
+		key := t.Format("2006-01-02")
+		entries := groups[key]
+		iso := int(t.Weekday())
+		if iso == 0 {
+			iso = 7
+		}
+		// Only render days configured as work days in businessHours.
+		if !m.WorkDays[iso] {
+			continue
+		}
+		dayTotal := totalTime(entries)
 		header := fmt.Sprintf("%s  %s", t.Format("Mon Jan 2"), styles.FormatDuration(dayTotal))
-		if dt := m.dailyTarget(); dt > 0 {
+		if dt := m.dailyTargetFor(t); dt > 0 {
 			header += "  " + m.formatEfficiency(dayTotal, dt)
 		}
+		if mark := m.holidayLabel(t); mark != "" {
+			header += "  " + mark
+		}
 		lines = append(lines, displayLine{entryIdx: -1, header: header})
-		for _, e := range g.entries {
+		for range entries {
 			entryToFlat[flatIdx] = len(lines)
 			lines = append(lines, displayLine{entryIdx: flatIdx})
-			_ = e
 			flatIdx++
 		}
 		lines = append(lines, displayLine{entryIdx: -1}) // blank separator

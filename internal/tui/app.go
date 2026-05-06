@@ -42,6 +42,8 @@ type Deps struct {
 	WeeklyHours      float64
 	EfficiencyTarget float64
 	WorkDays         []int // ISO weekday numbers (1=Mon..7=Sun)
+	BusinessHours    []config.BusinessHoursConfig
+	Holidays         config.HolidayIndex
 	WorklogProvider  string
 	ProfileName      string
 }
@@ -187,7 +189,7 @@ func initialModel(deps Deps) model {
 		tasks:           tasks.New(),
 		schedule:        ptrSchedule(schedule.New()),
 		timer:           timerView.New(),
-		worklog:         worklog.New(deps.DailyHours, deps.WeeklyHours, deps.EfficiencyTarget),
+		worklog:         worklog.New(deps.DailyHours, deps.WeeklyHours, deps.EfficiencyTarget, deps.WorkDays, deps.BusinessHours, deps.Holidays),
 		dashboard:       dashboard.New(deps.DailyHours, deps.WeeklyHours, deps.EfficiencyTarget, deps.WorkDays),
 		targets:         targets.New(deps.WorklogProvider),
 		targetEditIdx:   -1,

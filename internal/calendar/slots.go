@@ -40,6 +40,7 @@ func FindFreeSlots(
 	minDurationMinutes int,
 	snapMinutes []int,
 	travelBufferMinutes int,
+	holidays config.HolidayIndex,
 ) ([]Slot, error) {
 	type parsedWindow struct {
 		start      timeOfDay
@@ -65,6 +66,11 @@ func FindFreeSlots(
 	}
 
 	oooRanges := collectOOORanges(events)
+	for d := dateOf(rangeStart); !d.After(dateOf(rangeEnd)); d = nextDay(d) {
+		for _, b := range holidays.BlocksOn(d) {
+			oooRanges = append(oooRanges, timeRange{start: b.Start, end: b.End})
+		}
+	}
 	busy := collectBusyRanges(events, bufferMinutes, travelBufferMinutes)
 
 	buffer := time.Duration(bufferMinutes) * time.Minute

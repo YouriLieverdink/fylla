@@ -68,6 +68,26 @@ targets: []
 #   startDate: fixed-range override (paired with endDate; mutually exclusive with period)
 #   endDate:   fixed-range override
 
+holidays: []
+# Days (or partial windows) blocked from work. Subtract from worklog targets and
+# scheduler. Each entry:
+#   date:  YYYY-MM-DD (required)
+#   start: HH:MM      (optional; pair with end to block a partial window)
+#   end:   HH:MM      (optional)
+# Omit start/end to mark the whole day off. Multiple entries may share a date
+# for multiple non-overlapping blocks (e.g. one hour off morning + one off afternoon).
+# Examples:
+#   - date: 2026-04-27           # full day off
+#   - date: 2026-05-05
+#     start: "13:00"             # afternoon off
+#     end:   "17:00"
+#   - date: 2026-05-06
+#     start: "09:00"
+#     end:   "10:00"
+#   - date: 2026-05-06
+#     start: "16:00"
+#     end:   "17:00"
+
 weights:
   priority: 0.45
   dueDate: 0.30
