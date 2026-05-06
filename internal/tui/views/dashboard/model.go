@@ -518,7 +518,7 @@ func (m Model) renderProjectsPanel(stats monthStats, width int) string {
 		return panelBox(b.String(), width)
 	}
 
-	nameW := width - 28
+	nameW := width - 31
 	if nameW < 12 {
 		nameW = 12
 	}
