@@ -27,7 +27,8 @@ import (
 )
 
 const (
-	tabTasks = iota
+	tabDashboard = iota
+	tabTasks
 	tabSchedule
 	tabWorklog
 	tabTargets
@@ -190,7 +191,7 @@ func initialModel(deps Deps) model {
 		schedule:        ptrSchedule(schedule.New()),
 		timer:           timerView.New(),
 		worklog:         worklog.New(deps.DailyHours, deps.WeeklyHours, deps.EfficiencyTarget, deps.WorkDays, deps.BusinessHours, deps.Holidays),
-		dashboard:       dashboard.New(deps.DailyHours, deps.WeeklyHours, deps.EfficiencyTarget, deps.WorkDays),
+		dashboard:       dashboard.New(deps.DailyHours, deps.WeeklyHours, deps.EfficiencyTarget, deps.WorkDays, deps.BusinessHours, deps.Holidays),
 		targets:         targets.New(deps.WorklogProvider),
 		targetEditIdx:   -1,
 		config:          ptrConfig(configView.New()),
@@ -350,14 +351,16 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		// Tab switching
 		switch {
 		case key.Matches(mssg, keys.Tab1):
-			return m.switchTab(tabTasks)
+			return m.switchTab(tabDashboard)
 		case key.Matches(mssg, keys.Tab2):
-			return m.switchTab(tabSchedule)
+			return m.switchTab(tabTasks)
 		case key.Matches(mssg, keys.Tab3):
-			return m.switchTab(tabWorklog)
+			return m.switchTab(tabSchedule)
 		case key.Matches(mssg, keys.Tab4):
-			return m.switchTab(tabTargets)
+			return m.switchTab(tabWorklog)
 		case key.Matches(mssg, keys.Tab5):
+			return m.switchTab(tabTargets)
+		case key.Matches(mssg, keys.Tab6):
 			return m.switchTab(tabConfig)
 		case key.Matches(mssg, keys.NextTab):
 			return m.switchTab((m.activeTab + 1) % tabCount)
@@ -378,6 +381,8 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateWorklog(mssg)
 		case tabTargets:
 			return m.updateTargets(mssg)
+		case tabDashboard:
+			return m.updateDashboard(mssg)
 		case tabConfig:
 			return m.updateConfig(mssg)
 		}
@@ -2454,6 +2459,8 @@ func (m model) refreshActiveView() tea.Cmd {
 		return loadWorklogsCmd(m.cb, m.worklog.WeekView, m.worklog.Date)
 	case tabTargets:
 		return loadTargetsCmd(m.cb, m.targets.Offsets)
+	case tabDashboard:
+		return loadDashboardCmd(m.cb, m.dashboard.Month)
 	case tabConfig:
 		return loadConfigCmd(m.cb)
 	}
@@ -2494,10 +2501,10 @@ func (m model) panelWidth() int {
 }
 
 func (m *model) resizeViews(contentHeight int) {
-	mainWidth := m.width - 1
+	mainWidth := m.width
 	if m.timerRunning {
 		pw := m.panelWidth()
-		mainWidth = m.width - pw - 3
+		mainWidth = m.width - pw - 1
 		m.timer.SetSize(pw, contentHeight)
 	}
 	m.tasks.SetSize(mainWidth, contentHeight)
@@ -2534,6 +2541,10 @@ func (m model) isLoading() bool {
 		if m.targets.Loading {
 			return true
 		}
+	case tabDashboard:
+		if m.dashboard.Loading {
+			return true
+		}
 	case tabConfig:
 		if m.config.Loading {
 			return true
@@ -2562,6 +2573,10 @@ func (m model) loadingLabel() string {
 	case tabTargets:
 		if m.targets.Loading {
 			return "Loading targets"
+		}
+	case tabDashboard:
+		if m.dashboard.Loading {
+			return "Loading dashboard"
 		}
 	case tabConfig:
 		if m.config.Loading {
@@ -2639,6 +2654,8 @@ func (m model) View() string {
 		content = m.worklog.View()
 	case tabTargets:
 		content = m.targets.View()
+	case tabDashboard:
+		content = m.dashboard.View()
 	case tabConfig:
 		content = m.config.View()
 	}
@@ -2673,9 +2690,9 @@ func (m model) View() string {
 			Render(content)
 	}
 
-	hints := "1-4:tabs  ?:help  q:quit"
+	hints := "1-6:tabs  ?:help  q:quit"
 	if !m.timerRunning {
-		hints = "1-4:tabs  p:timer  ?:help  q:quit"
+		hints = "1-6:tabs  p:timer  ?:help  q:quit"
 	}
 	var loadingText string
 	if label := m.loadingLabel(); label != "" {
@@ -2704,7 +2721,7 @@ func (m model) renderHelp() string {
 	b.WriteString(bold.Render("Keyboard Shortcuts") + "\n\n")
 
 	b.WriteString(bold.Render("Global") + "\n")
-	b.WriteString("  1-5           Switch tabs\n")
+	b.WriteString("  1-6           Switch tabs\n")
 	b.WriteString("  Tab           Next tab\n")
 	b.WriteString("  Shift+Tab     Previous tab\n")
 	b.WriteString("  p             Toggle timer panel focus\n")

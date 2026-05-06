@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/iruoy/fylla/internal/config"
 	"github.com/iruoy/fylla/internal/tui/msg"
 	"github.com/iruoy/fylla/internal/tui/styles"
 )
@@ -19,23 +20,24 @@ type Model struct {
 	Err              error
 	Width            int
 	Height           int
-	Month            time.Time // first day of the selected month
+	Month            time.Time
 	DailyHours       float64
 	WeeklyHours      float64
 	EfficiencyTarget float64
-	WorkDays         map[int]bool // ISO weekday numbers (1=Mon..7=Sun)
+	WorkDays         map[int]bool
+	BusinessHours    []config.BusinessHoursConfig
+	Holidays         config.HolidayIndex
 	ScrollOffset     int
 }
 
 // New creates a new dashboard model.
-func New(dailyHours, weeklyHours, efficiencyTarget float64, workDays []int) Model {
+func New(dailyHours, weeklyHours, efficiencyTarget float64, workDays []int, businessHours []config.BusinessHoursConfig, holidays config.HolidayIndex) Model {
 	now := time.Now()
 	wd := make(map[int]bool, len(workDays))
 	for _, d := range workDays {
 		wd[d] = true
 	}
 	if len(wd) == 0 {
-		// Default Mon-Fri
 		for i := 1; i <= 5; i++ {
 			wd[i] = true
 		}
@@ -47,6 +49,8 @@ func New(dailyHours, weeklyHours, efficiencyTarget float64, workDays []int) Mode
 		WeeklyHours:      weeklyHours,
 		EfficiencyTarget: efficiencyTarget,
 		WorkDays:         wd,
+		BusinessHours:    businessHours,
+		Holidays:         holidays,
 	}
 }
 
@@ -57,13 +61,11 @@ func (m *Model) DateRange() (time.Time, time.Time) {
 	return since, until
 }
 
-// PrevMonth navigates to the previous month.
 func (m *Model) PrevMonth() {
 	m.Month = m.Month.AddDate(0, -1, 0)
 	m.ScrollOffset = 0
 }
 
-// NextMonth navigates to the next month, clamped to the current month.
 func (m *Model) NextMonth() {
 	now := time.Now()
 	current := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
@@ -74,42 +76,64 @@ func (m *Model) NextMonth() {
 	m.ScrollOffset = 0
 }
 
-// GoToCurrentMonth resets to the current month.
 func (m *Model) GoToCurrentMonth() {
 	now := time.Now()
 	m.Month = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 	m.ScrollOffset = 0
 }
 
-// IsCurrentMonth reports whether the selected month is the current month.
 func (m *Model) IsCurrentMonth() bool {
 	now := time.Now()
 	return m.Month.Year() == now.Year() && m.Month.Month() == now.Month()
 }
 
-// SetSize updates the view dimensions.
 func (m *Model) SetSize(w, h int) {
 	m.Width = w
 	m.Height = h
 }
 
-// ScrollUp scrolls the dashboard content up.
 func (m *Model) ScrollUp() {
 	if m.ScrollOffset > 0 {
 		m.ScrollOffset--
 	}
 }
 
-// ScrollDown scrolls the dashboard content down.
 func (m *Model) ScrollDown() {
 	m.ScrollOffset++
 }
 
-// projectStats holds aggregated stats for one project.
+// dailyTargetFor returns the holiday-adjusted target for a single date.
+// Returns 0 if the day is not a workday or is a full-day holiday.
+func (m Model) dailyTargetFor(d time.Time) time.Duration {
+	iso := isoWeekday(d.Weekday())
+	if !m.WorkDays[iso] {
+		return 0
+	}
+	if m.DailyHours <= 0 {
+		return 0
+	}
+	eff := m.Holidays.EffectiveDailyHours(d, m.DailyHours, m.BusinessHours)
+	if eff <= 0 {
+		return 0
+	}
+	return time.Duration(eff * float64(time.Hour))
+}
+
 type projectStats struct {
 	project string
 	total   time.Duration
 	entries int
+}
+
+type monthStats struct {
+	logged       time.Duration
+	expected     time.Duration
+	workingDays  int
+	loggedDays   int
+	missedDays   int
+	holidayDays  int
+	dailyTotals  map[string]time.Duration
+	dailyTargets map[string]time.Duration
 }
 
 // View renders the dashboard.
@@ -121,37 +145,436 @@ func (m Model) View() string {
 		return styles.ErrStyle.Render(fmt.Sprintf("  Error: %v", m.Err))
 	}
 
-	var b strings.Builder
+	stats := m.computeMonthStats()
 
-	// Title
+	var sections []string
+	sections = append(sections, m.renderTitle())
+	sections = append(sections, m.renderKPIs(stats))
+
+	if len(m.Entries) == 0 && stats.workingDays == 0 {
+		sections = append(sections, styles.HintStyle.Render("No worklogs and no working days in this month."))
+	} else {
+		sections = append(sections, m.renderBody(stats))
+	}
+
+	sections = append(sections, m.renderHints())
+
+	rendered := indentLines(strings.Join(sections, "\n"), "  ")
+	return m.applyScroll(rendered)
+}
+
+func (m Model) renderTitle() string {
 	var monthLabel string
 	if m.IsCurrentMonth() {
-		monthLabel = "This Month"
+		monthLabel = "This Month — " + m.Month.Format("January 2006")
 	} else {
 		monthLabel = m.Month.Format("January 2006")
 	}
-	monthTotal := totalTime(m.Entries)
-	title := fmt.Sprintf("  Dashboard — %s (%d entries, %s)", monthLabel, len(m.Entries), styles.FormatDuration(monthTotal))
-	b.WriteString(styles.HeaderFmt.Render(title))
+	return styles.SectionFmt.Render(monthLabel)
+}
+
+func (m Model) renderKPIs(stats monthStats) string {
+	available := m.Width - 3
+	if available < 40 {
+		available = 40
+	}
+	tileCount := 3
+	tileTotal := available / tileCount
+	if tileTotal < 18 {
+		tileTotal = 18
+	}
+	// lipgloss Width includes padding but excludes border, so border adds 2.
+	contentWidth := tileTotal - 2
+	remainder := available - tileTotal*tileCount
+
+	w0 := contentWidth
+	w1 := contentWidth
+	w2 := contentWidth
+	if remainder > 0 {
+		w0++
+	}
+	if remainder > 1 {
+		w1++
+	}
+
+	tiles := []string{
+		m.kpiThisMonth(stats, w0),
+		m.kpiAvgPerDay(stats, w1),
+		m.kpiMissed(stats, w2),
+	}
+
+	border := lipgloss.AdaptiveColor{Light: "#CCCCCC", Dark: "#444444"}
+	rendered := make([]string, len(tiles))
+	for i, t := range tiles {
+		rendered[i] = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(border).
+			Padding(0, 1).
+			Width(w(i, w0, w1, w2)).
+			Render(t)
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
+}
+
+func w(i, a, b, c int) int {
+	switch i {
+	case 0:
+		return a
+	case 1:
+		return b
+	default:
+		return c
+	}
+}
+
+func (m Model) kpiThisMonth(stats monthStats, w int) string {
+	value := styles.FormatDuration(stats.logged)
+	sub := ""
+	if stats.expected > 0 {
+		sub = "/ " + styles.FormatDuration(stats.expected) + "  " + colorPct(float64(stats.logged)/float64(stats.expected)*100, m.EfficiencyTarget)
+	}
+	return kpiBlock("Month", value, sub, w)
+}
+
+func (m Model) kpiAvgPerDay(stats monthStats, w int) string {
+	avg := time.Duration(0)
+	if stats.loggedDays > 0 {
+		avg = stats.logged / time.Duration(stats.loggedDays)
+	}
+	dailyTarget := time.Duration(m.DailyHours * float64(time.Hour))
+	value := styles.FormatDuration(avg)
+	sub := ""
+	if dailyTarget > 0 && avg > 0 {
+		sub = "/ " + styles.FormatDuration(dailyTarget) + "  " + colorPct(float64(avg)/float64(dailyTarget)*100, m.EfficiencyTarget)
+	} else {
+		sub = styles.HintStyle.Render(fmt.Sprintf("%d days logged", stats.loggedDays))
+	}
+	return kpiBlock("Avg / day", value, sub, w)
+}
+
+func (m Model) kpiMissed(stats monthStats, w int) string {
+	value := fmt.Sprintf("%d", stats.missedDays)
+	sub := styles.HintStyle.Render(fmt.Sprintf("%d work · %d hol", stats.workingDays, stats.holidayDays))
+	style := styles.CurrentStyle
+	if stats.missedDays > 0 {
+		style = styles.WarnStyle
+	}
+	if stats.missedDays > 2 {
+		style = styles.ErrStyle
+	}
+	return kpiBlock("Missed", style.Render(value), sub, w)
+}
+
+func kpiBlock(label, value, sub string, _ int) string {
+	h := styles.HintStyle.Render(strings.ToUpper(label))
+	if sub == "" {
+		return h + "\n" + value
+	}
+	return h + "\n" + value + "\n" + sub
+}
+
+func (m Model) renderBody(stats monthStats) string {
+	calWidth, projWidth := m.bodyWidths()
+
+	calendar := m.renderCalendarPanel(stats, calWidth)
+	projects := m.renderProjectsPanel(stats, projWidth)
+
+	if calWidth+projWidth+3 > m.Width || m.Width < 100 {
+		return calendar + "\n" + projects
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, calendar, "  ", projects)
+}
+
+func indentLines(s, prefix string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = prefix + l
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) bodyWidths() (int, int) {
+	w := m.Width
+	if w < 100 {
+		full := w - 3
+		if full < 40 {
+			full = 40
+		}
+		return full, full
+	}
+	avail := w - 5
+	cal := int(float64(avail) * 0.55)
+	proj := avail - cal
+	if cal < 50 {
+		cal = 50
+	}
+	if proj < 30 {
+		proj = 30
+	}
+	return cal, proj
+}
+
+func (m Model) renderCalendarPanel(stats monthStats, width int) string {
+	var b strings.Builder
+	b.WriteString(styles.HeaderFmt.Render("Calendar — heatmap"))
 	b.WriteString("\n\n")
 
-	if len(m.Entries) == 0 {
-		b.WriteString("  No worklogs found for this month.\n")
-	} else {
-		m.renderMonthSummary(&b, monthTotal)
+	dayNames := []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+	cellWidth := (width - 6) / 8 // 7 days + 1 week-total column
+	if cellWidth < 6 {
+		cellWidth = 6
+	}
+	if cellWidth > 12 {
+		cellWidth = 12
+	}
+
+	// Header row
+	for i, name := range dayNames {
+		iso := i + 1
+		label := styles.PadOrTruncate(name, cellWidth)
+		if m.WorkDays[iso] {
+			b.WriteString(styles.HeaderFmt.Render(label))
+		} else {
+			b.WriteString(styles.HintStyle.Render(label))
+		}
+	}
+	b.WriteString(styles.HeaderFmt.Render(styles.PadOrTruncate("Σ", cellWidth)))
+	b.WriteString("\n")
+
+	first := m.Month
+	gridStart := first.AddDate(0, 0, -(isoWeekday(first.Weekday()) - 1))
+	lastDay := m.Month.AddDate(0, 1, -1)
+	gridEnd := lastDay.AddDate(0, 0, 7-isoWeekday(lastDay.Weekday()))
+
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	for d := gridStart; !d.After(gridEnd); {
+		var weekTotal time.Duration
+		hadInMonth := false
+		var weekRow strings.Builder
+		for col := 0; col < 7; col++ {
+			weekRow.WriteString(m.renderCalendarCell(d, today, stats, cellWidth))
+			if d.Month() == m.Month.Month() && d.Year() == m.Month.Year() {
+				hadInMonth = true
+				key := d.Format("2006-01-02")
+				weekTotal += stats.dailyTotals[key]
+			}
+			d = d.AddDate(0, 0, 1)
+		}
+		b.WriteString(weekRow.String())
+		if hadInMonth {
+			b.WriteString(styles.HintStyle.Render(styles.PadOrTruncate(styles.FormatDuration(weekTotal), cellWidth)))
+		} else {
+			b.WriteString(styles.PadOrTruncate("", cellWidth))
+		}
 		b.WriteString("\n")
-		m.renderCalendarGrid(&b)
-		b.WriteString("\n")
-		m.renderProjectBreakdown(&b, monthTotal)
 	}
 
 	b.WriteString("\n")
-	hints := "h/l:prev/next month  T:current month  j/k:scroll  r:refresh"
-	b.WriteString(styles.HintStyle.Render("  " + hints))
+	b.WriteString(m.renderHeatmapLegend())
 
-	// Apply scroll
-	lines := strings.Split(b.String(), "\n")
-	visibleHeight := m.Height - 3
+	return panelBox(b.String(), width)
+}
+
+func (m Model) renderCalendarCell(d, today time.Time, stats monthStats, cellWidth int) string {
+	inMonth := d.Month() == m.Month.Month() && d.Year() == m.Month.Year()
+	if !inMonth {
+		return styles.PadOrTruncate("", cellWidth)
+	}
+
+	iso := isoWeekday(d.Weekday())
+	key := d.Format("2006-01-02")
+	total := stats.dailyTotals[key]
+	target := stats.dailyTargets[key]
+	dayNum := fmt.Sprintf("%d", d.Day())
+
+	isToday := d.Equal(today)
+	isFullHoliday := m.Holidays.IsFullDay(d)
+	isPartialHoliday := !isFullHoliday && m.Holidays.HasHoliday(d) && m.WorkDays[iso]
+	isFuture := d.After(today)
+	isWorkday := m.WorkDays[iso] && !isFullHoliday
+
+	var cellText string
+	switch {
+	case isFullHoliday:
+		cellText = dayNum + " ⛱"
+	case !isWorkday:
+		if total > 0 {
+			cellText = fmt.Sprintf("%s %s", dayNum, styles.FormatDuration(total))
+		} else {
+			cellText = dayNum
+		}
+	case isFuture:
+		if isPartialHoliday {
+			cellText = dayNum + " ½"
+		} else {
+			cellText = dayNum
+		}
+	case total == 0:
+		cellText = dayNum + " ·"
+	default:
+		cellText = fmt.Sprintf("%s %s", dayNum, styles.FormatDuration(total))
+	}
+
+	cellStr := styles.PadOrTruncate(cellText, cellWidth)
+
+	style := m.cellStyle(d, total, target, isWorkday, isFuture, isFullHoliday, isPartialHoliday)
+	if isToday {
+		style = style.Underline(true)
+	}
+	return style.Render(cellStr)
+}
+
+func (m Model) cellStyle(d time.Time, total, target time.Duration, isWorkday, isFuture, isFullHoliday, isPartialHoliday bool) lipgloss.Style {
+	if isFullHoliday {
+		return styles.HintStyle.Italic(true)
+	}
+	if !isWorkday {
+		if total > 0 {
+			return lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#888888", Dark: "#888888"})
+		}
+		return styles.HintStyle
+	}
+	if isFuture {
+		if isPartialHoliday {
+			return styles.HintStyle.Italic(true)
+		}
+		return styles.HintStyle
+	}
+	if total == 0 {
+		return styles.ErrStyle
+	}
+	if target == 0 {
+		return styles.CurrentStyle
+	}
+	ratio := float64(total) / float64(target)
+	return heatmapStyle(ratio, m.EfficiencyTarget, isPartialHoliday)
+}
+
+// heatmapStyle maps logged/target ratio to a color, using the same thresholds
+// as colorPct: red < target-10%, amber < target, green < 110%, blue ≥ 110%.
+func heatmapStyle(ratio, target float64, isPartialHoliday bool) lipgloss.Style {
+	red := lipgloss.AdaptiveColor{Light: "#FFD9DD", Dark: "#5A2A33"}
+	amber := lipgloss.AdaptiveColor{Light: "#FFE2A8", Dark: "#6A4A1A"}
+	green := lipgloss.AdaptiveColor{Light: "#43BF6D", Dark: "#73F59F"}
+	blue := lipgloss.AdaptiveColor{Light: "#1E88E5", Dark: "#42A5F5"}
+
+	var bg lipgloss.AdaptiveColor
+	switch {
+	case ratio >= 1.1:
+		bg = blue
+	case ratio >= target:
+		bg = green
+	case ratio >= target-0.1:
+		bg = amber
+	default:
+		bg = red
+	}
+	style := lipgloss.NewStyle().
+		Background(bg).
+		Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#FFFFFF"}).
+		Bold(true)
+	if isPartialHoliday {
+		style = style.Italic(true)
+	}
+	return style
+}
+
+func (m Model) renderHeatmapLegend() string {
+	t := m.EfficiencyTarget
+	amber := int((t - 0.1) * 100)
+	hit := int(t * 100)
+	swatches := []struct {
+		label string
+		ratio float64
+	}{
+		{fmt.Sprintf("<%d%%", amber), t - 0.2},
+		{fmt.Sprintf("%d–%d%%", amber, hit-1), t - 0.05},
+		{fmt.Sprintf("≥%d%%", hit), t},
+		{">110%", 1.2},
+	}
+	hint := styles.HintStyle
+	var b strings.Builder
+	b.WriteString("\n")
+	for _, s := range swatches {
+		b.WriteString(heatmapStyle(s.ratio, t, false).Render("  "))
+		b.WriteString(" " + hint.Render(s.label) + "  ")
+	}
+	b.WriteString("\n")
+	b.WriteString(hint.Render("⛱ holiday   · no log   ½ partial   _ today"))
+	return b.String()
+}
+
+func (m Model) renderProjectsPanel(stats monthStats, width int) string {
+	projects := m.computeProjectStats()
+
+	var b strings.Builder
+	b.WriteString(styles.HeaderFmt.Render("Projects"))
+	b.WriteString("\n\n")
+
+	if len(projects) == 0 {
+		b.WriteString(styles.HintStyle.Render("  No projects yet."))
+		return panelBox(b.String(), width)
+	}
+
+	nameW := width - 28
+	if nameW < 12 {
+		nameW = 12
+	}
+
+	header := fmt.Sprintf("  %s  %-7s  %-4s  %-7s",
+		styles.PadOrTruncate("Project", nameW),
+		"Hours", "Cnt", "Share")
+	b.WriteString(styles.HintStyle.Render(header))
+	b.WriteString("\n")
+
+	for _, ps := range projects {
+		pct := float64(0)
+		if stats.logged > 0 {
+			pct = float64(ps.total) / float64(stats.logged) * 100
+		}
+		dot := styles.FormatProjectDot(ps.project)
+		name := styles.PadOrTruncate(ps.project, nameW)
+		line := fmt.Sprintf("  %s%s  %-7s  %-4d  %5.1f%%",
+			dot, name, styles.FormatDuration(ps.total), ps.entries, pct)
+		b.WriteString(line)
+		b.WriteString("\n")
+
+		barWidth := width - 8
+		if barWidth > 6 {
+			b.WriteString("    " + renderProportionBar(ps.total, stats.logged, ps.project, barWidth))
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("\n")
+	b.WriteString(styles.HintStyle.Render(fmt.Sprintf("  %d projects · %s total", len(projects), styles.FormatDuration(stats.logged))))
+
+	return panelBox(b.String(), width)
+}
+
+func panelBox(content string, width int) string {
+	inner := width - 2
+	if inner < 10 {
+		inner = 10
+	}
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.AdaptiveColor{Light: "#CCCCCC", Dark: "#444444"}).
+		Padding(0, 1).
+		Width(inner).
+		Render(content)
+}
+
+func (m Model) renderHints() string {
+	hints := "h/l:prev/next month  T:current  j/k:scroll  r:refresh"
+	return styles.HintStyle.Render(hints)
+}
+
+func (m Model) applyScroll(rendered string) string {
+	lines := strings.Split(rendered, "\n")
+	visibleHeight := m.Height - 2
 	if visibleHeight < 5 {
 		visibleHeight = 5
 	}
@@ -165,179 +588,57 @@ func (m Model) View() string {
 	if end > len(lines) {
 		end = len(lines)
 	}
+	if m.ScrollOffset >= len(lines) {
+		return ""
+	}
 	return strings.Join(lines[m.ScrollOffset:end], "\n")
 }
 
-func (m Model) renderMonthSummary(b *strings.Builder, monthTotal time.Duration) {
-	// Count working days (Mon-Fri) in the month up to today
-	now := time.Now()
-	endDate := time.Date(m.Month.Year(), m.Month.Month()+1, 0, 0, 0, 0, 0, m.Month.Location())
-	if endDate.After(now) {
-		endDate = now
+func (m Model) computeMonthStats() monthStats {
+	stats := monthStats{
+		dailyTotals:  make(map[string]time.Duration),
+		dailyTargets: make(map[string]time.Duration),
 	}
-	workingDays := countWorkingDays(m.Month, endDate, m.WorkDays)
-
-	dailyTarget := time.Duration(m.DailyHours * float64(time.Hour))
-	expectedTotal := time.Duration(workingDays) * dailyTarget
-
-	b.WriteString(styles.HeaderFmt.Render("  Summary"))
-	b.WriteString("\n")
-
-	avgDaily := time.Duration(0)
-	if workingDays > 0 {
-		avgDaily = monthTotal / time.Duration(workingDays)
-	}
-
-	b.WriteString(fmt.Sprintf("  Working days: %d", workingDays))
-	b.WriteString(fmt.Sprintf("    Avg daily: %s", styles.FormatDuration(avgDaily)))
-	if dailyTarget > 0 {
-		pct := float64(avgDaily) / float64(dailyTarget) * 100
-		b.WriteString(fmt.Sprintf(" / %s", styles.FormatDuration(dailyTarget)))
-		b.WriteString("  " + colorPct(pct, m.EfficiencyTarget))
-	}
-	b.WriteString("\n")
-
-	if expectedTotal > 0 {
-		efficiency := float64(monthTotal) / float64(expectedTotal) * 100
-		b.WriteString(fmt.Sprintf("  Month total: %s / %s", styles.FormatDuration(monthTotal), styles.FormatDuration(expectedTotal)))
-		b.WriteString("  " + colorPct(efficiency, m.EfficiencyTarget))
-		b.WriteString("\n")
-	}
-}
-
-func (m Model) renderCalendarGrid(b *strings.Builder) {
-	dailyTotals := make(map[string]time.Duration)
 	for _, e := range m.Entries {
-		day := e.Started.Format("2006-01-02")
-		dailyTotals[day] += e.TimeSpent
+		key := e.Started.Format("2006-01-02")
+		stats.dailyTotals[key] += e.TimeSpent
+		stats.logged += e.TimeSpent
 	}
 
-	dailyTarget := time.Duration(m.DailyHours * float64(time.Hour))
 	now := time.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-
-	b.WriteString(styles.HeaderFmt.Render("  Calendar"))
-	b.WriteString("\n")
-
-	// Day-of-week headers (Mon–Sun)
-	dayNames := []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
-	cellWidth := 10
-	if m.Width > 0 {
-		cellWidth = (m.Width - 4) / 7
-		if cellWidth < 8 {
-			cellWidth = 8
-		}
-		if cellWidth > 12 {
-			cellWidth = 12
-		}
-	}
-
-	b.WriteString("  ")
-	for i, name := range dayNames {
-		iso := i + 1 // 1=Mon..7=Sun
-		label := styles.PadOrTruncate(name, cellWidth)
-		if m.WorkDays[iso] {
-			b.WriteString(styles.HeaderFmt.Render(label))
-		} else {
-			b.WriteString(styles.HintStyle.Render(label))
-		}
-	}
-	b.WriteString("\n")
-
-	// Find the Monday on or before the 1st of the month
-	first := m.Month
-	wd := isoWeekday(first.Weekday())
-	gridStart := first.AddDate(0, 0, -(wd - 1))
-
-	// Find the last day of the month
 	lastDay := m.Month.AddDate(0, 1, -1)
-	// Extend grid to Sunday after last day
-	lastWd := isoWeekday(lastDay.Weekday())
-	gridEnd := lastDay.AddDate(0, 0, 7-lastWd)
+	endDate := lastDay
+	if endDate.After(today) {
+		endDate = today
+	}
 
-	for d := gridStart; !d.After(gridEnd); {
-		b.WriteString("  ")
-		for col := 0; col < 7; col++ {
-			inMonth := d.Month() == m.Month.Month() && d.Year() == m.Month.Year()
-			iso := col + 1
+	for d := m.Month; !d.After(lastDay); d = d.AddDate(0, 0, 1) {
+		iso := isoWeekday(d.Weekday())
+		target := m.dailyTargetFor(d)
+		stats.dailyTargets[d.Format("2006-01-02")] = target
 
-			if !inMonth {
-				// Outside current month — blank cell
-				b.WriteString(styles.PadOrTruncate("", cellWidth))
-			} else {
+		if !d.After(endDate) {
+			if m.Holidays.IsFullDay(d) {
+				stats.holidayDays++
+			} else if m.WorkDays[iso] && target > 0 {
+				stats.workingDays++
+				stats.expected += target
 				key := d.Format("2006-01-02")
-				total := dailyTotals[key]
-				dayNum := fmt.Sprintf("%d", d.Day())
-
-				if !m.WorkDays[iso] {
-					// Non-work day
-					if total > 0 {
-						cell := fmt.Sprintf("%s %s", dayNum, styles.FormatDuration(total))
-						b.WriteString(styles.HintStyle.Render(styles.PadOrTruncate(cell, cellWidth)))
-					} else {
-						b.WriteString(styles.HintStyle.Render(styles.PadOrTruncate(dayNum, cellWidth)))
-					}
-				} else if d.After(today) {
-					// Future day
-					b.WriteString(styles.HintStyle.Render(styles.PadOrTruncate(dayNum, cellWidth)))
-				} else if total == 0 {
-					// Work day with no logged time
-					b.WriteString(styles.ErrStyle.Render(styles.PadOrTruncate(dayNum+" -", cellWidth)))
-				} else {
-					cell := fmt.Sprintf("%s %s", dayNum, styles.FormatDuration(total))
-					var style lipgloss.Style
-					if dailyTarget > 0 {
-						ratio := float64(total) / float64(dailyTarget)
-						switch {
-						case ratio >= m.EfficiencyTarget:
-							style = styles.CurrentStyle
-						case ratio >= m.EfficiencyTarget-0.1:
-							style = styles.WarnStyle
-						default:
-							style = styles.ErrStyle
-						}
-					} else {
-						style = styles.CurrentStyle
-					}
-					b.WriteString(style.Render(styles.PadOrTruncate(cell, cellWidth)))
+				if stats.dailyTotals[key] > 0 {
+					stats.loggedDays++
+				} else if d.Before(today) {
+					stats.missedDays++
 				}
 			}
-			d = d.AddDate(0, 0, 1)
-		}
-		b.WriteString("\n")
-	}
-}
-
-func (m Model) renderProjectBreakdown(b *strings.Builder, monthTotal time.Duration) {
-	projects := m.computeProjectStats()
-
-	b.WriteString(styles.HeaderFmt.Render("  Project Breakdown"))
-	b.WriteString("\n")
-
-	b.WriteString(styles.HintStyle.Render("  Project                    Hours     Entries  Share"))
-	b.WriteString("\n")
-
-	for _, ps := range projects {
-		pct := float64(0)
-		if monthTotal > 0 {
-			pct = float64(ps.total) / float64(monthTotal) * 100
-		}
-		dot := styles.FormatProjectDot(ps.project)
-		name := styles.PadOrTruncate(ps.project, 25)
-		line := fmt.Sprintf("  %s%s  %-10s%-9d%.1f%%",
-			dot, name, styles.FormatDuration(ps.total), ps.entries, pct)
-		b.WriteString(line)
-		b.WriteString("\n")
-
-		// Proportion bar
-		if monthTotal > 0 {
-			bar := renderProportionBar(ps.total, monthTotal, ps.project, m.Width-6)
-			b.WriteString("      " + bar)
-			b.WriteString("\n")
+		} else {
+			if m.Holidays.IsFullDay(d) {
+				stats.holidayDays++
+			}
 		}
 	}
+	return stats
 }
-
 
 func (m Model) computeProjectStats() []projectStats {
 	projectMap := make(map[string]*projectStats)
@@ -368,25 +669,6 @@ func (m Model) computeProjectStats() []projectStats {
 	return result
 }
 
-func totalTime(entries []msg.WorklogEntry) time.Duration {
-	var total time.Duration
-	for _, e := range entries {
-		total += e.TimeSpent
-	}
-	return total
-}
-
-func countWorkingDays(from, to time.Time, workDays map[int]bool) int {
-	count := 0
-	for d := from; !d.After(to); d = d.AddDate(0, 0, 1) {
-		iso := isoWeekday(d.Weekday())
-		if workDays[iso] {
-			count++
-		}
-	}
-	return count
-}
-
 func isoWeekday(wd time.Weekday) int {
 	d := int(wd)
 	if d == 0 {
@@ -395,9 +677,8 @@ func isoWeekday(wd time.Weekday) int {
 	return d
 }
 
-
 func colorPct(pct, target float64) string {
-	label := fmt.Sprintf("%.1f%%", pct)
+	label := fmt.Sprintf("%.0f%%", pct)
 	targetPct := target * 100
 	switch {
 	case pct >= targetPct:
@@ -409,7 +690,6 @@ func colorPct(pct, target float64) string {
 	}
 }
 
-
 func renderProportionBar(value, total time.Duration, project string, maxWidth int) string {
 	if maxWidth < 10 {
 		maxWidth = 10
@@ -417,6 +697,9 @@ func renderProportionBar(value, total time.Duration, project string, maxWidth in
 	barWidth := maxWidth - 2
 	if barWidth < 5 {
 		barWidth = 5
+	}
+	if total <= 0 {
+		return ""
 	}
 
 	ratio := float64(value) / float64(total)
@@ -436,7 +719,5 @@ func renderProportionBar(value, total time.Duration, project string, maxWidth in
 			bar[i] = '░'
 		}
 	}
-
 	return styles.ProjectBadgeStyle(project).Render(string(bar))
 }
-
