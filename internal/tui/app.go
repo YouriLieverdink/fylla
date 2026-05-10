@@ -17,8 +17,10 @@ import (
 	"github.com/iruoy/fylla/internal/tui/components"
 	"github.com/iruoy/fylla/internal/tui/msg"
 	"github.com/iruoy/fylla/internal/tui/styles"
+	"github.com/iruoy/fylla/internal/focus"
 	configView "github.com/iruoy/fylla/internal/tui/views/config"
 	"github.com/iruoy/fylla/internal/tui/views/dashboard"
+	focusView "github.com/iruoy/fylla/internal/tui/views/focus"
 	"github.com/iruoy/fylla/internal/tui/views/schedule"
 	"github.com/iruoy/fylla/internal/tui/views/targets"
 	"github.com/iruoy/fylla/internal/tui/views/tasks"
@@ -28,6 +30,7 @@ import (
 
 const (
 	tabDashboard = iota
+	tabFocus
 	tabTasks
 	tabSchedule
 	tabWorklog
@@ -116,6 +119,9 @@ type model struct {
 	width               int
 	height              int
 	tasks               tasks.Model
+	focus               focusView.Model
+	focusState          *focus.State
+	focusPath           string
 	schedule            *schedule.Model
 	timer               timerView.Model
 	worklog             worklog.Model
@@ -185,9 +191,14 @@ func initialModel(deps Deps) model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
+	focusState, focusPath := loadFocusState()
 	return model{
 		cb:              deps.CB,
+		activeTab:       tabFocus,
 		tasks:           tasks.New(),
+		focus:           focusView.New(),
+		focusState:      focusState,
+		focusPath:       focusPath,
 		schedule:        ptrSchedule(schedule.New()),
 		timer:           timerView.New(),
 		worklog:         worklog.New(deps.DailyHours, deps.WeeklyHours, deps.EfficiencyTarget, deps.WorkDays, deps.BusinessHours, deps.Holidays),
@@ -199,6 +210,20 @@ func initialModel(deps Deps) model {
 		worklogProvider: deps.WorklogProvider,
 		profileName:     deps.ProfileName,
 	}
+}
+
+// loadFocusState reads the focus list from disk for the active profile.
+// Errors are tolerated: an empty state is returned so the TUI still starts.
+func loadFocusState() (*focus.State, string) {
+	path, err := focus.DefaultPath()
+	if err != nil {
+		return &focus.State{}, ""
+	}
+	state, err := focus.Load(path)
+	if err != nil {
+		return &focus.State{}, path
+	}
+	return state, path
 }
 
 func (m model) Init() tea.Cmd {
@@ -353,14 +378,16 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(mssg, keys.Tab1):
 			return m.switchTab(tabDashboard)
 		case key.Matches(mssg, keys.Tab2):
-			return m.switchTab(tabTasks)
+			return m.switchTab(tabFocus)
 		case key.Matches(mssg, keys.Tab3):
-			return m.switchTab(tabSchedule)
+			return m.switchTab(tabTasks)
 		case key.Matches(mssg, keys.Tab4):
-			return m.switchTab(tabWorklog)
+			return m.switchTab(tabSchedule)
 		case key.Matches(mssg, keys.Tab5):
-			return m.switchTab(tabTargets)
+			return m.switchTab(tabWorklog)
 		case key.Matches(mssg, keys.Tab6):
+			return m.switchTab(tabTargets)
+		case key.Matches(mssg, keys.Tab7):
 			return m.switchTab(tabConfig)
 		case key.Matches(mssg, keys.NextTab):
 			return m.switchTab((m.activeTab + 1) % tabCount)
@@ -375,6 +402,8 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.activeTab {
 		case tabTasks:
 			return m.updateTasks(mssg)
+		case tabFocus:
+			return m.updateFocus(mssg)
 		case tabSchedule:
 			return m.updateSchedule(mssg)
 		case tabWorklog:
@@ -412,6 +441,9 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.tasks.Tasks = mssg.Tasks
 			m.tasks.Err = nil
+			// A successful, complete fetch is the only safe time to prune
+			// stale focus entries (skip on partial-provider failures).
+			m.applyFocusFromCache(true)
 		}
 		return m, nil
 
@@ -442,19 +474,30 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cachedTasks = merged
 		m.tasks.Tasks = merged
 		m.tasks.Err = nil
-		// Check if all providers have reported
+		// Update focus view as providers report; only prune stale entries
+		// once every provider has succeeded so a transient outage doesn't
+		// wipe entries belonging to the failing provider.
+		allDone := false
+		anyError := false
 		if m.cb.Providers != nil {
-			allDone := true
+			allDone = true
 			for _, p := range m.cb.Providers() {
 				if _, reported := m.partialTasks[p]; !reported {
 					allDone = false
 					break
 				}
 			}
-			if allDone {
-				m.tasks.Loading = false
-			}
 		} else {
+			allDone = true
+		}
+		for _, taskList := range m.partialTasks {
+			if taskList == nil {
+				anyError = true
+				break
+			}
+		}
+		m.applyFocusFromCache(allDone && !anyError)
+		if allDone {
 			m.tasks.Loading = false
 		}
 		return m, tea.Batch(cmds...)
@@ -1158,6 +1201,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
 	switch {
 	case key.Matches(mssg, keys.Up):
 		m.tasks.CursorUp()
@@ -1320,11 +1364,147 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.tasks.ToggleSelectMode()
 		}
 		m.tasks.ToggleSelect()
+	case key.Matches(mssg, keys.Focus):
+		// Toggle focus on the highlighted task, or bulk-add when in select mode.
+		if m.tasks.SelectMode && m.tasks.SelectionCount() > 0 {
+			selected := m.tasks.SelectedTasks()
+			added := 0
+			for _, t := range selected {
+				if !m.focusState.Contains(t.Provider, t.Key) {
+					m.focusState.Add(t.Provider, t.Key)
+					added++
+				}
+			}
+			m.persistFocus()
+			m.applyFocusFromCache(false)
+			m.tasks.ToggleSelectMode()
+			m.setToast(fmt.Sprintf("Added %d task(s) to focus", added), false)
+			cmds = append(cmds, clearToastCmd())
+			return m, tea.Batch(cmds...)
+		}
+		if t := m.tasks.SelectedTask(); t != nil {
+			added := m.focusState.Toggle(t.Provider, t.Key)
+			m.persistFocus()
+			m.applyFocusFromCache(false)
+			label := t.Key
+			if added {
+				m.setToast(fmt.Sprintf("Added %s to focus", label), false)
+			} else {
+				m.setToast(fmt.Sprintf("Removed %s from focus", label), false)
+			}
+			cmds = append(cmds, clearToastCmd())
+			return m, tea.Batch(cmds...)
+		}
 	case key.Matches(mssg, keys.ViewToggle):
 		m.tasks.ToggleViewMode()
 	}
 
-	return m, nil
+	return m, tea.Batch(cmds...)
+}
+
+func (m model) updateFocus(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+	switch {
+	case key.Matches(mssg, keys.Up):
+		m.focus.CursorUp()
+	case key.Matches(mssg, keys.Down):
+		m.focus.CursorDown()
+	case key.Matches(mssg, keys.Refresh):
+		m.focus.Loading = true
+		return m, loadTasksCmd(m.cb)
+	case key.Matches(mssg, keys.ReorderUp):
+		if t := m.focus.SelectedTask(); t != nil {
+			m.focusState.Move(t.Provider, t.Key, -1)
+			m.persistFocus()
+			m.applyFocusFromCache(false)
+			if m.focus.Cursor > 0 {
+				m.focus.Cursor--
+			}
+		}
+	case key.Matches(mssg, keys.ReorderDown):
+		if t := m.focus.SelectedTask(); t != nil {
+			m.focusState.Move(t.Provider, t.Key, 1)
+			m.persistFocus()
+			m.applyFocusFromCache(false)
+			if m.focus.Cursor < len(m.focus.Tasks)-1 {
+				m.focus.Cursor++
+			}
+		}
+	case key.Matches(mssg, keys.Focus):
+		if t := m.focus.SelectedTask(); t != nil {
+			label := t.Key
+			m.removeFromFocus(t.Provider, t.Key)
+			m.setToast(fmt.Sprintf("Removed %s from focus", label), false)
+			cmds = append(cmds, clearToastCmd())
+		}
+	case key.Matches(mssg, keys.Enter), key.Matches(mssg, keys.Timer):
+		if t := m.focus.SelectedTask(); t != nil {
+			if t.Provider == "github" {
+				if k := issueKeyFromSummary.FindString(t.Summary); k != "" {
+					return m, startTimerCmd(m.cb, k, t.Summary, t.Project, t.Section, m.worklogProvider)
+				}
+				m.pendingTimerStart = &pendingTimerData{
+					prKey:   t.Key,
+					summary: t.Summary,
+					project: t.Project,
+					section: t.Section,
+				}
+				m.saving = "Resolving issue..."
+				return m, resolveIssueKeyCmd(m.cb, t.Key)
+			}
+			return m, startTimerCmd(m.cb, t.Key, t.Summary, t.Project, t.Section, t.Provider)
+		}
+	case key.Matches(mssg, keys.Open):
+		if t := m.focus.SelectedTask(); t != nil {
+			return m, openTaskURLCmd(m.cb, t.Key, t.Provider, t.Project, t.IssueType)
+		}
+	case key.Matches(mssg, keys.Done):
+		if t := m.focus.SelectedTask(); t != nil {
+			return m, doneTaskCmd(m.cb, t.Key, t.Provider)
+		}
+	case key.Matches(mssg, keys.Delete):
+		if t := m.focus.SelectedTask(); t != nil {
+			m.confirm = components.NewConfirm(fmt.Sprintf("Delete %s?", t.Key))
+			m.confirmType = confirmDeleteTask
+			m.confirmKey = t.Key
+			m.confirmProvider = t.Provider
+		}
+	case key.Matches(mssg, keys.Edit):
+		if t := m.focus.SelectedTask(); t != nil {
+			ed := buildPendingEditData(t)
+			m.formTaskKey = t.Key
+			m.formTaskProvider = t.Provider
+			m.pendingEdit = &ed
+			m.formKind = formEditTaskPending
+			return m, loadEditFormOptionsCmd(m.cb, t.Project, t.Key, t.Provider)
+		}
+	case key.Matches(mssg, keys.ViewTask):
+		if t := m.focus.SelectedTask(); t != nil {
+			return m, viewTaskCmd(m.cb, t.Key)
+		}
+	case key.Matches(mssg, keys.ViewScore):
+		if t := m.focus.SelectedTask(); t != nil {
+			bd := t.Breakdown
+			m.scoreDetail = &bd
+			m.scoreTaskKey = t.Key
+		}
+	case key.Matches(mssg, keys.Move):
+		if t := m.focus.SelectedTask(); t != nil {
+			m.formKind = formMoveTaskPending
+			m.formTaskKey = t.Key
+			m.formTaskProvider = t.Provider
+			return m, listTransitionsCmd(m.cb, t.Key, t.Provider)
+		}
+	case key.Matches(mssg, keys.Snooze):
+		if t := m.focus.SelectedTask(); t != nil {
+			m.form = components.NewForm(fmt.Sprintf("Snooze %s", t.Key), []components.FormFieldDef{
+				{Label: "Duration", Placeholder: "e.g. 3d, 1w, Monday"},
+			})
+			m.formKind = formSnoozeTask
+			m.formTaskKey = t.Key
+		}
+	}
+	return m, tea.Batch(cmds...)
 }
 
 func (m model) updateTasksFilter(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -2434,6 +2614,15 @@ func (m *model) switchTab(tab int) (tea.Model, tea.Cmd) {
 		m.tasks.Err = nil
 		return *m, loadTasksCmd(m.cb) // background refresh
 	}
+	if tab == tabFocus {
+		if m.cachedTasks != nil {
+			m.applyFocusFromCache(false)
+			return *m, loadTasksCmd(m.cb) // background refresh
+		}
+		// No cache yet — show loading state and fetch.
+		m.focus.Loading = true
+		return *m, loadTasksCmd(m.cb)
+	}
 	if tab == tabSchedule && m.cachedSync != nil {
 		m.schedule.Result = m.cachedSync
 		m.schedule.Loading = false
@@ -2453,6 +2642,8 @@ func (m model) refreshActiveView() tea.Cmd {
 	switch m.activeTab {
 	case tabTasks:
 		return loadTasksCmd(m.cb)
+	case tabFocus:
+		return loadTasksCmd(m.cb)
 	case tabSchedule:
 		return syncPreviewCmd(m.cb)
 	case tabWorklog:
@@ -2467,9 +2658,76 @@ func (m model) refreshActiveView() tea.Cmd {
 	return nil
 }
 
+// applyFocusFromCache builds the focus tab's task list by intersecting
+// the cached task list with the focus state, in user-ordered order.
+// When prune is true, focus entries that no longer appear in the cached
+// task list are dropped and the new state is persisted.
+func (m *model) applyFocusFromCache(prune bool) {
+	if m.focusState == nil {
+		m.focusState = &focus.State{}
+	}
+	lookup := make(map[string]msg.ScoredTask, len(m.cachedTasks))
+	seen := make(map[string]bool, len(m.cachedTasks))
+	for _, t := range m.cachedTasks {
+		k := t.Provider + "|" + t.Key
+		lookup[k] = t
+		seen[k] = true
+	}
+	if prune && m.focusState.Prune(seen) {
+		m.persistFocus()
+	}
+	ordered := make([]msg.ScoredTask, 0, len(m.focusState.Entries))
+	keys := make(map[string]bool, len(m.focusState.Entries))
+	for _, e := range m.focusState.Sorted() {
+		keys[e.Provider+"|"+e.Key] = true
+		if t, ok := lookup[e.Provider+"|"+e.Key]; ok {
+			ordered = append(ordered, t)
+		}
+	}
+	m.focus.SetTasks(ordered)
+	m.focus.Loading = false
+	m.focus.Err = nil
+	m.tasks.FocusKeys = keys
+}
+
+// persistFocus saves the focus state to disk. Errors are surfaced as
+// toast messages but do not block the action.
+func (m *model) persistFocus() {
+	if m.focusPath == "" {
+		return
+	}
+	if err := focus.Save(m.focusState, m.focusPath); err != nil {
+		m.setToast(fmt.Sprintf("Focus save failed: %v", err), true)
+	}
+}
+
+// IsFocused reports whether (provider, key) is in the focus list. Used
+// by views to render a focus indicator beside tasks already in focus.
+func (m *model) isFocused(provider, key string) bool {
+	if m.focusState == nil {
+		return false
+	}
+	return m.focusState.Contains(provider, key)
+}
+
+// removeFromFocus drops (provider, key) from the focus state and
+// persists. Used both by explicit user toggle and after task completion.
+func (m *model) removeFromFocus(provider, key string) {
+	if m.focusState == nil {
+		return
+	}
+	if !m.focusState.Contains(provider, key) {
+		return
+	}
+	m.focusState.Remove(provider, key)
+	m.persistFocus()
+	m.applyFocusFromCache(false)
+}
+
 // removeTasksFromLists filters out tasks with the given keys from the
 // cached task list and the visible tasks view, providing instant visual
-// feedback after mutations like done or delete.
+// feedback after mutations like done or delete. Also drops any matching
+// entries from the focus list.
 func (m *model) removeTasksFromLists(keys ...string) {
 	if len(keys) == 0 {
 		return
@@ -2477,6 +2735,19 @@ func (m *model) removeTasksFromLists(keys ...string) {
 	exclude := make(map[string]struct{}, len(keys))
 	for _, k := range keys {
 		exclude[k] = struct{}{}
+	}
+	// Resolve provider for each excluded key so we can prune focus too.
+	focusMutated := false
+	if m.focusState != nil {
+		for _, t := range m.cachedTasks {
+			if _, ok := exclude[t.Key]; !ok {
+				continue
+			}
+			if m.focusState.Contains(t.Provider, t.Key) {
+				m.focusState.Remove(t.Provider, t.Key)
+				focusMutated = true
+			}
+		}
 	}
 	filter := func(tasks []msg.ScoredTask) []msg.ScoredTask {
 		n := 0
@@ -2490,6 +2761,15 @@ func (m *model) removeTasksFromLists(keys ...string) {
 	}
 	m.cachedTasks = filter(m.cachedTasks)
 	m.tasks.Tasks = filter(m.tasks.Tasks)
+	if focusMutated {
+		m.persistFocus()
+		m.applyFocusFromCache(false)
+	} else if m.focusState != nil {
+		// Visual list reflects cached tasks — re-derive even when focus
+		// state itself didn't change (the removed task may have been the
+		// only thing keeping it visible).
+		m.applyFocusFromCache(false)
+	}
 }
 
 func (m model) panelWidth() int {
@@ -2508,6 +2788,7 @@ func (m *model) resizeViews(contentHeight int) {
 		m.timer.SetSize(pw, contentHeight)
 	}
 	m.tasks.SetSize(mainWidth, contentHeight)
+	m.focus.SetSize(mainWidth, contentHeight)
 	m.schedule.SetSize(mainWidth, contentHeight)
 	m.worklog.SetSize(mainWidth, contentHeight)
 	m.dashboard.SetSize(mainWidth, contentHeight)
@@ -2527,6 +2808,10 @@ func (m model) isLoading() bool {
 	switch m.activeTab {
 	case tabTasks:
 		if m.tasks.Loading {
+			return true
+		}
+	case tabFocus:
+		if m.focus.Loading {
 			return true
 		}
 	case tabSchedule:
@@ -2561,6 +2846,10 @@ func (m model) loadingLabel() string {
 	case tabTasks:
 		if m.tasks.Loading {
 			return "Loading tasks"
+		}
+	case tabFocus:
+		if m.focus.Loading {
+			return "Loading focus"
 		}
 	case tabSchedule:
 		if m.schedule.Loading {
@@ -2648,6 +2937,8 @@ func (m model) View() string {
 	switch m.activeTab {
 	case tabTasks:
 		content = m.tasks.View()
+	case tabFocus:
+		content = m.focus.View()
 	case tabSchedule:
 		content = m.schedule.View()
 	case tabWorklog:

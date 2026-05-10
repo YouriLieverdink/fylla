@@ -28,6 +28,7 @@ type Model struct {
 	Selected   map[string]bool // multi-select: key → selected
 	SelectMode bool            // true when multi-select is active
 	ViewMode   string          // "compact" or "detailed"
+	FocusKeys  map[string]bool // (provider+"|"+key) → in focus list
 }
 
 // New creates a new tasks model.
@@ -379,6 +380,9 @@ func (m Model) renderTaskCompact(t msg.ScoredTask, idx int, cursor, check string
 	}
 
 	var tags string
+	if m.FocusKeys[t.Provider+"|"+t.Key] {
+		tags += styles.UpNextStyle.Render(" ★")
+	}
 	if t.UpNext {
 		tags += styles.UpNextStyle.Render(" ↑")
 	}
@@ -465,6 +469,10 @@ func (m Model) renderTaskDetailed(t msg.ScoredTask, idx int, cursor, check strin
 	if t.Status != "" {
 		meta.WriteString("  ")
 		meta.WriteString(styles.AbbrevStatus(t.Status))
+	}
+	if m.FocusKeys[t.Provider+"|"+t.Key] {
+		meta.WriteString("  ")
+		meta.WriteString(styles.UpNextStyle.Render("★"))
 	}
 	if t.UpNext {
 		meta.WriteString("  ")

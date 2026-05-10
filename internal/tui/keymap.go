@@ -9,6 +9,7 @@ type globalKeyMap struct {
 	Tab4        key.Binding
 	Tab5        key.Binding
 	Tab6        key.Binding
+	Tab7        key.Binding
 	NextTab     key.Binding
 	PrevTab     key.Binding
 	Quit        key.Binding
@@ -46,15 +47,19 @@ type globalKeyMap struct {
 	MultiSelect key.Binding
 	Space       key.Binding
 	ViewToggle  key.Binding
+	Focus       key.Binding
+	ReorderUp   key.Binding
+	ReorderDown key.Binding
 }
 
 var keys = globalKeyMap{
 	Tab1:        key.NewBinding(key.WithKeys("1"), key.WithHelp("1", "Dashboard")),
-	Tab2:        key.NewBinding(key.WithKeys("2"), key.WithHelp("2", "Tasks")),
-	Tab3:        key.NewBinding(key.WithKeys("3"), key.WithHelp("3", "Schedule")),
-	Tab4:        key.NewBinding(key.WithKeys("4"), key.WithHelp("4", "Worklog")),
-	Tab5:        key.NewBinding(key.WithKeys("5"), key.WithHelp("5", "Targets")),
-	Tab6:        key.NewBinding(key.WithKeys("6"), key.WithHelp("6", "Config")),
+	Tab2:        key.NewBinding(key.WithKeys("2"), key.WithHelp("2", "Focus")),
+	Tab3:        key.NewBinding(key.WithKeys("3"), key.WithHelp("3", "Tasks")),
+	Tab4:        key.NewBinding(key.WithKeys("4"), key.WithHelp("4", "Schedule")),
+	Tab5:        key.NewBinding(key.WithKeys("5"), key.WithHelp("5", "Worklog")),
+	Tab6:        key.NewBinding(key.WithKeys("6"), key.WithHelp("6", "Targets")),
+	Tab7:        key.NewBinding(key.WithKeys("7"), key.WithHelp("7", "Config")),
 	NextTab:     key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next tab")),
 	PrevTab:     key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift+tab", "prev tab")),
 	Quit:        key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
@@ -92,4 +97,7 @@ var keys = globalKeyMap{
 	MultiSelect: key.NewBinding(key.WithKeys("ctrl+v"), key.WithHelp("ctrl+v", "multi-select")),
 	Space:       key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "toggle select")),
 	ViewToggle:  key.NewBinding(key.WithKeys("."), key.WithHelp(".", "compact/detailed")),
+	Focus:       key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "focus")),
+	ReorderUp:   key.NewBinding(key.WithKeys("shift+up", "K"), key.WithHelp("shift+↑", "reorder up")),
+	ReorderDown: key.NewBinding(key.WithKeys("shift+down", "J"), key.WithHelp("shift+↓", "reorder down")),
 }
