@@ -350,8 +350,9 @@ func (m Model) renderCalendarPanel(stats monthStats, width int) string {
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 
 	for d := gridStart; !d.After(gridEnd); {
-		var weekTotal time.Duration
+		var weekTotal, weekTarget time.Duration
 		hadInMonth := false
+		anyPast := false
 		var weekRow strings.Builder
 		for col := 0; col < 7; col++ {
 			weekRow.WriteString(m.renderCalendarCell(d, today, stats, cellWidth))
@@ -359,12 +360,22 @@ func (m Model) renderCalendarPanel(stats monthStats, width int) string {
 				hadInMonth = true
 				key := d.Format("2006-01-02")
 				weekTotal += stats.dailyTotals[key]
+				if !d.After(today) {
+					weekTarget += stats.dailyTargets[key]
+					anyPast = true
+				}
 			}
 			d = d.AddDate(0, 0, 1)
 		}
 		b.WriteString(weekRow.String())
 		if hadInMonth {
-			b.WriteString(styles.HintStyle.Render(styles.PadOrTruncate(styles.FormatDuration(weekTotal), cellWidth)))
+			label := styles.PadOrTruncate(styles.FormatDuration(weekTotal), cellWidth)
+			if anyPast && weekTarget > 0 {
+				ratio := float64(weekTotal) / float64(weekTarget)
+				b.WriteString(heatmapStyle(ratio, m.EfficiencyTarget, false).Render(label))
+			} else {
+				b.WriteString(styles.HintStyle.Render(label))
+			}
 		} else {
 			b.WriteString(styles.PadOrTruncate("", cellWidth))
 		}
@@ -453,7 +464,7 @@ func (m Model) cellStyle(d time.Time, total, target time.Duration, isWorkday, is
 }
 
 // heatmapStyle maps logged/target ratio to a color, using the same thresholds
-// as colorPct: red < target-10%, amber < target, green < 110%, blue ≥ 110%.
+// as colorPct: red < target-20%, amber < target, green < 110%, blue ≥ 110%.
 func heatmapStyle(ratio, target float64, isPartialHoliday bool) lipgloss.Style {
 	red := lipgloss.AdaptiveColor{Light: "#FFD9DD", Dark: "#5A2A33"}
 	amber := lipgloss.AdaptiveColor{Light: "#FFE2A8", Dark: "#6A4A1A"}
@@ -466,7 +477,7 @@ func heatmapStyle(ratio, target float64, isPartialHoliday bool) lipgloss.Style {
 		bg = blue
 	case ratio >= target:
 		bg = green
-	case ratio >= target-0.1:
+	case ratio >= target-0.2:
 		bg = amber
 	default:
 		bg = red
@@ -483,14 +494,14 @@ func heatmapStyle(ratio, target float64, isPartialHoliday bool) lipgloss.Style {
 
 func (m Model) renderHeatmapLegend() string {
 	t := m.EfficiencyTarget
-	amber := int((t - 0.1) * 100)
+	amber := int((t - 0.2) * 100)
 	hit := int(t * 100)
 	swatches := []struct {
 		label string
 		ratio float64
 	}{
-		{fmt.Sprintf("<%d%%", amber), t - 0.2},
-		{fmt.Sprintf("%d–%d%%", amber, hit-1), t - 0.05},
+		{fmt.Sprintf("<%d%%", amber), t - 0.3},
+		{fmt.Sprintf("%d–%d%%", amber, hit-1), t - 0.1},
 		{fmt.Sprintf("≥%d%%", hit), t},
 		{">110%", 1.2},
 	}
@@ -686,7 +697,7 @@ func colorPct(pct, target float64) string {
 	switch {
 	case pct >= targetPct:
 		return styles.CurrentStyle.Render(label)
-	case pct >= targetPct-10:
+	case pct >= targetPct-20:
 		return styles.WarnStyle.Render(label)
 	default:
 		return styles.ErrStyle.Render(label)
