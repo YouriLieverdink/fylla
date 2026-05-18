@@ -81,6 +81,7 @@ func RunServe(ctx context.Context) error {
 		Holidays:         holidays,
 		WorklogProvider:  worklogProvider(cfg),
 		ProfileName:      config.ActiveProfile(),
+		DisabledTabs:     cfg.TUI.DisabledTabs,
 	})
 }
 

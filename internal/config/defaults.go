@@ -58,6 +58,9 @@ efficiency:
 
 targets: []
 
+tui:
+  disabledTabs: []
+
 weights:
   priority: 0.45
   dueDate: 0.30

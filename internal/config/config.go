@@ -21,6 +21,20 @@ type Config struct {
 	Efficiency    EfficiencyConfig                 `yaml:"efficiency"`
 	Targets       []TargetConfig                   `yaml:"targets"`
 	Holidays      []HolidayConfig                  `yaml:"holidays"`
+	TUI           TUIConfig                        `yaml:"tui"`
+}
+
+// TUIConfig holds TUI-related settings.
+type TUIConfig struct {
+	// DisabledTabs lists tab labels to hide from the TUI tab bar.
+	// Valid names: "Dashboard", "Focus", "Tasks", "Schedule",
+	// "Worklog", "Targets", "Config".
+	DisabledTabs []string `yaml:"disabledTabs"`
+}
+
+// AllTUITabs lists every TUI tab label in display order.
+var AllTUITabs = []string{
+	"Dashboard", "Focus", "Tasks", "Schedule", "Worklog", "Targets", "Config",
 }
 
 // ActiveProviders returns the list of configured providers.
@@ -351,6 +365,25 @@ func (c *Config) Validate() error {
 	// Holidays
 	if _, err := BuildHolidayIndex(c.Holidays); err != nil {
 		return err
+	}
+
+	// TUI disabled tabs
+	tabSet := make(map[string]bool, len(AllTUITabs))
+	for _, t := range AllTUITabs {
+		tabSet[t] = true
+	}
+	disabledSet := make(map[string]bool, len(c.TUI.DisabledTabs))
+	for _, name := range c.TUI.DisabledTabs {
+		if !tabSet[name] {
+			return fmt.Errorf("tui.disabledTabs: unknown tab %q (must be one of %v)", name, AllTUITabs)
+		}
+		if disabledSet[name] {
+			return fmt.Errorf("tui.disabledTabs: duplicate %q", name)
+		}
+		disabledSet[name] = true
+	}
+	if len(disabledSet) >= len(AllTUITabs) {
+		return fmt.Errorf("tui.disabledTabs: cannot disable every tab")
 	}
 
 	return nil

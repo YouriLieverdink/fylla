@@ -51,9 +51,25 @@ func RenderTabBar(tabs []string, active int, width int, rightLabel string) strin
 	return tabBarStyle.Width(width).Render(row)
 }
 
-// TabNames returns the default tab labels.
+// TabNames returns the default tab labels in display order.
 func TabNames() []string {
 	return []string{"Dashboard", "Focus", "Tasks", "Schedule", "Worklog", "Targets", "Config"}
+}
+
+// FilterTabNames returns TabNames with names in disabled removed.
+func FilterTabNames(disabled []string) []string {
+	skip := make(map[string]bool, len(disabled))
+	for _, n := range disabled {
+		skip[n] = true
+	}
+	all := TabNames()
+	out := make([]string, 0, len(all))
+	for _, n := range all {
+		if !skip[n] {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // RenderHelp renders a key hint string.

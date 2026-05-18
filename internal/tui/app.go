@@ -50,6 +50,64 @@ type Deps struct {
 	Holidays         config.HolidayIndex
 	WorklogProvider  string
 	ProfileName      string
+	DisabledTabs     []string // tab labels to hide from the tab bar
+}
+
+// tabIDForLabel maps a tab label to its constant ID.
+func tabIDForLabel(label string) (int, bool) {
+	switch label {
+	case "Dashboard":
+		return tabDashboard, true
+	case "Focus":
+		return tabFocus, true
+	case "Tasks":
+		return tabTasks, true
+	case "Schedule":
+		return tabSchedule, true
+	case "Worklog":
+		return tabWorklog, true
+	case "Targets":
+		return tabTargets, true
+	case "Config":
+		return tabConfig, true
+	}
+	return 0, false
+}
+
+// containsInt reports whether v appears in s.
+func containsInt(s []int, v int) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+// indexOfInt returns the position of v in s, or -1.
+func indexOfInt(s []int, v int) int {
+	for i, x := range s {
+		if x == v {
+			return i
+		}
+	}
+	return -1
+}
+
+// buildTabOrder returns the canonical-ordered list of enabled tab IDs.
+// Falls back to all tabs if disabled would empty the bar.
+func buildTabOrder(disabled []string) []int {
+	labels := components.FilterTabNames(disabled)
+	if len(labels) == 0 {
+		labels = components.TabNames()
+	}
+	out := make([]int, 0, len(labels))
+	for _, l := range labels {
+		if id, ok := tabIDForLabel(l); ok {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 type confirmAction int
@@ -116,6 +174,8 @@ type pendingEditData struct {
 type model struct {
 	cb                  Callbacks
 	activeTab           int
+	tabOrder            []int // enabled tab IDs in display order
+	disabledTabs        []string
 	width               int
 	height              int
 	tasks               tasks.Model
@@ -192,9 +252,16 @@ func initialModel(deps Deps) model {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
 	focusState, focusPath := loadFocusState()
+	tabOrder := buildTabOrder(deps.DisabledTabs)
+	initialTab := tabFocus
+	if !containsInt(tabOrder, initialTab) {
+		initialTab = tabOrder[0]
+	}
 	return model{
 		cb:              deps.CB,
-		activeTab:       tabFocus,
+		activeTab:       initialTab,
+		tabOrder:        tabOrder,
+		disabledTabs:    deps.DisabledTabs,
 		tasks:           tasks.New(),
 		focus:           focusView.New(),
 		focusState:      focusState,
@@ -376,23 +443,27 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		// Tab switching
 		switch {
 		case key.Matches(mssg, keys.Tab1):
-			return m.switchTab(tabDashboard)
+			return m.switchTabByPos(0)
 		case key.Matches(mssg, keys.Tab2):
-			return m.switchTab(tabFocus)
+			return m.switchTabByPos(1)
 		case key.Matches(mssg, keys.Tab3):
-			return m.switchTab(tabTasks)
+			return m.switchTabByPos(2)
 		case key.Matches(mssg, keys.Tab4):
-			return m.switchTab(tabSchedule)
+			return m.switchTabByPos(3)
 		case key.Matches(mssg, keys.Tab5):
-			return m.switchTab(tabWorklog)
+			return m.switchTabByPos(4)
 		case key.Matches(mssg, keys.Tab6):
-			return m.switchTab(tabTargets)
+			return m.switchTabByPos(5)
 		case key.Matches(mssg, keys.Tab7):
-			return m.switchTab(tabConfig)
+			return m.switchTabByPos(6)
 		case key.Matches(mssg, keys.NextTab):
-			return m.switchTab((m.activeTab + 1) % tabCount)
+			pos := indexOfInt(m.tabOrder, m.activeTab)
+			next := (pos + 1) % len(m.tabOrder)
+			return m.switchTab(m.tabOrder[next])
 		case key.Matches(mssg, keys.PrevTab):
-			return m.switchTab((m.activeTab + tabCount - 1) % tabCount)
+			pos := indexOfInt(m.tabOrder, m.activeTab)
+			prev := (pos + len(m.tabOrder) - 1) % len(m.tabOrder)
+			return m.switchTab(m.tabOrder[prev])
 		}
 
 		// Route to panel or active view
@@ -2603,6 +2674,15 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
+// switchTabByPos switches to the tab at position pos in tabOrder.
+// No-op when pos is out of range (e.g. fewer enabled tabs than the pressed key).
+func (m *model) switchTabByPos(pos int) (tea.Model, tea.Cmd) {
+	if pos < 0 || pos >= len(m.tabOrder) {
+		return *m, nil
+	}
+	return m.switchTab(m.tabOrder[pos])
+}
+
 func (m *model) switchTab(tab int) (tea.Model, tea.Cmd) {
 	m.activeTab = tab
 	m.panelFocused = false
@@ -2930,7 +3010,15 @@ func (m model) View() string {
 	if m.profileName != "" {
 		rightLabel = "profile: " + m.profileName
 	}
-	tabBar := components.RenderTabBar(components.TabNames(), m.activeTab, m.width, rightLabel)
+	tabLabels := components.FilterTabNames(m.disabledTabs)
+	if len(tabLabels) == 0 {
+		tabLabels = components.TabNames()
+	}
+	activePos := indexOfInt(m.tabOrder, m.activeTab)
+	if activePos < 0 {
+		activePos = 0
+	}
+	tabBar := components.RenderTabBar(tabLabels, activePos, m.width, rightLabel)
 
 	contentHeight := m.height - lipgloss.Height(tabBar) - 3
 	var content string

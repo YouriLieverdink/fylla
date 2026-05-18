@@ -221,7 +221,16 @@ weights:
   estimate: 0.15
   age: 0.10
   upNext: 50
+
+tui:
+  disabledTabs: []                # hide TUI tabs by label; valid: Dashboard, Focus, Tasks, Schedule, Worklog, Targets, Config
 ```
+
+When `tui.disabledTabs` is non-empty, the listed tabs are removed from the TUI
+tab bar. Number keys map positionally to the visible tabs (e.g. with `Targets`
+and `Worklog` disabled, `1`–`5` cover `Dashboard`/`Focus`/`Tasks`/`Schedule`/`Config`),
+and `tab`/`shift+tab` cycle only the visible set. At least one tab must remain
+enabled.
 
 ### Single-provider config example (Jira only)
 

@@ -88,6 +88,10 @@ holidays: []
 #     start: "16:00"
 #     end:   "17:00"
 
+tui:
+  # Hide TUI tabs by label. Valid: Dashboard, Focus, Tasks, Schedule, Worklog, Targets, Config.
+  disabledTabs: []
+
 weights:
   priority: 0.45
   dueDate: 0.30
