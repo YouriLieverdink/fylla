@@ -67,4 +67,5 @@ weights:
   estimate: 0.15
   age: 0.10
   upNext: 50
+  priorityLevels: [100, 80, 60, 40, 20]
 `)

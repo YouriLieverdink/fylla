@@ -159,6 +159,24 @@ func Test_SORT006_priority_scoring(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("custom levels via PriorityScoreWith", func(t *testing.T) {
+		levels := []float64{200, 50, 25, 10, 0}
+		if got := PriorityScoreWith(1, levels); got != 200 {
+			t.Errorf("P1 custom = %.0f, want 200", got)
+		}
+		if got := PriorityScoreWith(5, levels); got != 0 {
+			t.Errorf("P5 custom = %.0f, want 0", got)
+		}
+		// Invalid level slice falls back to defaults
+		if got := PriorityScoreWith(1, []float64{1, 2}); got != 100 {
+			t.Errorf("invalid levels should default; got %.0f", got)
+		}
+		// Out-of-range priority falls back to medium (index 2).
+		if got := PriorityScoreWith(0, levels); got != 25 {
+			t.Errorf("out-of-range priority should map to medium; got %.0f", got)
+		}
+	})
 }
 
 func Test_SORT007_due_date_scoring(t *testing.T) {

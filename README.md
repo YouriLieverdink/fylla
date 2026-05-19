@@ -221,16 +221,36 @@ weights:
   estimate: 0.15
   age: 0.10
   upNext: 50
+  priorityLevels: [100, 80, 60, 40, 20]   # raw score per priority P1..P5
+  # typeBonus:                            # flat score bonus per issue type
+  #   "Pull Request": 15
 
 tui:
-  disabledTabs: []                # hide TUI tabs by label; valid: Dashboard, Focus, Tasks, Schedule, Worklog, Targets, Config
+  disabledTabs: []                # hide TUI tabs by label; valid: Dashboard, Focus, Tasks, Schedule, Tuning, Worklog, Targets, Config
 ```
 
 When `tui.disabledTabs` is non-empty, the listed tabs are removed from the TUI
 tab bar. Number keys map positionally to the visible tabs (e.g. with `Targets`
-and `Worklog` disabled, `1`–`5` cover `Dashboard`/`Focus`/`Tasks`/`Schedule`/`Config`),
+and `Worklog` disabled, `1`–`6` cover `Dashboard`/`Focus`/`Tasks`/`Schedule`/`Tuning`/`Config`),
 and `tab`/`shift+tab` cycle only the visible set. At least one tab must remain
 enabled.
+
+### Tuning tab
+
+The **Tuning** tab is a live editor for the priority algorithm. Use `j`/`k` to
+navigate between parameters, `h`/`l` (or `-`/`+`) to nudge the selected value
+(`Shift+h`/`Shift+l` for a 5× jump). A right-hand pane re-ranks the top tasks
+in real time as you adjust:
+
+- `weights.priority`, `dueDate`, `estimate`, `age` — must still sum to 1.0
+- `weights.upNext` — flat boost applied to tasks marked Up Next
+- `weights.priorityLevels[1..5]` — per-priority raw score (defaults to
+  `100/80/60/40/20`); raise P1 to make highest-priority tasks dominate, or
+  flatten the curve if priorities feel too punishing
+- `weights.typeBonus` — flat additive bonus per issue type (e.g. `"Pull Request": 15`)
+
+Press `s` to persist all changes to `config.yaml` at once, or `r` to revert
+back to the saved values. Unsaved edits are flagged in the footer.
 
 ### Single-provider config example (Jira only)
 

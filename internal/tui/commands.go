@@ -88,6 +88,7 @@ type Callbacks struct {
 	ClearEvents         func() (int, error)
 	LoadConfig          func() (*config.Config, error)
 	SetConfig           func(key, value string) error
+	SetConfigMulti      func(kvs map[string]string) error
 	AddTask             func(provider, summary, project, section, issueType, lane, description, estimate, dueDate, priority, parent string, sprintID *int) (key, summaryOut string, err error)
 	EditTask            func(params EditTaskParams) error
 	StopTimer           func(description string, done bool, fallbackIssue, fallbackProvider string) (taskKey string, elapsed time.Duration, resumedKey string, err error)
@@ -341,6 +342,38 @@ func setConfigCmd(cb Callbacks, key, value string) tea.Cmd {
 	return func() tea.Msg {
 		err := cb.SetConfig(key, value)
 		return msg.ConfigSetMsg{Key: key, Err: err}
+	}
+}
+
+// TuningKeyValue is one key/value pair to persist via saveTuningCmd.
+type TuningKeyValue struct {
+	Key   string
+	Value string
+}
+
+func saveTuningCmd(cb Callbacks, changes []TuningKeyValue) tea.Cmd {
+	return func() tea.Msg {
+		applied := make([]string, 0, len(changes))
+		kvs := make(map[string]string, len(changes))
+		for _, kv := range changes {
+			kvs[kv.Key] = kv.Value
+			applied = append(applied, kv.Key)
+		}
+		if cb.SetConfigMulti != nil {
+			if err := cb.SetConfigMulti(kvs); err != nil {
+				return msg.TuningSavedMsg{Err: err}
+			}
+			return msg.TuningSavedMsg{Applied: applied}
+		}
+		// Fallback to per-key set.
+		applied = applied[:0]
+		for _, kv := range changes {
+			if err := cb.SetConfig(kv.Key, kv.Value); err != nil {
+				return msg.TuningSavedMsg{Applied: applied, Err: fmt.Errorf("set %s: %w", kv.Key, err)}
+			}
+			applied = append(applied, kv.Key)
+		}
+		return msg.TuningSavedMsg{Applied: applied}
 	}
 }
 

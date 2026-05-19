@@ -67,7 +67,7 @@ func SortTasks(tasks []task.Task, cfg config.WeightsConfig, now time.Time) []Sco
 
 // CompositeScore calculates the weighted composite score for a task.
 func CompositeScore(t task.Task, w config.WeightsConfig, now time.Time) float64 {
-	score := w.Priority*PriorityScore(t.Priority) +
+	score := w.Priority*PriorityScoreWith(t.Priority, w.PriorityLevelsOrDefault()) +
 		w.DueDate*DueDateScore(t.DueDate, now) +
 		w.Estimate*EstimateScore(t.RemainingEstimate) +
 		w.Age*AgeScore(t.Created, now)
@@ -87,10 +87,12 @@ func CompositeScore(t task.Task, w config.WeightsConfig, now time.Time) float64 
 // CompositeScoreBreakdown calculates the weighted composite score and returns
 // the individual components for display.
 func CompositeScoreBreakdown(t task.Task, w config.WeightsConfig, now time.Time) ScoreBreakdown {
+	levels := w.PriorityLevelsOrDefault()
+	priorityRaw := PriorityScoreWith(t.Priority, levels)
 	bd := ScoreBreakdown{
-		PriorityRaw:      PriorityScore(t.Priority),
+		PriorityRaw:      priorityRaw,
 		PriorityWeight:   w.Priority,
-		PriorityWeighted: w.Priority * PriorityScore(t.Priority),
+		PriorityWeighted: w.Priority * priorityRaw,
 		PriorityReason:   priorityReason(t.Priority),
 		DueDateRaw:       DueDateScore(t.DueDate, now),
 		DueDateWeight:    w.DueDate,
@@ -128,16 +130,23 @@ func CompositeScoreBreakdown(t task.Task, w config.WeightsConfig, now time.Time)
 	return bd
 }
 
-// PriorityScore maps priority (1-5) to a 0-100 score.
+// PriorityScore maps priority (1-5) to the default 0-100 score.
 // Highest(1)=100, High(2)=80, Medium(3)=60, Low(4)=40, Lowest(5)=20.
+// Equivalent to PriorityScoreWith(priority, config.DefaultPriorityLevels).
 func PriorityScore(priority int) float64 {
-	if priority < 1 {
-		priority = 3
+	return PriorityScoreWith(priority, config.DefaultPriorityLevels)
+}
+
+// PriorityScoreWith maps priority (1-5) to a configurable score using levels[0..4].
+// Unset/out-of-range priorities default to medium (index 2).
+func PriorityScoreWith(priority int, levels []float64) float64 {
+	if len(levels) != 5 {
+		levels = config.DefaultPriorityLevels
 	}
-	if priority > 5 {
-		priority = 5
+	if priority < 1 || priority > 5 {
+		return levels[2]
 	}
-	return float64(120 - 20*priority)
+	return levels[priority-1]
 }
 
 // DueDateScore scores based on days until due: 0 days=100, 30+ days=0.

@@ -53,7 +53,7 @@ func RenderTabBar(tabs []string, active int, width int, rightLabel string) strin
 
 // TabNames returns the default tab labels in display order.
 func TabNames() []string {
-	return []string{"Dashboard", "Focus", "Tasks", "Schedule", "Worklog", "Targets", "Config"}
+	return []string{"Dashboard", "Focus", "Tasks", "Schedule", "Tuning", "Worklog", "Targets", "Config"}
 }
 
 // FilterTabNames returns TabNames with names in disabled removed.

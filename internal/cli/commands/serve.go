@@ -398,8 +398,20 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			return config.SaveTo(cfg, cfgPath)
 		},
 		SetConfig: func(key, value string) error {
-			_, err := RunConfigSet(ConfigSetParams{ConfigPath: cfgPath, Key: key, Value: value})
-			return err
+			newCfg, err := RunConfigSet(ConfigSetParams{ConfigPath: cfgPath, Key: key, Value: value})
+			if err != nil {
+				return err
+			}
+			cfg = newCfg
+			return nil
+		},
+		SetConfigMulti: func(kvs map[string]string) error {
+			newCfg, err := config.SetMultiIn(cfgPath, kvs)
+			if err != nil {
+				return err
+			}
+			cfg = newCfg
+			return nil
 		},
 		AddTask: func(provider, summary, project, section, issueType, lane, description, estimate, dueDate, priority, parent string, sprintID *int) (string, string, error) {
 			var creator TaskCreator = source

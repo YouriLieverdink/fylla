@@ -25,6 +25,7 @@ import (
 	"github.com/iruoy/fylla/internal/tui/views/targets"
 	"github.com/iruoy/fylla/internal/tui/views/tasks"
 	timerView "github.com/iruoy/fylla/internal/tui/views/timer"
+	"github.com/iruoy/fylla/internal/tui/views/tuning"
 	"github.com/iruoy/fylla/internal/tui/views/worklog"
 )
 
@@ -33,6 +34,7 @@ const (
 	tabFocus
 	tabTasks
 	tabSchedule
+	tabTuning
 	tabWorklog
 	tabTargets
 	tabConfig
@@ -64,6 +66,8 @@ func tabIDForLabel(label string) (int, bool) {
 		return tabTasks, true
 	case "Schedule":
 		return tabSchedule, true
+	case "Tuning":
+		return tabTuning, true
 	case "Worklog":
 		return tabWorklog, true
 	case "Targets":
@@ -190,6 +194,7 @@ type model struct {
 	targetEditIdx       int // index of target being edited (-1 for add)
 	cachedTargets       []msg.TargetProgress
 	config              *configView.Model
+	tuning              *tuning.Model
 	timerKey            string
 	timerSummary        string
 	timerComment        string
@@ -273,6 +278,7 @@ func initialModel(deps Deps) model {
 		targets:         targets.New(deps.WorklogProvider),
 		targetEditIdx:   -1,
 		config:          ptrConfig(configView.New()),
+		tuning:          ptrTuning(tuning.New()),
 		spinner:         s,
 		worklogProvider: deps.WorklogProvider,
 		profileName:     deps.ProfileName,
@@ -485,12 +491,15 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateDashboard(mssg)
 		case tabConfig:
 			return m.updateConfig(mssg)
+		case tabTuning:
+			return m.updateTuning(mssg)
 		}
 
 	case msg.TasksLoadedMsg:
 		// Always update cache on successful fetch
 		if mssg.Err == nil {
 			m.cachedTasks = mssg.Tasks
+			m.tuning.SetTasks(m.cachedTasks)
 		}
 		if m.formKind == formAddWorklogPending || m.formKind == formStopTimerPending {
 			returnKind := formAddWorklog
@@ -970,10 +979,14 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case msg.ConfigLoadedMsg:
 		m.config.Loading = false
+		m.tuning.Loading = false
 		if mssg.Err != nil {
 			m.config.Err = mssg.Err
+			m.tuning.Err = mssg.Err
 		} else {
 			m.config.SetConfig(mssg.Config)
+			m.tuning.SetWeights(mssg.Config.Weights)
+			m.tuning.SetTasks(m.cachedTasks)
 		}
 		return m, nil
 
@@ -983,7 +996,19 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setToast(fmt.Sprintf("Config error: %v", mssg.Err), true)
 		} else {
 			m.setToast(fmt.Sprintf("Config key %q updated", mssg.Key), false)
-			cmds = append(cmds, m.refreshActiveView())
+			cmds = append(cmds, m.refreshAfterConfigChange()...)
+		}
+		cmds = append(cmds, clearToastCmd())
+		return m, tea.Batch(cmds...)
+
+	case msg.TuningSavedMsg:
+		m.saving = ""
+		if mssg.Err != nil {
+			m.setToast(fmt.Sprintf("Tuning save failed: %v", mssg.Err), true)
+		} else {
+			m.tuning.MarkSaved()
+			m.setToast(fmt.Sprintf("Tuning saved (%d keys)", len(mssg.Applied)), false)
+			cmds = append(cmds, m.refreshAfterConfigChange()...)
 		}
 		cmds = append(cmds, clearToastCmd())
 		return m, tea.Batch(cmds...)
@@ -1890,6 +1915,54 @@ func (m *model) openTargetForm(idx int) {
 	}
 }
 
+func (m model) updateTuning(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(mssg, keys.Up):
+		m.tuning.CursorUp()
+	case key.Matches(mssg, keys.Down):
+		m.tuning.CursorDown()
+	case key.Matches(mssg, keys.Refresh):
+		m.tuning.Loading = true
+		return m, loadConfigCmd(m.cb)
+	}
+	switch mssg.String() {
+	case "h", "left", "-", "_":
+		m.tuning.Adjust(-1, false)
+	case "H", "L":
+		m.tuning.Adjust(adjustDirForKey(mssg.String()), true)
+	case "l", "right", "+", "=":
+		m.tuning.Adjust(1, false)
+	case "s":
+		changes := m.tuning.ChangedKeys()
+		if len(changes) == 0 {
+			m.setToast("Tuning: no changes", false)
+			return m, clearToastCmd()
+		}
+		if !m.tuning.SumOK() {
+			m.setToast(fmt.Sprintf("Weights must sum to 1.00 (current: %.2f)", m.tuning.WeightSum()), true)
+			return m, clearToastCmd()
+		}
+		m.saving = "Saving tuning"
+		kvs := make([]TuningKeyValue, len(changes))
+		for i, c := range changes {
+			kvs[i] = TuningKeyValue{Key: c.Key, Value: c.Value}
+		}
+		return m, saveTuningCmd(m.cb, kvs)
+	case "r":
+		m.tuning.Reset()
+		m.setToast("Tuning reverted", false)
+		return m, clearToastCmd()
+	}
+	return m, nil
+}
+
+func adjustDirForKey(s string) int {
+	if s == "L" {
+		return 1
+	}
+	return -1
+}
+
 func (m model) updateConfig(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(mssg, keys.Up):
@@ -2715,7 +2788,42 @@ func (m *model) switchTab(tab int) (tea.Model, tea.Cmd) {
 		m.targets.Err = nil
 		return *m, loadTargetsCmd(m.cb, m.targets.Offsets) // background refresh
 	}
+	if tab == tabTuning {
+		// Seed preview tasks immediately from cache, weights load via ConfigLoadedMsg.
+		m.tuning.SetTasks(m.cachedTasks)
+		return *m, loadConfigCmd(m.cb)
+	}
 	return *m, m.refreshActiveView()
+}
+
+// refreshAfterConfigChange invalidates cached snapshots and refetches every
+// derived view in parallel so config edits propagate without re-running the
+// TUI. Returns the list of commands to batch.
+func (m *model) refreshAfterConfigChange() []tea.Cmd {
+	m.cachedTasks = nil
+	m.cachedSync = nil
+	m.cachedTargets = nil
+	m.cachedFallback = nil
+	m.partialTasks = nil
+	cmds := []tea.Cmd{
+		loadConfigCmd(m.cb),
+		loadTasksCmd(m.cb),
+		loadFormOptionsCmd(m.cb),
+		prefetchFallbackCmd(m.cb),
+	}
+	// Refresh the active tab's primary data source too. loadTasksCmd already
+	// covers Tasks/Focus/Tuning; other tabs need their own kick.
+	switch m.activeTab {
+	case tabSchedule:
+		cmds = append(cmds, syncPreviewCmd(m.cb))
+	case tabWorklog:
+		cmds = append(cmds, loadWorklogsCmd(m.cb, m.worklog.WeekView, m.worklog.Date))
+	case tabTargets:
+		cmds = append(cmds, loadTargetsCmd(m.cb, m.targets.Offsets))
+	case tabDashboard:
+		cmds = append(cmds, loadDashboardCmd(m.cb, m.dashboard.Month))
+	}
+	return cmds
 }
 
 func (m model) refreshActiveView() tea.Cmd {
@@ -2733,6 +2841,8 @@ func (m model) refreshActiveView() tea.Cmd {
 	case tabDashboard:
 		return loadDashboardCmd(m.cb, m.dashboard.Month)
 	case tabConfig:
+		return loadConfigCmd(m.cb)
+	case tabTuning:
 		return loadConfigCmd(m.cb)
 	}
 	return nil
@@ -2874,6 +2984,7 @@ func (m *model) resizeViews(contentHeight int) {
 	m.dashboard.SetSize(mainWidth, contentHeight)
 	m.targets.SetSize(mainWidth, contentHeight)
 	m.config.SetSize(mainWidth, contentHeight)
+	m.tuning.SetSize(mainWidth, contentHeight)
 }
 
 func (m *model) setToast(text string, isError bool) {
@@ -2914,6 +3025,10 @@ func (m model) isLoading() bool {
 		if m.config.Loading {
 			return true
 		}
+	case tabTuning:
+		if m.tuning.Loading {
+			return true
+		}
 	}
 	return m.formKind == formAddTaskPending || m.formKind == formEditTaskPending || m.formKind == formAddWorklogPending || m.formKind == formStopTimerPending || m.formKind == formMoveTaskPending || m.formKind == formBulkMoveTaskPending
 }
@@ -2950,6 +3065,10 @@ func (m model) loadingLabel() string {
 	case tabConfig:
 		if m.config.Loading {
 			return "Loading config"
+		}
+	case tabTuning:
+		if m.tuning.Loading {
+			return "Loading tuning"
 		}
 	}
 	if m.formKind == formAddTaskPending {
@@ -3037,6 +3156,8 @@ func (m model) View() string {
 		content = m.dashboard.View()
 	case tabConfig:
 		content = m.config.View()
+	case tabTuning:
+		content = m.tuning.View()
 	}
 
 	var contentArea string
@@ -3285,6 +3406,7 @@ func (m model) renderScoreBreakdown() string {
 
 func ptrSchedule(m schedule.Model) *schedule.Model   { return &m }
 func ptrConfig(m configView.Model) *configView.Model { return &m }
+func ptrTuning(m tuning.Model) *tuning.Model         { return &m }
 
 var worklogKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d+$`)
 var issueKeyFromSummary = regexp.MustCompile(`[A-Z][A-Z0-9]+-\d+`)

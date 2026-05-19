@@ -161,6 +161,12 @@ type ConfigSetMsg struct {
 	Err error
 }
 
+// TuningSavedMsg is sent after saving a batch of tuning changes.
+type TuningSavedMsg struct {
+	Applied []string
+	Err     error
+}
+
 // ToastMsg displays a temporary notification.
 type ToastMsg struct {
 	Message string

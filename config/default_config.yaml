@@ -89,7 +89,7 @@ holidays: []
 #     end:   "17:00"
 
 tui:
-  # Hide TUI tabs by label. Valid: Dashboard, Focus, Tasks, Schedule, Worklog, Targets, Config.
+  # Hide TUI tabs by label. Valid: Dashboard, Focus, Tasks, Schedule, Tuning, Worklog, Targets, Config.
   disabledTabs: []
 
 weights:
@@ -98,5 +98,7 @@ weights:
   estimate: 0.15
   age: 0.10
   upNext: 50
+  # Per-priority raw score (P1..P5). Edit in the Tuning tab or here directly.
+  priorityLevels: [100, 80, 60, 40, 20]
   # typeBonus:                  # flat score bonus per issue type
   #   "Pull Request": 15

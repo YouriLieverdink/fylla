@@ -34,7 +34,7 @@ type TUIConfig struct {
 
 // AllTUITabs lists every TUI tab label in display order.
 var AllTUITabs = []string{
-	"Dashboard", "Focus", "Tasks", "Schedule", "Worklog", "Targets", "Config",
+	"Dashboard", "Focus", "Tasks", "Schedule", "Tuning", "Worklog", "Targets", "Config",
 }
 
 // ActiveProviders returns the list of configured providers.
@@ -236,12 +236,26 @@ func dayOf(t time.Time) time.Time {
 
 // WeightsConfig holds sorting algorithm weights.
 type WeightsConfig struct {
-	Priority  float64            `yaml:"priority"`
-	DueDate   float64            `yaml:"dueDate"`
-	Estimate  float64            `yaml:"estimate"`
-	Age       float64            `yaml:"age"`
-	UpNext    float64            `yaml:"upNext"`
-	TypeBonus map[string]float64 `yaml:"typeBonus"`
+	Priority       float64            `yaml:"priority"`
+	DueDate        float64            `yaml:"dueDate"`
+	Estimate       float64            `yaml:"estimate"`
+	Age            float64            `yaml:"age"`
+	UpNext         float64            `yaml:"upNext"`
+	TypeBonus      map[string]float64 `yaml:"typeBonus"`
+	PriorityLevels []float64          `yaml:"priorityLevels"`
+}
+
+// DefaultPriorityLevels returns the fallback per-priority raw scores
+// (priority 1..5 → P1..P5) when weights.priorityLevels is unset.
+var DefaultPriorityLevels = []float64{100, 80, 60, 40, 20}
+
+// PriorityLevelsOrDefault returns the configured priority level scores,
+// falling back to [[DefaultPriorityLevels]] when unset or invalid.
+func (w WeightsConfig) PriorityLevelsOrDefault() []float64 {
+	if len(w.PriorityLevels) != 5 {
+		return DefaultPriorityLevels
+	}
+	return w.PriorityLevels
 }
 
 // Validate checks config invariants and returns an error if any are violated.
@@ -266,6 +280,11 @@ func (c *Config) Validate() error {
 	sum := c.Weights.Priority + c.Weights.DueDate + c.Weights.Estimate + c.Weights.Age
 	if sum < 0.99 || sum > 1.01 {
 		return fmt.Errorf("weights must sum to 1.0, got %.2f", sum)
+	}
+
+	// PriorityLevels (optional) must be 5 entries when set.
+	if len(c.Weights.PriorityLevels) != 0 && len(c.Weights.PriorityLevels) != 5 {
+		return fmt.Errorf("weights.priorityLevels: must have exactly 5 values (P1..P5), got %d", len(c.Weights.PriorityLevels))
 	}
 
 	// Business hours
