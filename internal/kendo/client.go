@@ -13,7 +13,11 @@ import (
 	"time"
 
 	"github.com/iruoy/fylla/internal/task"
+	"golang.org/x/sync/errgroup"
 )
+
+// fetchTasksConcurrency caps parallel per-project fetches in FetchTasks.
+const fetchTasksConcurrency = 6
 
 // Client handles communication with the Kendo REST API.
 type Client struct {
@@ -36,10 +40,15 @@ type Client struct {
 
 // NewClient creates a Kendo client with the given credentials.
 func NewClient(baseURL, token string) *Client {
+	// Clone the default transport and lift per-host conn limits so concurrent
+	// per-project fetches don't queue behind the default cap of 2.
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConnsPerHost = 32
+	transport.MaxConnsPerHost = 32
 	return &Client{
 		BaseURL:    strings.TrimRight(baseURL, "/"),
 		Token:      token,
-		HTTPClient: &http.Client{Timeout: 30 * time.Second},
+		HTTPClient: &http.Client{Timeout: 30 * time.Second, Transport: transport},
 	}
 }
 
@@ -63,6 +72,7 @@ type issueJSON struct {
 	ProjectID        int    `json:"project_id"`
 	LaneID           int    `json:"lane_id"`
 	EstimatedMinutes *int   `json:"estimated_minutes"`
+	RemainingMinutes *int   `json:"remaining_minutes"`
 	BlockedByIDs     []int  `json:"blocked_by_ids"`
 	BlocksIDs        []int  `json:"blocks_ids"`
 	CreatedAt        string `json:"created_at"`
@@ -411,9 +421,12 @@ func parseIssue(issue issueJSON, projectCode, laneName string, epicMap map[int]s
 	}
 
 	if issue.EstimatedMinutes != nil {
-		est := time.Duration(*issue.EstimatedMinutes) * time.Minute
-		t.OriginalEstimate = est
-		t.RemainingEstimate = est
+		t.OriginalEstimate = time.Duration(*issue.EstimatedMinutes) * time.Minute
+	}
+	if issue.RemainingMinutes != nil {
+		t.RemainingEstimate = time.Duration(*issue.RemainingMinutes) * time.Minute
+	} else {
+		t.RemainingEstimate = t.OriginalEstimate
 	}
 
 	// Extract scheduling constraints from summary
@@ -608,65 +621,88 @@ func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, err
 		}
 	}
 
-	// Fetch issues from all projects sequentially to avoid 429 rate limits.
+	// Fetch projects concurrently with bounded parallelism.
 	// Lanes and epics are cached per project after first fetch.
-	var allTasks []task.Task
-	for _, pid := range projectIDs {
-		laneMap, err := c.fetchLaneMap(ctx, pid)
-		if err != nil {
-			return nil, err
-		}
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(fetchTasksConcurrency)
+	perProject := make([][]task.Task, len(projectIDs))
 
-		resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/issues", pid), nil)
-		if err != nil {
-			return nil, fmt.Errorf("fetch issues: %w", err)
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			return nil, fmt.Errorf("kendo fetch issues: status %d: %s", resp.StatusCode, string(body))
-		}
-
-		var issues []issueJSON
-		if err := json.NewDecoder(resp.Body).Decode(&issues); err != nil {
-			resp.Body.Close()
-			return nil, fmt.Errorf("decode issues: %w", err)
-		}
-		resp.Body.Close()
-
-		// Quick filter before fetching epics — skip project entirely if no issues match
-		doneLaneID := c.doneLaneIDFromMap(laneMap)
-		var matching []issueJSON
-		for _, issue := range issues {
-			if issue.LaneID == doneLaneID {
-				continue
+	for i, pid := range projectIDs {
+		i, pid := i, pid
+		g.Go(func() error {
+			tasks, err := c.fetchProjectTasks(gctx, pid, filter, textSearch, query)
+			if err != nil {
+				return err
 			}
-			if !filter.empty() && !filter.matches(issue) {
-				continue
-			}
-			if textSearch && !issueMatchesText(issue, query) {
-				continue
-			}
-			matching = append(matching, issue)
-		}
-		if len(matching) == 0 {
-			continue
-		}
-
-		// Only fetch epics if we have matching issues (avoids unnecessary API call)
-		epicMap, err := c.fetchEpicMap(ctx, pid)
-		if err != nil {
-			return nil, err
-		}
-
-		code := c.projectCodeByID(pid)
-		for _, issue := range matching {
-			allTasks = append(allTasks, parseIssue(issue, code, laneMap[issue.LaneID], epicMap))
-		}
+			perProject[i] = tasks
+			return nil
+		})
 	}
 
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	var allTasks []task.Task
+	for _, tasks := range perProject {
+		allTasks = append(allTasks, tasks...)
+	}
 	return allTasks, nil
+}
+
+// fetchProjectTasks fetches and parses issues for a single project, applying
+// filters and skipping epic lookup when no issues match.
+func (c *Client) fetchProjectTasks(ctx context.Context, pid int, filter issueFilter, textSearch bool, query string) ([]task.Task, error) {
+	laneMap, err := c.fetchLaneMap(ctx, pid)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/issues", pid), nil)
+	if err != nil {
+		return nil, fmt.Errorf("fetch issues: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("kendo fetch issues: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var issues []issueJSON
+	if err := json.NewDecoder(resp.Body).Decode(&issues); err != nil {
+		return nil, fmt.Errorf("decode issues: %w", err)
+	}
+
+	doneLaneID := c.doneLaneIDFromMap(laneMap)
+	var matching []issueJSON
+	for _, issue := range issues {
+		if issue.LaneID == doneLaneID {
+			continue
+		}
+		if !filter.empty() && !filter.matches(issue) {
+			continue
+		}
+		if textSearch && !issueMatchesText(issue, query) {
+			continue
+		}
+		matching = append(matching, issue)
+	}
+	if len(matching) == 0 {
+		return nil, nil
+	}
+
+	epicMap, err := c.fetchEpicMap(ctx, pid)
+	if err != nil {
+		return nil, err
+	}
+
+	code := c.projectCodeByID(pid)
+	out := make([]task.Task, 0, len(matching))
+	for _, issue := range matching {
+		out = append(out, parseIssue(issue, code, laneMap[issue.LaneID], epicMap))
+	}
+	return out, nil
 }
 
 // CreateTask creates a new issue in Kendo.
@@ -1094,7 +1130,8 @@ func (c *Client) PostWorklog(ctx context.Context, issueKey string, timeSpent tim
 	return nil
 }
 
-// GetEstimate fetches the remaining estimate for the specified issue.
+// GetEstimate fetches the remaining estimate for the specified issue
+// (server-computed: estimated_minutes minus logged time).
 func (c *Client) GetEstimate(ctx context.Context, issueKey string) (time.Duration, error) {
 	pid, err := c.projectIDForKey(ctx, issueKey)
 	if err != nil {
@@ -1106,20 +1143,35 @@ func (c *Client) GetEstimate(ctx context.Context, issueKey string) (time.Duratio
 		return 0, err
 	}
 
-	if issue.EstimatedMinutes == nil {
-		return 0, nil
+	if issue.RemainingMinutes != nil {
+		return time.Duration(*issue.RemainingMinutes) * time.Minute, nil
 	}
-	return time.Duration(*issue.EstimatedMinutes) * time.Minute, nil
+	if issue.EstimatedMinutes != nil {
+		return time.Duration(*issue.EstimatedMinutes) * time.Minute, nil
+	}
+	return 0, nil
 }
 
-// UpdateEstimate sets the estimate for the specified issue.
+// UpdateEstimate sets the remaining estimate for the specified issue.
+// Kendo only stores total estimated_minutes server-side, so we write
+// estimated_minutes = already-logged + new remaining, preserving spent time.
 func (c *Client) UpdateEstimate(ctx context.Context, issueKey string, remaining time.Duration) error {
 	pid, err := c.projectIDForKey(ctx, issueKey)
 	if err != nil {
 		return err
 	}
+	issue, err := c.fetchIssue(ctx, pid, issueKey)
+	if err != nil {
+		return err
+	}
+	spent := 0
+	if issue.EstimatedMinutes != nil && issue.RemainingMinutes != nil {
+		if s := *issue.EstimatedMinutes - *issue.RemainingMinutes; s > 0 {
+			spent = s
+		}
+	}
 	return c.putIssue(ctx, pid, issueKey, map[string]interface{}{
-		"estimated_minutes": int(remaining.Minutes()),
+		"estimated_minutes": spent + int(remaining.Minutes()),
 	})
 }
 

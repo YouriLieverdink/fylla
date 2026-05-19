@@ -518,22 +518,93 @@ func TestGetEstimate(t *testing.T) {
 }
 
 func TestUpdateEstimate(t *testing.T) {
-	var gotPayload map[string]interface{}
+	t.Run("no logged time writes new remaining as total", func(t *testing.T) {
+		var gotPayload map[string]interface{}
+		server := httptest.NewServer(kendoHandler(t, func(cfg *kendoHandlerConfig) {
+			cfg.onPutIssue = func(w http.ResponseWriter, r *http.Request) {
+				json.NewDecoder(r.Body).Decode(&gotPayload)
+				w.WriteHeader(http.StatusOK)
+			}
+		}))
+		defer server.Close()
+
+		client := NewClient(server.URL, "test-token")
+		err := client.UpdateEstimate(context.Background(), "IRUOY-0001", 2*time.Hour)
+		if err != nil {
+			t.Fatalf("UpdateEstimate: %v", err)
+		}
+		if int(gotPayload["estimated_minutes"].(float64)) != 120 {
+			t.Errorf("estimated_minutes = %v, want 120", gotPayload["estimated_minutes"])
+		}
+	})
+
+	t.Run("preserves logged time when setting new remaining", func(t *testing.T) {
+		est, rem := 120, 60 // 60 min logged
+		var gotPayload map[string]interface{}
+		server := httptest.NewServer(kendoHandler(t, func(cfg *kendoHandlerConfig) {
+			cfg.issues = map[string]issueJSON{
+				"IRUOY-0001": {ID: 1, Key: "IRUOY-0001", Title: "Task", LaneID: 10, ProjectID: 1, EstimatedMinutes: &est, RemainingMinutes: &rem},
+			}
+			cfg.onPutIssue = func(w http.ResponseWriter, r *http.Request) {
+				json.NewDecoder(r.Body).Decode(&gotPayload)
+				w.WriteHeader(http.StatusOK)
+			}
+		}))
+		defer server.Close()
+
+		client := NewClient(server.URL, "test-token")
+		err := client.UpdateEstimate(context.Background(), "IRUOY-0001", 90*time.Minute)
+		if err != nil {
+			t.Fatalf("UpdateEstimate: %v", err)
+		}
+		// 60 spent + 90 new remaining = 150 total
+		if int(gotPayload["estimated_minutes"].(float64)) != 150 {
+			t.Errorf("estimated_minutes = %v, want 150 (60 spent + 90 remaining)", gotPayload["estimated_minutes"])
+		}
+	})
+}
+
+func TestGetEstimate_PrefersRemainingMinutes(t *testing.T) {
+	est, rem := 120, 45
 	server := httptest.NewServer(kendoHandler(t, func(cfg *kendoHandlerConfig) {
-		cfg.onPutIssue = func(w http.ResponseWriter, r *http.Request) {
-			json.NewDecoder(r.Body).Decode(&gotPayload)
-			w.WriteHeader(http.StatusOK)
+		cfg.issues = map[string]issueJSON{
+			"IRUOY-0001": {ID: 1, Key: "IRUOY-0001", Title: "Task", LaneID: 10, ProjectID: 1, EstimatedMinutes: &est, RemainingMinutes: &rem},
 		}
 	}))
 	defer server.Close()
 
 	client := NewClient(server.URL, "test-token")
-	err := client.UpdateEstimate(context.Background(), "IRUOY-0001", 2*time.Hour)
+	d, err := client.GetEstimate(context.Background(), "IRUOY-0001")
 	if err != nil {
-		t.Fatalf("UpdateEstimate: %v", err)
+		t.Fatalf("GetEstimate: %v", err)
 	}
-	if int(gotPayload["estimated_minutes"].(float64)) != 120 {
-		t.Errorf("estimated_minutes = %v, want 120", gotPayload["estimated_minutes"])
+	if d != 45*time.Minute {
+		t.Errorf("estimate = %v, want 45m (remaining, not total)", d)
+	}
+}
+
+func TestParseIssue_RemainingMinutes(t *testing.T) {
+	est, rem := 120, 30
+	tk := parseIssue(issueJSON{
+		Key: "IRUOY-0001", Title: "Task", ProjectID: 1,
+		EstimatedMinutes: &est, RemainingMinutes: &rem,
+	}, "IRUOY", "To Do", nil)
+	if tk.OriginalEstimate != 120*time.Minute {
+		t.Errorf("OriginalEstimate = %v, want 2h", tk.OriginalEstimate)
+	}
+	if tk.RemainingEstimate != 30*time.Minute {
+		t.Errorf("RemainingEstimate = %v, want 30m", tk.RemainingEstimate)
+	}
+}
+
+func TestParseIssue_NoRemainingFallsBackToEstimate(t *testing.T) {
+	est := 90
+	tk := parseIssue(issueJSON{
+		Key: "IRUOY-0001", Title: "Task", ProjectID: 1,
+		EstimatedMinutes: &est, // RemainingMinutes nil (old server)
+	}, "IRUOY", "To Do", nil)
+	if tk.RemainingEstimate != 90*time.Minute {
+		t.Errorf("RemainingEstimate = %v, want 90m (fallback)", tk.RemainingEstimate)
 	}
 }
 

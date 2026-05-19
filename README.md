@@ -602,6 +602,18 @@ kendo:
 `fylla task done` moves the issue to the configured `doneLane` (defaults to
 `"done"`). Configure `kendo.doneLane` to match your board's done column name.
 
+### Remaining estimate
+
+Fylla uses Kendo's server-computed `remaining_minutes` (total estimate minus
+logged time) everywhere it represents "time to schedule": the tasks/schedule
+tabs, sorter scoring, allocator slot sizing, `fylla task view`, and the
+"remaining" line after `fylla timer stop`. A 2h task with 1h already logged
+shows and schedules as 1h.
+
+`fylla task estimate KEY 90m` sets the remaining to 90m; logged time is
+preserved (Fylla writes `estimated_minutes = spent + new_remaining` so the
+server-computed remaining matches the value you set).
+
 ## Pull Request Reviews
 
 When `github` is added to `providers`, PRs awaiting your review appear alongside
