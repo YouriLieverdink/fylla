@@ -215,6 +215,9 @@ holidays:                         # days/windows blocked from work (subtracted f
     start: "16:00"
     end:   "17:00"
 
+sickDays:                         # same format/effect as holidays, tracked separately
+  - date: 2026-05-12              # full sick day
+
 weights:
   priority: 0.45
   dueDate: 0.30
@@ -504,13 +507,13 @@ is color-coded: green when at or above target, yellow when within 10% of
 target, red when below. In the week view, per-day efficiency is shown in each
 day header.
 
-### Holidays
+### Holidays & sick days
 
-Use `holidays:` to record national holidays, sick days, vacations, or
-appointments that reduce expected hours for that date. Each entry needs a
-`date: YYYY-MM-DD`. Omit `start`/`end` for a full day off; set both (HH:MM)
-to block only part of the day. Multiple non-overlapping entries may share a
-date — useful for splitting a couple hours off morning and afternoon.
+Use `holidays:` to record national holidays, vacations, or appointments that
+reduce expected hours for that date. Each entry needs a `date: YYYY-MM-DD`.
+Omit `start`/`end` for a full day off; set both (HH:MM) to block only part of
+the day. Multiple non-overlapping entries may share a date — useful for
+splitting a couple hours off morning and afternoon.
 
 ```yaml
 holidays:
@@ -526,9 +529,22 @@ holidays:
     end:   "17:00"
 ```
 
-The worklog tab subtracts holiday hours from the daily/weekly target. The
-sync scheduler treats holiday ranges like out-of-office events — no tasks
-are auto-scheduled into them.
+`sickDays:` uses the exact same format and has the same effect, but is tracked
+and labelled separately so you can tell holidays and sick leave apart:
+
+```yaml
+sickDays:
+  - date: 2026-05-12              # full sick day
+  - date: 2026-05-13
+    start: "13:00"                # left sick at noon
+    end:   "17:00"
+```
+
+The worklog tab subtracts holiday and sick-day hours from the daily/weekly
+target. The sync scheduler treats both as out-of-office ranges — no tasks are
+auto-scheduled into them. In the dashboard heatmap, holidays show `⛱` and sick
+days show `✚`; the "Missed" tile breaks the month down into work / holiday /
+sick days.
 
 ### Worklog provider routing
 

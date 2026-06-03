@@ -28,10 +28,11 @@ type Model struct {
 	WorkDays         map[int]bool // ISO weekday (1=Mon..7=Sun)
 	BusinessHours    []config.BusinessHoursConfig
 	Holidays         config.HolidayIndex
+	SickDays         config.HolidayIndex
 }
 
 // New creates a new worklog model.
-func New(dailyHours, weeklyHours, efficiencyTarget float64, workDays []int, businessHours []config.BusinessHoursConfig, holidays config.HolidayIndex) Model {
+func New(dailyHours, weeklyHours, efficiencyTarget float64, workDays []int, businessHours []config.BusinessHoursConfig, holidays, sickDays config.HolidayIndex) Model {
 	wd := make(map[int]bool, len(workDays))
 	for _, d := range workDays {
 		wd[d] = true
@@ -50,6 +51,7 @@ func New(dailyHours, weeklyHours, efficiencyTarget float64, workDays []int, busi
 		WorkDays:         wd,
 		BusinessHours:    businessHours,
 		Holidays:         holidays,
+		SickDays:         sickDays,
 	}
 }
 
@@ -212,20 +214,23 @@ func (m Model) View() string {
 	return b.String()
 }
 
-// holidayLabel returns a short marker (e.g. "holiday" or "½ 4h off") if the
-// given date has any holiday entry, or "" otherwise.
+// holidayLabel returns a short marker (e.g. "holiday", "sick" or "4h off") if
+// the given date has any holiday or sick-day entry, or "" otherwise.
 func (m Model) holidayLabel(date time.Time) string {
 	if m.Holidays.IsFullDay(date) {
 		return "holiday"
 	}
-	if !m.Holidays.HasHoliday(date) {
+	if m.SickDays.IsFullDay(date) {
+		return "sick"
+	}
+	if !m.Holidays.HasHoliday(date) && !m.SickDays.HasHoliday(date) {
 		return ""
 	}
 	full := m.DailyHours
 	if full <= 0 {
 		return "partial off"
 	}
-	eff := m.Holidays.EffectiveDailyHours(date, full, m.BusinessHours)
+	eff := m.SickDays.EffectiveDailyHours(date, m.Holidays.EffectiveDailyHours(date, full, m.BusinessHours), m.BusinessHours)
 	off := full - eff
 	if off <= 0 {
 		return ""
@@ -241,7 +246,7 @@ func (m Model) dailyTargetFor(date time.Time) time.Duration {
 	if m.DailyHours <= 0 {
 		return 0
 	}
-	eff := m.Holidays.EffectiveDailyHours(date, m.DailyHours, m.BusinessHours)
+	eff := m.SickDays.EffectiveDailyHours(date, m.Holidays.EffectiveDailyHours(date, m.DailyHours, m.BusinessHours), m.BusinessHours)
 	return time.Duration(eff * float64(time.Hour))
 }
 
@@ -296,7 +301,7 @@ func (m Model) efficiencyLine(total time.Duration) string {
 		default:
 			style = styles.ErrStyle
 		}
-		remainingStr = style.Render(styles.FormatDuration(remaining)+" to target")
+		remainingStr = style.Render(styles.FormatDuration(remaining) + " to target")
 	}
 
 	return fmt.Sprintf("  Efficiency: %s  Target: %.0f%%  %s\n",

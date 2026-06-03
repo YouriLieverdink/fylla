@@ -21,6 +21,7 @@ type Config struct {
 	Efficiency    EfficiencyConfig                 `yaml:"efficiency"`
 	Targets       []TargetConfig                   `yaml:"targets"`
 	Holidays      []HolidayConfig                  `yaml:"holidays"`
+	SickDays      []HolidayConfig                  `yaml:"sickDays"`
 	TUI           TUIConfig                        `yaml:"tui"`
 }
 
@@ -77,16 +78,16 @@ type CalendarConfig struct {
 
 // SchedulingConfig holds scheduling parameters.
 type SchedulingConfig struct {
-	WindowDays              int   `yaml:"windowDays"`
-	MinTaskDurationMinutes  int   `yaml:"minTaskDurationMinutes"`
-	MaxTaskDurationMinutes  int   `yaml:"maxTaskDurationMinutes"`
-	BufferMinutes           int   `yaml:"bufferMinutes"`
-	TravelBufferMinutes     int   `yaml:"travelBufferMinutes"`
-	SnapMinutes             []int `yaml:"snapMinutes"`
-	DefaultEstimateMinutes  int   `yaml:"defaultEstimateMinutes"`
-	ProviderTimeoutSeconds  int   `yaml:"providerTimeoutSeconds"`
-	TaskCacheTTLSeconds     int   `yaml:"taskCacheTTLSeconds"`
-	PreviewTimeoutSeconds   int   `yaml:"previewTimeoutSeconds"`
+	WindowDays             int   `yaml:"windowDays"`
+	MinTaskDurationMinutes int   `yaml:"minTaskDurationMinutes"`
+	MaxTaskDurationMinutes int   `yaml:"maxTaskDurationMinutes"`
+	BufferMinutes          int   `yaml:"bufferMinutes"`
+	TravelBufferMinutes    int   `yaml:"travelBufferMinutes"`
+	SnapMinutes            []int `yaml:"snapMinutes"`
+	DefaultEstimateMinutes int   `yaml:"defaultEstimateMinutes"`
+	ProviderTimeoutSeconds int   `yaml:"providerTimeoutSeconds"`
+	TaskCacheTTLSeconds    int   `yaml:"taskCacheTTLSeconds"`
+	PreviewTimeoutSeconds  int   `yaml:"previewTimeoutSeconds"`
 }
 
 // BusinessHoursConfig holds default business hours.
@@ -386,6 +387,11 @@ func (c *Config) Validate() error {
 		return err
 	}
 
+	// Sick days
+	if _, err := BuildSickDayIndex(c.SickDays); err != nil {
+		return err
+	}
+
 	// TUI disabled tabs
 	tabSet := make(map[string]bool, len(AllTUITabs))
 	for _, t := range AllTUITabs {
@@ -510,17 +516,29 @@ type holidayDay struct {
 	blocks []holidayBlock
 }
 
-// HolidayIndex resolves holidays by date for fast lookup.
-// Build via BuildHolidayIndex; the zero value is a valid empty index.
+// HolidayIndex resolves blocked days by date for fast lookup. The same type
+// backs both holidays and sick days. Build via BuildHolidayIndex or
+// BuildSickDayIndex; the zero value is a valid empty index.
 type HolidayIndex struct {
 	days map[string]holidayDay
 }
 
 // BuildHolidayIndex parses and validates a holiday list and returns a lookup index.
 func BuildHolidayIndex(holidays []HolidayConfig) (HolidayIndex, error) {
+	return buildDayOffIndex(holidays, "holidays")
+}
+
+// BuildSickDayIndex parses and validates a sick-day list and returns a lookup index.
+func BuildSickDayIndex(sickDays []HolidayConfig) (HolidayIndex, error) {
+	return buildDayOffIndex(sickDays, "sickDays")
+}
+
+// buildDayOffIndex parses and validates a list of blocked days (holidays or
+// sick days) into a lookup index. key prefixes error messages.
+func buildDayOffIndex(entries []HolidayConfig, key string) (HolidayIndex, error) {
 	days := make(map[string]holidayDay)
-	for i, h := range holidays {
-		prefix := fmt.Sprintf("holidays[%d]", i)
+	for i, h := range entries {
+		prefix := fmt.Sprintf("%s[%d]", key, i)
 		if h.Date == "" {
 			return HolidayIndex{}, fmt.Errorf("%s.date: required", prefix)
 		}

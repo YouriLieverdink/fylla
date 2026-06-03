@@ -14,10 +14,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/iruoy/fylla/internal/config"
+	"github.com/iruoy/fylla/internal/focus"
 	"github.com/iruoy/fylla/internal/tui/components"
 	"github.com/iruoy/fylla/internal/tui/msg"
 	"github.com/iruoy/fylla/internal/tui/styles"
-	"github.com/iruoy/fylla/internal/focus"
 	configView "github.com/iruoy/fylla/internal/tui/views/config"
 	"github.com/iruoy/fylla/internal/tui/views/dashboard"
 	focusView "github.com/iruoy/fylla/internal/tui/views/focus"
@@ -50,6 +50,7 @@ type Deps struct {
 	WorkDays         []int // ISO weekday numbers (1=Mon..7=Sun)
 	BusinessHours    []config.BusinessHoursConfig
 	Holidays         config.HolidayIndex
+	SickDays         config.HolidayIndex
 	WorklogProvider  string
 	ProfileName      string
 	DisabledTabs     []string // tab labels to hide from the tab bar
@@ -273,8 +274,8 @@ func initialModel(deps Deps) model {
 		focusPath:       focusPath,
 		schedule:        ptrSchedule(schedule.New()),
 		timer:           timerView.New(),
-		worklog:         worklog.New(deps.DailyHours, deps.WeeklyHours, deps.EfficiencyTarget, deps.WorkDays, deps.BusinessHours, deps.Holidays),
-		dashboard:       dashboard.New(deps.DailyHours, deps.WeeklyHours, deps.EfficiencyTarget, deps.WorkDays, deps.BusinessHours, deps.Holidays),
+		worklog:         worklog.New(deps.DailyHours, deps.WeeklyHours, deps.EfficiencyTarget, deps.WorkDays, deps.BusinessHours, deps.Holidays, deps.SickDays),
+		dashboard:       dashboard.New(deps.DailyHours, deps.WeeklyHours, deps.EfficiencyTarget, deps.WorkDays, deps.BusinessHours, deps.Holidays, deps.SickDays),
 		targets:         targets.New(deps.WorklogProvider),
 		targetEditIdx:   -1,
 		config:          ptrConfig(configView.New()),
