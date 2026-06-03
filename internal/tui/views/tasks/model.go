@@ -260,9 +260,17 @@ func (m Model) View() string {
 			if nActionable > 0 {
 				lines = append(lines, displayLine{taskIdx: -1}) // blank separator
 			}
-			lines = append(lines, displayLine{taskIdx: -1, header: fmt.Sprintf("Not yet (%d)", nDeferred)})
-			for i := split; i < len(filtered); i++ {
-				lines = append(lines, displayLine{taskIdx: i})
+			// Collapsed by default; expands once the cursor moves into the deferred range.
+			deferredExpanded := m.Cursor >= split
+			marker := "▸"
+			if deferredExpanded {
+				marker = "▾"
+			}
+			lines = append(lines, displayLine{taskIdx: -1, header: fmt.Sprintf("Not yet (%d) %s", nDeferred, marker)})
+			if deferredExpanded {
+				for i := split; i < len(filtered); i++ {
+					lines = append(lines, displayLine{taskIdx: i})
+				}
 			}
 		}
 
