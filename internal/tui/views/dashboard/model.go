@@ -352,7 +352,6 @@ func (m Model) renderCalendarPanel(stats monthStats, width int) string {
 	for d := gridStart; !d.After(gridEnd); {
 		var weekTotal, weekTarget time.Duration
 		hadInMonth := false
-		anyPast := false
 		var weekRow strings.Builder
 		for col := 0; col < 7; col++ {
 			weekRow.WriteString(m.renderCalendarCell(d, today, stats, cellWidth))
@@ -360,17 +359,14 @@ func (m Model) renderCalendarPanel(stats monthStats, width int) string {
 				hadInMonth = true
 				key := d.Format("2006-01-02")
 				weekTotal += stats.dailyTotals[key]
-				if !d.After(today) {
-					weekTarget += stats.dailyTargets[key]
-					anyPast = true
-				}
+				weekTarget += stats.dailyTargets[key]
 			}
 			d = d.AddDate(0, 0, 1)
 		}
 		b.WriteString(weekRow.String())
 		if hadInMonth {
 			label := styles.PadOrTruncate(styles.FormatDuration(weekTotal), cellWidth)
-			if anyPast && weekTarget > 0 {
+			if weekTarget > 0 {
 				ratio := float64(weekTotal) / float64(weekTarget)
 				b.WriteString(heatmapStyle(ratio, m.EfficiencyTarget, false).Render(label))
 			} else {
@@ -634,12 +630,16 @@ func (m Model) computeMonthStats() monthStats {
 		target := m.dailyTargetFor(d)
 		stats.dailyTargets[d.Format("2006-01-02")] = target
 
+		// expected spans the entire month, including days not yet started.
+		if m.WorkDays[iso] && target > 0 {
+			stats.expected += target
+		}
+
 		if !d.After(endDate) {
 			if m.Holidays.IsFullDay(d) {
 				stats.holidayDays++
 			} else if m.WorkDays[iso] && target > 0 {
 				stats.workingDays++
-				stats.expected += target
 				key := d.Format("2006-01-02")
 				if stats.dailyTotals[key] == 0 && d.Before(today) {
 					stats.missedDays++
