@@ -88,6 +88,18 @@ holidays: []
 #     start: "16:00"
 #     end:   "17:00"
 
+sickDays: []
+# Sick days — same format and effect as holidays (block scheduling, subtract
+# from worklog targets), tracked and labelled separately in the TUI. Each entry:
+#   date:  YYYY-MM-DD (required)
+#   start: HH:MM      (optional; pair with end to block a partial window)
+#   end:   HH:MM      (optional)
+# Examples:
+#   - date: 2026-05-12           # full sick day
+#   - date: 2026-05-13
+#     start: "13:00"             # left sick at noon
+#     end:   "17:00"
+
 tui:
   # Hide TUI tabs by label. Valid: Dashboard, Focus, Tasks, Schedule, Tuning, Worklog, Targets, Config.
   disabledTabs: []

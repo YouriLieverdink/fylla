@@ -455,6 +455,11 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 		return nil, fmt.Errorf("holiday index: %w", err)
 	}
 
+	sickDays, err := config.BuildSickDayIndex(p.Cfg.SickDays)
+	if err != nil {
+		return nil, fmt.Errorf("sick day index: %w", err)
+	}
+
 	defaultSlots, err := calendar.FindFreeSlots(
 		p.Now, p.Start, p.End, events,
 		p.Cfg.BusinessHours,
@@ -463,6 +468,7 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 		p.Cfg.Scheduling.SnapMinutes,
 		p.Cfg.Scheduling.TravelBufferMinutes,
 		holidays,
+		sickDays,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("find default slots: %w", err)
@@ -479,6 +485,7 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 			p.Cfg.Scheduling.SnapMinutes,
 			p.Cfg.Scheduling.TravelBufferMinutes,
 			holidays,
+			sickDays,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("find slots for project %s: %w", project, err)
@@ -489,13 +496,13 @@ func RunSync(ctx context.Context, p SyncParams) (*SyncResult, error) {
 	// Step 6: Allocate tasks to slots
 	progress(p.Progress, "Scheduling %d tasks into available slots...", len(sorted))
 	allocations, unscheduled := scheduler.Allocate(sorted, slotsByProject, scheduler.AllocateConfig{
-		MinTaskDurationMinutes:  p.Cfg.Scheduling.MinTaskDurationMinutes,
-		MaxTaskDurationMinutes:  p.Cfg.Scheduling.MaxTaskDurationMinutes,
-		BufferMinutes:           p.Cfg.Scheduling.BufferMinutes,
-		SnapMinutes:             p.Cfg.Scheduling.SnapMinutes,
-		DefaultEstimateMinutes:  p.Cfg.Scheduling.DefaultEstimateMinutes,
-		Weights:                 p.Cfg.Weights,
-		Now:                     p.Now,
+		MinTaskDurationMinutes: p.Cfg.Scheduling.MinTaskDurationMinutes,
+		MaxTaskDurationMinutes: p.Cfg.Scheduling.MaxTaskDurationMinutes,
+		BufferMinutes:          p.Cfg.Scheduling.BufferMinutes,
+		SnapMinutes:            p.Cfg.Scheduling.SnapMinutes,
+		DefaultEstimateMinutes: p.Cfg.Scheduling.DefaultEstimateMinutes,
+		Weights:                p.Cfg.Weights,
+		Now:                    p.Now,
 	})
 
 	// Step 7: Apply schedule to calendar

@@ -71,6 +71,11 @@ func RunServe(ctx context.Context) error {
 		return fmt.Errorf("holiday index: %w", err)
 	}
 
+	sickDays, err := config.BuildSickDayIndex(cfg.SickDays)
+	if err != nil {
+		return fmt.Errorf("sick day index: %w", err)
+	}
+
 	return tui.Run(tui.Deps{
 		CB:               buildCallbacks(ctx, cal, fetcher, source, cache, cfg, cfgPath, query),
 		DailyHours:       cfg.Efficiency.DailyHours,
@@ -79,6 +84,7 @@ func RunServe(ctx context.Context) error {
 		WorkDays:         collectWorkDays(cfg),
 		BusinessHours:    cfg.BusinessHours,
 		Holidays:         holidays,
+		SickDays:         sickDays,
 		WorklogProvider:  worklogProvider(cfg),
 		ProfileName:      config.ActiveProfile(),
 		DisabledTabs:     cfg.TUI.DisabledTabs,

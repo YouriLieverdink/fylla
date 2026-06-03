@@ -19,7 +19,7 @@ func newModel(t *testing.T, date time.Time, holidays []config.HolidayConfig) Mod
 	if err != nil {
 		t.Fatalf("build holiday index: %v", err)
 	}
-	m := New(8, 40, 0.7, []int{1, 2, 3, 4, 5}, defaultBiz(), idx)
+	m := New(8, 40, 0.7, []int{1, 2, 3, 4, 5}, defaultBiz(), idx, config.HolidayIndex{})
 	m.Date = date
 	return m
 }

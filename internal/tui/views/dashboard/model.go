@@ -27,11 +27,12 @@ type Model struct {
 	WorkDays         map[int]bool
 	BusinessHours    []config.BusinessHoursConfig
 	Holidays         config.HolidayIndex
+	SickDays         config.HolidayIndex
 	ScrollOffset     int
 }
 
 // New creates a new dashboard model.
-func New(dailyHours, weeklyHours, efficiencyTarget float64, workDays []int, businessHours []config.BusinessHoursConfig, holidays config.HolidayIndex) Model {
+func New(dailyHours, weeklyHours, efficiencyTarget float64, workDays []int, businessHours []config.BusinessHoursConfig, holidays, sickDays config.HolidayIndex) Model {
 	now := time.Now()
 	wd := make(map[int]bool, len(workDays))
 	for _, d := range workDays {
@@ -51,6 +52,7 @@ func New(dailyHours, weeklyHours, efficiencyTarget float64, workDays []int, busi
 		WorkDays:         wd,
 		BusinessHours:    businessHours,
 		Holidays:         holidays,
+		SickDays:         sickDays,
 	}
 }
 
@@ -112,7 +114,7 @@ func (m Model) dailyTargetFor(d time.Time) time.Duration {
 	if m.DailyHours <= 0 {
 		return 0
 	}
-	eff := m.Holidays.EffectiveDailyHours(d, m.DailyHours, m.BusinessHours)
+	eff := m.SickDays.EffectiveDailyHours(d, m.Holidays.EffectiveDailyHours(d, m.DailyHours, m.BusinessHours), m.BusinessHours)
 	if eff <= 0 {
 		return 0
 	}
@@ -132,6 +134,7 @@ type monthStats struct {
 	loggedDays   int
 	missedDays   int
 	holidayDays  int
+	sickDays     int
 	dailyTotals  map[string]time.Duration
 	dailyTargets map[string]time.Duration
 }
@@ -254,7 +257,7 @@ func (m Model) kpiAvgPerDay(stats monthStats, w int) string {
 
 func (m Model) kpiMissed(stats monthStats, w int) string {
 	value := fmt.Sprintf("%d", stats.missedDays)
-	sub := styles.HintStyle.Render(fmt.Sprintf("%d work · %d hol", stats.workingDays, stats.holidayDays))
+	sub := styles.HintStyle.Render(fmt.Sprintf("%d work · %d hol · %d sick", stats.workingDays, stats.holidayDays, stats.sickDays))
 	style := styles.CurrentStyle
 	if stats.missedDays > 0 {
 		style = styles.WarnStyle
@@ -398,14 +401,18 @@ func (m Model) renderCalendarCell(d, today time.Time, stats monthStats, cellWidt
 
 	isToday := d.Equal(today)
 	isFullHoliday := m.Holidays.IsFullDay(d)
-	isPartialHoliday := !isFullHoliday && m.Holidays.HasHoliday(d) && m.WorkDays[iso]
+	isFullSick := m.SickDays.IsFullDay(d)
+	isFullOff := isFullHoliday || isFullSick
+	isPartialOff := !isFullOff && (m.Holidays.HasHoliday(d) || m.SickDays.HasHoliday(d)) && m.WorkDays[iso]
 	isFuture := d.After(today)
-	isWorkday := m.WorkDays[iso] && !isFullHoliday
+	isWorkday := m.WorkDays[iso] && !isFullOff
 
 	var cellText string
 	switch {
 	case isFullHoliday:
 		cellText = dayNum + " ⛱"
+	case isFullSick:
+		cellText = dayNum + " ✚"
 	case !isWorkday:
 		if total > 0 {
 			cellText = fmt.Sprintf("%s %s", dayNum, styles.FormatDuration(total))
@@ -413,7 +420,7 @@ func (m Model) renderCalendarCell(d, today time.Time, stats monthStats, cellWidt
 			cellText = dayNum
 		}
 	case isFuture:
-		if isPartialHoliday {
+		if isPartialOff {
 			cellText = dayNum + " ½"
 		} else {
 			cellText = dayNum
@@ -426,15 +433,15 @@ func (m Model) renderCalendarCell(d, today time.Time, stats monthStats, cellWidt
 
 	cellStr := styles.PadOrTruncate(cellText, cellWidth)
 
-	style := m.cellStyle(d, total, target, isWorkday, isFuture, isFullHoliday, isPartialHoliday)
+	style := m.cellStyle(d, total, target, isWorkday, isFuture, isFullOff, isPartialOff)
 	if isToday {
 		style = style.Underline(true)
 	}
 	return style.Render(cellStr)
 }
 
-func (m Model) cellStyle(d time.Time, total, target time.Duration, isWorkday, isFuture, isFullHoliday, isPartialHoliday bool) lipgloss.Style {
-	if isFullHoliday {
+func (m Model) cellStyle(d time.Time, total, target time.Duration, isWorkday, isFuture, isFullOff, isPartialOff bool) lipgloss.Style {
+	if isFullOff {
 		return styles.HintStyle.Italic(true)
 	}
 	if !isWorkday {
@@ -444,7 +451,7 @@ func (m Model) cellStyle(d time.Time, total, target time.Duration, isWorkday, is
 		return styles.HintStyle
 	}
 	if isFuture {
-		if isPartialHoliday {
+		if isPartialOff {
 			return styles.HintStyle.Italic(true)
 		}
 		return styles.HintStyle
@@ -456,7 +463,7 @@ func (m Model) cellStyle(d time.Time, total, target time.Duration, isWorkday, is
 		return styles.CurrentStyle
 	}
 	ratio := float64(total) / float64(target)
-	return heatmapStyle(ratio, m.EfficiencyTarget, isPartialHoliday)
+	return heatmapStyle(ratio, m.EfficiencyTarget, isPartialOff)
 }
 
 // heatmapStyle maps logged/target ratio to a color, using the same thresholds
@@ -509,7 +516,7 @@ func (m Model) renderHeatmapLegend() string {
 		b.WriteString(" " + hint.Render(s.label) + "  ")
 	}
 	b.WriteString("\n")
-	b.WriteString(hint.Render("⛱ holiday   · no log   ½ partial   _ today"))
+	b.WriteString(hint.Render("⛱ holiday   ✚ sick   · no log   ½ partial   _ today"))
 	return b.String()
 }
 
@@ -638,6 +645,8 @@ func (m Model) computeMonthStats() monthStats {
 		if !d.After(endDate) {
 			if m.Holidays.IsFullDay(d) {
 				stats.holidayDays++
+			} else if m.SickDays.IsFullDay(d) {
+				stats.sickDays++
 			} else if m.WorkDays[iso] && target > 0 {
 				stats.workingDays++
 				key := d.Format("2006-01-02")
@@ -648,6 +657,8 @@ func (m Model) computeMonthStats() monthStats {
 		} else {
 			if m.Holidays.IsFullDay(d) {
 				stats.holidayDays++
+			} else if m.SickDays.IsFullDay(d) {
+				stats.sickDays++
 			}
 		}
 	}

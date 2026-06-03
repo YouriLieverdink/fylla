@@ -74,6 +74,16 @@ func TestBuildHolidayIndex_Errors(t *testing.T) {
 	}
 }
 
+func TestBuildSickDayIndex_ErrorPrefix(t *testing.T) {
+	_, err := BuildSickDayIndex([]HolidayConfig{{Date: "2026-04-27", Start: "10:00", End: "09:00"}})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "sickDays[0]") {
+		t.Errorf("error %q does not mention sickDays prefix", err.Error())
+	}
+}
+
 func TestHolidayIndex_EffectiveDailyHours(t *testing.T) {
 	biz := []BusinessHoursConfig{
 		{Start: "09:00", End: "17:00", WorkDays: []int{1, 2, 3, 4, 5}},
