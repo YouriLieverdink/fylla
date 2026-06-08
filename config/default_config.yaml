@@ -60,10 +60,13 @@ worklog:
   fallbackIssues: []
   roundMinutes: 1
 
+# Efficiency tracking. Set all three to 0 to disable target/efficiency tracking
+# (e.g. for personal projects) — the dashboard then shows logged hours without
+# target coloring, and the worklog view hides the efficiency line.
 efficiency:
   weeklyHours: 40
   dailyHours: 8
-  target: 0.7
+  target: 0.7 # 0.0–1.0, e.g. 0.7 = 70%
 
 targets: []
 # Soft hour goals per project. Each entry:

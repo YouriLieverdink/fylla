@@ -181,7 +181,12 @@ func (m Model) renderKPIs(stats monthStats) string {
 	if available < 40 {
 		available = 40
 	}
+	// "Missed" counts workdays with no log against a target — meaningless when
+	// efficiency tracking is disabled, so drop it.
 	tileCount := 3
+	if !m.efficiencyEnabled() {
+		tileCount = 2
+	}
 	tileTotal := available / tileCount
 	if tileTotal < 18 {
 		tileTotal = 18
@@ -190,20 +195,20 @@ func (m Model) renderKPIs(stats monthStats) string {
 	contentWidth := tileTotal - 2
 	remainder := available - tileTotal*tileCount
 
-	w0 := contentWidth
-	w1 := contentWidth
-	w2 := contentWidth
-	if remainder > 0 {
-		w0++
-	}
-	if remainder > 1 {
-		w1++
+	widths := make([]int, tileCount)
+	for i := range widths {
+		widths[i] = contentWidth
+		if i < remainder {
+			widths[i]++
+		}
 	}
 
 	tiles := []string{
-		m.kpiThisMonth(stats, w0),
-		m.kpiAvgPerDay(stats, w1),
-		m.kpiMissed(stats, w2),
+		m.kpiThisMonth(stats, widths[0]),
+		m.kpiAvgPerDay(stats, widths[1]),
+	}
+	if tileCount == 3 {
+		tiles = append(tiles, m.kpiMissed(stats, widths[2]))
 	}
 
 	border := lipgloss.AdaptiveColor{Light: "#CCCCCC", Dark: "#444444"}
@@ -213,21 +218,10 @@ func (m Model) renderKPIs(stats monthStats) string {
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(border).
 			Padding(0, 1).
-			Width(w(i, w0, w1, w2)).
+			Width(widths[i]).
 			Render(t)
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
-}
-
-func w(i, a, b, c int) int {
-	switch i {
-	case 0:
-		return a
-	case 1:
-		return b
-	default:
-		return c
-	}
 }
 
 func (m Model) kpiThisMonth(stats monthStats, w int) string {
@@ -440,6 +434,13 @@ func (m Model) renderCalendarCell(d, today time.Time, stats monthStats, cellWidt
 	return style.Render(cellStr)
 }
 
+// efficiencyEnabled reports whether efficiency tracking is configured. When all
+// three efficiency values are zero, target-based coloring is disabled and the
+// calendar shows logged hours in neutral styling.
+func (m Model) efficiencyEnabled() bool {
+	return m.WeeklyHours > 0 || m.DailyHours > 0 || m.EfficiencyTarget > 0
+}
+
 func (m Model) cellStyle(d time.Time, total, target time.Duration, isWorkday, isFuture, isFullOff, isPartialOff bool) lipgloss.Style {
 	if isFullOff {
 		return styles.HintStyle.Italic(true)
@@ -453,6 +454,12 @@ func (m Model) cellStyle(d time.Time, total, target time.Duration, isWorkday, is
 	if isFuture {
 		if isPartialOff {
 			return styles.HintStyle.Italic(true)
+		}
+		return styles.HintStyle
+	}
+	if !m.efficiencyEnabled() {
+		if total > 0 {
+			return lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#888888", Dark: "#888888"})
 		}
 		return styles.HintStyle
 	}
@@ -511,11 +518,13 @@ func (m Model) renderHeatmapLegend() string {
 	hint := styles.HintStyle
 	var b strings.Builder
 	b.WriteString("\n")
-	for _, s := range swatches {
-		b.WriteString(heatmapStyle(s.ratio, t, false).Render("  "))
-		b.WriteString(" " + hint.Render(s.label) + "  ")
+	if m.efficiencyEnabled() {
+		for _, s := range swatches {
+			b.WriteString(heatmapStyle(s.ratio, t, false).Render("  "))
+			b.WriteString(" " + hint.Render(s.label) + "  ")
+		}
+		b.WriteString("\n")
 	}
-	b.WriteString("\n")
 	b.WriteString(hint.Render("⛱ holiday   ✚ sick   · no log   ½ partial   _ today"))
 	return b.String()
 }

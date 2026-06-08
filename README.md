@@ -519,6 +519,11 @@ is color-coded: green when at or above target, yellow when within 10% of
 target, red when below. In the week view, per-day efficiency is shown in each
 day header.
 
+Set all three values (`weeklyHours`, `dailyHours`, `target`) to `0` to disable
+efficiency tracking — handy for personal projects. The dashboard then shows
+logged hours without target coloring or the heatmap legend, and the worklog
+view hides the efficiency line.
+
 ### Holidays & sick days
 
 Use `holidays:` to record national holidays, vacations, or appointments that
