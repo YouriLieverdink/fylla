@@ -198,12 +198,12 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			}
 			return openTaskInBrowser(ctx, cfg, taskKey, provider, project, issueType, kendoResolver)
 		},
-		StartTimer: func(taskKey, summary, project, section, provider string) error {
+		StartTimer: func(taskKey, summary, project, section, provider, worklogTarget string) error {
 			path, err := timer.DefaultPath()
 			if err != nil {
 				return err
 			}
-			return RunStart(StartParams{TaskKey: taskKey, Summary: summary, Project: project, Section: section, Provider: provider, TimerPath: path, Now: time.Now()})
+			return RunStart(StartParams{TaskKey: taskKey, Summary: summary, Project: project, Section: section, Provider: provider, WorklogTarget: worklogTarget, TimerPath: path, Now: time.Now()})
 		},
 		InterruptTimer: func() error {
 			path, err := timer.DefaultPath()

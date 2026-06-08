@@ -27,7 +27,11 @@ type StackEntry struct {
 	Provider  string    `json:"provider,omitempty"`
 	Summary   string    `json:"summary,omitempty"`
 	Comment   string    `json:"comment,omitempty"`
-	Segments  []Segment `json:"segments,omitempty"`
+	// WorklogTarget is a pre-selected worklog destination (e.g. a Jibble
+	// project) for tasks whose own provider isn't the worklog provider. When
+	// set, Stop uses it as the worklog target instead of prompting.
+	WorklogTarget string    `json:"worklogTarget,omitempty"`
+	Segments      []Segment `json:"segments,omitempty"`
 }
 
 // StackState holds the full timer stack. Index 0 is active, 1+ are paused.
@@ -44,13 +48,14 @@ type ResumedInfo struct {
 
 // StopResult holds the computed values when a timer is stopped.
 type StopResult struct {
-	TaskKey  string
-	Provider string
-	Project  string
-	Section  string
-	Summary  string
-	Segments []Segment
-	Resumed  *ResumedInfo
+	TaskKey       string
+	Provider      string
+	Project       string
+	Section       string
+	Summary       string
+	WorklogTarget string
+	Segments      []Segment
+	Resumed       *ResumedInfo
 }
 
 // AbortResult holds the result of aborting a timer.
@@ -137,7 +142,7 @@ func saveStack(ss *StackState, path string) error {
 }
 
 // Start creates a new timer. Errors if a timer is already running.
-func Start(taskKey, project, section, provider, summary string, now time.Time, path string) error {
+func Start(taskKey, project, section, provider, summary, worklogTarget string, now time.Time, path string) error {
 	ss, err := loadStack(path)
 	if err != nil {
 		return err
@@ -147,12 +152,13 @@ func Start(taskKey, project, section, provider, summary string, now time.Time, p
 	}
 	ss = &StackState{
 		Stack: []StackEntry{{
-			TaskKey:   taskKey,
-			StartTime: CeilMinute(now),
-			Project:   project,
-			Section:   section,
-			Provider:  provider,
-			Summary:   summary,
+			TaskKey:       taskKey,
+			StartTime:     CeilMinute(now),
+			Project:       project,
+			Section:       section,
+			Provider:      provider,
+			Summary:       summary,
+			WorklogTarget: worklogTarget,
 		}},
 	}
 	return saveStack(ss, path)
@@ -207,12 +213,13 @@ func Stop(now time.Time, path string) (*StopResult, error) {
 	segments := append(active.Segments, finalSeg)
 
 	result := &StopResult{
-		TaskKey:  active.TaskKey,
-		Provider: active.Provider,
-		Project:  active.Project,
-		Section:  active.Section,
-		Summary:  active.Summary,
-		Segments: segments,
+		TaskKey:       active.TaskKey,
+		Provider:      active.Provider,
+		Project:       active.Project,
+		Section:       active.Section,
+		Summary:       active.Summary,
+		WorklogTarget: active.WorklogTarget,
+		Segments:      segments,
 	}
 
 	// Remove active entry

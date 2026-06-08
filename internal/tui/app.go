@@ -160,6 +160,44 @@ type pendingTimerData struct {
 	summary string
 	project string
 	section string
+	// taskKey/provider are set when picking a worklog target upfront for a
+	// non-GitHub task (the task whose timer is starting). Empty for the GitHub
+	// PR-resolution flow, which keys off prKey instead.
+	taskKey  string
+	provider string
+}
+
+// fallbackPickerItems builds picker rows from the cached worklog fallback list.
+func fallbackPickerItems(fallbacks []msg.FallbackIssue) []components.PickerItem {
+	items := make([]components.PickerItem, len(fallbacks))
+	for i, fb := range fallbacks {
+		label := fb.Key
+		if fb.Summary != "" {
+			label = fmt.Sprintf("%-10s  %s", fb.Key, fb.Summary)
+		}
+		items[i] = components.PickerItem{Key: fb.Key, Label: label}
+	}
+	return items
+}
+
+// startTimerForTask starts a timer for t. When t's provider isn't the worklog
+// provider and a target list is available, it first prompts for the worklog
+// destination so the choice is made upfront rather than at stop time. GitHub
+// PRs are handled by the caller before reaching here.
+func (m *model) startTimerForTask(t *msg.ScoredTask) tea.Cmd {
+	if t.Provider != m.worklogProvider && len(m.cachedFallback) > 0 {
+		m.pendingTimerStart = &pendingTimerData{
+			taskKey:  t.Key,
+			summary:  t.Summary,
+			project:  t.Project,
+			section:  t.Section,
+			provider: t.Provider,
+		}
+		m.picker = components.NewPicker("Select worklog target (Enter to select, Esc to cancel)", fallbackPickerItems(m.cachedFallback))
+		m.pickerFieldLabel = "timerStartTarget"
+		return nil
+	}
+	return startTimerCmd(m.cb, t.Key, t.Summary, t.Project, t.Section, t.Provider)
 }
 
 type pendingEditData struct {
@@ -1323,7 +1361,8 @@ func (m model) updateTasks(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.saving = "Resolving issue..."
 				return m, resolveIssueKeyCmd(m.cb, t.Key)
 			}
-			return m, startTimerCmd(m.cb, t.Key, t.Summary, t.Project, t.Section, t.Provider)
+			startCmd := m.startTimerForTask(t)
+			return m, startCmd
 		}
 	case key.Matches(mssg, keys.Open):
 		if t := m.tasks.SelectedTask(); t != nil {
@@ -1548,7 +1587,8 @@ func (m model) updateFocus(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.saving = "Resolving issue..."
 				return m, resolveIssueKeyCmd(m.cb, t.Key)
 			}
-			return m, startTimerCmd(m.cb, t.Key, t.Summary, t.Project, t.Section, t.Provider)
+			startCmd := m.startTimerForTask(t)
+			return m, startCmd
 		}
 	case key.Matches(mssg, keys.Open):
 		if t := m.focus.SelectedTask(); t != nil {
@@ -2218,6 +2258,8 @@ func (m model) updatePicker(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(mssg, keys.Escape):
 		m.picker.Active = false
+		// Abandon any pending upfront timer start.
+		m.pendingTimerStart = nil
 		// Return to the form underneath
 		return m, nil
 	case key.Matches(mssg, keys.Up):
@@ -2233,6 +2275,15 @@ func (m model) updatePicker(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, startTimerCmd(m.cb, selected.Key, "", "", "", m.worklogProvider)
 		}
 		if m.pickerFieldLabel == "timerStartFallback" {
+			// No selection, cancel timer start
+			return m, nil
+		}
+		if m.pickerFieldLabel == "timerStartTarget" {
+			p := m.pendingTimerStart
+			m.pendingTimerStart = nil
+			if selected != nil && p != nil {
+				return m, startTimerWithTargetCmd(m.cb, p.taskKey, p.summary, p.project, p.section, p.provider, selected.Key)
+			}
 			// No selection, cancel timer start
 			return m, nil
 		}

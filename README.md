@@ -602,13 +602,18 @@ targets:
 ```
 
 - **Logging hours**: start a focus timer on a task, then stop it. Because no
-  task key maps to a Jibble Project, the stop prompts you to pick a
-  `Client / Project` (e.g. `Tjas / ICie`) from your live Jibble project list;
-  the block is posted as a Jibble **time entry** (an `HourEntry` — date +
+  task key maps to a Jibble Project, fylla prompts you to pick a
+  `Client / Project` (e.g. `Tjas / ICie`) from your live Jibble project list. In
+  the TUI this prompt appears **when you start the timer**, so the destination is
+  chosen upfront; the choice is stored on the timer and reused at stop without
+  asking again. (Via `fylla timer stop` on the CLI the prompt appears at stop.)
+  The block is posted as a Jibble **time entry** (an `HourEntry` — date +
   duration, the same as Jibble's "add time entry" feature) with the
-  task/comment as its note. Chores you never pick a project for are simply not
-  logged. Note: an `HourEntry` records the day and duration, not a clock-in
-  time, so the worklog tab groups by day rather than showing a start time.
+  task/comment as its note. The task itself stays on its own provider, so
+  marking it done still updates Todoist. Chores you never pick a project for are
+  simply not logged. Note: an `HourEntry` records the day and duration, not a
+  clock-in time, so the worklog tab groups by day rather than showing a start
+  time.
 - **Reading hours**: the Worklog dashboard and `targets` read back logged hours
   from Jibble. Targets are keyed by the **bare Jibble Project name** (`ICie`),
   not the `Client / Project` label shown in the picker.

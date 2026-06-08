@@ -78,7 +78,7 @@ type Callbacks struct {
 	DoneTask            func(taskKey, provider string) error
 	DeleteTask          func(taskKey, provider string) error
 	OpenTaskURL         func(taskKey, provider, project, issueType string) (string, error)
-	StartTimer          func(taskKey, summary, project, section, provider string) error
+	StartTimer          func(taskKey, summary, project, section, provider, worklogTarget string) error
 	InterruptTimer      func() error
 	TimerStatus         func() (*TimerStatusInfo, error)
 	SaveTimerComment    func(comment string) error
@@ -251,7 +251,18 @@ func openTaskURLCmd(cb Callbacks, taskKey, provider, project, issueType string) 
 
 func startTimerCmd(cb Callbacks, taskKey, summary, project, section, provider string) tea.Cmd {
 	return func() tea.Msg {
-		err := cb.StartTimer(taskKey, summary, project, section, provider)
+		err := cb.StartTimer(taskKey, summary, project, section, provider, "")
+		return msg.TimerStartedMsg{TaskKey: taskKey, Summary: summary, Project: project, Section: section, Err: err}
+	}
+}
+
+// startTimerWithTargetCmd starts a timer for taskKey while pre-selecting a
+// worklog target (e.g. a Jibble project) chosen before the timer began. The
+// task identity is preserved for done/estimate routing; only the worklog
+// destination is pinned.
+func startTimerWithTargetCmd(cb Callbacks, taskKey, summary, project, section, provider, worklogTarget string) tea.Cmd {
+	return func() tea.Msg {
+		err := cb.StartTimer(taskKey, summary, project, section, provider, worklogTarget)
 		return msg.TimerStartedMsg{TaskKey: taskKey, Summary: summary, Project: project, Section: section, Err: err}
 	}
 }

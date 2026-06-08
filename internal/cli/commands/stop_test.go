@@ -111,7 +111,7 @@ func TestStop_WorklogPosted(t *testing.T) {
 	startTime := time.Date(2025, 1, 20, 9, 0, 0, 0, time.UTC)
 
 	timerPath := filepath.Join(t.TempDir(), "timer.json")
-	if err := timer.Start("PROJ-1", "", "", "", "", startTime, timerPath); err != nil {
+	if err := timer.Start("PROJ-1", "", "", "", "", "", startTime, timerPath); err != nil {
 		t.Fatalf("timer.Start: %v", err)
 	}
 
@@ -143,7 +143,7 @@ func TestStop_RemainingEstimateMessages(t *testing.T) {
 		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
 		timerPath := filepath.Join(t.TempDir(), "timer.json")
-		if err := timer.Start("PROJ-3", "", "", "", "", startTime, timerPath); err != nil {
+		if err := timer.Start("PROJ-3", "", "", "", "", "", startTime, timerPath); err != nil {
 			t.Fatalf("timer.Start: %v", err)
 		}
 
@@ -186,7 +186,7 @@ func TestStop_RemainingEstimateMessages(t *testing.T) {
 		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
 		timerPath := filepath.Join(t.TempDir(), "timer.json")
-		if err := timer.Start("PROJ-4", "", "", "", "", startTime, timerPath); err != nil {
+		if err := timer.Start("PROJ-4", "", "", "", "", "", startTime, timerPath); err != nil {
 			t.Fatalf("timer.Start: %v", err)
 		}
 
@@ -231,7 +231,7 @@ func TestStop_GitHubKeyResolvesToIssue(t *testing.T) {
 		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
 		timerPath := filepath.Join(t.TempDir(), "timer.json")
-		if err := timer.Start("fylla#42", "", "", "", "", startTime, timerPath); err != nil {
+		if err := timer.Start("fylla#42", "", "", "", "", "", startTime, timerPath); err != nil {
 			t.Fatalf("timer.Start: %v", err)
 		}
 
@@ -270,7 +270,7 @@ func TestStop_GitHubKeyResolvesToIssue(t *testing.T) {
 		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
 		timerPath := filepath.Join(t.TempDir(), "timer.json")
-		if err := timer.Start("fylla#99", "", "", "", "", startTime, timerPath); err != nil {
+		if err := timer.Start("fylla#99", "", "", "", "", "", startTime, timerPath); err != nil {
 			t.Fatalf("timer.Start: %v", err)
 		}
 
@@ -303,7 +303,7 @@ func TestStop_GitHubKeyResolvesToIssue(t *testing.T) {
 		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
 		timerPath := filepath.Join(t.TempDir(), "timer.json")
-		if err := timer.Start("fylla#99", "", "", "", "", startTime, timerPath); err != nil {
+		if err := timer.Start("fylla#99", "", "", "", "", "", startTime, timerPath); err != nil {
 			t.Fatalf("timer.Start: %v", err)
 		}
 
@@ -336,7 +336,7 @@ func TestStop_GitHubKeyResolvesToIssue(t *testing.T) {
 		startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
 		timerPath := filepath.Join(t.TempDir(), "timer.json")
-		if err := timer.Start("fylla#42", "", "", "", "", startTime, timerPath); err != nil {
+		if err := timer.Start("fylla#42", "", "", "", "", "", startTime, timerPath); err != nil {
 			t.Fatalf("timer.Start: %v", err)
 		}
 
@@ -376,7 +376,7 @@ func TestStop_TodoistKeyResolvesToKendoFallback(t *testing.T) {
 	startTime := time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC)
 
 	timerPath := filepath.Join(t.TempDir(), "timer.json")
-	if err := timer.Start("12345", "", "", "", "", startTime, timerPath); err != nil {
+	if err := timer.Start("12345", "", "", "", "", "", startTime, timerPath); err != nil {
 		t.Fatalf("timer.Start: %v", err)
 	}
 
@@ -423,7 +423,7 @@ func TestStop_MultiSegmentWorklogPosting(t *testing.T) {
 	timerPath := filepath.Join(t.TempDir(), "timer.json")
 
 	// Start PROJ-1, set comment, interrupt, interrupt again, stop anonymous, stop anonymous, stop PROJ-1
-	if err := timer.Start("PROJ-1", "", "", "", "", t0, timerPath); err != nil {
+	if err := timer.Start("PROJ-1", "", "", "", "", "", t0, timerPath); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	if err := timer.SetComment("segment 1 work", timerPath); err != nil {
@@ -485,7 +485,7 @@ func TestStop_SingleSegment_NoNumbering(t *testing.T) {
 	now := startTime.Add(30 * time.Minute)
 
 	timerPath := filepath.Join(t.TempDir(), "timer.json")
-	if err := timer.Start("PROJ-1", "", "", "", "", startTime, timerPath); err != nil {
+	if err := timer.Start("PROJ-1", "", "", "", "", "", startTime, timerPath); err != nil {
 		t.Fatalf("timer.Start: %v", err)
 	}
 
@@ -521,7 +521,7 @@ func TestStop_AnonymousTimerWithFallbackIssue(t *testing.T) {
 
 	timerPath := filepath.Join(t.TempDir(), "timer.json")
 	// Start anonymous timer (empty key)
-	if err := timer.Start("", "", "", "", "", startTime, timerPath); err != nil {
+	if err := timer.Start("", "", "", "", "", "", startTime, timerPath); err != nil {
 		t.Fatalf("timer.Start: %v", err)
 	}
 
@@ -557,7 +557,7 @@ func TestStop_SegmentCommentUsedAsDescription(t *testing.T) {
 	t2 := t1.Add(15 * time.Minute)
 
 	timerPath := filepath.Join(t.TempDir(), "timer.json")
-	if err := timer.Start("PROJ-1", "", "", "", "", t0, timerPath); err != nil {
+	if err := timer.Start("PROJ-1", "", "", "", "", "", t0, timerPath); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	if err := timer.SetComment("first segment comment", timerPath); err != nil {
@@ -611,7 +611,7 @@ func TestStop_JibbleWorklogDecoupled(t *testing.T) {
 
 	timerPath := filepath.Join(t.TempDir(), "timer.json")
 	// Todoist task (numeric key), provider recorded as "todoist".
-	if err := timer.Start("12345", "", "", "todoist", "", startTime, timerPath); err != nil {
+	if err := timer.Start("12345", "", "", "todoist", "", "", startTime, timerPath); err != nil {
 		t.Fatalf("timer.Start: %v", err)
 	}
 
@@ -656,6 +656,62 @@ func TestStop_JibbleWorklogDecoupled(t *testing.T) {
 	}
 	if jibbleSrc.completedKey != "" {
 		t.Errorf("jibble should not complete a task, got %q", jibbleSrc.completedKey)
+	}
+	if !result.Done {
+		t.Error("expected result.Done = true")
+	}
+}
+
+// TestStop_PreSelectedWorklogTarget verifies that a worklog target chosen at
+// start time (stored on the timer) is used at stop without prompting, while
+// mark-done still targets the task's own provider.
+func TestStop_PreSelectedWorklogTarget(t *testing.T) {
+	now := time.Date(2026, 6, 7, 11, 0, 0, 0, time.UTC)
+	startTime := time.Date(2026, 6, 7, 10, 0, 0, 0, time.UTC)
+
+	timerPath := filepath.Join(t.TempDir(), "timer.json")
+	// Todoist task with a Jibble project pre-selected at start.
+	if err := timer.Start("12345", "", "", "todoist", "", "Tjas / ICie", startTime, timerPath); err != nil {
+		t.Fatalf("timer.Start: %v", err)
+	}
+
+	todoistSrc := &mockSource{name: "todoist"}
+	jibbleSrc := &mockSource{name: "jibble", projects: []string{"Tjas / ICie", "Tjas / KasCie"}}
+	ms := NewMultiTaskSource(
+		map[string]TaskSource{"todoist": todoistSrc, "jibble": jibbleSrc},
+		[]string{"todoist", "jibble"},
+	)
+
+	cfg := testConfig()
+	cfg.Worklog = config.WorklogConfig{Provider: "jibble"}
+
+	// Empty surveyor: any prompt would error and fail the stop.
+	survey := &mockSurveyor{}
+
+	result, err := RunStop(context.Background(), StopParams{
+		TimerPath:    timerPath,
+		RoundMinutes: 1,
+		Now:          now,
+		Description:  "Build ICie website",
+		Worklog:      ms,
+		Completer:    ms,
+		Estimate:     ms,
+		Done:         true,
+		Cfg:          cfg,
+		Survey:       survey,
+	})
+	if err != nil {
+		t.Fatalf("RunStop: %v", err)
+	}
+
+	if jibbleSrc.worklogKey != "Tjas / ICie" {
+		t.Errorf("jibble worklog target = %q, want %q", jibbleSrc.worklogKey, "Tjas / ICie")
+	}
+	if survey.selectIdx != 0 {
+		t.Errorf("expected no Select prompt, got %d calls", survey.selectIdx)
+	}
+	if todoistSrc.completedKey != "12345" {
+		t.Errorf("todoist completed key = %q, want 12345", todoistSrc.completedKey)
 	}
 	if !result.Done {
 		t.Error("expected result.Done = true")

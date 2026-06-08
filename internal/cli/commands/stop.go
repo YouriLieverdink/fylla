@@ -52,6 +52,15 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 	postProvider := worklogProvider(p.Cfg)
 	taskProvider := sr.Provider
 
+	// A target chosen at start time (e.g. via the TUI's upfront picker) is
+	// stored on the timer; use it as the fallback unless the caller passed an
+	// explicit one. This skips the stop-time prompt while leaving sr.TaskKey
+	// intact for done/estimate routing.
+	if p.FallbackIssue == "" && sr.WorklogTarget != "" {
+		p.FallbackIssue = sr.WorklogTarget
+		p.FallbackProvider = postProvider
+	}
+
 	worklogKey, postProvider, err := resolveWorklogTarget(ctx, sr.TaskKey, postProvider, p)
 	if err != nil {
 		return nil, err
