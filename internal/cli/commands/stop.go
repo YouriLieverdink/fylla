@@ -46,12 +46,13 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 		return nil, err
 	}
 
-	worklogProvider := p.Cfg.Worklog.Provider
-	if sr.Provider != "" {
-		worklogProvider = sr.Provider
-	}
+	// Worklog hours always post to the configured worklog provider, independent
+	// of which provider the task came from. Task operations (estimate, done)
+	// stay routed to the task's own provider. (See ADR-0001.)
+	postProvider := worklogProvider(p.Cfg)
+	taskProvider := sr.Provider
 
-	worklogKey, worklogProvider, err := resolveWorklogTarget(ctx, sr.TaskKey, worklogProvider, p)
+	worklogKey, postProvider, err := resolveWorklogTarget(ctx, sr.TaskKey, postProvider, p)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +78,7 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 		}
 
 		// Post worklog
-		routed := routedSource(p.Worklog, worklogProvider)
+		routed := routedSource(p.Worklog, postProvider)
 		if err := routed.PostWorklog(ctx, worklogKey, rounded, desc, seg.StartTime); err != nil {
 			return nil, fmt.Errorf("post worklog: %w", err)
 		}
@@ -97,7 +98,7 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 
 	// Check remaining estimate if available
 	if p.Estimate != nil && sr.TaskKey != "" {
-		routed := routedSource(p.Estimate, worklogProvider)
+		routed := routedSource(p.Estimate, taskProvider)
 		remaining, err := routed.GetEstimate(ctx, sr.TaskKey)
 		if err == nil {
 			result.RemainingEstimate = remaining
@@ -105,9 +106,10 @@ func RunStop(ctx context.Context, p StopParams) (*StopResult, error) {
 		}
 	}
 
-	// Mark task as done if requested
+	// Mark task as done if requested. Completion targets the task's own
+	// provider, not the worklog provider.
 	if p.Done && p.Completer != nil && sr.TaskKey != "" {
-		routed := routedSource(p.Completer, worklogProvider)
+		routed := routedSource(p.Completer, taskProvider)
 		if err := routed.CompleteTask(ctx, sr.TaskKey); err != nil {
 			return nil, fmt.Errorf("mark done: %w", err)
 		}
@@ -184,18 +186,15 @@ func resolveToFallbackIssue(survey Surveyor, cfg *config.Config) (string, error)
 // resolveWorklogTarget determines the worklog key and provider for a timer stop.
 // It handles GitHub keys, local keys, anonymous timers, and explicit fallback overrides.
 func resolveWorklogTarget(ctx context.Context, taskKey, provider string, p StopParams) (string, string, error) {
-	// Check if the key needs fallback resolution.
-	// A key needs fallback when it's empty, from a non-worklog provider
-	// (e.g. GitHub PR, local task), or when it doesn't match the worklog
-	// provider's key format (e.g. Todoist numeric key with Kendo worklog provider).
+	// A key needs target resolution when it's empty or doesn't belong to the
+	// worklog provider's key space — e.g. a GitHub PR or Todoist task logged to
+	// Kendo, or anything logged to Jibble (which has no task keys at all, so
+	// providerForKey never returns "jibble" and a target is always prompted).
 	worklogProv := provider
 	if worklogProv == "" {
 		worklogProv = p.Cfg.Worklog.Provider
 	}
-	needsFallback := taskKey == "" ||
-		isGitHubKey(taskKey) ||
-		isLocalKey(taskKey) ||
-		(!isKendoKey(taskKey) && worklogProv == "kendo")
+	needsFallback := taskKey == "" || providerForKey(taskKey) != worklogProv
 
 	// Pre-resolved fallback takes priority.
 	if p.FallbackIssue != "" {
@@ -226,7 +225,7 @@ func resolveWorklogTarget(ctx context.Context, taskKey, provider string, p StopP
 
 	// Interactive fallback.
 	if p.Survey != nil {
-		resolved, err := resolveToFallbackIssue(p.Survey, p.Cfg)
+		resolved, err := resolveInteractiveTarget(ctx, worklogProv, p)
 		if err != nil {
 			return "", "", fmt.Errorf("resolve worklog target: %w", err)
 		}
@@ -234,4 +233,20 @@ func resolveWorklogTarget(ctx context.Context, taskKey, provider string, p StopP
 	}
 
 	return "", "", fmt.Errorf("cannot resolve worklog target for key %q: no fallback or interactive prompt available", taskKey)
+}
+
+// resolveInteractiveTarget prompts for a worklog target. When the worklog
+// provider exposes a live project list and no fallback issues are configured
+// (e.g. Jibble), it prompts from ListProjects; otherwise it falls back to the
+// configured fallback issues.
+func resolveInteractiveTarget(ctx context.Context, worklogProv string, p StopParams) (string, error) {
+	if len(p.Cfg.Worklog.FallbackIssues) == 0 {
+		if pl, ok := routedSource(p.Worklog, worklogProv).(ProjectLister); ok {
+			projects, err := pl.ListProjects(ctx)
+			if err == nil && len(projects) > 0 {
+				return p.Survey.Select("Worklog project:", projects)
+			}
+		}
+	}
+	return resolveToFallbackIssue(p.Survey, p.Cfg)
 }

@@ -2642,13 +2642,13 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case formStopTimer:
 			comment := m.form.ValueByLabel("Comment")
 			done := m.form.ValueByLabel("Mark done") == "true"
-			fallbackIssue := extractIssueKey(m.form.ValueByLabel("Issue Key"))
+			fallbackIssue := m.resolveFallbackKey(m.form.ValueByLabel("Issue Key"))
 			m.form.Active = false
 			m.formKind = formNone
 			m.saving = "Stopping timer"
 			return m, stopTimerCmd(m.cb, comment, done, fallbackIssue, m.formWorklogProvider)
 		case formAddWorklog:
-			issueKey := extractIssueKey(m.form.ValueByLabel("Issue Key"))
+			issueKey := m.resolveFallbackKey(m.form.ValueByLabel("Issue Key"))
 			durationStr := m.form.ValueByLabel("Duration")
 			description := m.form.ValueByLabel("Description")
 			startedStr := m.form.ValueByLabel("Started")
@@ -3425,6 +3425,22 @@ func extractIssueKey(val string) string {
 		return val[:i]
 	}
 	return val
+}
+
+// resolveFallbackKey maps a selected worklog-target value back to its key.
+// Worklog targets may contain spaces (e.g. a Jibble "Client / Project" label),
+// so a selection matching a cached fallback is returned verbatim rather than
+// split on the first space.
+func (m model) resolveFallbackKey(val string) string {
+	for _, fb := range m.cachedFallback {
+		if val == fb.Key {
+			return fb.Key
+		}
+		if fb.Summary != "" && val == fb.Key+"  "+fb.Summary {
+			return fb.Key
+		}
+	}
+	return extractIssueKey(val)
 }
 
 func buildPendingEditData(t *msg.ScoredTask) pendingEditData {

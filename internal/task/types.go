@@ -19,6 +19,10 @@ type WorklogEntry struct {
 	Description  string
 	Started      time.Time
 	TimeSpent    time.Duration
+	// DateOnly marks entries that carry only a day and a duration, with no
+	// clock time (e.g. Jibble HourEntries). The worklog view shows the duration
+	// instead of a midnight-anchored start–end range for these.
+	DateOnly bool
 }
 
 // Epic represents an epic or parent issue.

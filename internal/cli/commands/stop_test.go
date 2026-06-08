@@ -600,3 +600,64 @@ func TestStop_SegmentCommentUsedAsDescription(t *testing.T) {
 		t.Errorf("call[1] description = %q, want %q", worklog.calls[1].description, "(2/2) form description")
 	}
 }
+
+// TestStop_JibbleWorklogDecoupled verifies the worklog/task provider split:
+// a focus session on a Todoist task with Jibble as the worklog provider posts
+// hours to Jibble (against a prompted project), while mark-done targets the
+// task's own provider (Todoist).
+func TestStop_JibbleWorklogDecoupled(t *testing.T) {
+	now := time.Date(2026, 6, 7, 11, 0, 0, 0, time.UTC)
+	startTime := time.Date(2026, 6, 7, 10, 0, 0, 0, time.UTC)
+
+	timerPath := filepath.Join(t.TempDir(), "timer.json")
+	// Todoist task (numeric key), provider recorded as "todoist".
+	if err := timer.Start("12345", "", "", "todoist", "", startTime, timerPath); err != nil {
+		t.Fatalf("timer.Start: %v", err)
+	}
+
+	todoistSrc := &mockSource{name: "todoist"}
+	jibbleSrc := &mockSource{name: "jibble", projects: []string{"Tjas / ICie", "Tjas / KasCie"}}
+	ms := NewMultiTaskSource(
+		map[string]TaskSource{"todoist": todoistSrc, "jibble": jibbleSrc},
+		[]string{"todoist", "jibble"},
+	)
+
+	cfg := testConfig()
+	cfg.Worklog = config.WorklogConfig{Provider: "jibble"} // no fallback issues -> use ListProjects
+
+	survey := &mockSurveyor{selectAnswers: []string{"Tjas / ICie"}}
+
+	result, err := RunStop(context.Background(), StopParams{
+		TimerPath:    timerPath,
+		RoundMinutes: 1,
+		Now:          now,
+		Description:  "Build ICie website",
+		Worklog:      ms,
+		Completer:    ms,
+		Estimate:     ms,
+		Done:         true,
+		Cfg:          cfg,
+		Survey:       survey,
+	})
+	if err != nil {
+		t.Fatalf("RunStop: %v", err)
+	}
+
+	// Hours posted to Jibble against the picked project.
+	if jibbleSrc.worklogKey != "Tjas / ICie" {
+		t.Errorf("jibble worklog target = %q, want %q", jibbleSrc.worklogKey, "Tjas / ICie")
+	}
+	if todoistSrc.worklogKey != "" {
+		t.Errorf("todoist should not receive a worklog, got %q", todoistSrc.worklogKey)
+	}
+	// Mark-done targets the task's provider (Todoist), not Jibble.
+	if todoistSrc.completedKey != "12345" {
+		t.Errorf("todoist completed key = %q, want 12345", todoistSrc.completedKey)
+	}
+	if jibbleSrc.completedKey != "" {
+		t.Errorf("jibble should not complete a task, got %q", jibbleSrc.completedKey)
+	}
+	if !result.Done {
+		t.Error("expected result.Done = true")
+	}
+}

@@ -267,9 +267,9 @@ func (c *Config) Validate() error {
 	seen := make(map[string]bool)
 	for _, p := range c.Providers {
 		switch p {
-		case "todoist", "github", "local", "kendo":
+		case "todoist", "github", "local", "kendo", "jibble":
 		default:
-			return fmt.Errorf("unknown provider %q (must be 'todoist', 'github', 'local', or 'kendo')", p)
+			return fmt.Errorf("unknown provider %q (must be 'todoist', 'github', 'local', 'kendo', or 'jibble')", p)
 		}
 		if seen[p] {
 			return fmt.Errorf("duplicate provider %q", p)

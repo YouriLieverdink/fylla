@@ -6,6 +6,7 @@ import (
 
 	"github.com/iruoy/fylla/internal/calendar"
 	"github.com/iruoy/fylla/internal/github"
+	"github.com/iruoy/fylla/internal/jibble"
 	"github.com/iruoy/fylla/internal/kendo"
 	"github.com/iruoy/fylla/internal/local"
 	"github.com/iruoy/fylla/internal/task"
@@ -36,6 +37,7 @@ var (
 	_ TaskSource = (*github.Client)(nil)
 	_ TaskSource = (*local.Client)(nil)
 	_ TaskSource = (*kendo.Client)(nil)
+	_ TaskSource = (*jibble.Client)(nil)
 )
 
 // CalendarClient abstracts calendar operations for testing.

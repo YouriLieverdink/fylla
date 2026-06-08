@@ -7,6 +7,7 @@ import (
 
 	"github.com/iruoy/fylla/internal/config"
 	"github.com/iruoy/fylla/internal/github"
+	"github.com/iruoy/fylla/internal/jibble"
 	"github.com/iruoy/fylla/internal/kendo"
 	"github.com/iruoy/fylla/internal/local"
 	"github.com/iruoy/fylla/internal/todoist"
@@ -155,6 +156,19 @@ func loadTaskSource() (TaskSource, *config.Config, error) {
 			client := kendo.NewClient(cfg.Kendo.URL, creds.Token)
 			client.DoneLane = cfg.Kendo.DoneLane
 			sources["kendo"] = client
+		case "jibble":
+			path, err := config.DefaultProviderCredentialsPath("jibble")
+			if err != nil {
+				return nil, nil, fmt.Errorf("jibble credentials path: %w", err)
+			}
+			creds, err := config.LoadProviderCredentials(path)
+			if err != nil {
+				return nil, nil, fmt.Errorf("load jibble credentials: %w", err)
+			}
+			if creds.Key == "" || creds.Secret == "" {
+				return nil, nil, fmt.Errorf("jibble not configured: run 'fylla auth jibble --key KEY --secret SECRET'")
+			}
+			sources["jibble"] = jibble.NewClient(creds.Key, creds.Secret)
 		}
 	}
 

@@ -1,3 +1,6 @@
+# Task providers to fetch work from: todoist, github, local, kendo.
+# jibble may also be listed, but it is worklog-only — it supplies no tasks and
+# is used as a worklog.provider target (see below).
 providers: [local]
 
 todoist:
@@ -48,6 +51,11 @@ projectRules:
       workDays: [1, 2, 3, 4, 5]
 
 worklog:
+  # Where logged hours go. Empty = first entry in `providers`. Set to a specific
+  # provider (e.g. kendo, jibble) to decouple time tracking from the task source.
+  # With jibble, list it in `providers` too and set provider: jibble; the focus
+  # timer prompts a Jibble "Client / Project" to book each session against, and
+  # `targets` below may name Jibble Projects by their bare name (e.g. ICie).
   provider: ""
   fallbackIssues: []
   roundMinutes: 1

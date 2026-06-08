@@ -63,6 +63,8 @@ type mockSource struct {
 	tasks          []task.Task
 	summary        string
 	updatedSummary string
+	worklogKey     string   // last issueKey passed to PostWorklog
+	projects       []string // returned by ListProjects (nil = not a ProjectLister target)
 }
 
 func (m *mockSource) FetchTasks(_ context.Context, query string) ([]task.Task, error) {
@@ -84,8 +86,13 @@ func (m *mockSource) DeleteTask(_ context.Context, taskKey string) error {
 	return nil
 }
 
-func (m *mockSource) PostWorklog(_ context.Context, _ string, _ time.Duration, _ string, _ time.Time) error {
+func (m *mockSource) PostWorklog(_ context.Context, issueKey string, _ time.Duration, _ string, _ time.Time) error {
+	m.worklogKey = issueKey
 	return nil
+}
+
+func (m *mockSource) ListProjects(_ context.Context) ([]string, error) {
+	return m.projects, nil
 }
 
 func (m *mockSource) GetEstimate(_ context.Context, _ string) (time.Duration, error) {

@@ -57,7 +57,7 @@ func buildTaskProviderURL(ctx context.Context, cfg *config.Config, taskKey, prov
 		return fmt.Sprintf("%s/projects/%d/issues/%s", baseURL, projectID, taskKey), nil
 	case "todoist":
 		return fmt.Sprintf("https://app.todoist.com/app/task/%s", taskKey), nil
-	case "local":
+	case "local", "jibble":
 		return "", fmt.Errorf("provider %q does not support opening tasks in browser", provider)
 	default:
 		return "", fmt.Errorf("unsupported provider %q", provider)

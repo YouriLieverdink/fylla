@@ -63,6 +63,13 @@ Fylla supports multiple task providers (Todoist, GitHub, Kendo) simultaneously v
 - Client tracks `X-RateLimit-Remaining` and `X-RateLimit-Reset` from API responses
 - Auto-pauses requests when < 50 remaining until reset window passes
 
+### Jibble Provider (worklog-only)
+- `internal/jibble` is a **worklog-only** provider: Jibble has no tasks (only Clients → Projects → Time Entries). It implements `PostWorklog`/`FetchWorklogs`/`ListProjects` and stubs the rest of `TaskSource` with `ErrUnsupported`; `FetchTasks` returns `(nil, nil)` so it contributes no tasks. It must still be listed in `providers` to be routable as the worklog provider.
+- **Auth:** OAuth2 client-credentials. `ProviderCredentials.Key`/`.Secret` (from `fylla auth jibble --key --secret`) are POSTed to `identity.prod.jibble.io/connect/token` for a short-lived JWT, cached behind a mutex and refreshed on expiry or a 401 (`do()` retries once). API base `time-tracking.prod.jibble.io/v1` (OData `{value:[...]}`).
+- **Targets vs picker labels:** `ListProjects` returns `Client / Project` labels (the worklog "issueKey" / picker value); `PostWorklog` resolves a label→project id. `FetchWorklogs` sets `WorklogEntry.Project` to the **bare** project name so `targets` (keyed by bare name) match.
+- **HourEntry model:** worklogs are Jibble `HourEntry` records (the "add time entry" feature) — `date` (YYYY-MM-DD) + `duration` (ISO-8601 `Edm.Duration`), not In/Out punches. Required create fields (confirmed via the OData `$metadata` at `time-tracking.prod.jibble.io/v1/$metadata`): `personId`, `date`, `duration`, `clientType` (`TimeEntryClientType` enum, e.g. `Web`), `platform` (`PlatformModel` object — no `clientType` inside it); `projectId`/`note` optional; `id`/`status`/`createdAt` are server-set. `HourEntry` has no clock time, so `WorklogEntry.Started` is the entry's local date (midnight). Projects/Clients/People live on the **workspace** host (`workspace.prod.jibble.io/v1`); HourEntries on the **time-tracking** host.
+- **Worklog/task provider decoupling (ADR-0001):** `RunStop` posts hours to `worklog.provider` (not the task's provider) and routes estimate/mark-done to the task's provider. `resolveWorklogTarget` needs a target when `providerForKey(taskKey) != worklogProvider` (always true for Jibble), then prompts from `ListProjects` when the worklog provider is a `ProjectLister` with no configured `fallbackIssues`.
+
 ## Dependencies
 
 - CLI: `github.com/spf13/cobra`

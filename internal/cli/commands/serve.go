@@ -696,12 +696,26 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 		},
 		FallbackIssues: func() []tui.FallbackIssue {
 			keys := cfg.Worklog.FallbackIssues
-			issues := make([]tui.FallbackIssue, len(keys))
 			provider := cfg.Worklog.Provider
 			if provider == "" {
 				provider = cfg.ActiveProviders()[0]
 			}
 			routed := routedSource(source, provider)
+			// Worklog providers with no fixed task keys (e.g. Jibble) supply a
+			// live project list as the set of worklog targets instead.
+			if len(keys) == 0 {
+				if pl, ok := routed.(ProjectLister); ok {
+					projects, err := pl.ListProjects(ctx)
+					if err == nil {
+						issues := make([]tui.FallbackIssue, len(projects))
+						for i, p := range projects {
+							issues[i] = tui.FallbackIssue{Key: p}
+						}
+						return issues
+					}
+				}
+			}
+			issues := make([]tui.FallbackIssue, len(keys))
 			var wg sync.WaitGroup
 			for i, k := range keys {
 				wg.Add(1)

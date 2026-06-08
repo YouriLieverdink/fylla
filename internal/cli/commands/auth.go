@@ -19,6 +19,7 @@ func NewAuthCmd() *cobra.Command {
 	cmd.AddCommand(newAuthKendoCmd())
 	cmd.AddCommand(newAuthTodoistCmd())
 	cmd.AddCommand(newAuthGitHubCmd())
+	cmd.AddCommand(newAuthJibbleCmd())
 	cmd.AddCommand(newAuthGoogleCmd())
 	return cmd
 }
@@ -114,6 +115,33 @@ func newAuthGitHubCmd() *cobra.Command {
 	return cmd
 }
 
+func newAuthJibbleCmd() *cobra.Command {
+	var key, secret string
+	cmd := &cobra.Command{
+		Use:   "jibble",
+		Short: "Store Jibble API credentials for the profile given by --profile",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireExplicitProfile(cmd); err != nil {
+				return err
+			}
+			if key == "" {
+				return fmt.Errorf("--key is required")
+			}
+			if secret == "" {
+				return fmt.Errorf("--secret is required")
+			}
+			if err := saveJibbleCredentials(key, secret); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Stored Jibble credentials for profile %q\n", config.ActiveProfile())
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&key, "key", "", "Jibble API key (client_id)")
+	cmd.Flags().StringVar(&secret, "secret", "", "Jibble API secret (client_secret)")
+	return cmd
+}
+
 func newAuthGoogleCmd() *cobra.Command {
 	var clientCreds string
 	cmd := &cobra.Command{
@@ -159,5 +187,19 @@ func saveProviderToken(provider, token string) error {
 		return err
 	}
 	creds := &config.ProviderCredentials{Token: strings.TrimSpace(token)}
+	return config.SaveProviderCredentials(creds, path)
+}
+
+// saveJibbleCredentials writes a ProviderCredentials{Key, Secret} into the
+// active profile's jibble credential file.
+func saveJibbleCredentials(key, secret string) error {
+	path, err := config.DefaultProviderCredentialsPath("jibble")
+	if err != nil {
+		return err
+	}
+	creds := &config.ProviderCredentials{
+		Key:    strings.TrimSpace(key),
+		Secret: strings.TrimSpace(secret),
+	}
 	return config.SaveProviderCredentials(creds, path)
 }

@@ -144,8 +144,18 @@ func (m *Model) ToggleWeekView() {
 func (m *Model) sortedEntries() []msg.WorklogEntry {
 	sorted := make([]msg.WorklogEntry, len(m.Entries))
 	copy(sorted, m.Entries)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Started.Before(sorted[j].Started)
+	// Total, deterministic order. Date-only entries (e.g. Jibble) all share the
+	// same midnight Started, so without a tiebreak sort.Slice would order them
+	// arbitrarily — and differently between the renderer and SelectedEntry,
+	// causing the cursor to act on a different row than the one highlighted.
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if !sorted[i].Started.Equal(sorted[j].Started) {
+			return sorted[i].Started.Before(sorted[j].Started)
+		}
+		if sorted[i].ID != sorted[j].ID {
+			return sorted[i].ID < sorted[j].ID
+		}
+		return sorted[i].Description < sorted[j].Description
 	})
 	return sorted
 }
@@ -482,8 +492,40 @@ func (m Model) renderWeekView(b *strings.Builder, sorted []msg.WorklogEntry) {
 
 func (m Model) formatEntryLine(e msg.WorklogEntry) string {
 	dot := styles.FormatProjectDot(e.Project)
-	timeRange := e.Started.Format("15:04") + "–" + e.Started.Add(e.TimeSpent).Format("15:04")
 	dur := styles.FormatDurationPadded(e.TimeSpent)
+
+	// Date-only entries (e.g. Jibble) have no clock time and no issue title.
+	// Render a compact line — "Client / Project" label, duration, note — instead
+	// of a misleading 00:00 range and an empty, space-hungry summary column.
+	if e.DateOnly {
+		label := e.IssueSummary
+		if label == "" {
+			label = e.Project
+		}
+		if label == "" {
+			label = e.IssueKey
+		}
+		labelW := 28
+		if maxW := m.Width / 3; labelW > maxW {
+			labelW = maxW
+		}
+		if labelW < 10 {
+			labelW = 10
+		}
+		labelCol := styles.PadOrTruncate(label, labelW)
+		note := e.Description
+		if note == "" {
+			note = "-"
+		}
+		remaining := m.Width - (labelW + 15) // cursor(2)+dot(2)+dur(5)+gaps(6)
+		if remaining < 10 {
+			remaining = 10
+		}
+		note = styles.Truncate(note, remaining)
+		return fmt.Sprintf("%s%s  %s  %s", dot, labelCol, dur, styles.HintStyle.Render(note))
+	}
+
+	timeRange := e.Started.Format("15:04") + "–" + e.Started.Add(e.TimeSpent).Format("15:04")
 	key := styles.PadOrTruncate(e.IssueKey, 10)
 
 	// Fixed parts: cursor(2) + dot(2) + time(11) + gaps(6) + key(10) + dur(5) = 36

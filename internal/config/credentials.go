@@ -8,8 +8,12 @@ import (
 )
 
 // ProviderCredentials holds a provider's authentication credentials.
+// Most providers use a single Token; Jibble uses a Key/Secret pair that is
+// exchanged for a short-lived JWT at runtime.
 type ProviderCredentials struct {
-	Token string `json:"token"`
+	Token  string `json:"token,omitempty"`
+	Key    string `json:"key,omitempty"`
+	Secret string `json:"secret,omitempty"`
 }
 
 // DefaultProviderCredentialsPath returns the active profile's credentials

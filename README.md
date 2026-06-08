@@ -64,6 +64,9 @@ fylla --profile work auth github --token YOUR_GITHUB_PAT
 # Kendo (also writes kendo.url into the profile's config.yaml)
 fylla --profile work auth kendo --url https://yourapp.kendo.dev --token YOUR_API_TOKEN
 
+# Jibble (worklog-only provider; API key + secret, exchanged for a JWT at runtime)
+fylla --profile personal auth jibble --key YOUR_API_KEY --secret YOUR_API_SECRET
+
 # Google Calendar (optional — enables sync / timeline / worklog calendar features)
 fylla --profile work auth google --client-credentials path/to/client_credentials.json
 ```
@@ -104,6 +107,15 @@ Fylla uses the Search API (`review-requested:@me`) and fetches PR detail for dif
 Create an API token in your Kendo instance settings. The token grants access
 to your projects and issues. Kendo hosts apps on subdomains of `kendo.dev`
 (e.g. `https://yourapp.kendo.dev`) — use your app's URL as the `--url` value.
+
+#### Jibble
+
+Create an API key/secret in Jibble under **Organization Settings → API**. Jibble
+is a **worklog-only** provider: it has no tasks, so it supplies nothing to the
+tasks/schedule tabs. List it in `providers` (alongside your task provider) and
+set `worklog.provider: jibble` to route logged hours to Jibble. The key/secret
+are exchanged for a short-lived bearer token at runtime. See
+[Jibble Worklog](#jibble-worklog) below.
 
 #### Google Calendar
 
@@ -559,6 +571,44 @@ posting. GitHub PRs and local tasks already had this resolution; the `provider`
 setting extends it to Todoist tasks as well. Kendo tasks have native worklog
 support via time entries, so Kendo worklogs are posted directly to Kendo
 regardless of the `worklog.provider` setting.
+
+The worklog provider is **independent of the task provider**: hours always post
+to `worklog.provider`, while task operations (mark-done, remaining estimate)
+stay with the task's own provider. This is what lets Todoist supply your tasks
+while a different backend (Jibble, Kendo) records the hours.
+
+### Jibble Worklog
+
+[Jibble](https://jibble.io) is a time-clock with no tasks — only Clients,
+Projects, and Time Entries. Fylla uses it as a **worklog-only** provider, ideal
+for tracking hours on personal-business or volunteer work whose tasks live in
+Todoist.
+
+Setup:
+
+```yaml
+providers: [todoist, jibble]   # Todoist supplies tasks; Jibble is worklog-only
+worklog:
+  provider: jibble
+targets:
+  - project: ICie             # a Jibble Project (bare name)
+    hours: 16
+    period: monthly
+```
+
+- **Logging hours**: start a focus timer on a task, then stop it. Because no
+  task key maps to a Jibble Project, the stop prompts you to pick a
+  `Client / Project` (e.g. `Tjas / ICie`) from your live Jibble project list;
+  the block is posted as a Jibble **time entry** (an `HourEntry` — date +
+  duration, the same as Jibble's "add time entry" feature) with the
+  task/comment as its note. Chores you never pick a project for are simply not
+  logged. Note: an `HourEntry` records the day and duration, not a clock-in
+  time, so the worklog tab groups by day rather than showing a start time.
+- **Reading hours**: the Worklog dashboard and `targets` read back logged hours
+  from Jibble. Targets are keyed by the **bare Jibble Project name** (`ICie`),
+  not the `Client / Project` label shown in the picker.
+- Jibble cannot create or complete tasks, and its tasks never appear in the
+  tasks/schedule tabs.
 
 ## Sync Behavior
 
