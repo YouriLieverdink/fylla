@@ -60,8 +60,8 @@ Fylla supports multiple task providers (Todoist, GitHub, Kendo) simultaneously v
 - Write ops: `CreateTask` appends estimate/due/priority clauses to the title (accepts `Project` as short name or `owner/repo`); `CompleteTask` closes with `state_reason=completed`; `DeleteTask` closes with `state_reason=not_planned`; `UpdateSummary` rewrites the non-clause portion while re-applying any existing estimate/due/priority. `PostWorklog` returns `ErrUnsupported`.
 
 ### GitHub Rate Limiting
-- Client tracks `X-RateLimit-Remaining` and `X-RateLimit-Reset` from API responses
-- Auto-pauses requests when < 50 remaining until reset window passes
+- Client records `X-RateLimit-Remaining`/`X-RateLimit-Reset` from each response (`updateRateLimit`); `RateRemaining()` exposes the last-seen value for observability.
+- The client does NOT proactively sleep. `FetchTasks` uses the Search API (30 req/min cap, far below core's 5000/hr), so a `Remaining < 50` pre-pause fired on nearly every fetch and blocked the UI up to ~60s. Instead, when the limit is genuinely hit GitHub returns an error and `cachedFetcher` serves stale cache + an `ErrPartialProviders` warning (multisource.go); the 30s `TaskCache` TTL keeps fetch frequency well under the cap.
 
 ### Jibble Provider (worklog-only)
 - `internal/jibble` is a **worklog-only** provider: Jibble has no tasks (only Clients → Projects → Time Entries). It implements `PostWorklog`/`FetchWorklogs`/`ListProjects` and stubs the rest of `TaskSource` with `ErrUnsupported`; `FetchTasks` returns `(nil, nil)` so it contributes no tasks. It must still be listed in `providers` to be routable as the worklog provider.

@@ -54,21 +54,6 @@ func NewClient(token string) *Client {
 	}
 }
 
-// checkRateLimit pauses if we're close to the rate limit.
-// Should be called before any API request.
-func (c *Client) checkRateLimit() {
-	c.rateMu.Lock()
-	rate := c.rateLimit
-	c.rateMu.Unlock()
-
-	if rate.Remaining > 0 && rate.Remaining < 50 {
-		sleepUntil := rate.Reset.Time.Sub(time.Now())
-		if sleepUntil > 0 && sleepUntil < 5*time.Minute {
-			time.Sleep(sleepUntil)
-		}
-	}
-}
-
 // updateRateLimit records the rate limit info from a response.
 func (c *Client) updateRateLimit(resp *gh.Response) {
 	if resp == nil {
@@ -110,7 +95,6 @@ func (c *Client) FetchTasks(ctx context.Context, query string) ([]task.Task, err
 		g.Go(func() error {
 			opts := &gh.SearchOptions{ListOptions: gh.ListOptions{PerPage: 50}}
 			for {
-				c.checkRateLimit()
 				result, resp, err := c.client.Search.Issues(gctx, q, opts)
 				c.updateRateLimit(resp)
 				if err != nil {
@@ -326,7 +310,6 @@ func (c *Client) closeIssue(ctx context.Context, taskKey, reason string) error {
 	}
 	state := "closed"
 	req := &gh.IssueRequest{State: &state, StateReason: &reason}
-	c.checkRateLimit()
 	_, resp, err := c.client.Issues.Edit(ctx, owner, repo, number, req)
 	c.updateRateLimit(resp)
 	if err != nil {
@@ -361,7 +344,6 @@ func (c *Client) fetchTitle(ctx context.Context, taskKey string) (string, issueH
 		return "", issueHandle{}, fmt.Errorf("parse key %q: %w", taskKey, err)
 	}
 	h := issueHandle{owner, repo, number}
-	c.checkRateLimit()
 	issue, resp, err := c.client.Issues.Get(ctx, owner, repo, number)
 	c.updateRateLimit(resp)
 	if err != nil {
@@ -373,7 +355,6 @@ func (c *Client) fetchTitle(ctx context.Context, taskKey string) (string, issueH
 // writeTitle PATCHes the issue title.
 func (c *Client) writeTitle(ctx context.Context, taskKey string, h issueHandle, title string) error {
 	req := &gh.IssueRequest{Title: &title}
-	c.checkRateLimit()
 	_, resp, err := c.client.Issues.Edit(ctx, h.owner, h.repo, h.number, req)
 	c.updateRateLimit(resp)
 	if err != nil {
