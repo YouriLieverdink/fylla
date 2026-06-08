@@ -485,13 +485,8 @@ func loadEditFormOptionsCmd(cb Callbacks, project, taskKey, taskProvider string)
 		if provider == "" && cb.Provider != nil {
 			provider = cb.Provider()
 		}
-		var projects []string
-		if cb.ListProjects != nil {
-			p, err := cb.ListProjects(provider)
-			if err == nil {
-				projects = p
-			}
-		}
+		// Project/section are not part of the edit form (they change via the
+		// task-list move action), so only parent/sprint options are loaded.
 		var epics []msg.EpicOption
 		if cb.ListEpics != nil {
 			e, err := cb.ListEpics(provider, project)
@@ -499,13 +494,6 @@ func loadEditFormOptionsCmd(cb Callbacks, project, taskKey, taskProvider string)
 				epics = e
 			} else {
 				epics = []msg.EpicOption{}
-			}
-		}
-		var sections []string
-		if cb.ListSections != nil {
-			s, err := cb.ListSections(provider, project)
-			if err == nil {
-				sections = s
 			}
 		}
 		var parentKey string
@@ -522,7 +510,7 @@ func loadEditFormOptionsCmd(cb Callbacks, project, taskKey, taskProvider string)
 				sprints = s
 			}
 		}
-		return msg.FormOptionsMsg{Provider: provider, Projects: projects, Sections: sections, Epics: epics, ParentKey: parentKey, Sprints: sprints}
+		return msg.FormOptionsMsg{Provider: provider, Epics: epics, ParentKey: parentKey, Sprints: sprints}
 	}
 }
 

@@ -13,19 +13,20 @@ import (
 	"time"
 
 	"github.com/iruoy/fylla/internal/task"
+	"golang.org/x/sync/errgroup"
 )
 
 const defaultBaseURL = "https://api.todoist.com/api/v1"
 
 // Client handles communication with the Todoist API v1.
 type Client struct {
-	BaseURL    string
-	Token      string
-	HTTPClient *http.Client
-	projects          map[string]string          // id → name cache
-	sections          map[string]string          // id → name cache
-	sectionsByProject map[string][]string        // project_id → []section names
-	sectionProject    map[string]string          // section_id → project_id
+	BaseURL           string
+	Token             string
+	HTTPClient        *http.Client
+	projects          map[string]string   // id → name cache
+	sections          map[string]string   // id → name cache
+	sectionsByProject map[string][]string // project_id → []section names
+	sectionProject    map[string]string   // section_id → project_id
 
 	projectsOnce sync.Once
 	projectsErr  error
@@ -331,33 +332,37 @@ func (c *Client) parseTask(t todoistTask) task.Task {
 }
 
 // FetchTasks retrieves active tasks from Todoist, optionally filtered.
+// The project cache, section cache, and task list are independent reads, so
+// they are fetched concurrently — parsing (which needs the project/section
+// maps) runs only after all three complete.
 func (c *Client) FetchTasks(ctx context.Context, filter string) ([]task.Task, error) {
-	if err := c.loadProjects(ctx); err != nil {
-		return nil, err
-	}
-	if err := c.loadSections(ctx); err != nil {
-		return nil, err
-	}
-
 	path := "/tasks"
 	if filter != "" {
 		path = "/tasks/filter?query=" + url.QueryEscape(filter)
 	}
 
-	resp, err := c.do(ctx, http.MethodGet, path, nil)
-	if err != nil {
-		return nil, fmt.Errorf("fetch tasks: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("todoist tasks: status %d: %s", resp.StatusCode, string(body))
-	}
-
 	var page paginatedResults[todoistTask]
-	if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
-		return nil, fmt.Errorf("decode tasks: %w", err)
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error { return c.loadProjects(gctx) })
+	g.Go(func() error { return c.loadSections(gctx) })
+	g.Go(func() error {
+		resp, err := c.do(gctx, http.MethodGet, path, nil)
+		if err != nil {
+			return fmt.Errorf("fetch tasks: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("todoist tasks: status %d: %s", resp.StatusCode, string(body))
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+			return fmt.Errorf("decode tasks: %w", err)
+		}
+		return nil
+	})
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 
 	tasks := make([]task.Task, 0, len(page.Results))
@@ -695,6 +700,87 @@ func (c *Client) UpdateSummary(ctx context.Context, taskID string, summary strin
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("todoist update summary: status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+// BatchUpdate applies summary, estimate, priority and due in a single
+// POST /tasks/{id}. The title (summary + [estimate] bracket) is composed
+// client-side: when both the summary and estimate are supplied no read is
+// needed; when only one is supplied a single fetchTask reads the current title
+// to preserve the other part.
+func (c *Client) BatchUpdate(ctx context.Context, taskID string, u task.BatchUpdate) error {
+	payload := map[string]interface{}{}
+
+	// Title composition. Only touch content when the summary and/or estimate
+	// change (estimate is encoded into the title).
+	if u.Title != nil || u.Estimate != nil {
+		var summary string
+		var est time.Duration
+
+		switch {
+		case u.Title != nil && u.Estimate != nil:
+			summary, est = *u.Title, *u.Estimate
+		default:
+			// Exactly one of summary/estimate supplied: read current title to
+			// preserve the part the caller did not provide.
+			t, err := c.fetchTask(ctx, taskID)
+			if err != nil {
+				return err
+			}
+			curEst, curSummary := task.ParseTitleEstimate(t.Content)
+			if u.Title != nil {
+				summary, est = *u.Title, curEst
+			} else {
+				summary, est = curSummary, *u.Estimate
+			}
+		}
+
+		content := summary
+		if est > 0 {
+			content = task.SetTitleEstimate(content, est)
+		}
+		payload["content"] = content
+	}
+
+	// Priority. Todoist has no null priority; "remove" maps to normal (API 1),
+	// matching UpdatePriority(…, 0).
+	if u.Priority != nil {
+		if *u.Priority == 0 {
+			payload["priority"] = 1
+		} else {
+			payload["priority"] = levelToAPIPriority(*u.Priority)
+		}
+	}
+
+	// Due date (mutually exclusive, same precedence as CreateTask).
+	switch {
+	case u.RemoveDue:
+		payload["due_string"] = "no date"
+	case u.DueString != nil:
+		payload["due_string"] = *u.DueString
+	case u.DueDate != nil:
+		payload["due_date"] = u.DueDate.Format("2006-01-02")
+	}
+
+	if len(payload) == 0 {
+		return nil
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal update: %w", err)
+	}
+
+	resp, err := c.do(ctx, http.MethodPost, "/tasks/"+taskID, strings.NewReader(string(data)))
+	if err != nil {
+		return fmt.Errorf("batch update: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("todoist batch update: status %d: %s", resp.StatusCode, string(body))
 	}
 	return nil
 }

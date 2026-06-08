@@ -46,3 +46,17 @@ type CreateInput struct {
 	SprintID    *int   // Sprint/iteration ID (Kendo)
 	Lane        string // Board column / lane name (Kendo)
 }
+
+// BatchUpdate carries the subset of fields a provider can set in a single
+// request. A nil pointer means "field unchanged"; for the removable fields a
+// non-nil zero value means "remove". Title is the bracket-free summary portion
+// — the provider owns estimate-bracket placement, so callers must never embed
+// an [estimate] clause in Title.
+type BatchUpdate struct {
+	Title     *string        // composed summary text (no [estimate] bracket)
+	Estimate  *time.Duration // nil = unchanged, 0 = remove, >0 = set
+	Priority  *int           // fylla level 1..5; nil = unchanged, 0 = remove
+	DueDate   *time.Time     // absolute due date set
+	DueString *string        // natural-language / recurrence set
+	RemoveDue bool           // clear due date
+}

@@ -178,14 +178,14 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 		DoneTask: func(taskKey, provider string) error {
 			_, err := RunDone(ctx, DoneParams{TaskKey: taskKey, Provider: provider, Completer: source})
 			if err == nil {
-				cache.InvalidateAll()
+				invalidateProvider(cache, taskKey, provider)
 			}
 			return err
 		},
 		DeleteTask: func(taskKey, provider string) error {
 			_, err := RunDelete(ctx, DeleteParams{TaskKey: taskKey, Provider: provider, Deleter: source})
 			if err == nil {
-				cache.InvalidateAll()
+				invalidateProvider(cache, taskKey, provider)
 			}
 			return err
 		},
@@ -442,21 +442,22 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			if err != nil {
 				return "", "", err
 			}
-			cache.InvalidateAll()
+			invalidateProvider(cache, "", coalesce(provider, cfg.ActiveProviders()[0]))
 			return result.Key, result.Summary, nil
 		},
 		EditTask: func(params tui.EditTaskParams) error {
 			ep := EditParams{
-				TaskKey:  params.TaskKey,
-				Provider: params.Provider,
-				Summary:  params.Summary,
-				Estimate: params.Estimate,
-				Due:      params.Due,
-				Priority: params.Priority,
-				Project:  params.Project,
-				Parent:   params.Parent,
-				Section:  params.Section,
-				Source:   source,
+				TaskKey:   params.TaskKey,
+				Provider:  params.Provider,
+				FullState: true,
+				Summary:   params.Summary,
+				Estimate:  params.Estimate,
+				Due:       params.Due,
+				Priority:  params.Priority,
+				Project:   params.Project,
+				Parent:    params.Parent,
+				Section:   params.Section,
+				Source:    source,
 			}
 			if params.NotBefore != "" {
 				ep.NotBefore = params.NotBefore
@@ -502,7 +503,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			}
 			_, err := RunEdit(ctx, ep)
 			if err == nil {
-				cache.InvalidateAll()
+				invalidateProvider(cache, params.TaskKey, params.Provider)
 			}
 			return err
 		},
@@ -625,7 +626,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 				Source:  source,
 			})
 			if err == nil {
-				cache.InvalidateAll()
+				invalidateProvider(cache, taskKey, "")
 			}
 			return err
 		},
@@ -738,7 +739,7 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			if tr, ok := routedSourceFor(source, taskKey, provider).(Transitioner); ok {
 				err := tr.TransitionTask(ctx, taskKey, target)
 				if err == nil {
-					cache.InvalidateAll()
+					invalidateProvider(cache, taskKey, provider)
 				}
 				return err
 			}
@@ -759,8 +760,8 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			if err != nil {
 				return nil, nil, err
 			}
-			if len(result.Succeeded) > 0 {
-				cache.InvalidateAll()
+			for _, k := range result.Succeeded {
+				cache.Invalidate(providerForKey(k))
 			}
 			return result.Succeeded, result.Failed, nil
 		},
@@ -773,8 +774,8 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			if err != nil {
 				return nil, nil, err
 			}
-			if len(result.Succeeded) > 0 {
-				cache.InvalidateAll()
+			for _, k := range result.Succeeded {
+				cache.Invalidate(providerForKey(k))
 			}
 			return result.Succeeded, result.Failed, nil
 		},
@@ -788,8 +789,8 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			if err != nil {
 				return nil, nil, err
 			}
-			if len(result.Succeeded) > 0 {
-				cache.InvalidateAll()
+			for _, k := range result.Succeeded {
+				cache.Invalidate(providerForKey(k))
 			}
 			return result.Succeeded, result.Failed, nil
 		},
@@ -803,8 +804,8 @@ func buildCallbacks(ctx context.Context, cal CalendarClient, fetcher TaskFetcher
 			if err != nil {
 				return nil, nil, err
 			}
-			if len(result.Succeeded) > 0 {
-				cache.InvalidateAll()
+			for _, k := range result.Succeeded {
+				cache.Invalidate(providerForKey(k))
 			}
 			return result.Succeeded, result.Failed, nil
 		},
@@ -998,6 +999,16 @@ func coalesce(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// invalidateProvider drops the cache entry for the provider that owns key,
+// preferring an explicit provider name when known.
+func invalidateProvider(cache *TaskCache, key, provider string) {
+	if provider != "" {
+		cache.Invalidate(provider)
+		return
+	}
+	cache.Invalidate(providerForKey(key))
 }
 
 func convertSyncResult(r *SyncResult) *msg.SyncResult {

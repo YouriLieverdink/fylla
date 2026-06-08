@@ -170,9 +170,7 @@ type pendingEditData struct {
 	upNext    string
 	noSplit   string
 	notBefore string
-	project   string
 	parentKey string // current parent key
-	section   string
 	sprintID  *int
 }
 
@@ -1029,7 +1027,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.formKind == formEditTaskPending && m.pendingEdit != nil {
 			m.pendingEdit.parentKey = mssg.ParentKey
 			m.formOptions = &mssg
-			m.form = buildEditForm(m.formTaskKey, m.formTaskProvider, *m.pendingEdit, mssg.Projects, mssg.Epics, mssg.Sections, mssg.Sprints)
+			m.form = buildEditForm(m.formTaskKey, m.formTaskProvider, *m.pendingEdit, mssg.Epics, mssg.Sprints)
 			m.formKind = formEditTask
 			return m, nil
 		}
@@ -2493,23 +2491,14 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					parent = parent[:idx]
 				}
 			}
-			editProject := m.form.ValueByLabel("Project")
-			// Only send project if it actually changed
-			hadProject := m.pendingEdit != nil && m.pendingEdit.project != ""
-			if m.pendingEdit != nil && editProject == m.pendingEdit.project {
-				editProject = ""
-				hadProject = false
-			}
-			editSection := m.form.ValueByLabel("Section")
-			if editSection == "None" {
-				editSection = ""
-			}
+			// Project/section are not edited here — they change via the task-list
+			// move action (m) — so an edit never triggers a /move and always
+			// updates in a single request.
 			hadNotBefore := m.pendingEdit != nil && m.pendingEdit.notBefore != ""
 			hadDue := m.pendingEdit != nil && m.pendingEdit.dueDate != ""
 			hadEstimate := m.pendingEdit != nil && m.pendingEdit.estimate != ""
 			hadPriority := m.pendingEdit != nil && m.pendingEdit.priority != ""
 			hadParent := m.pendingEdit != nil && m.pendingEdit.parentKey != ""
-			hadSection := m.pendingEdit != nil && m.pendingEdit.section != ""
 			hadSprint := m.pendingEdit != nil && m.pendingEdit.sprintID != nil
 			var sprintID *int
 			if sprintLabel := m.form.ValueByLabel("Sprint"); sprintLabel != "" && sprintLabel != "Backlog" {
@@ -2526,6 +2515,21 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			priority := m.form.ValueByLabel("Priority")
 			if priority == "None" {
 				priority = ""
+			}
+			// Only send parent/sprint when they actually changed; an unchanged
+			// value would otherwise fire a separate request and force the slow
+			// per-field path instead of the single-request update.
+			if m.pendingEdit != nil {
+				if parent == m.pendingEdit.parentKey {
+					parent = ""
+					hadParent = false
+				}
+				sprintUnchanged := (sprintID == nil) == (m.pendingEdit.sprintID == nil) &&
+					(sprintID == nil || *sprintID == *m.pendingEdit.sprintID)
+				if sprintUnchanged {
+					sprintID = nil
+					hadSprint = false
+				}
 			}
 			// Close form immediately, save in background
 			formCopy := m.form
@@ -2551,15 +2555,11 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				NoSplit:      noSplit,
 				NotBefore:    m.form.ValueByLabel("Not Before"),
 				HadNotBefore: hadNotBefore,
-				Project:      editProject,
 				Parent:       parent,
-				Section:      editSection,
 				HadDue:       hadDue,
 				HadEstimate:  hadEstimate,
 				HadPriority:  hadPriority,
-				HadProject:   hadProject,
 				HadParent:    hadParent,
-				HadSection:   hadSection,
 				SprintID:     sprintID,
 				HadSprint:    hadSprint,
 			})
@@ -3446,8 +3446,6 @@ func (m model) resolveFallbackKey(val string) string {
 
 func buildPendingEditData(t *msg.ScoredTask) pendingEditData {
 	ed := pendingEditData{}
-	ed.project = t.Project
-	ed.section = t.Section
 	if t.Estimate > 0 {
 		h := int(t.Estimate.Hours())
 		mins := int(t.Estimate.Minutes()) % 60
@@ -3611,19 +3609,12 @@ func (m *model) rebuildAddFormForProvider() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func buildEditForm(taskKey, provider string, ed pendingEditData, projects []string, epics []msg.EpicOption, sections []string, sprints []msg.SprintOption) components.Form {
+func buildEditForm(taskKey, provider string, ed pendingEditData, epics []msg.EpicOption, sprints []msg.SprintOption) components.Form {
+	// Project/section are intentionally omitted from the edit form — they change
+	// via the task-list move action (m). Keeping them out guarantees an edit is
+	// always a single update request (no /move).
 	fields := []components.FormFieldDef{
 		{Label: "Provider", Value: provider, Disabled: true},
-	}
-	if len(projects) > 0 {
-		currentVal := ed.project
-		if currentVal == "" && len(projects) > 0 {
-			currentVal = projects[0]
-		}
-		fields = append(fields, components.FormFieldDef{
-			Label: "Project", Kind: components.FieldSelect,
-			Options: projects, Value: currentVal,
-		})
 	}
 	fields = append(fields,
 		components.FormFieldDef{Label: "Summary", Placeholder: "Task summary", Value: ed.summary},
@@ -3660,33 +3651,6 @@ func buildEditForm(taskKey, provider string, ed pendingEditData, projects []stri
 		fields = append(fields, components.FormFieldDef{
 			Label: "Parent", Kind: components.FieldSelect,
 			Options: epicOptions, Value: currentVal,
-		})
-	}
-	if sections != nil {
-		sectionOptions := []string{"None"}
-		sectionOptions = append(sectionOptions, sections...)
-		currentVal := "None"
-		if ed.section != "" {
-			for _, s := range sections {
-				if s == ed.section {
-					currentVal = ed.section
-					break
-				}
-			}
-			if currentVal == "None" {
-				// Section exists but not in the list; add it
-				sectionOptions = append(sectionOptions, ed.section)
-				currentVal = ed.section
-			}
-		}
-		fields = append(fields, components.FormFieldDef{
-			Label: "Section", Kind: components.FieldSelect,
-			Options: sectionOptions, Value: currentVal,
-		})
-	} else if epics == nil {
-		// No sections loaded — show a text input
-		fields = append(fields, components.FormFieldDef{
-			Label: "Section", Placeholder: "Section name", Value: ed.section,
 		})
 	}
 	fields = append(fields,

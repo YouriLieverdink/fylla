@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/iruoy/fylla/internal/task"
 )
@@ -45,6 +47,13 @@ type EditParams struct {
 	SprintID    *int
 	NoSprint    bool
 	Source      TaskSource
+
+	// FullState signals that Summary plus the estimate and keyword flags fully
+	// describe the desired title — so the batch path can compose it and update
+	// in a single request without first reading the current title. The TUI sets
+	// this (its edit form always submits the complete state); CLI partial edits
+	// leave it false and fall back to reading the current title.
+	FullState bool
 }
 
 // EditResult holds the output of an edit operation.
@@ -75,6 +84,12 @@ type EditResult struct {
 func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 	// Resolve to the correct provider-specific source when provider is known.
 	p.Source = routedSource(p.Source, p.Provider)
+
+	// Fast path: when every requested edit maps onto a single combined provider
+	// update (currently Todoist), issue one request instead of one per field.
+	if bu, ok := p.Source.(BatchUpdater); ok && canBatchEdit(p) {
+		return runBatchEdit(ctx, bu, p)
+	}
 
 	result := &EditResult{TaskKey: p.TaskKey}
 
@@ -210,71 +225,7 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 		// Strip bracket estimate (e.g. [2h]) so keyword operations don't lose it
 		titleEst, summary := task.ParseTitleEstimate(summary)
 
-		changed := false
-
-		// Handle direct summary update: replace the base summary
-		// (strip existing keywords, set new base, then re-apply keywords below)
-		if p.Summary != "" {
-			// Strip constraint keywords from current summary to get current base
-			baseSummary := stripKeywords(summary)
-			if baseSummary != p.Summary {
-				// Replace base summary while preserving keywords
-				summary = p.Summary + extractKeywordSuffix(summary)
-				changed = true
-				result.SummaryUpdated = true
-			}
-		}
-
-		// UpNext
-		hasUpNext := upnextRe.MatchString(summary)
-		if p.UpNext && !hasUpNext {
-			summary = strings.TrimSpace(summary) + " upnext"
-			changed = true
-			result.UpNextSet = true
-		} else if p.UpNext && hasUpNext {
-			result.UpNextSet = true
-		} else if p.NoUpNext && hasUpNext {
-			summary = strings.TrimSpace(upnextRe.ReplaceAllString(summary, ""))
-			summary = strings.Join(strings.Fields(summary), " ")
-			changed = true
-			result.UpNextRemoved = true
-		} else if p.NoUpNext && !hasUpNext {
-			result.UpNextRemoved = true
-		}
-
-		// NoSplit
-		hasNoSplit := nosplitRe.MatchString(summary)
-		if p.NoSplit && !hasNoSplit {
-			summary = strings.TrimSpace(summary) + " nosplit"
-			changed = true
-			result.NoSplitSet = true
-		} else if p.NoSplit && hasNoSplit {
-			result.NoSplitSet = true
-		} else if p.NoNoSplit && hasNoSplit {
-			summary = strings.TrimSpace(nosplitRe.ReplaceAllString(summary, ""))
-			summary = strings.Join(strings.Fields(summary), " ")
-			changed = true
-			result.NoSplitRemoved = true
-		} else if p.NoNoSplit && !hasNoSplit {
-			result.NoSplitRemoved = true
-		}
-
-		// NotBefore
-		hasNotBefore := notBeforeRe.MatchString(summary)
-		if p.NotBefore != "" {
-			if hasNotBefore {
-				summary = strings.TrimSpace(notBeforeRe.ReplaceAllString(summary, ""))
-				summary = strings.Join(strings.Fields(summary), " ")
-			}
-			summary = strings.TrimSpace(summary) + " not before " + p.NotBefore
-			changed = true
-			result.NotBeforeSet = true
-		} else if p.NoNotBefore && hasNotBefore {
-			summary = strings.TrimSpace(notBeforeRe.ReplaceAllString(summary, ""))
-			summary = strings.Join(strings.Fields(summary), " ")
-			changed = true
-			result.NotBeforeRemoved = true
-		}
+		summary, changed := applySummaryKeywords(p, summary, result)
 
 		// Due date in title (Kendo)
 		if kendoDue {
@@ -322,6 +273,230 @@ func RunEdit(ctx context.Context, p EditParams) (*EditResult, error) {
 		}
 	}
 
+	return result, nil
+}
+
+// applySummaryKeywords applies the summary/keyword edits (direct summary
+// replace, upnext, nosplit, not before) to a bracket-free summary, recording
+// what changed on result. It returns the new summary and whether anything
+// changed. The Kendo title-due edit is handled separately by the caller.
+func applySummaryKeywords(p EditParams, summary string, result *EditResult) (string, bool) {
+	changed := false
+
+	// Handle direct summary update: replace the base summary
+	// (strip existing keywords, set new base, then re-apply keywords below)
+	if p.Summary != "" {
+		// Strip constraint keywords from current summary to get current base
+		baseSummary := stripKeywords(summary)
+		if baseSummary != p.Summary {
+			// Replace base summary while preserving keywords
+			summary = p.Summary + extractKeywordSuffix(summary)
+			changed = true
+			result.SummaryUpdated = true
+		}
+	}
+
+	// UpNext
+	hasUpNext := upnextRe.MatchString(summary)
+	if p.UpNext && !hasUpNext {
+		summary = strings.TrimSpace(summary) + " upnext"
+		changed = true
+		result.UpNextSet = true
+	} else if p.UpNext && hasUpNext {
+		result.UpNextSet = true
+	} else if p.NoUpNext && hasUpNext {
+		summary = strings.TrimSpace(upnextRe.ReplaceAllString(summary, ""))
+		summary = strings.Join(strings.Fields(summary), " ")
+		changed = true
+		result.UpNextRemoved = true
+	} else if p.NoUpNext && !hasUpNext {
+		result.UpNextRemoved = true
+	}
+
+	// NoSplit
+	hasNoSplit := nosplitRe.MatchString(summary)
+	if p.NoSplit && !hasNoSplit {
+		summary = strings.TrimSpace(summary) + " nosplit"
+		changed = true
+		result.NoSplitSet = true
+	} else if p.NoSplit && hasNoSplit {
+		result.NoSplitSet = true
+	} else if p.NoNoSplit && hasNoSplit {
+		summary = strings.TrimSpace(nosplitRe.ReplaceAllString(summary, ""))
+		summary = strings.Join(strings.Fields(summary), " ")
+		changed = true
+		result.NoSplitRemoved = true
+	} else if p.NoNoSplit && !hasNoSplit {
+		result.NoSplitRemoved = true
+	}
+
+	// NotBefore
+	hasNotBefore := notBeforeRe.MatchString(summary)
+	if p.NotBefore != "" {
+		if hasNotBefore {
+			summary = strings.TrimSpace(notBeforeRe.ReplaceAllString(summary, ""))
+			summary = strings.Join(strings.Fields(summary), " ")
+		}
+		summary = strings.TrimSpace(summary) + " not before " + p.NotBefore
+		changed = true
+		result.NotBeforeSet = true
+	} else if p.NoNotBefore && hasNotBefore {
+		summary = strings.TrimSpace(notBeforeRe.ReplaceAllString(summary, ""))
+		summary = strings.Join(strings.Fields(summary), " ")
+		changed = true
+		result.NotBeforeRemoved = true
+	}
+
+	return summary, changed
+}
+
+// hasSign reports whether s is a relative adjustment (+/- prefix).
+func hasSign(s string) bool {
+	return strings.HasPrefix(s, "+") || strings.HasPrefix(s, "-")
+}
+
+// batchNeedsSummary reports whether the edit touches the summary/keyword fields.
+func batchNeedsSummary(p EditParams) bool {
+	return p.UpNext || p.NoUpNext || p.NoSplit || p.NoNoSplit ||
+		p.NotBefore != "" || p.NoNotBefore || p.Summary != ""
+}
+
+// batchEditOps counts how many independent provider round-trips the slow path
+// would issue for this edit (the summary/keyword group counts as one).
+func batchEditOps(p EditParams) int {
+	ops := 0
+	if p.Estimate != "" || p.NoEstimate {
+		ops++
+	}
+	if p.Due != "" || p.NoDue {
+		ops++
+	}
+	if p.Priority != "" || p.NoPriority {
+		ops++
+	}
+	if batchNeedsSummary(p) {
+		ops++
+	}
+	return ops
+}
+
+// canBatchEdit reports whether the edit can be applied as a single combined
+// update. Move/sprint fields and relative adjustments fall through to the
+// per-field slow path, as do edits that collapse fewer than two round-trips.
+func canBatchEdit(p EditParams) bool {
+	if p.Provider == "kendo" {
+		// Kendo encodes due in the title; not representable here.
+		return false
+	}
+	if p.Project != "" || p.NoProject || p.Section != "" || p.NoSection ||
+		p.Parent != "" || p.NoParent || p.SprintID != nil || p.NoSprint {
+		return false
+	}
+	if hasSign(p.Estimate) || hasSign(p.Priority) || (p.Due != "" && hasSign(p.Due)) {
+		return false
+	}
+	// With full state the title is composed locally (no read), so even a single
+	// field is worth the batch path — it turns the edit into one request.
+	if p.FullState {
+		return batchEditOps(p) >= 1
+	}
+	return batchEditOps(p) >= 2
+}
+
+// runBatchEdit applies the edit via a single BatchUpdate call and synthesizes
+// the same EditResult the per-field path would produce.
+func runBatchEdit(ctx context.Context, bu BatchUpdater, p EditParams) (*EditResult, error) {
+	result := &EditResult{TaskKey: p.TaskKey}
+	var u task.BatchUpdate
+
+	// Estimate (absolute only — relative falls through in canBatchEdit).
+	if p.Estimate != "" {
+		d, err := ParseDuration(p.Estimate)
+		if err != nil {
+			return nil, fmt.Errorf("estimate: %w", err)
+		}
+		u.Estimate = &d
+		result.EstimateResult = &EstimateResult{TaskKey: p.TaskKey, Duration: d}
+	} else if p.NoEstimate {
+		zero := time.Duration(0)
+		u.Estimate = &zero
+		result.EstimateRemoved = true
+	}
+
+	// Priority (absolute only).
+	if p.Priority != "" {
+		level, ok := priorityNames[strings.ToLower(strings.TrimSpace(p.Priority))]
+		if !ok {
+			n, err := strconv.Atoi(strings.TrimSpace(p.Priority))
+			if err != nil || n < 1 || n > 5 {
+				return nil, fmt.Errorf("priority: invalid priority %q (use Highest, High, Medium, Low, Lowest or 1-5)", p.Priority)
+			}
+			level = n
+		}
+		u.Priority = &level
+		result.PriorityResult = &PriorityResult{TaskKey: p.TaskKey, Priority: level, Name: priorityLevelNames[level]}
+	} else if p.NoPriority {
+		zero := 0
+		u.Priority = &zero
+		result.PriorityRemoved = true
+	}
+
+	// Due.
+	if p.Due != "" {
+		if isRecurrenceDueString(p.Due) {
+			du := p.Due
+			u.DueString = &du
+			result.DueDateResult = &DueDateResult{TaskKey: p.TaskKey, DueString: p.Due}
+		} else {
+			d, err := ParseDate(p.Due)
+			if err != nil {
+				return nil, fmt.Errorf("due date: %w", err)
+			}
+			u.DueDate = &d
+			result.DueDateResult = &DueDateResult{TaskKey: p.TaskKey, DueDate: d}
+		}
+	} else if p.NoDue {
+		u.RemoveDue = true
+		result.DueDateRemoved = true
+	}
+
+	// Summary + keyword toggles.
+	if batchNeedsSummary(p) {
+		if p.FullState && p.Summary != "" {
+			// Caller supplied the complete state: compose the title from the
+			// clean base summary + keyword flags, no read required. Estimate is
+			// pinned below so the provider never needs to read it either.
+			newSummary, _ := applySummaryKeywords(p, p.Summary, result)
+			newSummary = normalizeModifierParens(newSummary)
+			u.Title = &newSummary
+			result.SummaryUpdated = true
+			if u.Estimate == nil {
+				zero := time.Duration(0)
+				u.Estimate = &zero
+			}
+		} else {
+			// Read the current title to preserve the existing keywords the
+			// caller did not resend and the [estimate] bracket.
+			current, err := p.Source.GetSummary(ctx, p.TaskKey)
+			if err != nil {
+				return nil, fmt.Errorf("get summary: %w", err)
+			}
+			titleEst, base := task.ParseTitleEstimate(current)
+			newSummary, changed := applySummaryKeywords(p, base, result)
+			if changed {
+				newSummary = normalizeModifierParens(newSummary)
+			}
+			u.Title = &newSummary
+			if u.Estimate == nil && titleEst > 0 {
+				e := titleEst
+				u.Estimate = &e
+			}
+		}
+	}
+
+	if err := bu.BatchUpdate(ctx, p.TaskKey, u); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 

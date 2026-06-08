@@ -287,9 +287,9 @@ func TestRemoveDueDate_Error(t *testing.T) {
 
 func TestGetPriority(t *testing.T) {
 	tests := []struct {
-		name     string
-		apiPri   int
-		wantPri  int
+		name    string
+		apiPri  int
+		wantPri int
 	}{
 		{"urgent", 4, 1},
 		{"high", 3, 2},
@@ -340,9 +340,9 @@ func TestGetPriority_Error(t *testing.T) {
 
 func TestUpdatePriority(t *testing.T) {
 	tests := []struct {
-		name      string
-		fyllaPri  int
-		wantAPI   int
+		name     string
+		fyllaPri int
+		wantAPI  int
 	}{
 		{"highest to urgent", 1, 4},
 		{"high to high", 2, 3},
@@ -1161,5 +1161,198 @@ func TestFetchTasks_AuthorizationHeader(t *testing.T) {
 	}
 	if gotAuth != "Bearer my-secret-token" {
 		t.Errorf("Authorization = %q, want 'Bearer my-secret-token'", gotAuth)
+	}
+}
+
+// ptr returns a pointer to v (test helper for BatchUpdate fields).
+func ptr[T any](v T) *T { return &v }
+
+func TestBatchUpdate_AllFields_SinglePost(t *testing.T) {
+	var reqLog []string
+	var received map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqLog = append(reqLog, r.Method+" "+r.URL.Path)
+		if r.Method == http.MethodPost {
+			json.NewDecoder(r.Body).Decode(&received)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	client := NewClient("test-token")
+	client.BaseURL = srv.URL
+
+	due := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	err := client.BatchUpdate(context.Background(), "1001", task.BatchUpdate{
+		Title:    ptr("New summary"),
+		Estimate: ptr(2 * time.Hour),
+		Priority: ptr(2), // High → API 3
+		DueDate:  &due,
+	})
+	if err != nil {
+		t.Fatalf("BatchUpdate: %v", err)
+	}
+
+	// Exactly one POST, zero GETs (both summary and estimate supplied).
+	if len(reqLog) != 1 || reqLog[0] != "POST /tasks/1001" {
+		t.Fatalf("request log = %v, want exactly [POST /tasks/1001]", reqLog)
+	}
+	if received["content"] != "New summary [2h]" {
+		t.Errorf("content = %v, want 'New summary [2h]'", received["content"])
+	}
+	if int(received["priority"].(float64)) != 3 {
+		t.Errorf("priority = %v, want 3", received["priority"])
+	}
+	if received["due_date"] != "2026-07-01" {
+		t.Errorf("due_date = %v, want '2026-07-01'", received["due_date"])
+	}
+}
+
+func TestBatchUpdate_EstimateOnly_PreGet(t *testing.T) {
+	var reqLog []string
+	var received map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqLog = append(reqLog, r.Method)
+		if r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(todoistTask{ID: "1001", Content: "Existing task [30m]"})
+			return
+		}
+		json.NewDecoder(r.Body).Decode(&received)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	client := NewClient("test-token")
+	client.BaseURL = srv.URL
+
+	err := client.BatchUpdate(context.Background(), "1001", task.BatchUpdate{Estimate: ptr(2 * time.Hour)})
+	if err != nil {
+		t.Fatalf("BatchUpdate: %v", err)
+	}
+	if len(reqLog) != 2 || reqLog[0] != http.MethodGet || reqLog[1] != http.MethodPost {
+		t.Fatalf("request log = %v, want [GET POST]", reqLog)
+	}
+	if received["content"] != "Existing task [2h]" {
+		t.Errorf("content = %v, want 'Existing task [2h]' (summary preserved, estimate replaced)", received["content"])
+	}
+}
+
+func TestBatchUpdate_SummaryOnly_PreGet(t *testing.T) {
+	var reqLog []string
+	var received map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqLog = append(reqLog, r.Method)
+		if r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(todoistTask{ID: "1001", Content: "Old [45m]"})
+			return
+		}
+		json.NewDecoder(r.Body).Decode(&received)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	client := NewClient("test-token")
+	client.BaseURL = srv.URL
+
+	err := client.BatchUpdate(context.Background(), "1001", task.BatchUpdate{Title: ptr("New")})
+	if err != nil {
+		t.Fatalf("BatchUpdate: %v", err)
+	}
+	if len(reqLog) != 2 || reqLog[0] != http.MethodGet || reqLog[1] != http.MethodPost {
+		t.Fatalf("request log = %v, want [GET POST]", reqLog)
+	}
+	if received["content"] != "New [45m]" {
+		t.Errorf("content = %v, want 'New [45m]' (bracket preserved)", received["content"])
+	}
+}
+
+func TestBatchUpdate_RemoveEstimate(t *testing.T) {
+	var received map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&received)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	client := NewClient("test-token")
+	client.BaseURL = srv.URL
+
+	err := client.BatchUpdate(context.Background(), "1001", task.BatchUpdate{
+		Title:    ptr("Just a title"),
+		Estimate: ptr(time.Duration(0)),
+	})
+	if err != nil {
+		t.Fatalf("BatchUpdate: %v", err)
+	}
+	if received["content"] != "Just a title" {
+		t.Errorf("content = %v, want 'Just a title' (no bracket)", received["content"])
+	}
+}
+
+func TestBatchUpdate_RemoveDue(t *testing.T) {
+	var received map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&received)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	client := NewClient("test-token")
+	client.BaseURL = srv.URL
+
+	err := client.BatchUpdate(context.Background(), "1001", task.BatchUpdate{
+		Priority:  ptr(3),
+		RemoveDue: true,
+	})
+	if err != nil {
+		t.Fatalf("BatchUpdate: %v", err)
+	}
+	if received["due_string"] != "no date" {
+		t.Errorf("due_string = %v, want 'no date'", received["due_string"])
+	}
+	if _, ok := received["due_date"]; ok {
+		t.Errorf("due_date should not be set when removing due")
+	}
+}
+
+func TestBatchUpdate_DueString(t *testing.T) {
+	var received map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&received)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	client := NewClient("test-token")
+	client.BaseURL = srv.URL
+
+	err := client.BatchUpdate(context.Background(), "1001", task.BatchUpdate{
+		Priority:  ptr(3),
+		DueString: ptr("every monday"),
+	})
+	if err != nil {
+		t.Fatalf("BatchUpdate: %v", err)
+	}
+	if received["due_string"] != "every monday" {
+		t.Errorf("due_string = %v, want 'every monday'", received["due_string"])
+	}
+	if _, ok := received["due_date"]; ok {
+		t.Errorf("due_date should not be set alongside due_string")
+	}
+}
+
+func TestBatchUpdate_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("fail"))
+	}))
+	defer srv.Close()
+
+	client := NewClient("test-token")
+	client.BaseURL = srv.URL
+
+	err := client.BatchUpdate(context.Background(), "1001", task.BatchUpdate{Priority: ptr(2)})
+	if err == nil {
+		t.Fatal("expected error for 500 response")
 	}
 }

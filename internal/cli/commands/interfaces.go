@@ -38,6 +38,8 @@ var (
 	_ TaskSource = (*local.Client)(nil)
 	_ TaskSource = (*kendo.Client)(nil)
 	_ TaskSource = (*jibble.Client)(nil)
+
+	_ BatchUpdater = (*todoist.Client)(nil)
 )
 
 // CalendarClient abstracts calendar operations for testing.
@@ -119,6 +121,14 @@ type DueDateRemover interface {
 // due-date string (recurrence or natural language) — currently Todoist.
 type DueStringUpdater interface {
 	UpdateDueDateString(ctx context.Context, issueKey string, dueString string) error
+}
+
+// BatchUpdater is an optional interface for providers that can apply summary,
+// estimate, priority and due in a single request — currently Todoist. The
+// update payload (task.BatchUpdate) lives in the task package so providers can
+// implement it without importing this package.
+type BatchUpdater interface {
+	BatchUpdate(ctx context.Context, issueKey string, u task.BatchUpdate) error
 }
 
 // PriorityGetter abstracts fetching the priority of a task.

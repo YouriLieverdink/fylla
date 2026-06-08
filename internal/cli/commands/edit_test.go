@@ -7,27 +7,30 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/iruoy/fylla/internal/task"
 )
 
 // editMock extends mockSource with configurable return values for edit tests.
 type editMock struct {
 	mockSource
-	estimateVal    time.Duration
-	estimateErr    error
-	dueDateVal     *time.Time
-	dueDateErr     error
-	priorityVal    int
-	priorityErr    error
-	updateErr      error
-	removeDueErr   error
-	getSummaryErr  error
-	updateSumErr   error
-	updatedEst     time.Duration
-	updatedDue     time.Time
-	updatedPri     int
-	removedDue     bool
-	updatedParent  string
-	parentUpdated  bool
+	estimateVal     time.Duration
+	estimateErr     error
+	dueDateVal      *time.Time
+	dueDateErr      error
+	priorityVal     int
+	priorityErr     error
+	updateErr       error
+	removeDueErr    error
+	getSummaryErr   error
+	updateSumErr    error
+	updatedEst      time.Duration
+	updatedDue      time.Time
+	updatedPri      int
+	removedDue      bool
+	updatedParent   string
+	parentUpdated   bool
+	getSummaryCalls int
 }
 
 func (m *editMock) GetEstimate(_ context.Context, _ string) (time.Duration, error) {
@@ -63,6 +66,7 @@ func (m *editMock) RemoveDueDate(_ context.Context, _ string) error {
 }
 
 func (m *editMock) GetSummary(_ context.Context, _ string) (string, error) {
+	m.getSummaryCalls++
 	return m.summary, m.getSummaryErr
 }
 
@@ -514,3 +518,169 @@ func TestRunEdit_ClearFields(t *testing.T) {
 	})
 }
 
+// batchMock extends editMock with a BatchUpdate recorder so the fast path can
+// be exercised.
+type batchMock struct {
+	editMock
+	batchCalls int
+	lastBatch  task.BatchUpdate
+}
+
+func (m *batchMock) BatchUpdate(_ context.Context, _ string, u task.BatchUpdate) error {
+	m.batchCalls++
+	m.lastBatch = u
+	return m.updateErr
+}
+
+func TestRunEdit_BatchFastPath(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("project edit bypasses batch (slow path)", func(t *testing.T) {
+		m := &batchMock{}
+		_, err := RunEdit(ctx, EditParams{
+			TaskKey:  "123",
+			Provider: "todoist",
+			Project:  "Inbox",
+			Priority: "High",
+			Source:   m,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if m.batchCalls != 0 {
+			t.Errorf("batchCalls = %d, want 0 (move field forces slow path)", m.batchCalls)
+		}
+		if m.updatedPri == 0 {
+			t.Error("expected priority applied via slow path")
+		}
+	})
+
+	t.Run("relative estimate bypasses batch (slow path)", func(t *testing.T) {
+		m := &batchMock{}
+		_, err := RunEdit(ctx, EditParams{
+			TaskKey:  "123",
+			Provider: "todoist",
+			Estimate: "+30m",
+			Priority: "High",
+			Source:   m,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if m.batchCalls != 0 {
+			t.Errorf("batchCalls = %d, want 0 (relative estimate forces slow path)", m.batchCalls)
+		}
+	})
+
+	t.Run("summary + priority uses batch once", func(t *testing.T) {
+		m := &batchMock{}
+		m.summary = "Old title"
+		result, err := RunEdit(ctx, EditParams{
+			TaskKey:  "123",
+			Provider: "todoist",
+			Summary:  "New title",
+			Priority: "High",
+			Source:   m,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if m.batchCalls != 1 {
+			t.Fatalf("batchCalls = %d, want 1", m.batchCalls)
+		}
+		if !result.SummaryUpdated {
+			t.Error("expected SummaryUpdated")
+		}
+		if result.PriorityResult == nil || result.PriorityResult.Name != "High" {
+			t.Errorf("PriorityResult = %+v, want High", result.PriorityResult)
+		}
+		if m.lastBatch.Title == nil || *m.lastBatch.Title != "New title" {
+			t.Errorf("batch Title = %v, want 'New title'", m.lastBatch.Title)
+		}
+		if m.lastBatch.Priority == nil || *m.lastBatch.Priority != 2 {
+			t.Errorf("batch Priority = %v, want 2", m.lastBatch.Priority)
+		}
+	})
+
+	t.Run("full state edit is a single request with no GET", func(t *testing.T) {
+		m := &batchMock{}
+		m.summary = "server side title [9h]" // would corrupt if read+reused
+		result, err := RunEdit(ctx, EditParams{
+			TaskKey:   "123",
+			Provider:  "todoist",
+			FullState: true,
+			Summary:   "Clean base",
+			Estimate:  "2h",
+			Priority:  "High",
+			Source:    m,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if m.getSummaryCalls != 0 {
+			t.Errorf("getSummaryCalls = %d, want 0 (title composed locally)", m.getSummaryCalls)
+		}
+		if m.batchCalls != 1 {
+			t.Fatalf("batchCalls = %d, want 1", m.batchCalls)
+		}
+		if m.lastBatch.Title == nil || *m.lastBatch.Title != "Clean base" {
+			t.Errorf("batch Title = %v, want 'Clean base'", m.lastBatch.Title)
+		}
+		if m.lastBatch.Estimate == nil || *m.lastBatch.Estimate != 2*time.Hour {
+			t.Errorf("batch Estimate = %v, want 2h", m.lastBatch.Estimate)
+		}
+		if !result.SummaryUpdated {
+			t.Error("expected SummaryUpdated")
+		}
+	})
+
+	t.Run("full form (summary+estimate+due+priority, no section) is one request", func(t *testing.T) {
+		m := &batchMock{}
+		m.summary = "current [1h]"
+		_, err := RunEdit(ctx, EditParams{
+			TaskKey:   "123",
+			Provider:  "todoist",
+			FullState: true,
+			Summary:   "Clean base",
+			Estimate:  "1h",
+			Due:       "2026-06-30",
+			Priority:  "Medium",
+			// Section/Parent/Sprint intentionally empty (unchanged → guarded by TUI)
+			Source: m,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if m.getSummaryCalls != 0 {
+			t.Errorf("getSummaryCalls = %d, want 0", m.getSummaryCalls)
+		}
+		if m.batchCalls != 1 {
+			t.Fatalf("batchCalls = %d, want 1 (whole form in one request)", m.batchCalls)
+		}
+		u := m.lastBatch
+		if u.Title == nil || u.Estimate == nil || u.Priority == nil || (u.DueDate == nil && u.DueString == nil) {
+			t.Errorf("batch update missing fields: %+v", u)
+		}
+	})
+
+	t.Run("full state summary-only still batches (single field)", func(t *testing.T) {
+		m := &batchMock{}
+		m.summary = "old [3h]"
+		_, err := RunEdit(ctx, EditParams{
+			TaskKey:   "123",
+			Provider:  "todoist",
+			FullState: true,
+			Summary:   "Just a new title",
+			Source:    m,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if m.getSummaryCalls != 0 {
+			t.Errorf("getSummaryCalls = %d, want 0", m.getSummaryCalls)
+		}
+		if m.batchCalls != 1 {
+			t.Errorf("batchCalls = %d, want 1 (single-field full-state edit batches)", m.batchCalls)
+		}
+	})
+}
