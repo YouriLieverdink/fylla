@@ -307,6 +307,7 @@ func (m model) Init() tea.Cmd {
 		loadTasksCmd(m.cb),
 		loadFormOptionsCmd(m.cb),
 		prefetchFallbackCmd(m.cb),
+		loadDashboardCmd(m.cb, m.dashboard.Month),
 	)
 }
 
