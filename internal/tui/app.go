@@ -667,7 +667,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 	case msg.PickerSearchDebounceMsg:
 		// Only fire search if picker is still in all-tasks mode and query matches
 		if m.picker.Active && m.picker.Mode == components.PickerModeAllTasks && mssg.Query == m.picker.Filter.Value() {
-			if mssg.Query == "" {
+			if len(mssg.Query) < minPickerSearchChars {
 				m.picker.Items = nil
 				m.picker.Loading = false
 				return m, nil
@@ -2312,8 +2312,8 @@ func (m model) updatePicker(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.picker.Mode = components.PickerModeAllTasks
 			m.picker.Items = nil
 			m.picker.ResetCursor()
-			// If there's already text, trigger a search immediately
-			if q := m.picker.Filter.Value(); q != "" {
+			// If there's already a selective query, trigger a search immediately
+			if q := m.picker.Filter.Value(); len(q) >= minPickerSearchChars {
 				m.picker.Loading = true
 				return m, searchAllTasksCmd(m.cb, q)
 			}

@@ -735,8 +735,13 @@ func searchAllTasksCmd(cb Callbacks, query string) tea.Cmd {
 	}
 }
 
+// minPickerSearchChars is the shortest query that triggers an all-tasks search.
+// A 1-char query matches almost every issue and forces a sweep of every project,
+// so we wait for a more selective term before hitting the API.
+const minPickerSearchChars = 2
+
 func pickerSearchDebounceCmd(query string) tea.Cmd {
-	return tea.Tick(300*time.Millisecond, func(time.Time) tea.Msg {
+	return tea.Tick(400*time.Millisecond, func(time.Time) tea.Msg {
 		return msg.PickerSearchDebounceMsg{Query: query}
 	})
 }

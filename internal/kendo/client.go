@@ -19,6 +19,11 @@ import (
 // fetchTasksConcurrency caps parallel per-project fetches in FetchTasks.
 const fetchTasksConcurrency = 6
 
+// issuesCacheTTL bounds how long a project's issue list is reused. Text search
+// filters issues client-side, so repeated keystroke searches reuse the cached
+// list instead of re-hitting /issues per project (the main rate-limit driver).
+const issuesCacheTTL = 30 * time.Second
+
 // Client handles communication with the Kendo REST API.
 type Client struct {
 	BaseURL    string
@@ -34,8 +39,15 @@ type Client struct {
 	userMu   sync.Mutex
 	userDone bool
 
-	lanesCache sync.Map // projectID (int) → map[int]string
-	epicsCache sync.Map // projectID (int) → map[int]string
+	lanesCache  sync.Map // projectID (int) → map[int]string
+	epicsCache  sync.Map // projectID (int) → map[int]string
+	issuesCache sync.Map // projectID (int) → issuesCacheEntry
+}
+
+// issuesCacheEntry holds a project's issue list with the time it was fetched.
+type issuesCacheEntry struct {
+	fetchedAt time.Time
+	issues    []issueJSON
 }
 
 // NewClient creates a Kendo client with the given credentials.
@@ -353,6 +365,7 @@ func (c *Client) putIssue(ctx context.Context, pid int, issueKey string, overrid
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("kendo update issue: status %d: %s", resp.StatusCode, string(body))
 	}
+	c.invalidateIssues(pid)
 	return nil
 }
 
@@ -658,20 +671,9 @@ func (c *Client) fetchProjectTasks(ctx context.Context, pid int, filter issueFil
 		return nil, err
 	}
 
-	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/issues", pid), nil)
+	issues, err := c.fetchProjectIssues(ctx, pid)
 	if err != nil {
-		return nil, fmt.Errorf("fetch issues: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("kendo fetch issues: status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var issues []issueJSON
-	if err := json.NewDecoder(resp.Body).Decode(&issues); err != nil {
-		return nil, fmt.Errorf("decode issues: %w", err)
+		return nil, err
 	}
 
 	doneLaneID := c.doneLaneIDFromMap(laneMap)
@@ -703,6 +705,42 @@ func (c *Client) fetchProjectTasks(ctx context.Context, pid int, filter issueFil
 		out = append(out, parseIssue(issue, code, laneMap[issue.LaneID], epicMap))
 	}
 	return out, nil
+}
+
+// fetchProjectIssues returns a project's issue list, reusing a cached copy
+// within issuesCacheTTL. The list is filtered client-side by callers, so
+// repeated text searches share one fetch instead of hitting /issues each time.
+func (c *Client) fetchProjectIssues(ctx context.Context, pid int) ([]issueJSON, error) {
+	if v, ok := c.issuesCache.Load(pid); ok {
+		if entry := v.(issuesCacheEntry); time.Since(entry.fetchedAt) < issuesCacheTTL {
+			return entry.issues, nil
+		}
+	}
+
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/projects/%d/issues", pid), nil)
+	if err != nil {
+		return nil, fmt.Errorf("fetch issues: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("kendo fetch issues: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var issues []issueJSON
+	if err := json.NewDecoder(resp.Body).Decode(&issues); err != nil {
+		return nil, fmt.Errorf("decode issues: %w", err)
+	}
+
+	c.issuesCache.Store(pid, issuesCacheEntry{fetchedAt: time.Now(), issues: issues})
+	return issues, nil
+}
+
+// invalidateIssues drops a project's cached issue list so the next fetch is
+// fresh. Called after writes that change the project's issues.
+func (c *Client) invalidateIssues(pid int) {
+	c.issuesCache.Delete(pid)
 }
 
 // CreateTask creates a new issue in Kendo.
@@ -775,6 +813,7 @@ func (c *Client) CreateTask(ctx context.Context, input task.CreateInput) (string
 	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
 		return "", fmt.Errorf("decode create response: %w", err)
 	}
+	c.invalidateIssues(pid)
 	return created.Key, nil
 }
 
@@ -1097,6 +1136,7 @@ func (c *Client) DeleteTask(ctx context.Context, issueKey string) error {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("kendo delete issue: status %d: %s", resp.StatusCode, string(body))
 	}
+	c.invalidateIssues(pid)
 	return nil
 }
 
