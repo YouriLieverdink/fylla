@@ -384,10 +384,6 @@ func batchEditOps(p EditParams) int {
 // update. Move/sprint fields and relative adjustments fall through to the
 // per-field slow path, as do edits that collapse fewer than two round-trips.
 func canBatchEdit(p EditParams) bool {
-	if p.Provider == "kendo" {
-		// Kendo encodes due in the title; not representable here.
-		return false
-	}
 	if p.Project != "" || p.NoProject || p.Section != "" || p.NoSection ||
 		p.Parent != "" || p.NoParent || p.SprintID != nil || p.NoSprint {
 		return false
@@ -470,7 +466,10 @@ func runBatchEdit(ctx context.Context, bu BatchUpdater, p EditParams) (*EditResu
 			newSummary = normalizeModifierParens(newSummary)
 			u.Title = &newSummary
 			result.SummaryUpdated = true
-			if u.Estimate == nil {
+			// Title-encoded-estimate providers (Todoist) lose the estimate when
+			// the title is rewritten, so pin it to avoid a read. Kendo stores
+			// estimate as a native field — pinning 0 would wrongly clear it.
+			if u.Estimate == nil && p.Provider != "kendo" {
 				zero := time.Duration(0)
 				u.Estimate = &zero
 			}

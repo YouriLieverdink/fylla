@@ -40,6 +40,7 @@ var (
 	_ TaskSource = (*jibble.Client)(nil)
 
 	_ BatchUpdater = (*todoist.Client)(nil)
+	_ BatchUpdater = (*kendo.Client)(nil)
 )
 
 // CalendarClient abstracts calendar operations for testing.

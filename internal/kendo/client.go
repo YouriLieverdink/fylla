@@ -160,8 +160,8 @@ func decodeTimeEntries(body []byte) (entries []timeEntryJSON, hasMore bool, hasE
 	}
 
 	var env struct {
-		Data  []timeEntryJSON `json:"data"`
-		Meta  struct {
+		Data []timeEntryJSON `json:"data"`
+		Meta struct {
 			CurrentPage int `json:"current_page"`
 			LastPage    int `json:"last_page"`
 		} `json:"meta"`
@@ -1327,6 +1327,94 @@ func (c *Client) UpdateSummary(ctx context.Context, issueKey string, summary str
 	return c.putIssue(ctx, pid, issueKey, map[string]interface{}{
 		"title": summary,
 	})
+}
+
+// BatchUpdate applies title, estimate, priority, and due in a single
+// read-modify-write. The per-field path issues 6–8 sequential round-trips for a
+// typical edit (each Update* reads, then putIssue reads again, then writes);
+// this collapses them into one GET + one PUT. Kendo has no native due field, so
+// the due date is folded into the title alongside any existing modifiers.
+func (c *Client) BatchUpdate(ctx context.Context, issueKey string, u task.BatchUpdate) error {
+	pid, err := c.projectIDForKey(ctx, issueKey)
+	if err != nil {
+		return err
+	}
+	current, err := c.fetchIssue(ctx, pid, issueKey)
+	if err != nil {
+		return err
+	}
+
+	overrides := map[string]interface{}{}
+
+	// Title (with due folded in). Recompose whenever the summary or the due
+	// changes so the due clause stays consistent with the other modifiers.
+	dueChanged := u.DueDate != nil || u.RemoveDue
+	if u.Title != nil || dueChanged {
+		base := current.Title
+		if u.Title != nil {
+			base = *u.Title
+		}
+		est, base := task.ParseTitleEstimate(base)
+		_, base = task.ParseTitleDueDate(base) // strip {date} form
+		cleaned, notBefore, notBeforeRaw, upNext, noSplit, _ := task.ExtractConstraints(base, time.Now(), nil)
+		nbVal := notBeforeRaw
+		if nbVal == "" && notBefore != nil {
+			nbVal = notBefore.Format("2006-01-02")
+		}
+		dueVal := ""
+		switch {
+		case u.DueDate != nil:
+			dueVal = u.DueDate.Format("2006-01-02")
+		case !u.RemoveDue:
+			// Due unchanged: preserve whatever the issue already had.
+			if d, _ := task.ParseTitleDueDate(current.Title); d != nil {
+				dueVal = d.Format("2006-01-02")
+			} else if _, d := task.ExtractDueClause(current.Title, time.Now()); d != nil {
+				dueVal = d.Format("2006-01-02")
+			}
+		}
+		result := cleaned
+		if mods := task.BuildModifiers(dueVal, nbVal, upNext, noSplit); mods != "" {
+			result += " " + mods
+		}
+		if est > 0 {
+			result = task.SetTitleEstimate(result, est)
+		}
+		overrides["title"] = result
+	}
+
+	// Estimate is a native field; preserve spent time, as UpdateEstimate does.
+	if u.Estimate != nil {
+		spent := 0
+		if current.EstimatedMinutes != nil && current.RemainingMinutes != nil {
+			if s := *current.EstimatedMinutes - *current.RemainingMinutes; s > 0 {
+				spent = s
+			}
+		}
+		overrides["estimated_minutes"] = spent + int(u.Estimate.Minutes())
+	}
+
+	if u.Priority != nil {
+		overrides["priority"] = fyllaPriorityToKendo(*u.Priority)
+	}
+
+	if len(overrides) == 0 {
+		return nil
+	}
+
+	payload := issueUpdatePayload(current, overrides)
+	resp, err := c.do(ctx, http.MethodPut, fmt.Sprintf("/api/projects/%d/issues/%s", pid, issueKey), payload)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("kendo batch update: status %d: %s", resp.StatusCode, string(body))
+	}
+	c.invalidateIssues(pid)
+	return nil
 }
 
 // FetchWorklogs retrieves time entries in the given date range.

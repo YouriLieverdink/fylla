@@ -1748,3 +1748,88 @@ func TestProjectCodeByID(t *testing.T) {
 		t.Errorf("projectCodeByID(99) = %q, want empty", code)
 	}
 }
+
+// TestBatchUpdate_SingleReadWrite asserts a full edit (title + estimate +
+// priority + due) collapses to exactly one GET and one PUT against the issue —
+// the per-field path issued 6–8 round-trips.
+func TestBatchUpdate_SingleReadWrite(t *testing.T) {
+	var issueReqs []string
+	var put map[string]interface{}
+
+	base := kendoHandler(t, func(cfg *kendoHandlerConfig) {
+		cfg.issues = map[string]issueJSON{
+			"IRUOY-0001": {
+				ID: 1, Key: "IRUOY-0001", Title: "Fix login bug", Priority: 1,
+				LaneID: 10, ProjectID: 1, EstimatedMinutes: intPtr(120), RemainingMinutes: intPtr(30),
+			},
+		}
+		cfg.onPutIssue = func(w http.ResponseWriter, r *http.Request) {
+			json.NewDecoder(r.Body).Decode(&put)
+			w.WriteHeader(http.StatusOK)
+		}
+	})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/issues/IRUOY-0001") {
+			issueReqs = append(issueReqs, r.Method)
+		}
+		base(w, r)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-token")
+	title := "Renamed task"
+	est := 2 * time.Hour
+	prio := 2
+	due := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	if err := client.BatchUpdate(context.Background(), "IRUOY-0001", task.BatchUpdate{
+		Title:    &title,
+		Estimate: &est,
+		Priority: &prio,
+		DueDate:  &due,
+	}); err != nil {
+		t.Fatalf("BatchUpdate: %v", err)
+	}
+
+	if len(issueReqs) != 2 || issueReqs[0] != http.MethodGet || issueReqs[1] != http.MethodPut {
+		t.Fatalf("issue requests = %v, want [GET PUT]", issueReqs)
+	}
+	if got, ok := put["title"].(string); !ok || !strings.Contains(got, "Renamed task") || !strings.Contains(got, "2026-07-01") {
+		t.Errorf("title = %v, want 'Renamed task' with due 2026-07-01", put["title"])
+	}
+	// spent = 120 - 30 = 90, + new remaining 120 = 210.
+	if got := int(put["estimated_minutes"].(float64)); got != 210 {
+		t.Errorf("estimated_minutes = %d, want 210", got)
+	}
+	// fylla level 2 -> kendo priority 1.
+	if got := int(put["priority"].(float64)); got != fyllaPriorityToKendo(2) {
+		t.Errorf("priority = %d, want %d", got, fyllaPriorityToKendo(2))
+	}
+}
+
+// TestBatchUpdate_EstimateUnchanged confirms a title-only edit never zeroes the
+// native estimate (the FullState pin that is correct for Todoist must not apply).
+func TestBatchUpdate_EstimateUnchanged(t *testing.T) {
+	var put map[string]interface{}
+	server := httptest.NewServer(kendoHandler(t, func(cfg *kendoHandlerConfig) {
+		cfg.issues = map[string]issueJSON{
+			"IRUOY-0001": {
+				ID: 1, Key: "IRUOY-0001", Title: "Old title", Priority: 1,
+				LaneID: 10, ProjectID: 1, EstimatedMinutes: intPtr(90), RemainingMinutes: intPtr(90),
+			},
+		}
+		cfg.onPutIssue = func(w http.ResponseWriter, r *http.Request) {
+			json.NewDecoder(r.Body).Decode(&put)
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-token")
+	title := "New title"
+	if err := client.BatchUpdate(context.Background(), "IRUOY-0001", task.BatchUpdate{Title: &title}); err != nil {
+		t.Fatalf("BatchUpdate: %v", err)
+	}
+	if got := int(put["estimated_minutes"].(float64)); got != 90 {
+		t.Errorf("estimated_minutes = %d, want 90 (preserved)", got)
+	}
+}
