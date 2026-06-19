@@ -265,7 +265,8 @@ and scheduling/scoring are unchanged. It only changes what is shown:
 - **Worklog:** durations, the efficiency line, and daily/weekly targets are
   gone. Each logged entry is its own row showing just the issue key and the note
   (`PRJ-123  review`); long notes wrap onto indented continuation lines. Holiday/
-  sick labels stay, without the hour math.
+  sick labels stay, without the hour math. Editing a worklog (`e`) shows only the
+  description field — the duration and start time are kept as they were.
 - **Timer panel:** the started-at time, the elapsed counter, and per-segment
   durations are hidden — you see which task is active and your notes, never how
   long it has run.

@@ -287,6 +287,8 @@ type model struct {
 	formWorklogID       string
 	formWorklogKey      string
 	formWorklogProvider string
+	formWorklogDuration time.Duration // original duration, preserved when calm mode edits only the description
+	formWorklogStarted  time.Time     // original start, preserved when calm mode edits only the description
 	formOptions         *msg.FormOptionsMsg
 	pickerFieldLabel    string
 	pendingEdit         *pendingEditData
@@ -1814,15 +1816,24 @@ func (m model) updateWorklog(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.formWorklogProvider = ""
 	case key.Matches(mssg, keys.Edit):
 		if e := m.worklog.SelectedEntry(); e != nil {
-			m.form = components.NewForm(fmt.Sprintf("Edit Worklog — %s", e.IssueKey), []components.FormFieldDef{
+			fields := []components.FormFieldDef{
 				{Label: "Duration", Placeholder: "e.g. 1h30m, 45m", Value: styles.FormatDuration(e.TimeSpent)},
 				{Label: "Description", Placeholder: "What did you work on?", Value: e.Description},
 				{Label: "Started", Placeholder: "e.g. 09:00, 2006-01-02T15:04", Value: e.Started.Format("15:04")},
-			})
+			}
+			if m.calmMode {
+				// Calm mode hides time; only the description is editable.
+				fields = []components.FormFieldDef{
+					{Label: "Description", Placeholder: "What did you work on?", Value: e.Description},
+				}
+			}
+			m.form = components.NewForm(fmt.Sprintf("Edit Worklog — %s", e.IssueKey), fields)
 			m.formKind = formEditWorklog
 			m.formWorklogID = e.ID
 			m.formWorklogKey = e.IssueKey
 			m.formWorklogProvider = e.Provider
+			m.formWorklogDuration = e.TimeSpent
+			m.formWorklogStarted = e.Started
 		}
 	case key.Matches(mssg, keys.Delete):
 		if e := m.worklog.SelectedEntry(); e != nil {
@@ -2768,16 +2779,23 @@ func (m model) updateForm(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.saving = "Adding worklog"
 			return m, addWorklogCmd(m.cb, issueKey, m.formWorklogProvider, dur, description, started)
 		case formEditWorklog:
-			durationStr := m.form.ValueByLabel("Duration")
 			description := m.form.ValueByLabel("Description")
-			startedStr := m.form.ValueByLabel("Started")
-			if durationStr == "" {
-				m.form.Active = false
-				m.formKind = formNone
-				return m, nil
+			var dur time.Duration
+			var started time.Time
+			if m.calmMode {
+				// Time fields are hidden; keep the original duration and start.
+				dur = m.formWorklogDuration
+				started = m.formWorklogStarted
+			} else {
+				durationStr := m.form.ValueByLabel("Duration")
+				if durationStr == "" {
+					m.form.Active = false
+					m.formKind = formNone
+					return m, nil
+				}
+				dur = parseDurationInput(durationStr)
+				started = parseStartedInput(m.form.ValueByLabel("Started"), m.worklog.Date)
 			}
-			dur := parseDurationInput(durationStr)
-			started := parseStartedInput(startedStr, m.worklog.Date)
 			m.form.Active = false
 			m.formKind = formNone
 			m.saving = "Updating worklog"
