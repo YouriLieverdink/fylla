@@ -31,6 +31,11 @@ type TUIConfig struct {
 	// Valid names: "Dashboard", "Focus", "Tasks", "Schedule",
 	// "Worklog", "Targets", "Config".
 	DisabledTabs []string `yaml:"disabledTabs"`
+	// CalmMode hides time-pressure surfaces from the TUI: the Dashboard and
+	// Schedule tabs, all estimates/due dates/scores on the Tasks tab, and all
+	// durations/efficiency on the Worklog tab and timer panel. Time is still
+	// tracked and logged underneath — it is only hidden from view.
+	CalmMode bool `yaml:"calmMode"`
 }
 
 // AllTUITabs lists every TUI tab label in display order.

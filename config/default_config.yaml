@@ -114,6 +114,10 @@ sickDays: []
 tui:
   # Hide TUI tabs by label. Valid: Dashboard, Focus, Tasks, Schedule, Tuning, Worklog, Targets, Config.
   disabledTabs: []
+  # Calm mode hides time-pressure surfaces: the Dashboard and Schedule tabs,
+  # estimates/due dates/scores on Tasks, and durations/efficiency on Worklog and
+  # the timer panel. Time is still tracked and logged — just not shown.
+  calmMode: false
 
 weights:
   priority: 0.45

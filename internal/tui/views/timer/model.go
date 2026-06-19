@@ -39,6 +39,7 @@ type Model struct {
 	Height       int
 	Focused      bool
 	Paused       []PausedInfo
+	CalmMode     bool // hide started-at, elapsed counter, and segment durations
 }
 
 // New creates a new timer model.
@@ -101,24 +102,58 @@ func (m Model) View() string {
 			b.WriteString("    " + styles.TaskStyle.Render(line) + "\n")
 		}
 	}
-	if !m.StartTime.IsZero() {
+	if !m.CalmMode && !m.StartTime.IsZero() {
 		b.WriteString(styles.HintStyle.Render("  Started at "+m.StartTime.Local().Format("15:04")) + "\n")
 	}
 	b.WriteString("\n")
 
-	// Big elapsed display
-	dur := m.Elapsed
-	if len(m.Segments) > 0 {
-		dur = m.TotalElapsed
+	// Big elapsed display (hidden in calm mode — the active task is shown above,
+	// never how long it has been running).
+	if !m.CalmMode {
+		dur := m.Elapsed
+		if len(m.Segments) > 0 {
+			dur = m.TotalElapsed
+		}
+		h := int(dur.Hours())
+		min := int(dur.Minutes()) % 60
+		sec := int(dur.Seconds()) % 60
+		b.WriteString("  " + styles.TimerBig.Render(fmt.Sprintf("%02d:%02d:%02d", h, min, sec)) + "\n")
+		b.WriteString("\n")
 	}
-	h := int(dur.Hours())
-	min := int(dur.Minutes()) % 60
-	sec := int(dur.Seconds()) % 60
-	b.WriteString("  " + styles.TimerBig.Render(fmt.Sprintf("%02d:%02d:%02d", h, min, sec)) + "\n")
-	b.WriteString("\n")
 
 	// Segments
-	if len(m.Segments) > 0 {
+	if m.CalmMode {
+		// Show segment notes only, no durations; skip segments without a note.
+		// Long notes wrap onto indented continuation lines instead of truncating.
+		wrapWidth := m.Width - 4 // "  • " prefix
+		if wrapWidth < 8 {
+			wrapWidth = 8
+		}
+		writeNote := func(note string) {
+			for i, l := range wordWrap(note, wrapWidth) {
+				prefix := "  • "
+				if i > 0 {
+					prefix = "    "
+				}
+				b.WriteString(styles.HintStyle.Render(prefix+l) + "\n")
+			}
+		}
+		wrote := false
+		for _, seg := range m.Segments {
+			if seg.Comment == "" {
+				continue
+			}
+			writeNote(seg.Comment)
+			wrote = true
+		}
+		if m.Comment != "" {
+			writeNote(m.Comment)
+			wrote = true
+		}
+		if wrote {
+			b.WriteString("\n")
+		}
+	} else if len(m.Segments) > 0 {
 		for i, seg := range m.Segments {
 			line := fmt.Sprintf("  seg %d: %s", i+1, styles.FormatDuration(seg.Duration))
 			if seg.Comment != "" {

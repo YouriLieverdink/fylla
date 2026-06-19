@@ -35,6 +35,7 @@ Fylla supports multiple task providers (Todoist, GitHub, Kendo) simultaneously v
 - **Past event preservation:** `reconcile()` takes a `now` parameter and skips events whose end time is before `now`, preserving them as a calendar record
 - **Worklog command:** `fylla worklog` walks calendar events (tasks + meetings), prompts for adjustments, fills remaining hours, and bulk-posts worklogs. Kendo tasks are posted directly to Kendo as time entries
 - **Bulk operations:** `RunBulk()` supports bulk done/delete on multiple selected tasks. TUI multi-select mode (ctrl+v) with space to toggle, then d/D to apply
+- **Calm mode:** `tui.calmMode` bool threads through `tui.Deps.CalmMode` into the tasks/worklog/timer view models. It is render-only — time is still tracked, logged, and used for scoring/scheduling. It hides the Dashboard+Schedule tabs (`effectiveDisabledTabs` unions `calmHiddenTabs` into `disabledTabs`, so both `buildTabOrder` and the tab-bar render follow), strips estimate/due/not-before/score on Tasks, and removes durations/efficiency from the Worklog tab and timer panel. The Worklog view renders one row per entry (no collapsing) with time stripped in `formatEntryLine`
 
 ### Key Interfaces
 - `TaskSource` — composite interface combining all task operations (fetch, create, complete, delete, estimate, priority, due date, summary, worklog)

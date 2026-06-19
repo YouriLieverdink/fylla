@@ -29,6 +29,7 @@ type Model struct {
 	SelectMode bool            // true when multi-select is active
 	ViewMode   string          // "compact" or "detailed"
 	FocusKeys  map[string]bool // (provider+"|"+key) → in focus list
+	CalmMode   bool            // hide estimate, due date, not-before, and score
 }
 
 // New creates a new tasks model.
@@ -394,21 +395,28 @@ func (m Model) renderTaskCompact(t msg.ScoredTask, idx int, cursor, check string
 	if t.UpNext {
 		tags += styles.UpNextStyle.Render(" ↑")
 	}
-	if t.NotBefore != nil && t.NotBefore.After(time.Now()) {
-		tags += styles.HintStyle.Render(" ≥" + t.NotBefore.Format("Jan 2"))
-	}
-	if t.DueDate != nil {
-		days := t.DueDate.Sub(time.Now()).Hours() / 24
-		switch {
-		case days <= 0:
-			tags += styles.AtRiskStyle.Render(" ⚠ " + t.DueDate.Format("Jan 2"))
-		case days <= 3:
-			tags += styles.WarnStyle.Render(" ⚠ " + t.DueDate.Format("Jan 2"))
+	if !m.CalmMode {
+		if t.NotBefore != nil && t.NotBefore.After(time.Now()) {
+			tags += styles.HintStyle.Render(" ≥" + t.NotBefore.Format("Jan 2"))
+		}
+		if t.DueDate != nil {
+			days := t.DueDate.Sub(time.Now()).Hours() / 24
+			switch {
+			case days <= 0:
+				tags += styles.AtRiskStyle.Render(" ⚠ " + t.DueDate.Format("Jan 2"))
+			case days <= 3:
+				tags += styles.WarnStyle.Render(" ⚠ " + t.DueDate.Format("Jan 2"))
+			}
 		}
 	}
 
-	// Fixed parts: cursor(2) + dot(2) + rank(3) + gaps(4) + est(5) = 16
+	// Fixed parts: cursor(2) + dot(2) + rank(3) + gaps(4) + est(5) = 16.
+	// Calm mode drops the estimate column (5).
 	fixedWidth := 16
+	if m.CalmMode {
+		est = ""
+		fixedWidth = 11
+	}
 	if m.SelectMode {
 		fixedWidth += 4
 	}
@@ -423,7 +431,12 @@ func (m Model) renderTaskCompact(t msg.ScoredTask, idx int, cursor, check string
 	}
 	label := styles.PadOrTruncate(prefix+styles.Truncate(t.Summary, summaryWidth), labelWidth)
 
-	line := fmt.Sprintf("%s  %s  %s%s", rank, label, est, tags)
+	var line string
+	if m.CalmMode {
+		line = fmt.Sprintf("%s  %s%s", rank, label, tags)
+	} else {
+		line = fmt.Sprintf("%s  %s  %s%s", rank, label, est, tags)
+	}
 	if isSelected {
 		line = styles.SelectedStyle.Render(line)
 	}
@@ -463,9 +476,11 @@ func (m Model) renderTaskDetailed(t msg.ScoredTask, idx int, cursor, check strin
 	}
 
 	var meta strings.Builder
-	meta.WriteString(est)
-	meta.WriteString("  ")
-	meta.WriteString(score)
+	if !m.CalmMode {
+		meta.WriteString(est)
+		meta.WriteString("  ")
+		meta.WriteString(score)
+	}
 	switch t.IssueType {
 	case "Pull Request":
 		meta.WriteString("  ")
@@ -486,22 +501,24 @@ func (m Model) renderTaskDetailed(t msg.ScoredTask, idx int, cursor, check strin
 		meta.WriteString("  ")
 		meta.WriteString(styles.UpNextStyle.Render("↑"))
 	}
-	if t.NotBefore != nil && t.NotBefore.After(time.Now()) {
-		meta.WriteString("  ")
-		meta.WriteString(styles.HintStyle.Render("≥" + t.NotBefore.Format("Jan 2")))
-	}
-	if t.DueDate != nil {
-		days := t.DueDate.Sub(time.Now()).Hours() / 24
-		switch {
-		case days <= 0:
+	if !m.CalmMode {
+		if t.NotBefore != nil && t.NotBefore.After(time.Now()) {
 			meta.WriteString("  ")
-			meta.WriteString(styles.AtRiskStyle.Render("⚠ " + t.DueDate.Format("Jan 2")))
-		case days <= 3:
-			meta.WriteString("  ")
-			meta.WriteString(styles.WarnStyle.Render("⚠ " + t.DueDate.Format("Jan 2")))
-		default:
-			meta.WriteString("  ")
-			meta.WriteString(styles.HintStyle.Render(t.DueDate.Format("Jan 2")))
+			meta.WriteString(styles.HintStyle.Render("≥" + t.NotBefore.Format("Jan 2")))
+		}
+		if t.DueDate != nil {
+			days := t.DueDate.Sub(time.Now()).Hours() / 24
+			switch {
+			case days <= 0:
+				meta.WriteString("  ")
+				meta.WriteString(styles.AtRiskStyle.Render("⚠ " + t.DueDate.Format("Jan 2")))
+			case days <= 3:
+				meta.WriteString("  ")
+				meta.WriteString(styles.WarnStyle.Render("⚠ " + t.DueDate.Format("Jan 2")))
+			default:
+				meta.WriteString("  ")
+				meta.WriteString(styles.HintStyle.Render(t.DueDate.Format("Jan 2")))
+			}
 		}
 	}
 	if t.RecurrenceRaw != "" {

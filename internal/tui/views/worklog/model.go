@@ -29,6 +29,7 @@ type Model struct {
 	BusinessHours    []config.BusinessHoursConfig
 	Holidays         config.HolidayIndex
 	SickDays         config.HolidayIndex
+	CalmMode         bool // hide durations/efficiency; collapse entries per task
 }
 
 // New creates a new worklog model.
@@ -159,6 +160,43 @@ func (m *Model) sortedEntries() []msg.WorklogEntry {
 	})
 	return sorted
 }
+// wrapText word-wraps s to the given column width, hard-breaking any word longer
+// than width. It always returns at least one line.
+func wrapText(s string, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	var lines []string
+	var cur string
+	for _, word := range strings.Fields(s) {
+		for styles.StringWidth(word) > width {
+			// Hard-break an over-long word so it never overflows the column.
+			if cur != "" {
+				lines = append(lines, cur)
+				cur = ""
+			}
+			r := []rune(word)
+			lines = append(lines, string(r[:width]))
+			word = string(r[width:])
+		}
+		switch {
+		case cur == "":
+			cur = word
+		case styles.StringWidth(cur)+1+styles.StringWidth(word) <= width:
+			cur += " " + word
+		default:
+			lines = append(lines, cur)
+			cur = word
+		}
+	}
+	if cur != "" {
+		lines = append(lines, cur)
+	}
+	if len(lines) == 0 {
+		lines = append(lines, "")
+	}
+	return lines
+}
 
 func totalTime(entries []msg.WorklogEntry) time.Duration {
 	var total time.Duration
@@ -199,13 +237,20 @@ func (m Model) View() string {
 			viewLabel += "  " + mark
 		}
 	}
-	total := totalTime(sorted)
-	title := fmt.Sprintf("  Worklogs — %s (%d entries, %s)", viewLabel, len(sorted), styles.FormatDuration(total))
+	var title string
+	if m.CalmMode {
+		title = fmt.Sprintf("  Worklogs — %s (%d entries)", viewLabel, len(sorted))
+	} else {
+		total := totalTime(sorted)
+		title = fmt.Sprintf("  Worklogs — %s (%d entries, %s)", viewLabel, len(sorted), styles.FormatDuration(total))
+	}
 	b.WriteString(styles.HeaderFmt.Render(title))
 	b.WriteString("\n")
 
-	if line := m.efficiencyLine(total); line != "" {
-		b.WriteString(line)
+	if !m.CalmMode {
+		if line := m.efficiencyLine(totalTime(sorted)); line != "" {
+			b.WriteString(line)
+		}
 	}
 	b.WriteString("\n")
 
@@ -235,6 +280,9 @@ func (m Model) holidayLabel(date time.Time) string {
 	}
 	if !m.Holidays.HasHoliday(date) && !m.SickDays.HasHoliday(date) {
 		return ""
+	}
+	if m.CalmMode {
+		return "partial off"
 	}
 	full := m.DailyHours
 	if full <= 0 {
@@ -365,17 +413,7 @@ func (m Model) renderDayView(b *strings.Builder, sorted []msg.WorklogEntry) {
 	}
 
 	for i := startIdx; i < endIdx; i++ {
-		e := sorted[i]
-		isSelected := i == m.Cursor
-		line := m.formatEntryLine(e)
-		cursor := "  "
-		if isSelected {
-			cursor = "> "
-			line = styles.SelectedStyle.Render(line)
-		}
-		b.WriteString(cursor)
-		b.WriteString(line)
-		b.WriteString("\n")
+		m.writeEntryLine(b, sorted[i], i == m.Cursor)
 	}
 
 	if len(sorted) > visibleHeight {
@@ -420,10 +458,15 @@ func (m Model) renderWeekView(b *strings.Builder, sorted []msg.WorklogEntry) {
 		if !m.WorkDays[iso] {
 			continue
 		}
-		dayTotal := totalTime(entries)
-		header := fmt.Sprintf("%s  %s", t.Format("Mon Jan 2"), styles.FormatDuration(dayTotal))
-		if dt := m.dailyTargetFor(t); dt > 0 {
-			header += "  " + m.formatEfficiency(dayTotal, dt)
+		var header string
+		if m.CalmMode {
+			header = t.Format("Mon Jan 2")
+		} else {
+			dayTotal := totalTime(entries)
+			header = fmt.Sprintf("%s  %s", t.Format("Mon Jan 2"), styles.FormatDuration(dayTotal))
+			if dt := m.dailyTargetFor(t); dt > 0 {
+				header += "  " + m.formatEfficiency(dayTotal, dt)
+			}
 		}
 		if mark := m.holidayLabel(t); mark != "" {
 			header += "  " + mark
@@ -476,22 +519,80 @@ func (m Model) renderWeekView(b *strings.Builder, sorted []msg.WorklogEntry) {
 			continue
 		}
 
-		e := sorted[dl.entryIdx]
-		isSelected := dl.entryIdx == m.Cursor
-		line := m.formatEntryLine(e)
-		cursor := "  "
-		if isSelected {
-			cursor = "> "
-			line = styles.SelectedStyle.Render(line)
-		}
-		b.WriteString(cursor)
-		b.WriteString(line)
-		b.WriteString("\n")
+		m.writeEntryLine(b, sorted[dl.entryIdx], dl.entryIdx == m.Cursor)
 	}
+}
+
+// writeEntryLine writes one worklog row (including the leading cursor and a
+// trailing newline). Calm mode delegates to renderCalmEntry; otherwise it is the
+// timed single-line render with the selected row highlighted.
+func (m Model) writeEntryLine(b *strings.Builder, e msg.WorklogEntry, isSelected bool) {
+	if m.CalmMode {
+		b.WriteString(m.renderCalmEntry(e, isSelected))
+		b.WriteString("\n")
+		return
+	}
+	line := m.formatEntryLine(e)
+	cursor := "  "
+	if isSelected {
+		cursor = "> "
+		line = styles.SelectedStyle.Render(line)
+	}
+	b.WriteString(cursor)
+	b.WriteString(line)
+	b.WriteString("\n")
+}
+
+// renderCalmEntry renders a calm-mode worklog row: cursor + project dot + issue
+// key + note, with long notes wrapped onto indented continuation lines. The row
+// style is applied per line *after* the dot so the dot's ANSI reset cannot clip
+// the highlight (which otherwise leaves the first line unstyled while wrapped
+// lines stay bold).
+func (m Model) renderCalmEntry(e msg.WorklogEntry, isSelected bool) string {
+	dot := styles.FormatProjectDot(e.Project)
+	key := e.IssueKey
+	if key == "" {
+		key = e.Project
+	}
+	if key == "" {
+		key = e.IssueSummary
+	}
+	note := e.Description
+	if note == "" {
+		note = "-"
+	}
+	// noteCol = cursor(2) + dot(2) + key(10) + gaps(2) = 16.
+	const noteCol = 16
+	width := m.Width - noteCol
+	if width < 10 {
+		width = 10
+	}
+	keyCol := styles.PadOrTruncate(key, 10)
+	wrapped := wrapText(note, width)
+	indent := strings.Repeat(" ", noteCol)
+	cursor := "  "
+	if isSelected {
+		cursor = "> "
+	}
+
+	var sb strings.Builder
+	if isSelected {
+		sb.WriteString(cursor + dot + styles.SelectedStyle.Render(keyCol+"  "+wrapped[0]))
+		for _, l := range wrapped[1:] {
+			sb.WriteString("\n" + indent + styles.SelectedStyle.Render(l))
+		}
+	} else {
+		sb.WriteString(cursor + dot + keyCol + "  " + styles.HintStyle.Render(wrapped[0]))
+		for _, l := range wrapped[1:] {
+			sb.WriteString("\n" + indent + styles.HintStyle.Render(l))
+		}
+	}
+	return sb.String()
 }
 
 func (m Model) formatEntryLine(e msg.WorklogEntry) string {
 	dot := styles.FormatProjectDot(e.Project)
+
 	dur := styles.FormatDurationPadded(e.TimeSpent)
 
 	// Date-only entries (e.g. Jibble) have no clock time and no issue title.

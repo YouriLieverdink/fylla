@@ -54,6 +54,35 @@ type Deps struct {
 	WorklogProvider  string
 	ProfileName      string
 	DisabledTabs     []string // tab labels to hide from the tab bar
+	CalmMode         bool     // hide time-pressure surfaces (see config.TUIConfig.CalmMode)
+}
+
+// calmHiddenTabs lists tabs hidden when calm mode is on: both are pure
+// time/target surfaces with nothing left once their numbers are stripped.
+var calmHiddenTabs = []string{"Dashboard", "Schedule"}
+
+// effectiveDisabledTabs unions the user's disabledTabs with the calm-mode
+// hidden tabs when calm mode is on.
+func effectiveDisabledTabs(disabled []string, calm bool) []string {
+	if !calm {
+		return disabled
+	}
+	out := append([]string(nil), disabled...)
+	for _, t := range calmHiddenTabs {
+		if !containsString(out, t) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func containsString(s []string, v string) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }
 
 // tabIDForLabel maps a tab label to its constant ID.
@@ -217,6 +246,7 @@ type model struct {
 	activeTab           int
 	tabOrder            []int // enabled tab IDs in display order
 	disabledTabs        []string
+	calmMode            bool
 	width               int
 	height              int
 	tasks               tasks.Model
@@ -294,16 +324,17 @@ func initialModel(deps Deps) model {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
 	focusState, focusPath := loadFocusState()
-	tabOrder := buildTabOrder(deps.DisabledTabs)
+	disabledTabs := effectiveDisabledTabs(deps.DisabledTabs, deps.CalmMode)
+	tabOrder := buildTabOrder(disabledTabs)
 	initialTab := tabFocus
 	if !containsInt(tabOrder, initialTab) {
 		initialTab = tabOrder[0]
 	}
-	return model{
+	m := model{
 		cb:              deps.CB,
 		activeTab:       initialTab,
 		tabOrder:        tabOrder,
-		disabledTabs:    deps.DisabledTabs,
+		disabledTabs:    disabledTabs,
 		tasks:           tasks.New(),
 		focus:           focusView.New(),
 		focusState:      focusState,
@@ -320,6 +351,11 @@ func initialModel(deps Deps) model {
 		worklogProvider: deps.WorklogProvider,
 		profileName:     deps.ProfileName,
 	}
+	m.calmMode = deps.CalmMode
+	m.tasks.CalmMode = deps.CalmMode
+	m.worklog.CalmMode = deps.CalmMode
+	m.timer.CalmMode = deps.CalmMode
+	return m
 }
 
 // loadFocusState reads the focus list from disk for the active profile.
@@ -894,9 +930,13 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 			if stoppedLabel == "" {
 				stoppedLabel = "(anonymous)"
 			}
-			elapsed := styles.FormatDuration(mssg.Elapsed)
+			// Calm mode hides the elapsed time from the stop confirmation.
+			dur := fmt.Sprintf(" (%s)", styles.FormatDuration(mssg.Elapsed))
+			if m.calmMode {
+				dur = ""
+			}
 			if mssg.ResumedKey != "" {
-				m.setToast(fmt.Sprintf("Stopped %s (%s), resumed %s", stoppedLabel, elapsed, mssg.ResumedKey), false)
+				m.setToast(fmt.Sprintf("Stopped %s%s, resumed %s", stoppedLabel, dur, mssg.ResumedKey), false)
 				// Refresh timer status to pick up resumed timer
 				cmds = append(cmds, timerStatusCmd(m.cb))
 			} else {
@@ -914,7 +954,7 @@ func (m model) Update(mssg tea.Msg) (tea.Model, tea.Cmd) {
 				m.timer.Paused = nil
 				m.panelFocused = false
 				m.resizeViews(m.height - 5)
-				m.setToast(fmt.Sprintf("Stopped %s (%s)", stoppedLabel, elapsed), false)
+				m.setToast(fmt.Sprintf("Stopped %s%s", stoppedLabel, dur), false)
 			}
 		}
 		cmds = append(cmds, clearToastCmd())
@@ -2061,6 +2101,9 @@ func (m model) updateTimer(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				titleLabel = "(anonymous)"
 			}
 			formTitle := fmt.Sprintf("Stop Timer — %s (%s)", titleLabel, styles.FormatDuration(m.timerElapsed))
+			if m.calmMode {
+				formTitle = fmt.Sprintf("Stop Timer — %s", titleLabel)
+			}
 
 			fields := []components.FormFieldDef{
 				{Label: "Comment", Placeholder: "What did you work on?", Value: m.timerComment},
@@ -2096,13 +2139,22 @@ func (m model) updateTimer(mssg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if len(m.timer.Segments) > 0 {
 				var segLines []string
 				for i, seg := range m.timer.Segments {
+					if m.calmMode {
+						// Calm mode: segment notes only, no durations.
+						if seg.Comment != "" {
+							segLines = append(segLines, "• "+seg.Comment)
+						}
+						continue
+					}
 					line := fmt.Sprintf("seg %d: %s", i+1, styles.FormatDuration(seg.Duration))
 					if seg.Comment != "" {
 						line += " — " + seg.Comment
 					}
 					segLines = append(segLines, line)
 				}
-				m.form.Subtitle = strings.Join(segLines, "\n")
+				if len(segLines) > 0 {
+					m.form.Subtitle = strings.Join(segLines, "\n")
+				}
 			}
 			m.formKind = formStopTimer
 			// Auto-resolve issue key from GitHub PR branch name
@@ -3257,6 +3309,7 @@ func (m model) View() string {
 		HelpHints:    hints,
 		Width:        m.width,
 		LoadingText:  loadingText,
+		CalmMode:     m.calmMode,
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left,

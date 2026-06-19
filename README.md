@@ -242,6 +242,7 @@ weights:
 
 tui:
   disabledTabs: []                # hide TUI tabs by label; valid: Dashboard, Focus, Tasks, Schedule, Tuning, Worklog, Targets, Config
+  calmMode: false                 # hide time-pressure surfaces (see Calm mode below)
 ```
 
 When `tui.disabledTabs` is non-empty, the listed tabs are removed from the TUI
@@ -249,6 +250,27 @@ tab bar. Number keys map positionally to the visible tabs (e.g. with `Targets`
 and `Worklog` disabled, `1`–`6` cover `Dashboard`/`Focus`/`Tasks`/`Schedule`/`Tuning`/`Config`),
 and `tab`/`shift+tab` cycle only the visible set. At least one tab must remain
 enabled.
+
+### Calm mode
+
+Set `tui.calmMode: true` to strip the time-pressure surfaces from the TUI while
+leaving everything working underneath — timers still run, worklogs still post,
+and scheduling/scoring are unchanged. It only changes what is shown:
+
+- **Tabs:** the **Dashboard** and **Schedule** tabs are hidden (unioned with any
+  `disabledTabs`). **Targets**, **Tasks**, **Focus**, **Worklog**, **Tuning**,
+  and **Config** stay.
+- **Tasks:** estimates, due dates, not-before dates, and the score column are
+  hidden. The list is still ordered by score under the hood.
+- **Worklog:** durations, the efficiency line, and daily/weekly targets are
+  gone. Each logged entry is its own row showing just the issue key and the note
+  (`PRJ-123  review`); long notes wrap onto indented continuation lines. Holiday/
+  sick labels stay, without the hour math.
+- **Timer panel:** the started-at time, the elapsed counter, and per-segment
+  durations are hidden — you see which task is active and your notes, never how
+  long it has run.
+
+The toggle is read at startup; restart the TUI after changing it.
 
 ### Tuning tab
 

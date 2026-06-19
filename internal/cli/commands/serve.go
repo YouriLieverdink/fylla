@@ -88,6 +88,7 @@ func RunServe(ctx context.Context) error {
 		WorklogProvider:  worklogProvider(cfg),
 		ProfileName:      config.ActiveProfile(),
 		DisabledTabs:     cfg.TUI.DisabledTabs,
+		CalmMode:         cfg.TUI.CalmMode,
 	})
 }
 

@@ -26,6 +26,10 @@ var (
 			BorderTop(true).
 			BorderStyle(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
+
+	calmTagStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}).
+			Bold(true)
 )
 
 // StatusBar holds the state for the bottom status bar.
@@ -39,11 +43,16 @@ type StatusBar struct {
 	HelpHints    string
 	Width        int
 	LoadingText  string
+	CalmMode     bool
 }
 
 // Render renders the status bar.
 func (s StatusBar) Render() string {
 	var left string
+
+	if s.CalmMode {
+		left = calmTagStyle.Render(" calm")
+	}
 
 	if s.TimerRunning {
 		label := s.TimerSummary
