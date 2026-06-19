@@ -151,7 +151,7 @@ func (m *Model) sortedEntries() []msg.WorklogEntry {
 	// causing the cursor to act on a different row than the one highlighted.
 	sort.SliceStable(sorted, func(i, j int) bool {
 		if !sorted[i].Started.Equal(sorted[j].Started) {
-			return sorted[i].Started.Before(sorted[j].Started)
+			return sorted[i].Started.After(sorted[j].Started)
 		}
 		if sorted[i].ID != sorted[j].ID {
 			return sorted[i].ID < sorted[j].ID
@@ -396,27 +396,23 @@ func (m Model) renderDayView(b *strings.Builder, sorted []msg.WorklogEntry) {
 		visibleHeight = 3
 	}
 
-	// Center cursor in visible window.
-	startIdx := m.Cursor - visibleHeight/2
-	if startIdx < 0 {
-		startIdx = 0
+	// Render rows up front so we can window by actual terminal-line height
+	// (calm-mode notes wrap), keeping the cursor row fully visible.
+	rows := make([]string, len(sorted))
+	heights := make([]int, len(sorted))
+	for i, e := range sorted {
+		rows[i] = m.renderEntryRow(e, i == m.Cursor)
+		heights[i] = lineHeight(rows[i])
 	}
-	if startIdx > len(sorted)-visibleHeight {
-		startIdx = len(sorted) - visibleHeight
-	}
-	if startIdx < 0 {
-		startIdx = 0
-	}
-	endIdx := startIdx + visibleHeight
-	if endIdx > len(sorted) {
-		endIdx = len(sorted)
-	}
+
+	startIdx, endIdx := windowAround(heights, m.Cursor, visibleHeight)
 
 	for i := startIdx; i < endIdx; i++ {
-		m.writeEntryLine(b, sorted[i], i == m.Cursor)
+		b.WriteString(rows[i])
+		b.WriteString("\n")
 	}
 
-	if len(sorted) > visibleHeight {
+	if startIdx > 0 || endIdx < len(sorted) {
 		b.WriteString(styles.HintStyle.Render(fmt.Sprintf("\n  Showing %d-%d of %d", startIdx+1, endIdx, len(sorted))))
 		b.WriteString("\n")
 	}
@@ -438,15 +434,21 @@ func (m Model) renderWeekView(b *strings.Builder, sorted []msg.WorklogEntry) {
 	}
 	monday := time.Date(m.Date.Year(), m.Date.Month(), m.Date.Day()-weekday+1, 0, 0, 0, 0, m.Date.Location())
 
+	// Pre-render every display line (headers, entry rows, blank separators) to
+	// its final text so the window can be sized by actual terminal-line height —
+	// calm-mode notes wrap, so an entry row is not always one line.
 	type displayLine struct {
-		entryIdx int // -1 for header/separator
-		header   string
+		text   string // final rendered content, no trailing newline; "" = blank separator
+		height int
 	}
 	var lines []displayLine
+	cursorDisplayIdx := 0
 	flatIdx := 0
-	entryToFlat := make(map[int]int) // sorted index -> flat index
 
-	for i := 0; i < 7; i++ {
+	// Iterate Sun→Mon so the most recent day renders at the top, matching the
+	// descending sort. The flatIdx→sorted coupling holds because both walk
+	// entries in descending-time order.
+	for i := 6; i >= 0; i-- {
 		t := monday.AddDate(0, 0, i)
 		key := t.Format("2006-01-02")
 		entries := groups[key]
@@ -471,13 +473,16 @@ func (m Model) renderWeekView(b *strings.Builder, sorted []msg.WorklogEntry) {
 		if mark := m.holidayLabel(t); mark != "" {
 			header += "  " + mark
 		}
-		lines = append(lines, displayLine{entryIdx: -1, header: header})
+		lines = append(lines, displayLine{text: styles.HeaderFmt.Render("  " + header), height: 1})
 		for range entries {
-			entryToFlat[flatIdx] = len(lines)
-			lines = append(lines, displayLine{entryIdx: flatIdx})
+			row := m.renderEntryRow(sorted[flatIdx], flatIdx == m.Cursor)
+			if flatIdx == m.Cursor {
+				cursorDisplayIdx = len(lines)
+			}
+			lines = append(lines, displayLine{text: row, height: lineHeight(row)})
 			flatIdx++
 		}
-		lines = append(lines, displayLine{entryIdx: -1}) // blank separator
+		lines = append(lines, displayLine{text: "", height: 1}) // blank separator
 	}
 
 	visibleHeight := m.Height - 8
@@ -485,52 +490,25 @@ func (m Model) renderWeekView(b *strings.Builder, sorted []msg.WorklogEntry) {
 		visibleHeight = 3
 	}
 
-	// Find display line for cursor and center it.
-	cursorDisplayIdx := 0
+	heights := make([]int, len(lines))
 	for di, dl := range lines {
-		if dl.entryIdx == m.Cursor {
-			cursorDisplayIdx = di
-			break
-		}
+		heights[di] = dl.height
 	}
-
-	startIdx := cursorDisplayIdx - visibleHeight/2
-	if startIdx < 0 {
-		startIdx = 0
-	}
-	if startIdx > len(lines)-visibleHeight {
-		startIdx = len(lines) - visibleHeight
-	}
-	if startIdx < 0 {
-		startIdx = 0
-	}
-	endIdx := startIdx + visibleHeight
-	if endIdx > len(lines) {
-		endIdx = len(lines)
-	}
+	startIdx, endIdx := windowAround(heights, cursorDisplayIdx, visibleHeight)
 
 	for di := startIdx; di < endIdx; di++ {
-		dl := lines[di]
-		if dl.entryIdx == -1 {
-			if dl.header != "" {
-				b.WriteString(styles.HeaderFmt.Render("  " + dl.header))
-			}
-			b.WriteString("\n")
-			continue
-		}
-
-		m.writeEntryLine(b, sorted[dl.entryIdx], dl.entryIdx == m.Cursor)
+		b.WriteString(lines[di].text)
+		b.WriteString("\n")
 	}
 }
 
-// writeEntryLine writes one worklog row (including the leading cursor and a
-// trailing newline). Calm mode delegates to renderCalmEntry; otherwise it is the
-// timed single-line render with the selected row highlighted.
-func (m Model) writeEntryLine(b *strings.Builder, e msg.WorklogEntry, isSelected bool) {
+// renderEntryRow returns one worklog row's content (leading cursor included, no
+// trailing newline). Calm mode delegates to renderCalmEntry, which may wrap a
+// long note across several lines; otherwise it is the timed single-line render
+// with the selected row highlighted.
+func (m Model) renderEntryRow(e msg.WorklogEntry, isSelected bool) string {
 	if m.CalmMode {
-		b.WriteString(m.renderCalmEntry(e, isSelected))
-		b.WriteString("\n")
-		return
+		return m.renderCalmEntry(e, isSelected)
 	}
 	line := m.formatEntryLine(e)
 	cursor := "  "
@@ -538,9 +516,57 @@ func (m Model) writeEntryLine(b *strings.Builder, e msg.WorklogEntry, isSelected
 		cursor = "> "
 		line = styles.SelectedStyle.Render(line)
 	}
-	b.WriteString(cursor)
-	b.WriteString(line)
+	return cursor + line
+}
+
+// writeEntryLine writes one worklog row plus a trailing newline.
+func (m Model) writeEntryLine(b *strings.Builder, e msg.WorklogEntry, isSelected bool) {
+	b.WriteString(m.renderEntryRow(e, isSelected))
 	b.WriteString("\n")
+}
+
+// lineHeight reports how many terminal lines a rendered row occupies.
+func lineHeight(s string) int {
+	return strings.Count(s, "\n") + 1
+}
+
+// windowAround returns the [start, end) index range over heights that keeps the
+// focus index visible within at most visible terminal lines, expanding outward
+// from focus (up then down) so the focused row stays roughly centered. It
+// accounts for variable per-row heights, so calm-mode rows that wrap don't push
+// the cursor off-screen.
+func windowAround(heights []int, focus, visible int) (int, int) {
+	n := len(heights)
+	if n == 0 {
+		return 0, 0
+	}
+	if focus < 0 {
+		focus = 0
+	}
+	if focus >= n {
+		focus = n - 1
+	}
+	start := focus
+	used := heights[focus]
+	up, down := focus-1, focus+1
+	for {
+		grew := false
+		if up >= 0 && used+heights[up] <= visible {
+			used += heights[up]
+			start = up
+			up--
+			grew = true
+		}
+		if down < n && used+heights[down] <= visible {
+			used += heights[down]
+			down++
+			grew = true
+		}
+		if !grew {
+			break
+		}
+	}
+	return start, down
 }
 
 // renderCalmEntry renders a calm-mode worklog row: cursor + project dot + issue
