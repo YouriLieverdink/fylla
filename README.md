@@ -26,6 +26,22 @@ feed (skipped when the feed comes back truncated). The scheduler runs it every
 scheduling fields (due, not-before, up-next, no-split, recurrence) are owned
 locally and never written back to Kendo (ADR-0004).
 
+### Timer stack
+
+Each issue row has a **Start** button. Starting a timer while one runs pushes a
+new timer on top (LIFO); pausing closes the current segment, resuming opens a
+new one, and stopping the top timer rolls its segments up into a `worklogs` row
+(raw seconds summed, rounded once to nearest minute, discarded if 0) then
+auto-resumes the one beneath. Stack order is derived from timer id — no position
+column. Only the top timer is interactive; buried ones are display-only. One
+live timer per issue. `TimerService` owns the state machine; the running
+segment's elapsed time ticks client-side from timestamps, so a reload recomputes
+it. Worklog posting to Kendo is not wired yet — the `posted_at` /
+`kendo_worklog_id` / `post_error` columns are reserved (ADR-0001/0003).
+
+Routes: `POST /timers` (start), `POST /timers/pause`, `POST /timers/resume`,
+`POST /timers/stop`, `PATCH /timers/comment`.
+
 ## Setup
 
 ```bash

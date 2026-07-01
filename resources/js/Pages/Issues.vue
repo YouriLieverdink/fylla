@@ -4,14 +4,23 @@ import Card from '../Components/Card.vue';
 import SyncStatus from '../Components/SyncStatus.vue';
 import EmptyState from '../Components/EmptyState.vue';
 import AppButton from '../Components/AppButton.vue';
+import TimerStack from '../Components/TimerStack.vue';
 
-defineProps({
+const props = defineProps({
     issues: { type: Array, default: () => [] },
     lastSyncedAt: { type: String, default: null },
+    timer: { type: Object, default: null },
+    liveIssueIds: { type: Array, default: () => [] },
 });
 
+const opts = { preserveScroll: true };
+
 function syncNow() {
-    router.post('/sync', {}, { preserveScroll: true });
+    router.post('/sync', {}, opts);
+}
+
+function startTimer(issue) {
+    router.post('/timers', { issue_id: issue.id }, opts);
 }
 
 function fmt(ts) {
@@ -21,7 +30,7 @@ function fmt(ts) {
 // type → the coloured square from the kit's work-item rows
 const typeDot = { Feature: 'bg-accent-soft', Bug: 'bg-behind', Task: 'bg-faint-2' };
 
-const cols = 'grid-cols-[80px_1fr_120px_170px]';
+const cols = 'grid-cols-[80px_1fr_120px_150px_84px]';
 </script>
 
 <template>
@@ -51,6 +60,18 @@ const cols = 'grid-cols-[80px_1fr_120px_170px]';
             />
         </header>
 
+        <!-- timer stack -->
+        <div class="mb-6">
+            <TimerStack
+                :active="timer?.active ?? null"
+                :paused="timer?.paused ?? []"
+                @pause="router.post('/timers/pause', {}, opts)"
+                @resume="router.post('/timers/resume', {}, opts)"
+                @stop="router.post('/timers/stop', {}, opts)"
+                @comment="(c) => router.patch('/timers/comment', { comment: c }, opts)"
+            />
+        </div>
+
         <!-- issues -->
         <Card v-if="issues.length" radius="24px" pad="10px 10px 12px">
             <div
@@ -61,6 +82,7 @@ const cols = 'grid-cols-[80px_1fr_120px_170px]';
                 <span>Title</span>
                 <span>Priority</span>
                 <span class="text-right">Updated</span>
+                <span></span>
             </div>
 
             <div class="flex flex-col">
@@ -91,6 +113,16 @@ const cols = 'grid-cols-[80px_1fr_120px_170px]';
                         <span v-else class="font-mono text-[11px] text-faint-3">—</span>
                     </div>
                     <div class="text-right font-mono text-[12px] tabular-nums text-faint">{{ fmt(issue.updated_at) }}</div>
+                    <div class="text-right">
+                        <button
+                            v-if="!liveIssueIds.includes(issue.id)"
+                            class="cursor-pointer rounded-[9px] bg-accent px-3 py-1.5 font-mono text-[11px] font-semibold text-white shadow-btn"
+                            @click="startTimer(issue)"
+                        >
+                            Start
+                        </button>
+                        <span v-else class="font-mono text-[11px] text-faint-3">live</span>
+                    </div>
                 </div>
             </div>
         </Card>
