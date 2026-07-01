@@ -53,7 +53,7 @@ const notes = computed(() => props.active?.notes ?? []);
 
         <template v-else>
             <!-- active card + paused stack (left) · notes (right) -->
-            <div class="grid items-stretch gap-4 lg:grid-cols-[1fr_400px]">
+            <div class="grid items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_400px]">
                 <!-- left column: active timer on top, paused nested beneath -->
                 <div class="flex flex-col">
                 <!-- active (top of stack) -->
