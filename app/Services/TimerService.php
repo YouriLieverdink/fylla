@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\PostWorklog;
 use App\Models\Issue;
 use App\Models\Note;
 use App\Models\Segment;
@@ -136,12 +137,16 @@ class TimerService
             ? null
             : $notes->map(fn (Note $n) => $n->created_at->format('H:i').' — '.$n->text)->implode("\n");
 
-        Worklog::create([
+        $worklog = Worklog::create([
             'issue_id' => $segment->timer->issue_id,
             'timer_id' => $segment->timer_id,
             'minutes' => $minutes,
             'started_at' => $segment->started_at,
             'comment' => $comment,
         ]);
+
+        // Post to Kendo once the timer txn commits (#10) — afterCommit so the
+        // queued job reads a committed row.
+        PostWorklog::dispatch($worklog)->afterCommit();
     }
 }

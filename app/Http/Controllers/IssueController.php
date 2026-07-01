@@ -24,10 +24,15 @@ class IssueController extends Controller
         $syncedAt = Issue::max('synced_at');
 
         return Inertia::render('Issues', [
-            'issues' => Issue::orderByDesc('updated_at')->get([
-                'id', 'key', 'title', 'priority', 'type',
-                'estimated_minutes', 'remaining_minutes', 'updated_at',
-            ]),
+            // Only issues from the latest sync = current open work. Done issues
+            // leave the my-issues feed; ones with local history are retained in
+            // the DB (for their worklogs) but keep an older synced_at, so this
+            // filters them out of the list without deleting them.
+            'issues' => Issue::where('synced_at', $syncedAt)
+                ->orderByDesc('updated_at')->get([
+                    'id', 'key', 'title', 'priority', 'type',
+                    'estimated_minutes', 'remaining_minutes', 'updated_at',
+                ]),
             'lastSyncedAt' => $syncedAt ? Carbon::parse($syncedAt, 'UTC')->toJSON() : null,
             'liveIssueIds' => $live->pluck('issue_id'),
             'timer' => $this->stack($live),

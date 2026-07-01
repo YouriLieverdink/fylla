@@ -9,6 +9,7 @@ use App\Models\Timer;
 use App\Models\Worklog;
 use App\Services\TimerService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Tests\TestCase;
 
 class TimerServiceTest extends TestCase
@@ -20,6 +21,7 @@ class TimerServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        Bus::fake(); // isolate the state machine from the Kendo-posting side effect (#10)
         $this->svc = app(TimerService::class);
     }
 

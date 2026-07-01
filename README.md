@@ -25,7 +25,10 @@ the job also fetches each distinct project's `/api/projects/{id}/issues` feed to
 mirror `estimated_minutes` / `remaining_minutes` (shown as the Estimate/Remaining
 columns; `—` when unset in Kendo). It reconciles deletes for issues that left the
 feed — skipped when the feed comes back truncated, and issues with local
-timer/worklog history are kept regardless. The scheduler runs it every
+timer/worklog history are kept regardless. Those retained rows are hidden from
+the work-items list — it shows only issues from the latest sync (current open
+work), so an issue moved to Kendo's done lane drops off on the next sync. The
+scheduler runs it every
 15 minutes (queued); the **Sync now** button runs the same job synchronously so
 the page returns fresh rows immediately — the button spins for the real
 duration, and a failed sync shows a red "Sync failed" in place of the status
@@ -43,9 +46,13 @@ three sittings yields three worklogs at three real start times (ADR-0005), not
 one summed entry. Stack order is derived from timer id — no position column. Only
 the top timer is interactive; buried ones are display-only. One live timer per
 issue. `TimerService` owns the state machine; the running segment's elapsed time
-ticks client-side from timestamps, so a reload recomputes it. Worklog posting to
-Kendo is not wired yet — the `posted_at` / `kendo_worklog_id` / `post_error`
-columns are reserved (ADR-0001/0003).
+ticks client-side from timestamps, so a reload recomputes it.
+
+When a segment closes, its worklog is posted to Kendo as a time entry by a queued
+`PostWorklog` job (`queue:work` must be running), stamping `posted_at` /
+`kendo_worklog_id`. It's idempotent on `posted_at`, so a retry never double-posts.
+After 3 failed tries the error is recorded in `post_error` and the worklog stays
+unposted (no auto-retry). Kendo-only, direct on `Kendo\Client` (ADR-0006).
 
 **Notes** attach to the open segment: add one (Enter or the Add button) while the
 timer runs and it's stamped with the wall-clock time. A segment's notes ride into

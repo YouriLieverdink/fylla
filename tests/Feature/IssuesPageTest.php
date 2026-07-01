@@ -29,6 +29,25 @@ class IssuesPageTest extends TestCase
                 ->where('lastSyncedAt', fn ($v) => $v !== null));
     }
 
+    public function test_index_hides_issues_absent_from_the_latest_sync(): void
+    {
+        // Retained-but-done: older synced_at than the current feed.
+        Issue::create([
+            'kendo_id' => 1, 'key' => 'DONE-1', 'title' => 'Done, kept for history',
+            'synced_at' => now()->subDay(),
+        ]);
+        Issue::create([
+            'kendo_id' => 2, 'key' => 'OPEN-1', 'title' => 'Current work',
+            'synced_at' => now(),
+        ]);
+
+        $this->get('/')
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->has('issues', 1)
+                ->where('issues.0.key', 'OPEN-1'));
+    }
+
     public function test_sync_now_dispatches_the_job(): void
     {
         Queue::fake();

@@ -81,4 +81,20 @@ class Client
 
         return $out;
     }
+
+    /**
+     * Log a time entry against an issue. One entry per local Worklog (ADR-0005);
+     * returns the Kendo entry id.
+     */
+    public function postWorklog(int $projectId, int $issueId, int $minutes, string $startedAt, ?string $note): int
+    {
+        return (int) $this->request()
+            ->post("/api/projects/{$projectId}/issues/{$issueId}/time-entries", [
+                'minutes_spent' => $minutes,
+                'started_at' => $startedAt,
+                'note' => $note,
+            ])
+            ->throw()
+            ->json('id');
+    }
 }
