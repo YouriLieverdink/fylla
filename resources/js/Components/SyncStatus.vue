@@ -1,5 +1,4 @@
 <script setup>
-import Card from './Card.vue';
 import AppButton from './AppButton.vue';
 
 defineProps({
@@ -10,14 +9,12 @@ defineEmits(['sync']);
 </script>
 
 <template>
-    <Card pad="20px 24px" class="flex items-center justify-between gap-6">
-        <div class="flex items-center gap-3">
-            <span class="h-2 w-2 rounded-full bg-track shadow-[0_0_0_4px_var(--color-track-tint)]"></span>
-            <div>
-                <div class="font-sans text-[13px] font-medium text-ink-soft">{{ label }}</div>
-                <div class="mt-[5px] font-mono text-[11.5px] font-medium text-faint-2">{{ lastSynced }}</div>
-            </div>
+    <div class="flex items-center gap-[14px]">
+        <div class="text-right">
+            <div class="font-sans text-[12.5px] font-medium text-ink-soft">{{ label }}</div>
+            <div class="mt-1 font-mono text-[11px] font-medium text-faint-2">{{ lastSynced }}</div>
         </div>
+        <span class="h-2 w-2 rounded-full bg-track shadow-[0_0_0_4px_var(--color-track-tint)]"></span>
         <AppButton variant="secondary" size="sm" @click="$emit('sync')">
             <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
                 <path
@@ -30,5 +27,5 @@ defineEmits(['sync']);
             </svg>
             Sync now
         </AppButton>
-    </Card>
+    </div>
 </template>

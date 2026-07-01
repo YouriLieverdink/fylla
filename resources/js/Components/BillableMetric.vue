@@ -12,6 +12,7 @@ defineProps({
         type: String,
         default: '1.2 pts under target — comfortably within your soft band. No action needed.',
     },
+    demo: { type: Boolean, default: false },
 });
 </script>
 
@@ -29,7 +30,12 @@ defineProps({
                 </div>
                 <div class="text-[12.5px] text-faint-2">Rolling 30 days</div>
             </div>
-            <Chip tone="accent" dot>{{ status }}</Chip>
+            <span
+                v-if="demo"
+                class="inline-flex items-center rounded-full bg-divider px-2.5 py-[5px] font-mono text-[9.5px] font-semibold uppercase tracking-[0.1em] text-faint"
+                >demo data</span
+            >
+            <Chip v-else tone="accent" dot>{{ status }}</Chip>
         </div>
 
         <div class="my-0.5 flex items-end gap-1">

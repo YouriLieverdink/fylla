@@ -20,8 +20,12 @@ and `docs/adr/` for the decisions behind the design.
 
 The UI never calls Kendo live for reads. A queued `SyncKendoIssues` job pulls
 the current user's issues from Kendo's my-issues endpoint into a local `issues`
-table (Kendo-mirror fields only), reconciling deletes for issues that left the
-feed (skipped when the feed comes back truncated). The scheduler runs it every
+table (Kendo-mirror fields only). The lean my-issues feed omits estimates, so
+the job also fetches each distinct project's `/api/projects/{id}/issues` feed to
+mirror `estimated_minutes` / `remaining_minutes` (shown as the Estimate/Remaining
+columns; `—` when unset in Kendo). It reconciles deletes for issues that left the
+feed — skipped when the feed comes back truncated, and issues with local
+timer/worklog history are kept regardless. The scheduler runs it every
 15 minutes; a "Sync now" button dispatches the same job. Fylla-native
 scheduling fields (due, not-before, up-next, no-split, recurrence) are owned
 locally and never written back to Kendo (ADR-0004).
@@ -29,18 +33,24 @@ locally and never written back to Kendo (ADR-0004).
 ### Timer stack
 
 Each issue row has a **Start** button. Starting a timer while one runs pushes a
-new timer on top (LIFO); pausing closes the current segment, resuming opens a
-new one, and stopping the top timer rolls its segments up into a `worklogs` row
-(raw seconds summed, rounded once to nearest minute, discarded if 0) then
-auto-resumes the one beneath. Stack order is derived from timer id — no position
-column. Only the top timer is interactive; buried ones are display-only. One
-live timer per issue. `TimerService` owns the state machine; the running
-segment's elapsed time ticks client-side from timestamps, so a reload recomputes
-it. Worklog posting to Kendo is not wired yet — the `posted_at` /
-`kendo_worklog_id` / `post_error` columns are reserved (ADR-0001/0003).
+new timer on top (LIFO); pausing closes the current segment and resuming opens a
+new one. **Each segment posts its own `worklogs` row the moment it closes**
+(seconds rounded to the nearest minute, discarded if 0) — so one issue worked in
+three sittings yields three worklogs at three real start times (ADR-0005), not
+one summed entry. Stack order is derived from timer id — no position column. Only
+the top timer is interactive; buried ones are display-only. One live timer per
+issue. `TimerService` owns the state machine; the running segment's elapsed time
+ticks client-side from timestamps, so a reload recomputes it. Worklog posting to
+Kendo is not wired yet — the `posted_at` / `kendo_worklog_id` / `post_error`
+columns are reserved (ADR-0001/0003).
+
+**Notes** attach to the open segment: add one (Enter or the Add button) while the
+timer runs and it's stamped with the wall-clock time. A segment's notes ride into
+that segment's worklog comment, one `HH:MM — text` line each. The notes panel
+shows only the open segment's notes and is disabled while paused (ADR-0005).
 
 Routes: `POST /timers` (start), `POST /timers/pause`, `POST /timers/resume`,
-`POST /timers/stop`, `PATCH /timers/comment`.
+`POST /timers/stop`, `POST /timers/notes`.
 
 ## Setup
 

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Issue;
+use App\Models\Note;
 use App\Models\Segment;
 use App\Models\Timer;
 use App\Models\Worklog;
@@ -56,20 +57,16 @@ class TimerService
         });
     }
 
-    /** Stop the top live timer: roll up a worklog, then auto-resume the one beneath. */
+    /** Stop the top live timer: close its segment (rolls up), auto-resume beneath. */
     public function stop(): void
     {
         DB::transaction(function () {
-            $top = Timer::live()->with('segments')->first();
+            $top = Timer::live()->first();
             if (! $top) {
                 return;
             }
 
             $this->closeOpenSegment();
-            $top->refresh()->load('segments');
-
-            $this->rollUpWorklog($top);
-
             $top->update(['stopped_at' => now()]);
 
             // auto-resume the one now on top (Q8)
@@ -80,10 +77,15 @@ class TimerService
         });
     }
 
-    /** Patch the comment on the open (active) segment. */
-    public function comment(string $comment): void
+    /** Add a note to the open (active) segment, stamped now. No-op if none is open. */
+    public function addNote(string $text): void
     {
-        $this->openSegment()?->update(['comment' => $comment]);
+        $text = trim($text);
+        $segment = $this->openSegment();
+        if ($text === '' || ! $segment) {
+            return;
+        }
+        $segment->notes()->create(['text' => $text, 'created_at' => now()]);
     }
 
     /** Seconds accumulated in closed segments of a timer (excludes any open one). */
@@ -101,9 +103,15 @@ class TimerService
         return Segment::whereIn('timer_id', $ids)->whereNull('ended_at')->first();
     }
 
+    /** Close the open segment and post its Worklog (ADR-0005). No-op if none open. */
     private function closeOpenSegment(): void
     {
-        $this->openSegment()?->update(['ended_at' => now()]);
+        $segment = $this->openSegment();
+        if (! $segment) {
+            return;
+        }
+        $segment->update(['ended_at' => now()]);
+        $this->rollUpSegment($segment);
     }
 
     private function openSegmentOn(Timer $timer): Segment
@@ -112,35 +120,28 @@ class TimerService
     }
 
     /**
-     * Sum raw seconds across all segments, round once to nearest minute (Q4).
-     * Discard on 0 (Q11). Comment = non-empty segment comments joined as
-     * "[i/n] …" where n = count of commented segments (Q14).
+     * One Worklog per segment (ADR-0005): minutes = segment seconds rounded to
+     * the nearest minute, discarded on 0. Comment = the segment's notes joined
+     * one "HH:MM — text" line each (wall-clock stamp), null if none.
      */
-    private function rollUpWorklog(Timer $timer): void
+    private function rollUpSegment(Segment $segment): void
     {
-        $segments = $timer->segments;
-        $seconds = $segments->sum(fn (Segment $s) => $s->seconds());
-        $minutes = (int) round($seconds / 60);
-
+        $minutes = (int) round($segment->seconds() / 60);
         if ($minutes === 0) {
             return;
         }
 
-        $comments = $segments
-            ->map(fn (Segment $s) => trim((string) $s->comment))
-            ->filter()
-            ->values();
-        $n = $comments->count();
-        $rollup = $comments
-            ->map(fn (string $c, int $i) => "[".($i + 1)."/{$n}] {$c}")
-            ->implode("\n");
+        $notes = $segment->notes()->orderBy('created_at')->orderBy('id')->get();
+        $comment = $notes->isEmpty()
+            ? null
+            : $notes->map(fn (Note $n) => $n->created_at->format('H:i').' — '.$n->text)->implode("\n");
 
         Worklog::create([
-            'issue_id' => $timer->issue_id,
-            'timer_id' => $timer->id,
+            'issue_id' => $segment->timer->issue_id,
+            'timer_id' => $segment->timer_id,
             'minutes' => $minutes,
-            'started_at' => $segments->min('started_at'),
-            'comment' => $rollup ?: null,
+            'started_at' => $segment->started_at,
+            'comment' => $comment,
         ]);
     }
 }

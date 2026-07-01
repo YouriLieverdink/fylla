@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Jobs\SyncKendoIssues;
 use App\Models\Issue;
+use App\Models\Timer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -11,6 +12,9 @@ use Tests\TestCase;
 class SyncKendoIssuesTest extends TestCase
 {
     use RefreshDatabase;
+
+    /** Rows the per-project estimates feed returns (id + estimate fields). */
+    private array $projectIssues = [];
 
     /** Body of one my-issues response (real REST shape: data + meta). */
     private function feed(array $issues, bool $truncated = false): array
@@ -21,14 +25,17 @@ class SyncKendoIssuesTest extends TestCase
         ];
     }
 
-    /** Stub the endpoint to return each feed in turn on successive calls. */
+    /** Stub my-issues (per call) plus the per-project estimates feed. */
     private function fakeFeeds(array ...$feeds): void
     {
         $sequence = Http::sequence();
         foreach ($feeds as $feed) {
             $sequence->push($feed, 200);
         }
-        Http::fake(['*/api/issues/my' => $sequence]);
+        Http::fake([
+            '*/api/projects/*/issues' => Http::response($this->projectIssues),
+            '*/api/issues/my' => $sequence,
+        ]);
     }
 
     private function payload(int $id, string $key, array $overrides = []): array
@@ -48,6 +55,10 @@ class SyncKendoIssuesTest extends TestCase
 
     public function test_upserts_mirror_fields_and_stamps_synced_at(): void
     {
+        // Estimates come from the per-project feed, not my-issues.
+        $this->projectIssues = [
+            ['id' => 1905, 'estimated_minutes' => 360, 'remaining_minutes' => 90],
+        ];
         $this->fakeFeeds($this->feed([$this->payload(1905, 'SOHY-0173')]));
 
         SyncKendoIssues::dispatchSync();
@@ -56,7 +67,27 @@ class SyncKendoIssuesTest extends TestCase
         $this->assertSame(1905, $issue->kendo_id);
         $this->assertSame('SOHY-0173', $issue->key);
         $this->assertSame('Medium', $issue->priority);
+        $this->assertSame(360, $issue->estimated_minutes);
+        $this->assertSame(90, $issue->remaining_minutes);
         $this->assertNotNull($issue->synced_at);
+    }
+
+    public function test_keeps_issues_with_timer_history_even_when_absent_from_feed(): void
+    {
+        $this->fakeFeeds(
+            $this->feed([$this->payload(1, 'A-1'), $this->payload(2, 'A-2')]),
+            $this->feed([$this->payload(1, 'A-1')]), // issue 2 gone from the feed
+        );
+
+        SyncKendoIssues::dispatchSync();
+
+        // Track time on issue 2, then re-sync: it must not be deleted (FK + intent).
+        $issue2 = Issue::where('kendo_id', 2)->sole();
+        Timer::create(['issue_id' => $issue2->id]);
+
+        SyncKendoIssues::dispatchSync();
+
+        $this->assertEqualsCanonicalizing([1, 2], Issue::pluck('kendo_id')->all());
     }
 
     public function test_updates_existing_issue_instead_of_duplicating(): void

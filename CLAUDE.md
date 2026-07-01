@@ -29,9 +29,13 @@ php artisan queue:work            # database queue
   `config/services.php` (`KENDO_BASE_URL`/`KENDO_TOKEN`). `getMyIssues()` hits
   `GET /api/issues/my`, which returns `{data:[...], meta:{truncated,count,limit}}`;
   `priority`/`type` arrive as ints and are mapped to labels in the client.
+  The my-issues feed omits estimates; `getProjectEstimates($pid)` reads
+  `GET /api/projects/{id}/issues` for `estimated_minutes`/`remaining_minutes`.
 - **`SyncKendoIssues` job** (queued, `database` driver) — `updateOrCreate` on
-  `kendo_id` writing **only Kendo-mirror fields**, then deletes local rows absent
-  from the feed **unless `truncated`**. Scheduled every 15 min in
+  `kendo_id` writing **only Kendo-mirror fields** (incl. estimates fetched
+  per-project), then deletes local rows absent from the feed **unless
+  `truncated`**, and **never** deletes issues with local timer/worklog history
+  (FK + intent). Scheduled every 15 min in
   `routes/console.php`; "Sync now" (`POST /sync`) dispatches the same job.
 - **Fylla-native fields owned locally (ADR-0004):** `due_date`, `not_before`,
   `up_next`, `no_split`, `recurrence` are local `issues` columns, never parsed

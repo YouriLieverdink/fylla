@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Segment extends Model
 {
@@ -19,6 +20,11 @@ class Segment extends Model
     public function timer(): BelongsTo
     {
         return $this->belongsTo(Timer::class);
+    }
+
+    public function notes(): HasMany
+    {
+        return $this->hasMany(Note::class);
     }
 
     /** Elapsed whole seconds; for an open segment, up to now. */

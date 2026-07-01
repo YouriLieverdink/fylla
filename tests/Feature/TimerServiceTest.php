@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Issue;
+use App\Models\Note;
 use App\Models\Segment;
 use App\Models\Timer;
 use App\Models\Worklog;
@@ -72,23 +73,23 @@ class TimerServiceTest extends TestCase
         $this->svc->start($a);
     }
 
-    public function test_segments_sum_then_round_once_to_nearest_minute(): void
+    public function test_each_segment_posts_its_own_worklog(): void
     {
         $a = $this->issue('A-1');
 
-        // two 40s segments = 80s → sum-then-round = round(80/60) = 1 min
-        // (round-then-sum would give 2 — this pins the sum-then-round rule)
+        // Two segments, each rounded on its own (ADR-0005): 2 min then 3 min,
+        // two Worklogs — not one summed entry.
         $this->svc->start($a);
-        $this->travel(40)->seconds();
-        $this->svc->pause();
+        $this->travel(120)->seconds();
+        $this->svc->pause();   // closes seg 1 → worklog
         $this->svc->resume();
-        $this->travel(40)->seconds();
-        $this->svc->stop();
+        $this->travel(180)->seconds();
+        $this->svc->stop();    // closes seg 2 → worklog
 
-        $this->assertSame(1, Worklog::sole()->minutes);
+        $this->assertSame([2, 3], Worklog::orderBy('id')->pluck('minutes')->all());
     }
 
-    public function test_session_rounding_to_zero_writes_no_worklog(): void
+    public function test_segment_rounding_to_zero_writes_no_worklog(): void
     {
         $a = $this->issue('A-1');
 
@@ -100,26 +101,53 @@ class TimerServiceTest extends TestCase
         $this->assertSame(0, Timer::live()->count());
     }
 
-    public function test_worklog_comment_rolls_up_nonempty_segments(): void
+    public function test_segment_worklog_comment_joins_its_notes_in_order(): void
     {
         $a = $this->issue('A-1');
 
         $this->svc->start($a);
-        $this->svc->comment('first');
-        $this->travel(60)->seconds();
-        $this->svc->pause();
-
-        $this->svc->resume();
-        $this->svc->comment('second');
-        $this->travel(60)->seconds();
-        $this->svc->pause();
-
-        // third segment left without a comment — must be skipped in the rollup
-        $this->svc->resume();
+        $this->svc->addNote('first');
+        $this->svc->addNote('second');
         $this->travel(60)->seconds();
         $this->svc->stop();
 
-        $this->assertSame("[1/2] first\n[2/2] second", Worklog::sole()->comment);
+        $comment = Worklog::sole()->comment;
+        $this->assertStringContainsString('— first', $comment);
+        $this->assertStringContainsString('— second', $comment);
+        $this->assertLessThan(strpos($comment, 'second'), strpos($comment, 'first'));
+        // notes stamp wall-clock as HH:MM
+        $this->assertMatchesRegularExpression('/^\d{2}:\d{2} — first/', $comment);
+    }
+
+    public function test_notes_attach_only_while_a_segment_is_open(): void
+    {
+        $a = $this->issue('A-1');
+
+        $this->svc->start($a);
+        $this->svc->pause();               // no open segment
+        $this->svc->addNote('while paused');
+
+        $this->assertSame(0, Note::count());
+    }
+
+    public function test_each_segment_keeps_its_own_notes(): void
+    {
+        $a = $this->issue('A-1');
+
+        $this->svc->start($a);
+        $this->svc->addNote('seg one');
+        $this->travel(60)->seconds();
+        $this->svc->pause();
+
+        $this->svc->resume();
+        $this->svc->addNote('seg two');
+        $this->travel(60)->seconds();
+        $this->svc->stop();
+
+        [$first, $second] = Worklog::orderBy('id')->get()->all();
+        $this->assertStringContainsString('seg one', $first->comment);
+        $this->assertStringNotContainsString('seg two', $first->comment);
+        $this->assertStringContainsString('seg two', $second->comment);
     }
 
     public function test_state_survives_reload_through_the_route(): void

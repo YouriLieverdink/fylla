@@ -68,7 +68,11 @@ One of the (currently four) teammates working a managed client's projects. They 
 The set of running/paused timers. Starting a timer while one runs pushes a new timer on top (a nested interruption); stopping the top timer auto-resumes the one beneath. Index 0 is active, the rest are paused.
 
 **Segment**:
-One continuous run of a single timer, bounded by start and pause (or stop). A timer accumulates multiple segments across pause/resume cycles, each with its own optional comment. Stopping sums the segments (rounded) into one Worklog.
+One continuous run of a single timer, bounded by start/resume and pause/stop. Because only one segment is open across the whole timer stack, segments tile the day with no overlap. **Each segment posts its own Worklog** when it closes (duration rounded to the minute; a zero-minute segment is discarded). A single issue worked in three sittings yields three Worklogs, not one.
+
+**Note**:
+A free-text entry the user adds while a segment runs, stamped with the **wall-clock time** it was added (e.g. `14:32`). A note belongs to the **open segment** and rides into that segment's Worklog comment. The notes panel shows only the current segment's notes and starts empty when a new segment opens (on resume). Because a segment has no internal pauses, the gap between consecutive note stamps is worked time. Notes replace the former per-segment comment.
+_Avoid_: comment (the old single-per-segment field this supersedes)
 
 ## Flagged ambiguities
 

@@ -6,6 +6,7 @@ use App\Jobs\SyncKendoIssues;
 use App\Models\Issue;
 use App\Models\Timer;
 use App\Services\TimerService;
+use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -16,13 +17,18 @@ class IssueController extends Controller
     /** List issues from the local table (never live Kendo, per ADR-0003). */
     public function index(): Response
     {
-        $live = Timer::live()->with(['issue:id,key,title', 'segments'])->get();
+        $live = Timer::live()->with(['issue:id,key,title', 'segments.notes'])->get();
+
+        // max() is a raw aggregate — reparse as UTC so it serializes with a tz
+        // marker (the frontend reads a naive string as local, showing it off).
+        $syncedAt = Issue::max('synced_at');
 
         return Inertia::render('Issues', [
             'issues' => Issue::orderByDesc('updated_at')->get([
-                'id', 'key', 'title', 'priority', 'type', 'updated_at',
+                'id', 'key', 'title', 'priority', 'type',
+                'estimated_minutes', 'remaining_minutes', 'updated_at',
             ]),
-            'lastSyncedAt' => Issue::max('synced_at'),
+            'lastSyncedAt' => $syncedAt ? Carbon::parse($syncedAt, 'UTC')->toJSON() : null,
             'liveIssueIds' => $live->pluck('issue_id'),
             'timer' => $this->stack($live),
         ]);
@@ -57,12 +63,13 @@ class IssueController extends Controller
             'active' => $row($top) + [
                 'running' => (bool) $open,
                 'started_at' => $open?->started_at,
-                'comment' => $open?->comment,
-                'segments' => $top->segments->map(fn ($s) => [
-                    'started_at' => $s->started_at,
-                    'ended_at' => $s->ended_at,
-                    'comment' => $s->comment,
-                ])->values(),
+                // Notes of the open segment only (ADR-0005); empty when paused.
+                'notes' => $open
+                    ? $open->notes->sortBy('created_at')->values()->map(fn ($n) => [
+                        'at' => $n->created_at->format('H:i'),
+                        'text' => $n->text,
+                    ])
+                    : [],
             ],
             'paused' => $live->skip(1)->map($row)->values(),
         ];

@@ -1,9 +1,12 @@
 <script setup>
 import { router } from '@inertiajs/vue3';
 import Card from '../Components/Card.vue';
+import Chip from '../Components/Chip.vue';
 import SyncStatus from '../Components/SyncStatus.vue';
 import EmptyState from '../Components/EmptyState.vue';
 import AppButton from '../Components/AppButton.vue';
+import BillableMetric from '../Components/BillableMetric.vue';
+import UtilizationTrendChart from '../Components/UtilizationTrendChart.vue';
 import TimerStack from '../Components/TimerStack.vue';
 
 const props = defineProps({
@@ -27,61 +30,78 @@ function fmt(ts) {
     return ts ? new Date(ts).toLocaleString() : '—';
 }
 
+// minutes → "6h" / "1.5h"; em-dash when unset
+function hrs(min) {
+    if (min == null) return '—';
+    const h = min / 60;
+    return (Number.isInteger(h) ? h : h.toFixed(1)) + 'h';
+}
+
 // type → the coloured square from the kit's work-item rows
 const typeDot = { Feature: 'bg-accent-soft', Bug: 'bg-behind', Task: 'bg-faint-2' };
 
-const cols = 'grid-cols-[80px_1fr_120px_150px_84px]';
+const cols = 'grid-cols-[66px_1fr_78px_90px_74px_96px]';
 </script>
 
 <template>
-    <div class="mx-auto max-w-[1180px] px-11 pb-[120px] pt-[60px]">
+    <div class="mx-auto max-w-[1180px] px-11 pb-[120px] pt-11">
         <!-- header -->
-        <header class="mb-8 flex items-center justify-between gap-6">
-            <div>
-                <div class="flex items-center gap-3">
-                    <div class="relative h-[34px] w-[34px] rounded-[11px] bg-accent shadow-[0_5px_15px_-5px_rgba(108,95,201,0.6)]">
-                        <div class="absolute inset-0 flex items-center justify-center">
-                            <div
-                                class="h-3 w-3 rounded-full border-[2.5px] border-white border-t-transparent"
-                                style="transform: rotate(35deg)"
-                            ></div>
-                        </div>
+        <header class="mb-[34px] flex items-center justify-between gap-6 border-b border-divider-soft pb-[26px]">
+            <div class="flex items-center gap-3.5">
+                <div class="relative h-[34px] w-[34px] rounded-[11px] bg-accent shadow-[0_5px_15px_-5px_rgba(108,95,201,0.6)]">
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <div
+                            class="h-3 w-3 rounded-full border-[2.5px] border-white border-t-transparent"
+                            style="transform: rotate(35deg)"
+                        ></div>
                     </div>
-                    <span class="text-[22px] font-semibold tracking-[-0.02em]">Fylla</span>
                 </div>
-                <p class="mt-3 text-[13px] text-muted">
-                    {{ issues.length }} {{ issues.length === 1 ? 'issue' : 'issues' }} synced from the tracker.
-                </p>
+                <div class="flex items-baseline gap-3">
+                    <span class="text-[21px] font-semibold tracking-[-0.02em]">Fylla</span>
+                    <span class="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-faint">Personal</span>
+                </div>
             </div>
             <SyncStatus
-                label="Synced with Kendo"
+                label="Synced with issue tracker"
                 :last-synced="lastSyncedAt ? 'last synced ' + fmt(lastSyncedAt) : 'never synced'"
                 @sync="syncNow"
             />
         </header>
 
+        <!-- metrics row (demo data) -->
+        <div class="mb-[22px] grid items-stretch gap-[22px] lg:grid-cols-[400px_1fr]">
+            <BillableMetric demo />
+            <UtilizationTrendChart demo />
+        </div>
+
         <!-- timer stack -->
-        <div class="mb-6">
+        <div class="mb-[22px]">
             <TimerStack
                 :active="timer?.active ?? null"
                 :paused="timer?.paused ?? []"
                 @pause="router.post('/timers/pause', {}, opts)"
                 @resume="router.post('/timers/resume', {}, opts)"
                 @stop="router.post('/timers/stop', {}, opts)"
-                @comment="(c) => router.patch('/timers/comment', { comment: c }, opts)"
+                @note="(text) => router.post('/timers/notes', { text }, opts)"
             />
         </div>
 
-        <!-- issues -->
+        <!-- work items -->
         <Card v-if="issues.length" radius="24px" pad="10px 10px 12px">
+            <div class="flex items-center justify-between px-5 pb-3.5 pt-4">
+                <div class="text-[16px] font-semibold tracking-[-0.01em]">Work items</div>
+                <Chip tone="accent">In progress · {{ liveIssueIds.length }}</Chip>
+            </div>
+
             <div
                 class="grid gap-3 px-5 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-faint-3"
                 :class="cols"
             >
                 <span>Key</span>
                 <span>Title</span>
-                <span>Priority</span>
-                <span class="text-right">Updated</span>
+                <span class="text-right">Estimate</span>
+                <span class="text-right">Remaining</span>
+                <span class="text-right">Priority</span>
                 <span></span>
             </div>
 
@@ -89,8 +109,8 @@ const cols = 'grid-cols-[80px_1fr_120px_150px_84px]';
                 <div
                     v-for="issue in issues"
                     :key="issue.key"
-                    class="grid items-center gap-3 rounded-[14px] border-t border-divider-soft px-5 py-3.5 transition hover:bg-surface-soft"
-                    :class="cols"
+                    class="grid items-center gap-3 rounded-[14px] border-t border-divider-soft px-5 py-3.5 transition"
+                    :class="[cols, liveIssueIds.includes(issue.id) ? 'bg-surface-soft' : 'hover:bg-surface-soft']"
                 >
                     <span class="font-mono text-[12px] font-semibold text-muted">{{ issue.key }}</span>
                     <div class="min-w-0">
@@ -104,7 +124,22 @@ const cols = 'grid-cols-[80px_1fr_120px_150px_84px]';
                         </div>
                         <div v-if="issue.type" class="mt-[3px] font-mono text-[11px] text-faint-3">{{ issue.type }}</div>
                     </div>
-                    <div>
+                    <div class="text-right font-mono text-[13px] font-medium tabular-nums text-muted">
+                        {{ hrs(issue.estimated_minutes) }}
+                    </div>
+                    <div
+                        class="text-right font-mono text-[13px] font-medium tabular-nums"
+                        :class="
+                            issue.remaining_minutes == null
+                                ? 'text-faint-3'
+                                : issue.estimated_minutes != null && issue.remaining_minutes >= issue.estimated_minutes
+                                  ? 'text-behind'
+                                  : 'text-track'
+                        "
+                    >
+                        {{ hrs(issue.remaining_minutes) }}
+                    </div>
+                    <div class="text-right">
                         <span
                             v-if="issue.priority"
                             class="rounded-[7px] bg-divider px-[9px] py-[5px] font-mono text-[11px] font-medium text-[#8a8578]"
@@ -112,16 +147,22 @@ const cols = 'grid-cols-[80px_1fr_120px_150px_84px]';
                         >
                         <span v-else class="font-mono text-[11px] text-faint-3">—</span>
                     </div>
-                    <div class="text-right font-mono text-[12px] tabular-nums text-faint">{{ fmt(issue.updated_at) }}</div>
-                    <div class="text-right">
+                    <div class="flex justify-end">
+                        <span
+                            v-if="liveIssueIds.includes(issue.id)"
+                            class="inline-flex items-center gap-1.5 rounded-[10px] bg-accent-tint px-3 py-2 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-accent-deep"
+                        >
+                            <span class="h-1.5 w-1.5 rounded-full bg-accent" style="animation: fyl-pulse 2s ease-in-out infinite"></span>
+                            live
+                        </span>
                         <button
-                            v-if="!liveIssueIds.includes(issue.id)"
-                            class="cursor-pointer rounded-[9px] bg-accent px-3 py-1.5 font-mono text-[11px] font-semibold text-white shadow-btn"
+                            v-else
+                            class="inline-flex cursor-pointer items-center gap-[7px] rounded-[10px] border border-[#e0dbd0] bg-white px-[13px] py-2 font-sans text-[12.5px] font-semibold text-ink-soft transition hover:border-accent-tint-2 hover:bg-[#faf9fd]"
                             @click="startTimer(issue)"
                         >
+                            <span class="h-1.5 w-1.5 rounded-full bg-accent"></span>
                             Start
                         </button>
-                        <span v-else class="font-mono text-[11px] text-faint-3">live</span>
                     </div>
                 </div>
             </div>
@@ -129,8 +170,8 @@ const cols = 'grid-cols-[80px_1fr_120px_150px_84px]';
 
         <EmptyState
             v-else
-            title="No issues yet"
-            text="Nothing has synced from Kendo yet. Pull your assigned issues to get started."
+            title="No work items synced"
+            text="Nothing assigned to you right now. Pull the latest from your issue tracker to populate this view."
         >
             <template #action>
                 <AppButton variant="primary" size="sm" @click="syncNow">Sync now</AppButton>

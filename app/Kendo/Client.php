@@ -58,4 +58,27 @@ class Client
             'truncated' => (bool) ($body['meta']['truncated'] ?? false),
         ];
     }
+
+    /**
+     * Estimate mirror fields per issue for one project, keyed by issue id. The
+     * lean my-issues feed omits estimated/remaining minutes; the per-project
+     * issues feed carries them (remaining is server-computed = estimate − logged).
+     *
+     * @return array<int, array{estimated_minutes: ?int, remaining_minutes: ?int}>
+     */
+    public function getProjectEstimates(int $projectId): array
+    {
+        $body = $this->request()->get("/api/projects/{$projectId}/issues")->throw()->json();
+        $rows = $body['data'] ?? $body;
+
+        $out = [];
+        foreach ($rows as $row) {
+            $out[$row['id']] = [
+                'estimated_minutes' => $row['estimated_minutes'] ?? null,
+                'remaining_minutes' => $row['remaining_minutes'] ?? null,
+            ];
+        }
+
+        return $out;
+    }
 }

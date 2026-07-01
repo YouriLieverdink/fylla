@@ -40,9 +40,9 @@ class TimerController extends Controller
         return back();
     }
 
-    public function comment(Request $request): RedirectResponse
+    public function note(Request $request): RedirectResponse
     {
-        $this->timers->comment((string) $request->input('comment', ''));
+        $this->timers->addNote((string) $request->input('text', ''));
 
         return back();
     }

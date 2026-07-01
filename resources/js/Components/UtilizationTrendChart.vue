@@ -2,13 +2,21 @@
 import Card from './Card.vue';
 // ponytail: SVG geometry is the kit's demo data, hardcoded. Wire real
 // rolling-13-week points via props when a screen consumes this.
+defineProps({ demo: { type: Boolean, default: false } });
 </script>
 
 <template>
     <Card radius="24px" pad="28px 30px" class="flex flex-col">
         <div class="mb-1.5 flex items-start justify-between">
             <div>
-                <div class="text-[16px] font-semibold tracking-[-0.01em]">Utilization trend</div>
+                <div class="flex items-center gap-2.5">
+                    <div class="text-[16px] font-semibold tracking-[-0.01em]">Utilization trend</div>
+                    <span
+                        v-if="demo"
+                        class="inline-flex items-center rounded-full bg-divider px-2.5 py-[5px] font-mono text-[9.5px] font-semibold uppercase tracking-[0.1em] text-faint"
+                        >demo data</span
+                    >
+                </div>
                 <div class="mt-[3px] text-[12.5px] text-faint-2">Billable % · rolling 13 weeks</div>
             </div>
             <div class="flex items-center gap-4 font-mono text-[11px] font-medium">
