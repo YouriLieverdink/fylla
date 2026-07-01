@@ -26,9 +26,12 @@ mirror `estimated_minutes` / `remaining_minutes` (shown as the Estimate/Remainin
 columns; `—` when unset in Kendo). It reconciles deletes for issues that left the
 feed — skipped when the feed comes back truncated, and issues with local
 timer/worklog history are kept regardless. The scheduler runs it every
-15 minutes; a "Sync now" button dispatches the same job. Fylla-native
-scheduling fields (due, not-before, up-next, no-split, recurrence) are owned
-locally and never written back to Kendo (ADR-0004).
+15 minutes (queued); the **Sync now** button runs the same job synchronously so
+the page returns fresh rows immediately — the button spins for the real
+duration, and a failed sync shows a red "Sync failed" in place of the status
+label. The page also polls every 60s so scheduled syncs surface without a
+manual refresh. Fylla-native scheduling fields (due, not-before, up-next,
+no-split, recurrence) are owned locally and never written back to Kendo (ADR-0004).
 
 ### Timer stack
 

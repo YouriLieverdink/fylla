@@ -58,6 +58,12 @@
 }
 
 @layer base {
+    html {
+        /* reserve the scrollbar gutter so partial-reload content swaps don't
+           toggle the scrollbar and nudge the centered layout */
+        scrollbar-gutter: stable;
+    }
+
     body {
         background: var(--color-canvas);
         color: var(--color-ink);

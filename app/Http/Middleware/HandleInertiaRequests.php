@@ -37,7 +37,7 @@ class HandleInertiaRequests extends Middleware
     {
         return [
             ...parent::share($request),
-            //
+            'syncError' => fn () => $request->session()->get('syncError', false),
         ];
     }
 }

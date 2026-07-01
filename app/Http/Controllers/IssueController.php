@@ -34,10 +34,14 @@ class IssueController extends Controller
         ]);
     }
 
-    /** Manual "sync now" — dispatches the same job the scheduler runs. */
+    /** Manual "sync now" — runs the job inline so back() returns fresh data. */
     public function sync(): \Illuminate\Http\RedirectResponse
     {
-        SyncKendoIssues::dispatch();
+        try {
+            SyncKendoIssues::dispatchSync();
+        } catch (\Throwable $e) {
+            return back()->with('syncError', true);
+        }
 
         return back();
     }

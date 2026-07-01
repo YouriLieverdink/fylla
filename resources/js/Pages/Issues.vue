@@ -1,5 +1,6 @@
 <script setup>
-import { router } from '@inertiajs/vue3';
+import { ref } from 'vue';
+import { router, usePoll } from '@inertiajs/vue3';
 import Card from '../Components/Card.vue';
 import Chip from '../Components/Chip.vue';
 import SyncStatus from '../Components/SyncStatus.vue';
@@ -14,12 +15,22 @@ const props = defineProps({
     lastSyncedAt: { type: String, default: null },
     timer: { type: Object, default: null },
     liveIssueIds: { type: Array, default: () => [] },
+    syncError: { type: Boolean, default: false },
 });
 
 const opts = { preserveScroll: true };
+const syncing = ref(false);
+
+// keep issues/timestamp fresh when the 15-min scheduled sync fires; narrow
+// only: leaves the running timer clock untouched (ticks locally off started_at)
+usePoll(60000, { only: ['issues', 'lastSyncedAt'] });
 
 function syncNow() {
-    router.post('/sync', {}, opts);
+    router.post('/sync', {}, {
+        ...opts,
+        onStart: () => (syncing.value = true),
+        onFinish: () => (syncing.value = false),
+    });
 }
 
 function startTimer(issue) {
@@ -64,6 +75,8 @@ const cols = 'grid-cols-[66px_1fr_78px_90px_74px_96px]';
             <SyncStatus
                 label="Synced with issue tracker"
                 :last-synced="lastSyncedAt ? 'last synced ' + fmt(lastSyncedAt) : 'never synced'"
+                :syncing="syncing"
+                :error="syncError"
                 @sync="syncNow"
             />
         </header>
