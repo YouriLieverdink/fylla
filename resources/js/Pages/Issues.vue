@@ -1,5 +1,9 @@
 <script setup>
 import { router } from '@inertiajs/vue3';
+import Card from '../Components/Card.vue';
+import SyncStatus from '../Components/SyncStatus.vue';
+import EmptyState from '../Components/EmptyState.vue';
+import AppButton from '../Components/AppButton.vue';
 
 defineProps({
     issues: { type: Array, default: () => [] },
@@ -13,46 +17,92 @@ function syncNow() {
 function fmt(ts) {
     return ts ? new Date(ts).toLocaleString() : '—';
 }
+
+// type → the coloured square from the kit's work-item rows
+const typeDot = { Feature: 'bg-accent-soft', Bug: 'bg-behind', Task: 'bg-faint-2' };
+
+const cols = 'grid-cols-[80px_1fr_120px_170px]';
 </script>
 
 <template>
-    <div class="mx-auto max-w-4xl p-8">
-        <div class="mb-6 flex items-center justify-between">
-            <h1 class="text-2xl font-semibold">My Kendo issues</h1>
-            <button
-                class="rounded bg-black px-4 py-2 text-sm text-white hover:opacity-80"
-                @click="syncNow"
+    <div class="mx-auto max-w-[1180px] px-11 pb-[120px] pt-[60px]">
+        <!-- header -->
+        <header class="mb-8 flex items-center justify-between gap-6">
+            <div>
+                <div class="flex items-center gap-3">
+                    <div class="relative h-[34px] w-[34px] rounded-[11px] bg-accent shadow-[0_5px_15px_-5px_rgba(108,95,201,0.6)]">
+                        <div class="absolute inset-0 flex items-center justify-center">
+                            <div
+                                class="h-3 w-3 rounded-full border-[2.5px] border-white border-t-transparent"
+                                style="transform: rotate(35deg)"
+                            ></div>
+                        </div>
+                    </div>
+                    <span class="text-[22px] font-semibold tracking-[-0.02em]">Fylla</span>
+                </div>
+                <p class="mt-3 text-[13px] text-muted">
+                    {{ issues.length }} {{ issues.length === 1 ? 'issue' : 'issues' }} synced from the tracker.
+                </p>
+            </div>
+            <SyncStatus
+                label="Synced with Kendo"
+                :last-synced="lastSyncedAt ? 'last synced ' + fmt(lastSyncedAt) : 'never synced'"
+                @sync="syncNow"
+            />
+        </header>
+
+        <!-- issues -->
+        <Card v-if="issues.length" radius="24px" pad="10px 10px 12px">
+            <div
+                class="grid gap-3 px-5 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-faint-3"
+                :class="cols"
             >
-                Sync now
-            </button>
-        </div>
+                <span>Key</span>
+                <span>Title</span>
+                <span>Priority</span>
+                <span class="text-right">Updated</span>
+            </div>
 
-        <p class="mb-4 text-sm text-gray-500">Last synced: {{ fmt(lastSyncedAt) }}</p>
+            <div class="flex flex-col">
+                <div
+                    v-for="issue in issues"
+                    :key="issue.key"
+                    class="grid items-center gap-3 rounded-[14px] border-t border-divider-soft px-5 py-3.5 transition hover:bg-surface-soft"
+                    :class="cols"
+                >
+                    <span class="font-mono text-[12px] font-semibold text-muted">{{ issue.key }}</span>
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2">
+                            <span
+                                class="h-[7px] w-[7px] flex-none rounded-sm"
+                                :class="typeDot[issue.type] ?? 'bg-faint-2'"
+                                :title="issue.type"
+                            ></span>
+                            <span class="truncate text-[14px] font-medium">{{ issue.title }}</span>
+                        </div>
+                        <div v-if="issue.type" class="mt-[3px] font-mono text-[11px] text-faint-3">{{ issue.type }}</div>
+                    </div>
+                    <div>
+                        <span
+                            v-if="issue.priority"
+                            class="rounded-[7px] bg-divider px-[9px] py-[5px] font-mono text-[11px] font-medium text-[#8a8578]"
+                            >{{ issue.priority }}</span
+                        >
+                        <span v-else class="font-mono text-[11px] text-faint-3">—</span>
+                    </div>
+                    <div class="text-right font-mono text-[12px] tabular-nums text-faint">{{ fmt(issue.updated_at) }}</div>
+                </div>
+            </div>
+        </Card>
 
-        <table class="w-full border-collapse text-sm">
-            <thead>
-                <tr class="border-b text-left text-gray-500">
-                    <th class="py-2 pr-4">Key</th>
-                    <th class="py-2 pr-4">Title</th>
-                    <th class="py-2 pr-4">Priority</th>
-                    <th class="py-2 pr-4">Type</th>
-                    <th class="py-2">Updated</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr v-for="issue in issues" :key="issue.key" class="border-b">
-                    <td class="py-2 pr-4 font-mono">{{ issue.key }}</td>
-                    <td class="py-2 pr-4">{{ issue.title }}</td>
-                    <td class="py-2 pr-4">{{ issue.priority }}</td>
-                    <td class="py-2 pr-4">{{ issue.type }}</td>
-                    <td class="py-2 text-gray-500">{{ fmt(issue.updated_at) }}</td>
-                </tr>
-                <tr v-if="issues.length === 0">
-                    <td colspan="5" class="py-6 text-center text-gray-400">
-                        No issues yet — hit “Sync now”.
-                    </td>
-                </tr>
-            </tbody>
-        </table>
+        <EmptyState
+            v-else
+            title="No issues yet"
+            text="Nothing has synced from Kendo yet. Pull your assigned issues to get started."
+        >
+            <template #action>
+                <AppButton variant="primary" size="sm" @click="syncNow">Sync now</AppButton>
+            </template>
+        </EmptyState>
     </div>
 </template>

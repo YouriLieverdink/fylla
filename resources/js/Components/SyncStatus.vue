@@ -10,7 +10,7 @@ defineEmits(['sync']);
 </script>
 
 <template>
-    <Card pad="20px 24px" class="flex items-center justify-between">
+    <Card pad="20px 24px" class="flex items-center justify-between gap-6">
         <div class="flex items-center gap-3">
             <span class="h-2 w-2 rounded-full bg-track shadow-[0_0_0_4px_var(--color-track-tint)]"></span>
             <div>
