@@ -3,7 +3,70 @@
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 
+/* Fylla design system — extracted from the Claude Design UI kit (v0.1).
+   Colours and type are the shared vocabulary; radii/shadows the repeated chrome.
+   Per-component exact px (font sizes, one-off radii) stay as Tailwind arbitrary
+   values in the SFCs — only what recurs lives here. */
 @theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-sans: 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'Spline Sans Mono', ui-monospace, monospace;
+
+    /* surfaces & lines */
+    --color-canvas: #f4f2ee;
+    --color-surface: #ffffff;
+    --color-sunken: #edeae3;
+    --color-border: #e6e2d9;
+    --color-card-border: #e9e5dc;
+    --color-divider: #f0ece4;
+    --color-divider-soft: #f4f1ea;
+    --color-surface-soft: #faf9f6;
+    --color-border-soft: #eee9e0;
+
+    /* text — quiet hierarchy from ink down to faintest mono labels */
+    --color-ink: #2b2a27;
+    --color-ink-soft: #3f3d38;
+    --color-muted: #6d6a63;
+    --color-faint: #9c988e;
+    --color-faint-2: #a8a498;
+    --color-faint-3: #b6b1a6;
+    --color-faint-4: #c2bdb1;
+
+    /* signature accent — periwinkle, reserved for the billable number */
+    --color-accent: #6c5fc9;
+    --color-accent-deep: #4d4599;
+    --color-accent-soft: #8074cf;
+    --color-accent-tint: #edeafb;
+    --color-accent-tint-2: #c9c2ee;
+    --color-accent-wash: #f2f0fc;
+    --color-accent-chip: #e6e0fa;
+
+    /* status */
+    --color-track: #5c8a6f;
+    --color-track-tint: #e9efe9;
+    --color-behind: #b18749;
+    --color-behind-tint: #f3ecdf;
+
+    /* canonical radius scale: 8 · 12 · 20 · full */
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 20px;
+
+    /* recurring elevation */
+    --shadow-card: 0 1px 2px rgba(42, 41, 38, 0.03), 0 12px 30px -20px rgba(42, 41, 38, 0.18);
+    --shadow-card-accent: 0 1px 2px rgba(42, 41, 38, 0.03), 0 14px 34px -20px rgba(108, 95, 201, 0.34);
+    --shadow-btn: 0 6px 16px -8px rgba(108, 95, 201, 0.7);
+}
+
+@layer base {
+    body {
+        background: var(--color-canvas);
+        color: var(--color-ink);
+        font-family: var(--font-sans);
+    }
+}
+
+/* active-timer pulse (referenced by TimerStack) */
+@keyframes fyl-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
 }

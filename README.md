@@ -54,6 +54,15 @@ php artisan queue:work     # processes the database queue
 
 Then open `/`. Hit **Sync now** to pull issues immediately.
 
+## Design system
+
+Ported from a Claude Design UI kit. Tokens (colours, type, radii, shadows) live
+in the `@theme` block of `resources/css/app.css`; fonts (Hanken Grotesk + Spline
+Sans Mono) load via Google Fonts in `resources/views/app.blade.php`. Reusable
+presentational components are in `resources/js/Components/`. The `/playground`
+route renders a live catalog of every component — the reference when composing
+screens.
+
 ## Test
 
 ```bash
