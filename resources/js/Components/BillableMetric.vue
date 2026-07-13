@@ -1,19 +1,20 @@
 <script setup>
+import { computed } from 'vue';
 import Card from './Card.vue';
 import Chip from './Chip.vue';
 
-defineProps({
-    value: { type: Number, default: 73.8 },
+const props = defineProps({
+    value: { type: Number, default: null }, // null → no capacity in window
     status: { type: String, default: 'on track' },
-    delta: { type: String, default: '+0.9 pts' },
-    deltaCaption: { type: String, default: 'vs. last month' },
+    delta: { type: String, default: null },
+    deltaCaption: { type: String, default: '' },
     target: { type: Number, default: 75 },
-    note: {
-        type: String,
-        default: '1.2 pts under target — comfortably within your soft band. No action needed.',
-    },
-    demo: { type: Boolean, default: false },
+    note: { type: String, default: '' },
+    week: { type: Object, default: () => ({ value: null, billableHours: 0, capacityHours: 0 }) },
 });
+
+const hasValue = computed(() => props.value != null);
+const barWidth = (v) => Math.min(100, Math.max(0, v ?? 0)) + '%';
 </script>
 
 <template>
@@ -28,26 +29,21 @@ defineProps({
                 <div class="mb-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.13em] text-faint">
                     Billable utilization
                 </div>
-                <div class="text-[12.5px] text-faint-2">Rolling 30 days</div>
+                <div class="text-[12.5px] text-faint-2">{{ deltaCaption }}</div>
             </div>
-            <span
-                v-if="demo"
-                class="inline-flex items-center rounded-full bg-divider px-2.5 py-[5px] font-mono text-[9.5px] font-semibold uppercase tracking-[0.1em] text-faint"
-                >demo data</span
-            >
-            <Chip v-else tone="accent" dot>{{ status }}</Chip>
+            <Chip tone="accent" dot>{{ status }}</Chip>
         </div>
 
         <div class="my-0.5 flex items-end gap-1">
             <span
                 class="font-mono font-semibold leading-[0.86] tabular-nums tracking-[-0.04em] text-accent"
                 style="font-size: 82px"
-                >{{ value }}</span
+                >{{ hasValue ? value : '—' }}</span
             >
-            <span class="mb-2 font-mono text-[30px] font-medium text-accent-tint-2">%</span>
+            <span v-if="hasValue" class="mb-2 font-mono text-[30px] font-medium text-accent-tint-2">%</span>
         </div>
 
-        <div class="mt-4 flex items-center gap-3.5">
+        <div v-if="delta" class="mt-4 flex items-center gap-3.5">
             <span class="inline-flex items-center gap-1.5 font-mono text-[13px] font-medium text-track">
                 <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
                     <path
@@ -70,7 +66,7 @@ defineProps({
                 <span>100%</span>
             </div>
             <div class="relative h-2 overflow-hidden rounded-full bg-sunken">
-                <div class="absolute inset-y-0 left-0 rounded-full bg-accent" :style="{ width: value + '%' }"></div>
+                <div class="absolute inset-y-0 left-0 rounded-full bg-accent" :style="{ width: barWidth(value) }"></div>
             </div>
             <div class="relative h-0">
                 <div
@@ -80,6 +76,22 @@ defineProps({
             </div>
         </div>
 
-        <p class="mt-[22px] text-[12.5px] leading-[1.55] text-faint-2">{{ note }}</p>
+        <!-- This week gauge: the operational number alongside the cumulative headline -->
+        <div class="mt-6 border-t border-divider-soft pt-4">
+            <div class="mb-[7px] flex items-baseline justify-between">
+                <span class="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-faint">This week</span>
+                <span class="font-mono text-[13px] font-medium tabular-nums text-muted">
+                    <template v-if="week.value != null"
+                        >{{ week.value }}% · {{ week.billableHours }}/{{ week.capacityHours }}h</template
+                    >
+                    <template v-else>—</template>
+                </span>
+            </div>
+            <div class="relative h-1.5 overflow-hidden rounded-full bg-sunken">
+                <div class="absolute inset-y-0 left-0 rounded-full bg-accent-tint-2" :style="{ width: barWidth(week.value) }"></div>
+            </div>
+        </div>
+
+        <p v-if="note" class="mt-[18px] text-[12.5px] leading-[1.55] text-faint-2">{{ note }}</p>
     </Card>
 </template>

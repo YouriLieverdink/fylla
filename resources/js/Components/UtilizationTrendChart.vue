@@ -1,59 +1,117 @@
 <script setup>
+import { computed, ref } from 'vue';
 import Card from './Card.vue';
-// ponytail: SVG geometry is the kit's demo data, hardcoded. Wire real
-// rolling-13-week points via props when a screen consumes this.
-defineProps({ demo: { type: Boolean, default: false } });
+
+const props = defineProps({
+    points: { type: Array, default: () => [] }, // [{ label, value }] oldest → newest
+    target: { type: Number, default: 75 },
+    weeks: { type: Number, default: 13 },
+});
+
+// Plot geometry (matches the kit: viewBox 360×150, fill baseline y=118).
+const X0 = 20;
+const X1 = 344;
+const TOP = 30;
+const BOTTOM = 118;
+
+// Domain padded around the data + target so the line and target both sit inside.
+const domain = computed(() => {
+    const vals = [...props.points.map((p) => p.value), props.target];
+    const lo = Math.max(0, Math.min(...vals) - 8);
+    const hi = Math.max(...vals) + 8;
+    return { lo, hi: hi > lo ? hi : lo + 1 };
+});
+
+const yFor = (v) => {
+    const { lo, hi } = domain.value;
+    return BOTTOM - ((v - lo) / (hi - lo)) * (BOTTOM - TOP);
+};
+const xFor = (i, n) => (n <= 1 ? X0 : X0 + (i / (n - 1)) * (X1 - X0));
+
+const coords = computed(() => props.points.map((p, i) => [xFor(i, props.points.length), yFor(p.value)]));
+const polyline = computed(() => coords.value.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' '));
+const area = computed(() => {
+    if (!coords.value.length) return '';
+    const pts = coords.value.map(([x, y]) => `L ${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+    const first = coords.value[0];
+    const last = coords.value[coords.value.length - 1];
+    return `M ${first[0].toFixed(1)} ${BOTTOM} ${pts} L ${last[0].toFixed(1)} ${BOTTOM} Z`;
+});
+const last = computed(() => coords.value[coords.value.length - 1] ?? null);
+const targetY = computed(() => yFor(props.target));
+
+const hover = ref(null); // active point index
+const bandW = computed(() => (props.points.length <= 1 ? X1 - X0 : (X1 - X0) / (props.points.length - 1)));
+const tip = computed(() => {
+    if (hover.value == null) return null;
+    const [x, y] = coords.value[hover.value];
+    const p = props.points[hover.value];
+    // Anchor the label so it stays inside the viewBox at both ends.
+    const anchor = x < 60 ? 'start' : x > X1 - 40 ? 'end' : 'middle';
+    return { x, y, anchor, text: `${p.label} · ${p.value}%` };
+});
 </script>
 
 <template>
     <Card radius="24px" pad="28px 30px" class="flex flex-col">
         <div class="mb-1.5 flex items-start justify-between">
             <div>
-                <div class="flex items-center gap-2.5">
-                    <div class="text-[16px] font-semibold tracking-[-0.01em]">Utilization trend</div>
-                    <span
-                        v-if="demo"
-                        class="inline-flex items-center rounded-full bg-divider px-2.5 py-[5px] font-mono text-[9.5px] font-semibold uppercase tracking-[0.1em] text-faint"
-                        >demo data</span
-                    >
-                </div>
-                <div class="mt-[3px] text-[12.5px] text-faint-2">Billable % · rolling 13 weeks</div>
+                <div class="text-[16px] font-semibold tracking-[-0.01em]">Utilization trend</div>
+                <div class="mt-[3px] text-[12.5px] text-faint-2">Billable % · rolling {{ weeks }} weeks</div>
             </div>
             <div class="flex items-center gap-4 font-mono text-[11px] font-medium">
                 <span class="inline-flex items-center gap-1.5 text-muted">
                     <span class="inline-block h-0.5 w-3.5 rounded-sm bg-accent"></span>billable
                 </span>
                 <span class="inline-flex items-center gap-1.5 text-faint">
-                    <span class="inline-block w-3.5 border-t-[1.5px] border-dashed border-behind"></span>75% target
+                    <span class="inline-block w-3.5 border-t-[1.5px] border-dashed border-behind"></span>{{ target }}% target
                 </span>
             </div>
         </div>
         <div class="mt-2 flex flex-1 items-center">
-            <svg viewBox="0 0 360 150" width="100%" class="block">
-                <line x1="20" y1="44.3" x2="344" y2="44.3" stroke="#b18749" stroke-width="1.25" stroke-dasharray="3 4" opacity=".85" />
-                <text x="344" y="39" text-anchor="end" font-family="var(--font-mono)" font-size="9" fill="#b18749">75%</text>
-                <path
-                    d="M 20 118 L 20.0,75.5 L 47.0,87.0 L 74.0,65.7 L 101.0,81.3 L 128.0,60.0 L 155.0,47.8 L 182.0,61.6 L 209.0,54.3 L 236.0,42.9 L 263.0,51.9 L 290.0,60.8 L 317.0,46.1 L 344.0,54.3 L 344 118 Z"
-                    fill="url(#utilFill)"
-                />
+            <svg v-if="points.length" viewBox="0 0 360 150" width="100%" class="block">
+                <line :x1="X0" :y1="targetY" :x2="X1" :y2="targetY" stroke="#b18749" stroke-width="1.25" stroke-dasharray="3 4" opacity=".85" />
+                <text :x="X1" :y="targetY - 5" text-anchor="end" font-family="var(--font-mono)" font-size="9" fill="#b18749">{{ target }}%</text>
+                <path :d="area" fill="url(#utilFill)" />
                 <defs>
                     <linearGradient id="utilFill" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0" stop-color="#6c5fc9" stop-opacity=".16" />
                         <stop offset="1" stop-color="#6c5fc9" stop-opacity="0" />
                     </linearGradient>
                 </defs>
-                <polyline
-                    points="20.0,75.5 47.0,87.0 74.0,65.7 101.0,81.3 128.0,60.0 155.0,47.8 182.0,61.6 209.0,54.3 236.0,42.9 263.0,51.9 290.0,60.8 317.0,46.1 344.0,54.3"
-                    fill="none"
-                    stroke="#6c5fc9"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
+                <polyline :points="polyline" fill="none" stroke="#6c5fc9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                <circle v-if="last" :cx="last[0]" :cy="last[1]" r="4" fill="#6c5fc9" stroke="#fff" stroke-width="2" />
+                <text :x="X0" y="140" font-family="var(--font-mono)" font-size="9" fill="#a8a498">{{ weeks }}w ago</text>
+                <text :x="X1" y="140" text-anchor="end" font-family="var(--font-mono)" font-size="9" fill="#a8a498">now</text>
+
+                <!-- hover layer: a full-height band per point, tooltip on the active one -->
+                <g v-if="tip">
+                    <line :x1="tip.x" :y1="TOP" :x2="tip.x" :y2="BOTTOM" stroke="#6c5fc9" stroke-width="1" stroke-dasharray="2 3" opacity=".4" />
+                    <circle :cx="tip.x" :cy="tip.y" r="4" fill="#6c5fc9" stroke="#fff" stroke-width="2" />
+                    <text
+                        :x="tip.x"
+                        :y="tip.y - 10"
+                        :text-anchor="tip.anchor"
+                        font-family="var(--font-mono)"
+                        font-size="10"
+                        font-weight="600"
+                        fill="#6c5fc9"
+                        >{{ tip.text }}</text
+                    >
+                </g>
+                <rect
+                    v-for="(c, i) in coords"
+                    :key="i"
+                    :x="c[0] - bandW / 2"
+                    :y="TOP"
+                    :width="bandW"
+                    :height="BOTTOM - TOP"
+                    fill="transparent"
+                    @mouseenter="hover = i"
+                    @mouseleave="hover = null"
                 />
-                <circle cx="344" cy="54.3" r="4" fill="#6c5fc9" stroke="#fff" stroke-width="2" />
-                <text x="20" y="140" font-family="var(--font-mono)" font-size="9" fill="#a8a498">13w ago</text>
-                <text x="344" y="140" text-anchor="end" font-family="var(--font-mono)" font-size="9" fill="#a8a498">now</text>
             </svg>
+            <div v-else class="w-full py-10 text-center text-[12.5px] text-faint-2">No billable weeks in this window yet.</div>
         </div>
     </Card>
 </template>

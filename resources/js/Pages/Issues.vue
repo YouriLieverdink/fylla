@@ -13,13 +13,14 @@ const props = defineProps({
     issues: { type: Array, default: () => [] },
     timer: { type: Object, default: null },
     liveIssueIds: { type: Array, default: () => [] },
+    utilization: { type: Object, default: () => ({}) },
 });
 
 const opts = { preserveScroll: true };
 
 // keep issues fresh when the 15-min scheduled sync fires; narrow only: leaves
 // the running timer clock untouched (ticks locally off started_at)
-usePoll(60000, { only: ['issues'] });
+usePoll(60000, { only: ['issues', 'utilization'] });
 
 function syncNow() {
     router.post('/sync', {}, opts);
@@ -47,10 +48,18 @@ const cols = 'grid-cols-[66px_1fr_78px_90px_74px_96px]';
         <!-- header -->
         <AppHeader />
 
-        <!-- metrics row (demo data) -->
+        <!-- metrics row -->
         <div class="mb-[22px] grid items-stretch gap-[22px] lg:grid-cols-[400px_1fr]">
-            <BillableMetric demo />
-            <UtilizationTrendChart demo />
+            <BillableMetric
+                :value="utilization.value"
+                :status="utilization.status"
+                :delta="utilization.delta"
+                :delta-caption="utilization.deltaCaption"
+                :target="utilization.target"
+                :note="utilization.note"
+                :week="utilization.week"
+            />
+            <UtilizationTrendChart :points="utilization.points" :target="utilization.target" />
         </div>
 
         <!-- timer stack -->

@@ -82,6 +82,28 @@ billable iff its project's `billable` flag is set, derived at read time — so
 toggling a project on the `/projects` page re-classifies every worklog with no
 re-sync. Manage the list at `/projects` (`PATCH /projects/{project}`).
 
+### Billable utilization dashboard
+
+The home page headlines personal utilization (`App\Utilization\UtilizationReport`,
+issue #12). Utilization = billable hours ÷ **capacity**, where weekly capacity is
+`fylla.contracted_hours_per_week` (default 32) minus logged time off. The current
+(partial) week prorates over elapsed Mon–Fri workdays; completed weeks use full
+capacity.
+
+- **Headline** = one cumulative `Σbillable ÷ Σcapacity` over the last
+  `fylla.utilization_window_weeks` weeks (default 13), with a delta vs. the
+  preceding equal-length window.
+- **Trend chart** = each week's own billable %.
+- **This-week gauge** = the prorated current-week number.
+- `fylla.utilization_target` (75) is a soft target; at or above
+  `fylla.utilization_soft_floor` (73) reads as "on track" — trend, not pass/fail.
+- A week with no capacity (fully time off) drops out of both sums; an all-off
+  window shows "—".
+
+Time off lives in the Fylla-native `time_off` table (`date`, `hours`, `reason`;
+ADR-0004 — Kendo has no leave concept). **There is no entry UI yet** — seed rows
+by hand for now.
+
 ## Setup
 
 ```bash

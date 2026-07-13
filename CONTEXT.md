@@ -30,10 +30,13 @@ A project on a user-configured list whose logged hours count as billable. Not ev
 _Avoid_: client project (a project can be client-facing but non-billable, and vice versa)
 
 **Contracted capacity**:
-The hours the user is contracted to work per week — currently **32h** — minus any time off that week. Time off (PTO, holiday, sick) is **excluded from the denominator**: the target is 75% of the hours the user *should have been working*, so a week with a day off caps at `32 − 8 = 24h` of capacity. This is the denominator of the billable target.
+The hours the user is contracted to work per week — currently **32h** — minus any time off that week. Time off (PTO, holiday, sick) is **excluded from the denominator**: the target is 75% of the hours the user *should have been working*, so a week with a day off caps at `32 − 8 = 24h` of capacity. This is the denominator of the billable target. The workweek is **Mon–Fri**; the **current (partial) week prorates** capacity to workdays elapsed so far (`32 × elapsed÷5`, less time off already passed), so the metric reflects pace-to-date rather than dipping every Monday. Completed weeks use full-week capacity.
+
+**Time off**:
+A record of hours not worked on a given date (PTO, holiday, sick), **owned by Fylla** — Kendo has no leave concept. Dated hours (e.g. `8` = a full day). Shrinks the **denominator** (capacity) for the week it falls in, never the numerator. A week fully off contributes zero billable and zero capacity, dropping out of every average.
 
 **Billable target / utilization**:
-`billable-hours ÷ contracted-capacity`, cumulative over a **rolling window of ~1–3 months**, target **75%**. The user's **personal** metric only (the promotion case, Jan 2027) — never computed for other developers, and distinct from the client monthly targets in Project management below. The target is **soft, not a cliff** — 73% is acceptable; 75% is the aim. Reported as a trend, not pass/fail. Distinct from hours-actually-worked: a light productive week must not inflate it, a heavy week must not be required to hit it.
+`billable-hours ÷ contracted-capacity`, cumulative over a **rolling window of ~1–3 months** (a configurable number of weeks, default 13), target **75%**. The **headline** is that single cumulative figure; the **trend** plots each week's own utilization (per-week, not running-cumulative) to show volatility. The user's **personal** metric only (the promotion case, Jan 2027) — never computed for other developers, and distinct from the client monthly targets in Project management below. The target is **soft, not a cliff** — 73% is acceptable; 75% is the aim. Reported as a trend, not pass/fail. Distinct from hours-actually-worked: a light productive week must not inflate it, a heavy week must not be required to hit it.
 _Avoid_: productivity, efficiency (those are different, and calm mode already uses "efficiency")
 
 ### Estimation

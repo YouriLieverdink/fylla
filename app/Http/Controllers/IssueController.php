@@ -8,6 +8,7 @@ use App\Jobs\SyncKendoWorklogs;
 use App\Models\Issue;
 use App\Models\Timer;
 use App\Services\TimerService;
+use App\Utilization\UtilizationReport;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -36,6 +37,7 @@ class IssueController extends Controller
                 ]),
             'liveIssueIds' => $live->pluck('issue_id'),
             'timer' => $this->stack($live),
+            'utilization' => (new UtilizationReport)->generate(),
         ]);
     }
 
