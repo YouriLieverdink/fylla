@@ -1,12 +1,16 @@
 <?php
 
 use App\Http\Controllers\IssueController;
+use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\TimerController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
 Route::get('/', [IssueController::class, 'index']);
 Route::post('/sync', [IssueController::class, 'sync'])->name('sync');
+
+Route::get('/projects', [ProjectController::class, 'index'])->name('projects.index');
+Route::patch('/projects/{project}', [ProjectController::class, 'update'])->name('projects.update');
 
 Route::post('/timers', [TimerController::class, 'start'])->name('timers.start');
 Route::post('/timers/pause', [TimerController::class, 'pause'])->name('timers.pause');

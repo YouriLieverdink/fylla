@@ -21,7 +21,7 @@ _Avoid_: time tracker (use only for the external product, not the role)
 
 **Worklog**:
 A record of time spent — a duration with a start time, attributed to a unit of work. Posted to Kendo, read back to measure progress against targets.
-_Avoid_: timesheet
+_Avoid_: timesheet; time entry (Kendo's wire word — it's a Worklog on our side)
 
 ### Billable tracking
 

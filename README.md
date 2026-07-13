@@ -62,6 +62,26 @@ shows only the open segment's notes and is disabled while paused (ADR-0005).
 Routes: `POST /timers` (start), `POST /timers/pause`, `POST /timers/resume`,
 `POST /timers/stop`, `POST /timers/notes`.
 
+### Billable projects & synced worklogs
+
+A separate read path measures personal billable utilization (ADR-0007). Two
+queued jobs run alongside the issues sync (every 15 min, and on **Sync now**):
+
+- `SyncKendoProjects` mirrors `GET /api/projects` into a local `projects` table.
+  Each project carries a locally-owned `billable` flag (ADR-0004, preserved
+  across sync); projects are never deleted.
+- `SyncKendoWorklogs` pulls the user's time entries (`GET /api/time-entries`)
+  over a rolling window (`fylla.worklog_sync_days`, default 90) into the
+  `synced_worklogs` read mirror — separate from the `worklogs` outbox. The admin
+  token returns the whole team, so rows are filtered to `FYLLA_KENDO_USER_ID`.
+  Reconcile deletes rows inside the window absent from the feed; rows outside it
+  are never touched.
+
+**Billability is a property of the project, not the worklog.** A worklog is
+billable iff its project's `billable` flag is set, derived at read time — so
+toggling a project on the `/projects` page re-classifies every worklog with no
+re-sync. Manage the list at `/projects` (`PATCH /projects/{project}`).
+
 ## Setup
 
 ```bash
@@ -73,6 +93,7 @@ php artisan key:generate
 # Kendo credentials — add to .env:
 #   KENDO_BASE_URL=https://<tenant>.kendo.dev
 #   KENDO_TOKEN=<bearer token>
+#   FYLLA_KENDO_USER_ID=<your Kendo user id>   # required: filters worklogs to you
 
 php artisan migrate
 npm run build

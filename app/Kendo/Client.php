@@ -83,6 +83,50 @@ class Client
     }
 
     /**
+     * All Kendo projects (mirror source for the local `projects` table).
+     *
+     * @return array<int, array{id: int, name: string, code: ?string}>
+     */
+    public function getProjects(): array
+    {
+        $body = $this->request()->get('/api/projects')->throw()->json();
+        $rows = $body['data'] ?? $body;
+
+        return array_map(fn (array $row) => [
+            'id' => $row['id'],
+            'name' => $row['name'],
+            'code' => $row['code'] ?? null,
+        ], $rows);
+    }
+
+    /**
+     * Time entries in a date window (whole team — the admin token has no user
+     * filter, so callers filter client-side). Dates are inclusive Y-m-d.
+     *
+     * @return array<int, array{id: int, user_id: ?int, issue_id: ?int, project_id: ?int, minutes: int, started_at: string, note: ?string, issue_key: ?string, issue_title: ?string}>
+     */
+    public function getTimeEntries(string $from, string $to): array
+    {
+        $body = $this->request()
+            ->get('/api/time-entries', ['start_date' => $from, 'end_date' => $to])
+            ->throw()
+            ->json();
+        $rows = $body['data'] ?? $body;
+
+        return array_map(fn (array $row) => [
+            'id' => $row['id'],
+            'user_id' => $row['user_id'] ?? null,
+            'issue_id' => $row['issue_id'] ?? null,
+            'project_id' => $row['project_id'] ?? null,
+            'minutes' => $row['minutes_spent'] ?? 0,
+            'started_at' => $row['started_at'],
+            'note' => $row['note'] ?? null,
+            'issue_key' => $row['issue_key'] ?? null,
+            'issue_title' => $row['issue_title'] ?? null,
+        ], $rows);
+    }
+
+    /**
      * Log a time entry against an issue. One entry per local Worklog (ADR-0005);
      * returns the Kendo entry id.
      */

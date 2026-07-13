@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -38,6 +39,8 @@ class HandleInertiaRequests extends Middleware
         return [
             ...parent::share($request),
             'syncError' => fn () => $request->session()->get('syncError', false),
+            // Header (every page) shows last-sync time; the job caches it on each run.
+            'lastSyncedAt' => fn () => Cache::get('kendo.synced_at'),
         ];
     }
 }

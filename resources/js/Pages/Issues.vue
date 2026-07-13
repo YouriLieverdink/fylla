@@ -1,9 +1,8 @@
 <script setup>
-import { ref } from 'vue';
 import { router, usePoll } from '@inertiajs/vue3';
 import Card from '../Components/Card.vue';
+import AppHeader from '../Components/AppHeader.vue';
 import Chip from '../Components/Chip.vue';
-import SyncStatus from '../Components/SyncStatus.vue';
 import EmptyState from '../Components/EmptyState.vue';
 import AppButton from '../Components/AppButton.vue';
 import BillableMetric from '../Components/BillableMetric.vue';
@@ -12,33 +11,22 @@ import TimerStack from '../Components/TimerStack.vue';
 
 const props = defineProps({
     issues: { type: Array, default: () => [] },
-    lastSyncedAt: { type: String, default: null },
     timer: { type: Object, default: null },
     liveIssueIds: { type: Array, default: () => [] },
-    syncError: { type: Boolean, default: false },
 });
 
 const opts = { preserveScroll: true };
-const syncing = ref(false);
 
-// keep issues/timestamp fresh when the 15-min scheduled sync fires; narrow
-// only: leaves the running timer clock untouched (ticks locally off started_at)
-usePoll(60000, { only: ['issues', 'lastSyncedAt'] });
+// keep issues fresh when the 15-min scheduled sync fires; narrow only: leaves
+// the running timer clock untouched (ticks locally off started_at)
+usePoll(60000, { only: ['issues'] });
 
 function syncNow() {
-    router.post('/sync', {}, {
-        ...opts,
-        onStart: () => (syncing.value = true),
-        onFinish: () => (syncing.value = false),
-    });
+    router.post('/sync', {}, opts);
 }
 
 function startTimer(issue) {
     router.post('/timers', { issue_id: issue.id }, opts);
-}
-
-function fmt(ts) {
-    return ts ? new Date(ts).toLocaleString() : '—';
 }
 
 // minutes → "6h" / "1.5h"; em-dash when unset
@@ -57,29 +45,7 @@ const cols = 'grid-cols-[66px_1fr_78px_90px_74px_96px]';
 <template>
     <div class="mx-auto max-w-[1180px] px-11 pb-[120px] pt-11">
         <!-- header -->
-        <header class="mb-[34px] flex items-center justify-between gap-6 border-b border-divider-soft pb-[26px]">
-            <div class="flex items-center gap-3.5">
-                <div class="relative h-[34px] w-[34px] rounded-[11px] bg-accent shadow-[0_5px_15px_-5px_rgba(108,95,201,0.6)]">
-                    <div class="absolute inset-0 flex items-center justify-center">
-                        <div
-                            class="h-3 w-3 rounded-full border-[2.5px] border-white border-t-transparent"
-                            style="transform: rotate(35deg)"
-                        ></div>
-                    </div>
-                </div>
-                <div class="flex items-baseline gap-3">
-                    <span class="text-[21px] font-semibold tracking-[-0.02em]">Fylla</span>
-                    <span class="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-faint">Personal</span>
-                </div>
-            </div>
-            <SyncStatus
-                label="Synced with issue tracker"
-                :last-synced="lastSyncedAt ? 'last synced ' + fmt(lastSyncedAt) : 'never synced'"
-                :syncing="syncing"
-                :error="syncError"
-                @sync="syncNow"
-            />
-        </header>
+        <AppHeader />
 
         <!-- metrics row (demo data) -->
         <div class="mb-[22px] grid items-stretch gap-[22px] lg:grid-cols-[400px_1fr]">

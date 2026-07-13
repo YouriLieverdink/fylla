@@ -1,6 +1,8 @@
 <?php
 
 use App\Jobs\SyncKendoIssues;
+use App\Jobs\SyncKendoProjects;
+use App\Jobs\SyncKendoWorklogs;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -10,3 +12,5 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::job(new SyncKendoIssues)->everyFifteenMinutes();
+Schedule::job(new SyncKendoProjects)->everyFifteenMinutes();
+Schedule::job(new SyncKendoWorklogs)->everyFifteenMinutes();

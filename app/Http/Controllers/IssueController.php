@@ -3,10 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\SyncKendoIssues;
+use App\Jobs\SyncKendoProjects;
+use App\Jobs\SyncKendoWorklogs;
 use App\Models\Issue;
 use App\Models\Timer;
 use App\Services\TimerService;
-use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -18,11 +19,6 @@ class IssueController extends Controller
     public function index(): Response
     {
         $live = Timer::live()->with(['issue:id,key,title', 'segments.notes'])->get();
-
-        // Latest sync-run time (cached by the job on every successful run).
-        // Distinct from per-issue synced_at below: an empty/all-retained feed
-        // stamps no rows, so max(synced_at) freezes while the job keeps running.
-        $lastSyncedAt = Cache::get('kendo.synced_at');
 
         // max() is a raw aggregate — reparse as UTC so it serializes with a tz
         // marker (the frontend reads a naive string as local, showing it off).
@@ -38,7 +34,6 @@ class IssueController extends Controller
                     'id', 'key', 'title', 'priority', 'type',
                     'estimated_minutes', 'remaining_minutes', 'updated_at',
                 ]),
-            'lastSyncedAt' => $lastSyncedAt,
             'liveIssueIds' => $live->pluck('issue_id'),
             'timer' => $this->stack($live),
         ]);
@@ -49,6 +44,10 @@ class IssueController extends Controller
     {
         try {
             SyncKendoIssues::dispatchSync();
+            // Projects before worklogs: the billability join needs project rows
+            // present on the first run.
+            SyncKendoProjects::dispatchSync();
+            SyncKendoWorklogs::dispatchSync();
         } catch (\Throwable $e) {
             return back()->with('syncError', true);
         }
