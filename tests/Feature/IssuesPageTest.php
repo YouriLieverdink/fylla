@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Jobs\SyncKendoIssues;
 use App\Models\Issue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
@@ -19,6 +20,7 @@ class IssuesPageTest extends TestCase
             'kendo_id' => 1, 'key' => 'A-1', 'title' => 'Local row',
             'priority' => 'High', 'type' => 'Bug', 'synced_at' => now(),
         ]);
+        Cache::forever('kendo.synced_at', now()->toJSON());
 
         $this->get('/')
             ->assertOk()

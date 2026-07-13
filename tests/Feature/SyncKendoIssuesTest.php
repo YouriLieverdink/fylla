@@ -6,6 +6,7 @@ use App\Jobs\SyncKendoIssues;
 use App\Models\Issue;
 use App\Models\Timer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -70,6 +71,18 @@ class SyncKendoIssuesTest extends TestCase
         $this->assertSame(360, $issue->estimated_minutes);
         $this->assertSame(90, $issue->remaining_minutes);
         $this->assertNotNull($issue->synced_at);
+    }
+
+    public function test_stamps_last_sync_time_even_when_feed_is_empty(): void
+    {
+        // Regression: "last synced" derived from max(synced_at) froze whenever
+        // the feed returned no issues (nothing to stamp), even though the job
+        // ran fine. It must record the run time regardless.
+        $this->fakeFeeds($this->feed([]));
+
+        SyncKendoIssues::dispatchSync();
+
+        $this->assertNotNull(Cache::get('kendo.synced_at'));
     }
 
     public function test_keeps_issues_with_timer_history_even_when_absent_from_feed(): void

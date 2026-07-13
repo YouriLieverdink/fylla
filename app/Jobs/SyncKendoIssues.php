@@ -6,6 +6,7 @@ use App\Kendo\Client as KendoClient;
 use App\Models\Issue;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Pull the current user's Kendo issues into the local `issues` table.
@@ -65,5 +66,10 @@ class SyncKendoIssues implements ShouldQueue
                 ->whereDoesntHave('worklogs')
                 ->delete();
         }
+
+        // "Last synced" = when this job last ran, not the newest issue's
+        // synced_at. An empty (or all-retained) feed stamps no rows, so
+        // max(synced_at) would freeze; this advances regardless.
+        Cache::forever('kendo.synced_at', $now->toJSON());
     }
 }
