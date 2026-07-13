@@ -86,9 +86,9 @@ re-sync. Manage the list at `/projects` (`PATCH /projects/{project}`).
 
 The home page headlines personal utilization (`App\Utilization\UtilizationReport`,
 issue #12). Utilization = billable hours ÷ **capacity**, where weekly capacity is
-`fylla.contracted_hours_per_week` (default 32) minus logged time off. The current
-(partial) week prorates over elapsed Mon–Fri workdays; completed weeks use full
-capacity.
+`fylla.contracted_hours_per_week` (default 32) **± the signed capacity
+adjustments** that week (ADR-0008). The current (partial) week prorates over
+elapsed Mon–Fri workdays; completed weeks use full capacity.
 
 - **Headline** = one cumulative `Σbillable ÷ Σcapacity` over the last
   `fylla.utilization_window_weeks` weeks (default 13), with a delta vs. the
@@ -100,9 +100,17 @@ capacity.
 - A week with no capacity (fully time off) drops out of both sums; an all-off
   window shows "—".
 
-Time off lives in the Fylla-native `time_off` table (`date`, `hours`, `reason`;
-ADR-0004 — Kendo has no leave concept). **There is no entry UI yet** — seed rows
-by hand for now.
+Capacity adjustments live in the Fylla-native `capacity_adjustments` table
+(`date` unique, signed `hours`, `reason`; ADR-0004/0008 — Kendo has no leave
+concept). One signed row per date: **negative = time off**, **positive = an
+extra day** (a 40h week banked toward vacation). Manage them on the `/capacity`
+page (the **Capacity** nav tab):
+
+- `GET /capacity` · `POST /capacity` · `PATCH /capacity/{capacityAdjustment}` ·
+  `DELETE /capacity/{capacityAdjustment}`.
+- Time off is entered as a date range, expanded to **weekdays only** (weekends
+  skipped); an extra day is a single date, **any day** allowed.
+- Each date upserts (`updateOrCreate` on `date`); magnitude is 1–24h.
 
 ## Setup
 

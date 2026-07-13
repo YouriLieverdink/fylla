@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\CapacityController;
 use App\Http\Controllers\IssueController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\TimerController;
@@ -11,6 +12,11 @@ Route::post('/sync', [IssueController::class, 'sync'])->name('sync');
 
 Route::get('/projects', [ProjectController::class, 'index'])->name('projects.index');
 Route::patch('/projects/{project}', [ProjectController::class, 'update'])->name('projects.update');
+
+Route::get('/capacity', [CapacityController::class, 'index'])->name('capacity.index');
+Route::post('/capacity', [CapacityController::class, 'store'])->name('capacity.store');
+Route::patch('/capacity/{capacityAdjustment}', [CapacityController::class, 'update'])->name('capacity.update');
+Route::delete('/capacity/{capacityAdjustment}', [CapacityController::class, 'destroy'])->name('capacity.destroy');
 
 Route::post('/timers', [TimerController::class, 'start'])->name('timers.start');
 Route::post('/timers/pause', [TimerController::class, 'pause'])->name('timers.pause');

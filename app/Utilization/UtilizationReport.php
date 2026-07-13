@@ -2,17 +2,18 @@
 
 namespace App\Utilization;
 
+use App\Models\CapacityAdjustment;
 use App\Models\SyncedWorklog;
-use App\Models\TimeOff;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 
 /**
  * Personal billable utilization (issue #12). Reads the local worklog mirror +
- * time-off table; no HTTP, so it is directly testable.
+ * capacity-adjustment table; no HTTP, so it is directly testable.
  *
  * - Numerator: billable minutes only, bucketed by ISO week of started_at.
- * - Denominator (capacity) per week: contracted hours − time off that week.
+ * - Denominator (capacity) per week: contracted hours + Σ signed adjustments
+ *   that week (time off is stored negative, an extra day positive; ADR-0008).
  *   The current (partial) week prorates over Mon–Fri elapsed workdays.
  * - Headline = one cumulative Σbillable ÷ Σcapacity over the window.
  * - Trend points = each week's own billable ÷ capacity (not running-cumulative).
@@ -29,7 +30,7 @@ class UtilizationReport
 
     /** @var Collection<string,int> billable minutes keyed by week-start date */
     private Collection $billableByWeek;
-    private Collection $timeOff;
+    private Collection $adjustments;
 
     public function __construct(?CarbonImmutable $now = null)
     {
@@ -53,7 +54,7 @@ class UtilizationReport
             ->groupBy(fn ($w) => $w->started_at->startOfWeek(CarbonImmutable::MONDAY)->toDateString())
             ->map(fn ($group) => $group->sum('minutes'));
 
-        $this->timeOff = TimeOff::whereBetween('date', [$rangeStart, $rangeEnd])->get();
+        $this->adjustments = CapacityAdjustment::whereBetween('date', [$rangeStart, $rangeEnd])->get();
 
         // Current window: build trend points, headline sums, and the gauge.
         $points = [];
@@ -115,17 +116,18 @@ class UtilizationReport
 
         if ($weekStart->equalTo($this->currentMonday)) {
             // Partial week: prorate over Mon–Fri elapsed (incl. today), then
-            // subtract only time off that has already passed.
+            // fold in only adjustments whose date has already passed. Signed,
+            // so + covers both time off (−) and an extra day (+).
             $workdaysElapsed = min($this->now->dayOfWeekIso, 5);
-            $offPassed = $this->timeOff
-                ->filter(fn ($t) => $t->date->gte($weekStart) && $t->date->lte($this->now))
+            $adjPassed = $this->adjustments
+                ->filter(fn ($a) => $a->date->gte($weekStart) && $a->date->lte($this->now))
                 ->sum('hours');
-            $capacity = $this->contracted * $workdaysElapsed / 5 - $offPassed;
+            $capacity = $this->contracted * $workdaysElapsed / 5 + $adjPassed;
         } else {
-            $off = $this->timeOff
-                ->filter(fn ($t) => $t->date->gte($weekStart) && $t->date->lt($weekStart->addWeek()))
+            $adj = $this->adjustments
+                ->filter(fn ($a) => $a->date->gte($weekStart) && $a->date->lt($weekStart->addWeek()))
                 ->sum('hours');
-            $capacity = $this->contracted - $off;
+            $capacity = $this->contracted + $adj;
         }
 
         return [$billableHours, (float) $capacity];

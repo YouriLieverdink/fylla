@@ -2,9 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Models\CapacityAdjustment;
 use App\Models\Project;
 use App\Models\SyncedWorklog;
-use App\Models\TimeOff;
 use App\Utilization\UtilizationReport;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -50,7 +50,7 @@ class UtilizationTest extends TestCase
         $this->log(1, '2026-06-29', 16);
         // Week B (last week): 24h billable, 8h time off → capacity 24 → 100%.
         $this->log(2, '2026-07-06', 24);
-        TimeOff::create(['date' => '2026-07-08', 'hours' => 8]);
+        CapacityAdjustment::create(['date' => '2026-07-08', 'hours' => -8]);
         // Week C (current): 20h billable, capacity 32 → 62.5%.
         $this->log(3, self::CURRENT_MONDAY, 20);
         // A non-billable entry must never touch the numerator.
@@ -73,6 +73,20 @@ class UtilizationTest extends TestCase
         $this->assertSame('vs. previous 3 weeks', $report['deltaCaption']);
     }
 
+    public function test_extra_day_raises_the_week_capacity(): void
+    {
+        // Friday → current week complete (5/5). An extra day (+8) this week
+        // lifts capacity to 40; 30h billable then reads 75%, not ~94%.
+        $now = CarbonImmutable::parse('2026-07-17 17:00');
+        $this->log(1, self::CURRENT_MONDAY, 30);
+        CapacityAdjustment::create(['date' => '2026-07-15', 'hours' => 8]);
+
+        $report = (new UtilizationReport($now))->generate();
+
+        $this->assertSame(40.0, $report['week']['capacityHours']);
+        $this->assertSame(75.0, $report['week']['value']);
+    }
+
     public function test_current_week_capacity_prorates_over_elapsed_workdays(): void
     {
         // Now = Wednesday → 3/5 workdays elapsed → 32 × 3/5 = 19.2h capacity.
@@ -91,7 +105,7 @@ class UtilizationTest extends TestCase
         // used — with a 1-week window the whole window is time off.
         config(['fylla.utilization_window_weeks' => 1]);
         $now = CarbonImmutable::parse('2026-07-13 09:00');
-        TimeOff::create(['date' => self::CURRENT_MONDAY, 'hours' => 8]);
+        CapacityAdjustment::create(['date' => self::CURRENT_MONDAY, 'hours' => -8]);
 
         $report = (new UtilizationReport($now))->generate();
 
