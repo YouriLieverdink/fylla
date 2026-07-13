@@ -135,7 +135,7 @@ class TimerService
         $notes = $segment->notes()->orderBy('created_at')->orderBy('id')->get();
         $comment = $notes->isEmpty()
             ? null
-            : $notes->map(fn (Note $n) => $n->created_at->format('H:i').' — '.$n->text)->implode("\n");
+            : $notes->map(fn (Note $n) => $n->created_at->setTimezone(config('fylla.display_timezone'))->format('H:i').' — '.$n->text)->implode("\n");
 
         $worklog = Worklog::create([
             'issue_id' => $segment->timer->issue_id,

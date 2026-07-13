@@ -8,6 +8,7 @@ use App\Models\Segment;
 use App\Models\Timer;
 use App\Models\Worklog;
 use App\Services\TimerService;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Tests\TestCase;
@@ -119,6 +120,19 @@ class TimerServiceTest extends TestCase
         $this->assertLessThan(strpos($comment, 'second'), strpos($comment, 'first'));
         // notes stamp wall-clock as HH:MM
         $this->assertMatchesRegularExpression('/^\d{2}:\d{2} — first/', $comment);
+    }
+
+    public function test_note_stamp_renders_in_display_timezone_not_utc(): void
+    {
+        config(['fylla.display_timezone' => 'Europe/Amsterdam']);
+        $this->travelTo(CarbonImmutable::parse('2026-07-13 12:00:00', 'UTC')); // 14:00 Amsterdam (CEST)
+
+        $this->svc->start($this->issue('A-1'));
+        $this->svc->addNote('hi');
+        $this->travel(60)->seconds();
+        $this->svc->stop();
+
+        $this->assertStringStartsWith('14:00 — hi', Worklog::sole()->comment);
     }
 
     public function test_notes_attach_only_while_a_segment_is_open(): void

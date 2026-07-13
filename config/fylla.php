@@ -8,6 +8,9 @@ return [
     // Rolling window (days) the worklog mirror pulls and reconciles.
     'worklog_sync_days' => 90,
 
+    // Timestamps are stored UTC (app.timezone); note stamps render in this zone.
+    'display_timezone' => 'Europe/Amsterdam',
+
     // Personal billable utilization (issue #12). Capacity = contracted hours
     // minus logged time off; target/soft-floor drive the trend, not pass/fail.
     'contracted_hours_per_week' => 32,

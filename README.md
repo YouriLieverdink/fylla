@@ -56,8 +56,10 @@ unposted (no auto-retry). Kendo-only, direct on `Kendo\Client` (ADR-0006).
 
 **Notes** attach to the open segment: add one (Enter or the Add button) while the
 timer runs and it's stamped with the wall-clock time. A segment's notes ride into
-that segment's worklog comment, one `HH:MM — text` line each. The notes panel
-shows only the open segment's notes and is disabled while paused (ADR-0005).
+that segment's worklog comment, one `HH:MM — text` line each. Timestamps store
+UTC; stamps render in `fylla.display_timezone` (default `Europe/Amsterdam`). The
+notes panel shows only the open segment's notes and is disabled while paused
+(ADR-0005).
 
 Routes: `POST /timers` (start), `POST /timers/pause`, `POST /timers/resume`,
 `POST /timers/stop`, `POST /timers/notes`.
