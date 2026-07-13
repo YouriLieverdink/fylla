@@ -19,6 +19,7 @@ class CapacityController extends Controller
             'adjustments' => CapacityAdjustment::orderByDesc('date')
                 ->get(['id', 'date', 'hours', 'reason']),
             'baseCapacity' => (int) config('fylla.contracted_hours_per_week'),
+            'windowWeeks' => (int) config('fylla.utilization_window_weeks'),
         ]);
     }
 
@@ -75,9 +76,10 @@ class CapacityController extends Controller
         }
 
         $end = isset($data['end']) ? CarbonImmutable::parse($data['end']) : $start;
+        $offDay = (int) config('fylla.contracted_off_weekday');
         $dates = [];
         for ($d = $start; $d->lte($end); $d = $d->addDay()) {
-            if ($d->dayOfWeekIso <= 5) {
+            if ($d->dayOfWeekIso <= 5 && $d->dayOfWeekIso !== $offDay) {
                 $dates[] = $d->toDateString();
             }
         }

@@ -22,9 +22,11 @@ class CapacityTest extends TestCase
                 ->where('baseCapacity', 32));
     }
 
-    public function test_time_off_range_expands_to_weekdays_only_and_stores_negative(): void
+    public function test_time_off_range_expands_to_worked_weekdays_and_stores_negative(): void
     {
-        // 2026-07-13 Mon .. 2026-07-19 Sun → 5 weekday rows, no Sat/Sun.
+        // 2026-07-13 Mon .. 2026-07-19 Sun → Mon–Thu only. Friday is the
+        // contracted non-working day (config), Sat/Sun are weekend. A full
+        // week off is 4 × −8 = −32, matching the 32h contract → 0h capacity.
         $this->post('/capacity', [
             'type' => 'off',
             'start' => '2026-07-13',
@@ -34,10 +36,11 @@ class CapacityTest extends TestCase
         ])->assertRedirect();
 
         $rows = CapacityAdjustment::orderBy('date')->get();
-        $this->assertCount(5, $rows);
-        $this->assertSame(['2026-07-13', '2026-07-14', '2026-07-15', '2026-07-16', '2026-07-17'],
+        $this->assertCount(4, $rows);
+        $this->assertSame(['2026-07-13', '2026-07-14', '2026-07-15', '2026-07-16'],
             $rows->map(fn ($r) => $r->date->toDateString())->all());
         $this->assertTrue($rows->every(fn ($r) => $r->hours === -8));
+        $this->assertSame(-32, $rows->sum('hours'));
     }
 
     public function test_extra_day_allows_a_weekend_and_stores_positive(): void

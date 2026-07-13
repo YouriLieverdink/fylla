@@ -22,6 +22,7 @@ use Illuminate\Support\Collection;
 class UtilizationReport
 {
     private int $contracted;
+    private int $offWeekday;
     private int $windowWeeks;
     private int $target;
     private int $softFloor;
@@ -35,6 +36,7 @@ class UtilizationReport
     public function __construct(?CarbonImmutable $now = null)
     {
         $this->contracted = (int) config('fylla.contracted_hours_per_week');
+        $this->offWeekday = (int) config('fylla.contracted_off_weekday');
         $this->windowWeeks = (int) config('fylla.utilization_window_weeks');
         $this->target = (int) config('fylla.utilization_target');
         $this->softFloor = (int) config('fylla.utilization_soft_floor');
@@ -115,14 +117,16 @@ class UtilizationReport
         $billableHours = ($this->billableByWeek->get($weekStart->toDateString(), 0)) / 60;
 
         if ($weekStart->equalTo($this->currentMonday)) {
-            // Partial week: prorate over Mon–Fri elapsed (incl. today), then
-            // fold in only adjustments whose date has already passed. Signed,
-            // so + covers both time off (−) and an extra day (+).
-            $workdaysElapsed = min($this->now->dayOfWeekIso, 5);
+            // Partial week: prorate over worked weekdays elapsed (incl. today),
+            // then fold in only adjustments whose date has already passed.
+            // Signed, so + covers both time off (−) and an extra day (+).
+            $isWorkday = fn (int $dow) => $dow <= 5 && $dow !== $this->offWeekday;
+            $workdaysPerWeek = count(array_filter([1, 2, 3, 4, 5], $isWorkday));
+            $workdaysElapsed = count(array_filter(range(1, min($this->now->dayOfWeekIso, 5)), $isWorkday));
             $adjPassed = $this->adjustments
                 ->filter(fn ($a) => $a->date->gte($weekStart) && $a->date->lte($this->now))
                 ->sum('hours');
-            $capacity = $this->contracted * $workdaysElapsed / 5 + $adjPassed;
+            $capacity = $this->contracted * $workdaysElapsed / $workdaysPerWeek + $adjPassed;
         } else {
             $adj = $this->adjustments
                 ->filter(fn ($a) => $a->date->gte($weekStart) && $a->date->lt($weekStart->addWeek()))

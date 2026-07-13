@@ -43,7 +43,7 @@ class UtilizationTest extends TestCase
     public function test_cumulative_and_trend_with_a_time_off_week(): void
     {
         // Window = 3 ISO weeks ending in the current one; now = Friday, so the
-        // current week's proration is complete (5/5 workdays).
+        // current week's proration is complete (4/4 worked days — Friday off).
         $now = CarbonImmutable::parse('2026-07-17 17:00');
 
         // Week A (two weeks ago): 16h billable, capacity 32 → 50%.
@@ -89,18 +89,18 @@ class UtilizationTest extends TestCase
 
     public function test_current_week_capacity_prorates_over_elapsed_workdays(): void
     {
-        // Now = Wednesday → 3/5 workdays elapsed → 32 × 3/5 = 19.2h capacity.
+        // Now = Wednesday → 3/4 worked days elapsed (Friday off) → 32 × 3/4 = 24h.
         $now = CarbonImmutable::parse('2026-07-15 12:00');
         $this->log(1, self::CURRENT_MONDAY, 20);
 
         $report = (new UtilizationReport($now))->generate();
 
-        $this->assertSame(19.2, $report['week']['capacityHours']);
+        $this->assertSame(24.0, $report['week']['capacityHours']);
     }
 
     public function test_zero_capacity_window_returns_no_data(): void
     {
-        // Now = Monday: current week prorates to 32 × 1/5 = 6.4h, wiped out by a
+        // Now = Monday: current week prorates to 32 × 1/4 = 8h, wiped out by a
         // full day off. Prior weeks have no time off logged but also no capacity
         // used — with a 1-week window the whole window is time off.
         config(['fylla.utilization_window_weeks' => 1]);

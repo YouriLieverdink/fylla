@@ -108,9 +108,17 @@ page (the **Capacity** nav tab):
 
 - `GET /capacity` · `POST /capacity` · `PATCH /capacity/{capacityAdjustment}` ·
   `DELETE /capacity/{capacityAdjustment}`.
-- Time off is entered as a date range, expanded to **weekdays only** (weekends
-  skipped); an extra day is a single date, **any day** allowed.
+- Time off is entered as a date range, expanded to **worked weekdays** —
+  weekends and the contracted non-working day (`fylla.contracted_off_weekday`,
+  default Friday) are skipped, so a full week off is 4 × 8h = −32h against the
+  32h contract; an extra day is a single date, **any day** allowed.
 - Each date upserts (`updateOrCreate` on `date`); magnitude is 1–24h.
+- The page shows a **weekly capacity overview** (current week back
+  `fylla.utilization_window_weeks`, plus any future weeks with entries): each
+  row is `base ± Σ signed adjustments` for that week as a **full contracted
+  week — no proration** (it verifies data entry, so it differs from the
+  utilization card, which prorates the current week). The adjustment list below
+  groups by year, prior years collapsed.
 
 ## Setup
 

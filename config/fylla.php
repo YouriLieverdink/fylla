@@ -11,6 +11,9 @@ return [
     // Personal billable utilization (issue #12). Capacity = contracted hours
     // minus logged time off; target/soft-floor drive the trend, not pass/fail.
     'contracted_hours_per_week' => 32,
+    // The one weekday not worked in the 4-day, 32h week (ISO: 1=Mon … 7=Sun).
+    // Time off skips it, so a full week off subtracts 4 days, not 5.
+    'contracted_off_weekday' => 5, // Friday
     'utilization_window_weeks' => 13,
     'utilization_target' => 75,
     'utilization_soft_floor' => 73,
