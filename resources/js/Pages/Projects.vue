@@ -17,6 +17,15 @@ function toggle(project, billable) {
     <div class="mx-auto max-w-[1180px] px-11 pb-[120px] pt-11">
         <AppHeader />
 
+        <div class="mb-8">
+            <h1 class="mb-3 text-[34px] font-bold leading-[1.05] tracking-[-0.03em]">Projects</h1>
+            <p class="max-w-[62ch] text-[15px] leading-[1.55] text-muted">
+                Every project synced from Kendo. Flag the ones whose logged hours count as
+                <strong class="font-semibold text-ink-soft">billable</strong> — the toggle re-classifies your
+                worklogs on the next read.
+            </p>
+        </div>
+
         <Card v-if="projects.length" radius="24px" pad="10px 10px 12px">
             <div
                 class="grid grid-cols-[1fr_auto] gap-3 px-5 pb-3.5 pt-4 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-faint-3"

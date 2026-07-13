@@ -19,7 +19,6 @@ class CapacityController extends Controller
             'adjustments' => CapacityAdjustment::orderByDesc('date')
                 ->get(['id', 'date', 'hours', 'reason']),
             'baseCapacity' => (int) config('fylla.contracted_hours_per_week'),
-            'windowWeeks' => (int) config('fylla.utilization_window_weeks'),
         ]);
     }
 

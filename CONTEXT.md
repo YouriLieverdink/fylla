@@ -42,6 +42,9 @@ A negative capacity adjustment — hours not worked on a given date (PTO, holida
 **Extra day**:
 A positive capacity adjustment — an agreed extra workday (e.g. `+8`), arranged with the user's manager and **banked toward extra vacation** taken later. Raises that week's capacity (a 40h week instead of 32) so the 75% target scales to the hours actually contracted; without it, a normal-effort extra-work week reads far above target and the metric is wrong. May fall on **any day**, including a weekend.
 
+**Worked hours**:
+The total hours logged in a week — Σ of **all** Worklogs that week, billable and non-billable alike (internal, admin, and non-billable client work all count). Distinct from **Actual** (which is per-issue) and from **capacity** (contracted, not logged). Reflects only Worklogs already posted to Kendo; a timer still running is not yet worked hours. Shown alongside utilization so the effort behind the metric is visible, but is not itself a denominator — `worked − billable` is simply the non-billable remainder.
+
 **Billable target / utilization**:
 `billable-hours ÷ contracted-capacity`, cumulative over a **rolling window of ~1–3 months** (a configurable number of weeks, default 13), target **75%**. The **headline** is that single cumulative figure; the **trend** plots each week's own utilization (per-week, not running-cumulative) to show volatility. The user's **personal** metric only (the promotion case, Jan 2027) — never computed for other developers, and distinct from the client monthly targets in Project management below. The target is **soft, not a cliff** — 73% is acceptable; 75% is the aim. Reported as a trend, not pass/fail. Distinct from hours-actually-worked: a light productive week must not inflate it, a heavy week must not be required to hit it.
 _Avoid_: productivity, efficiency (those are different, and calm mode already uses "efficiency")

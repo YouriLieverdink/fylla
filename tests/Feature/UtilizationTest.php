@@ -73,6 +73,44 @@ class UtilizationTest extends TestCase
         $this->assertSame('vs. previous 3 weeks', $report['deltaCaption']);
     }
 
+    public function test_breakdown_reconciles_with_the_dashboard(): void
+    {
+        // Same fixture as the cumulative test above.
+        $now = CarbonImmutable::parse('2026-07-17 17:00');
+        $this->log(1, '2026-06-29', 16);
+        $this->log(2, '2026-07-06', 24);
+        CapacityAdjustment::create(['date' => '2026-07-08', 'hours' => -8]);
+        $this->log(3, self::CURRENT_MONDAY, 20);
+        // Non-billable: counts toward worked, never toward billable.
+        $this->log(99, self::CURRENT_MONDAY, 40, projectId: 2);
+
+        $report = new UtilizationReport($now);
+        $gen = $report->generate();
+        $bd = $report->breakdown();
+
+        // Window totals equal the headline %.
+        $this->assertSame($gen['value'], $bd['totals']['utilization']);
+
+        // Weeks are newest-first; the current week matches the dashboard week.
+        $current = $bd['weeks'][0];
+        $this->assertSame('Jul 13', $current['label']);
+        $this->assertSame(62.5, $current['utilization']);
+        $this->assertSame(32.0, $current['capacity']);
+        $this->assertSame(20.0, $current['billable']);
+        // Worked = 20h billable + 40h non-billable.
+        $this->assertSame(60.0, $current['worked']);
+
+        // Last week's −8 time off surfaces as a chip on that week's row.
+        $this->assertSame('Jul 6', $bd['weeks'][1]['label']);
+        $this->assertSame([['hours' => -8, 'count' => 1]], $bd['weeks'][1]['adjustments']);
+        $this->assertSame([], $current['adjustments']);
+
+        // Per-week utilization equals the dashboard trend (which runs oldest→newest).
+        $trendVals = array_column($gen['points'], 'value');
+        $weekVals = array_reverse(array_map(fn ($w) => $w['utilization'], $bd['weeks']));
+        $this->assertSame($trendVals, $weekVals);
+    }
+
     public function test_extra_day_raises_the_week_capacity(): void
     {
         // Friday → current week complete (5/5). An extra day (+8) this week

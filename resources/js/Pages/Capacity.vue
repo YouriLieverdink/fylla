@@ -7,7 +7,6 @@ import AppHeader from '../Components/AppHeader.vue';
 const props = defineProps({
     adjustments: { type: Array, default: () => [] },
     baseCapacity: { type: Number, default: 32 },
-    windowWeeks: { type: Number, default: 13 },
 });
 
 const opts = { preserveScroll: true };
@@ -110,16 +109,6 @@ function prevWeekday(d) {
 function fmtISO(dt) {
     return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
 }
-// Monday of the week containing `dt`, matching PHP startOfWeek(MONDAY).
-function monday(dt) {
-    const d = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
-    const isoDow = d.getDay() === 0 ? 7 : d.getDay(); // JS Sun=0 → ISO 7
-    d.setDate(d.getDate() - (isoDow - 1));
-    return d;
-}
-// self-check: Wed 2026-07-15 buckets to Mon 2026-07-13
-console.assert(fmtISO(monday(new Date(2026, 6, 15))) === '2026-07-13', 'monday() bucketing');
-
 // Fold the (date-desc) rows into runs: same signed hours + reason, and each row
 // the next weekday of the previous. Display-only — rows stay one per date.
 const groups = computed(() => {
@@ -164,59 +153,6 @@ const openYears = ref({});
 function toggleYear(y) {
     openYears.value[y] = !openYears.value[y];
 }
-
-// Chip label for a signed hours value, e.g. -8 → "Off −8", 8 → "Extra +8".
-function chipLabel(h) {
-    return (h < 0 ? 'Off ' : 'Extra ') + (h > 0 ? '+' : '−') + Math.abs(h);
-}
-
-// Weekly capacity overview: current week back `windowWeeks`, plus any future
-// weeks that have entries. Each row = base + Σ signed adjustments that week —
-// full contracted week, NO proration (unlike the utilization card). Verifies
-// data entry, not pace. Weeks are continuous so a missing entry shows as a gap.
-const weeklyCapacity = computed(() => {
-    const curMon = monday(new Date());
-    const earliest = new Date(curMon);
-    earliest.setDate(earliest.getDate() - 7 * (props.windowWeeks - 1));
-
-    // Bucket adjustments by their week's Monday; extend the range to cover any
-    // future-dated entries.
-    let latest = curMon;
-    const byWeek = {};
-    for (const a of props.adjustments) {
-        const m = monday(parse(a.date));
-        if (m > latest) latest = m;
-        const k = fmtISO(m);
-        (byWeek[k] ||= []).push(a);
-    }
-
-    const curKey = fmtISO(curMon);
-    const rows = [];
-    for (const m = new Date(latest); m >= earliest; m.setDate(m.getDate() - 7)) {
-        const key = fmtISO(m);
-        const adj = byWeek[key] || [];
-        const sum = adj.reduce((s, a) => s + a.hours, 0);
-        // collapse identical adjustments into one chip with a count
-        const counts = {};
-        for (const a of adj) counts[a.hours] = (counts[a.hours] || 0) + 1;
-        const chips = Object.keys(counts)
-            .map(Number)
-            .sort((a, b) => b - a)
-            .map((h) => ({ hours: h, count: counts[h] }));
-
-        const end = new Date(m);
-        end.setDate(end.getDate() + 6);
-        rows.push({
-            key,
-            label: rangeLabel(key, fmtISO(end)),
-            year: m.getFullYear(),
-            capacity: props.baseCapacity + sum,
-            chips,
-            isCurrent: key === curKey,
-        });
-    }
-    return rows;
-});
 
 const offCount = computed(() => props.adjustments.filter((r) => r.hours < 0).length);
 const extraCount = computed(() => props.adjustments.filter((r) => r.hours > 0).length);
@@ -363,48 +299,6 @@ const signPreview = computed(() => (isOff.value ? '−' : '+') + (Math.abs(hours
             </Card>
 
             <div class="flex flex-col gap-[22px]">
-            <!-- weekly capacity overview -->
-            <Card radius="24px" pad="10px 10px 14px">
-                <div class="flex items-center justify-between px-5 pb-3.5 pt-[18px]">
-                    <div class="text-[16px] font-semibold tracking-[-0.01em]">Weekly capacity</div>
-                    <span class="rounded-full bg-surface-soft px-[11px] py-1.5 font-mono text-[11px] font-medium text-faint-2">full contracted week · no proration</span>
-                </div>
-
-                <div class="grid grid-cols-[190px_82px_1fr] gap-3 px-5 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-faint-3">
-                    <span>Week</span><span>Capacity</span><span>Adjustments</span>
-                </div>
-
-                <div class="flex flex-col">
-                    <div
-                        v-for="w in weeklyCapacity"
-                        :key="w.key"
-                        class="grid grid-cols-[190px_82px_1fr] items-center gap-3 rounded-[14px] border-t border-divider-soft px-5 py-3"
-                        :class="w.isCurrent ? 'bg-accent-wash' : ''"
-                    >
-                        <div class="min-w-0">
-                            <div class="whitespace-nowrap text-[13.5px] font-semibold">{{ w.label }}</div>
-                            <div class="mt-[3px] font-mono text-[11px] font-medium text-faint-3">
-                                {{ w.year }}<span v-if="w.isCurrent"> · this week</span>
-                            </div>
-                        </div>
-                        <div class="font-mono text-[14px] font-semibold tabular-nums" :class="w.capacity <= 0 ? 'text-behind' : 'text-ink'">
-                            {{ w.capacity }}h
-                        </div>
-                        <div v-if="w.chips.length" class="flex flex-wrap gap-1.5">
-                            <span
-                                v-for="c in w.chips"
-                                :key="c.hours"
-                                class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 font-mono text-[12px] font-semibold tabular-nums"
-                                :class="c.hours < 0 ? 'bg-divider text-muted' : 'bg-track-tint text-track'"
-                            >
-                                {{ chipLabel(c.hours) }}<span v-if="c.count > 1" class="text-faint-3">×{{ c.count }}</span>
-                            </span>
-                        </div>
-                        <div v-else class="text-[12.5px] text-faint-4">no adjustments</div>
-                    </div>
-                </div>
-            </Card>
-
             <!-- list -->
             <Card radius="24px" pad="10px 10px 14px">
                 <div class="flex items-center justify-between px-5 pb-3.5 pt-[18px]">

@@ -64,7 +64,7 @@ Routes: `POST /timers` (start), `POST /timers/pause`, `POST /timers/resume`,
 
 ### Billable projects & synced worklogs
 
-A separate read path measures personal billable utilization (ADR-0007). Two
+A separate read path measures personal utilization (ADR-0007). Two
 queued jobs run alongside the issues sync (every 15 min, and on **Sync now**):
 
 - `SyncKendoProjects` mirrors `GET /api/projects` into a local `projects` table.
@@ -82,7 +82,7 @@ billable iff its project's `billable` flag is set, derived at read time — so
 toggling a project on the `/projects` page re-classifies every worklog with no
 re-sync. Manage the list at `/projects` (`PATCH /projects/{project}`).
 
-### Billable utilization dashboard
+### Utilization dashboard
 
 The home page headlines personal utilization (`App\Utilization\UtilizationReport`,
 issue #12). Utilization = billable hours ÷ **capacity**, where weekly capacity is
@@ -100,6 +100,16 @@ elapsed Mon–Fri workdays; completed weeks use full capacity.
 - A week with no capacity (fully time off) drops out of both sums; an all-off
   window shows "—".
 
+The `/utilization` page (the **Utilization** nav tab) exposes the data behind
+the headline via `UtilizationReport::breakdown()`: window totals (Σ capacity /
+worked / billable + the cumulative %), a per-week table (`Week | Capacity |
+Worked | Billable | Utilization | Adjustments`, current week prorated,
+target-coloured — the same % as the dashboard, with that week's signed
+adjustments shown as chips), and the window's synced time entries grouped into
+collapsible week sections (newest first, current week open). Worked = Σ **all**
+worklog minutes that week (billable + non-billable) as effort context; it is
+never a denominator.
+
 Capacity adjustments live in the Fylla-native `capacity_adjustments` table
 (`date` unique, signed `hours`, `reason`; ADR-0004/0008 — Kendo has no leave
 concept). One signed row per date: **negative = time off**, **positive = an
@@ -113,12 +123,8 @@ page (the **Capacity** nav tab):
   default Friday) are skipped, so a full week off is 4 × 8h = −32h against the
   32h contract; an extra day is a single date, **any day** allowed.
 - Each date upserts (`updateOrCreate` on `date`); magnitude is 1–24h.
-- The page shows a **weekly capacity overview** (current week back
-  `fylla.utilization_window_weeks`, plus any future weeks with entries): each
-  row is `base ± Σ signed adjustments` for that week as a **full contracted
-  week — no proration** (it verifies data entry, so it differs from the
-  utilization card, which prorates the current week). The adjustment list below
-  groups by year, prior years collapsed.
+- The page is just the form and the adjustment list (grouped by year, prior
+  years collapsed). The per-week capacity view moved to `/utilization`.
 
 ## Setup
 

@@ -48,6 +48,14 @@ const cols = 'grid-cols-[66px_1fr_78px_90px_74px_96px]';
         <!-- header -->
         <AppHeader />
 
+        <div class="mb-8">
+            <h1 class="mb-3 text-[34px] font-bold leading-[1.05] tracking-[-0.03em]">Personal</h1>
+            <p class="max-w-[62ch] text-[15px] leading-[1.55] text-muted">
+                Your billable utilization and the issues assigned to you right now. Start a timer on any
+                work item to log time against it.
+            </p>
+        </div>
+
         <!-- metrics row -->
         <div class="mb-[22px] grid items-stretch gap-[22px] lg:grid-cols-[400px_1fr]">
             <BillableMetric

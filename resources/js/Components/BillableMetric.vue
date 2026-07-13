@@ -27,7 +27,7 @@ const barWidth = (v) => Math.min(100, Math.max(0, v ?? 0)) + '%';
         <div class="mb-5 flex items-start justify-between">
             <div>
                 <div class="mb-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.13em] text-faint">
-                    Billable utilization
+                    Utilization
                 </div>
                 <div class="text-[12.5px] text-faint-2">{{ deltaCaption }}</div>
             </div>

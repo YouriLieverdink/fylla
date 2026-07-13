@@ -31,6 +31,8 @@ class UtilizationReport
 
     /** @var Collection<string,int> billable minutes keyed by week-start date */
     private Collection $billableByWeek;
+    /** @var Collection<string,int> all worked minutes keyed by week-start date */
+    private Collection $workedByWeek;
     private Collection $adjustments;
 
     public function __construct(?CarbonImmutable $now = null)
@@ -46,17 +48,7 @@ class UtilizationReport
 
     public function generate(): array
     {
-        // Load current + preceding window in one pass (delta needs both).
-        $rangeStart = $this->currentMonday->subWeeks(2 * $this->windowWeeks - 1);
-        $rangeEnd = $this->currentMonday->addWeek();
-
-        $this->billableByWeek = SyncedWorklog::billable()
-            ->whereBetween('started_at', [$rangeStart, $rangeEnd])
-            ->get(['minutes', 'started_at'])
-            ->groupBy(fn ($w) => $w->started_at->startOfWeek(CarbonImmutable::MONDAY)->toDateString())
-            ->map(fn ($group) => $group->sum('minutes'));
-
-        $this->adjustments = CapacityAdjustment::whereBetween('date', [$rangeStart, $rangeEnd])->get();
+        $this->load();
 
         // Current window: build trend points, headline sums, and the gauge.
         $points = [];
@@ -109,6 +101,96 @@ class UtilizationReport
             'week' => $week,
             'points' => $points,
         ];
+    }
+
+    /**
+     * Per-week breakdown for the window (newest first) plus window totals.
+     * Utilization + capacity reuse weekData() so they reconcile with generate()
+     * exactly; worked is Σ all minutes that week (effort context, not a
+     * denominator — see the handoff).
+     */
+    public function breakdown(): array
+    {
+        $this->load();
+
+        $weeks = [];
+        $bill = 0.0;
+        $cap = 0.0;
+        $worked = 0.0;
+        for ($i = 0; $i < $this->windowWeeks; $i++) {
+            $weekStart = $this->currentMonday->subWeeks($i);
+            [$b, $c] = $this->weekData($weekStart);
+            $w = ($this->workedByWeek->get($weekStart->toDateString(), 0)) / 60;
+
+            $weeks[] = [
+                'label' => $weekStart->format('M j'),
+                'capacity' => round($c, 1),
+                'worked' => round($w, 1),
+                'billable' => round($b, 1),
+                'utilization' => $c > 0 ? round($b / $c * 100, 1) : null,
+                'adjustments' => $this->weekAdjustments($weekStart),
+            ];
+
+            $worked += $w;
+            if ($c > 0) { // zero-capacity weeks stay out of the totals, as in generate()
+                $bill += $b;
+                $cap += $c;
+            }
+        }
+
+        return [
+            'weeks' => $weeks,
+            'totals' => [
+                'capacity' => round($cap, 1),
+                'worked' => round($worked, 1),
+                'billable' => round($bill, 1),
+                'utilization' => $cap > 0 ? round($bill / $cap * 100, 1) : null,
+            ],
+            'target' => $this->target,
+            'softFloor' => $this->softFloor,
+        ];
+    }
+
+    /**
+     * The week's signed adjustments folded into chips (identical hours values
+     * collapse into one chip with a count), newest-magnitude first. Whole week
+     * Mon–Sun, no proration — this is the entry-verification view the capacity
+     * page used to carry.
+     *
+     * @return array<int,array{hours:int,count:int}>
+     */
+    private function weekAdjustments(CarbonImmutable $weekStart): array
+    {
+        return $this->adjustments
+            ->filter(fn ($a) => $a->date->gte($weekStart) && $a->date->lt($weekStart->addWeek()))
+            ->countBy('hours')
+            ->map(fn ($count, $hours) => ['hours' => (int) $hours, 'count' => $count])
+            ->sortByDesc('hours')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Load the current + preceding window in one pass (the delta needs both).
+     * Worklogs are fetched once with their project so billable vs. worked are
+     * split in PHP off the derived billable attribute.
+     */
+    private function load(): void
+    {
+        $rangeStart = $this->currentMonday->subWeeks(2 * $this->windowWeeks - 1);
+        $rangeEnd = $this->currentMonday->addWeek();
+
+        $worklogs = SyncedWorklog::whereBetween('started_at', [$rangeStart, $rangeEnd])
+            ->with('project:kendo_id,billable')
+            ->get(['minutes', 'started_at', 'kendo_project_id']);
+
+        $byWeek = fn (Collection $logs) => $logs
+            ->groupBy(fn ($w) => $w->started_at->startOfWeek(CarbonImmutable::MONDAY)->toDateString())
+            ->map(fn ($group) => $group->sum('minutes'));
+
+        $this->workedByWeek = $byWeek($worklogs);
+        $this->billableByWeek = $byWeek($worklogs->filter(fn ($w) => $w->billable));
+        $this->adjustments = CapacityAdjustment::whereBetween('date', [$rangeStart, $rangeEnd])->get();
     }
 
     /** @return array{0: float, 1: float} [billableHours, capacityHours] */
