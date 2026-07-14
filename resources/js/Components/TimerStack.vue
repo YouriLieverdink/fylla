@@ -5,9 +5,9 @@ import Card from './Card.vue';
 import EmptyState from './EmptyState.vue';
 
 const props = defineProps({
-    // { issue_id, key, title, accumulated_seconds, running, started_at, started_at_hm, notes: [{at,text}] } | null
+    // { id, key, title, accumulated_seconds, running, started_at, started_at_hm, notes: [{at,text}] } | null
     active: { type: Object, default: null },
-    // [{ issue_id, key, title, accumulated_seconds }]
+    // [{ id, key, title, accumulated_seconds }]
     paused: { type: Array, default: () => [] },
 });
 const emit = defineEmits(['pause', 'resume', 'stop', 'note']);
@@ -166,7 +166,7 @@ function submitStart() {
                 <!-- paused, nested beneath the active card (display-only, Q8) -->
                 <div
                     v-for="(row, i) in paused"
-                    :key="row.issue_id"
+                    :key="row.id"
                     class="relative rounded-b-2xl border border-t-0 border-[#ebe7de] px-4 pb-3.5 pt-[15px]"
                     :class="i === 0 ? 'z-20 bg-surface-soft' : 'z-10 bg-[#f7f6f2] opacity-90'"
                     :style="{ marginLeft: (i + 1) * 8 + 'px', marginRight: (i + 1) * 8 + 'px' }"

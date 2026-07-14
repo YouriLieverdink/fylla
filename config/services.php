@@ -40,4 +40,8 @@ return [
         'token' => env('KENDO_TOKEN'),
     ],
 
+    'github' => [
+        'token' => env('GITHUB_TOKEN'),
+    ],
+
 ];

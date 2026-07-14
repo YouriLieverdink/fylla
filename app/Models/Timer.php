@@ -3,9 +3,9 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class Timer extends Model
 {
@@ -17,9 +17,10 @@ class Timer extends Model
         'stopped_at' => 'datetime',
     ];
 
-    public function issue(): BelongsTo
+    /** The timed subject — an Issue or a PullRequest (ADR-0009). */
+    public function timeable(): MorphTo
     {
-        return $this->belongsTo(Issue::class);
+        return $this->morphTo();
     }
 
     public function segments(): HasMany

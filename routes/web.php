@@ -3,6 +3,7 @@
 use App\Http\Controllers\CapacityController;
 use App\Http\Controllers\IssueController;
 use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\PullRequestController;
 use App\Http\Controllers\TimerController;
 use App\Http\Controllers\UtilizationController;
 use Illuminate\Support\Facades\Route;
@@ -20,6 +21,10 @@ Route::get('/capacity', [CapacityController::class, 'index'])->name('capacity.in
 Route::post('/capacity', [CapacityController::class, 'store'])->name('capacity.store');
 Route::patch('/capacity/{capacityAdjustment}', [CapacityController::class, 'update'])->name('capacity.update');
 Route::delete('/capacity/{capacityAdjustment}', [CapacityController::class, 'destroy'])->name('capacity.destroy');
+
+Route::get('/kendo/issues/search', [PullRequestController::class, 'candidates'])->name('kendo.issues.search');
+Route::post('/pull-requests/{pullRequest}/resolve', [PullRequestController::class, 'resolve'])->name('pull-requests.resolve');
+Route::post('/pull-requests/{pullRequest}/timer', [PullRequestController::class, 'startTimer'])->name('pull-requests.timer');
 
 Route::post('/timers', [TimerController::class, 'start'])->name('timers.start');
 Route::post('/timers/pause', [TimerController::class, 'pause'])->name('timers.pause');

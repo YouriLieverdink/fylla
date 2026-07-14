@@ -8,6 +8,7 @@ use App\Models\Note;
 use App\Models\Segment;
 use App\Models\Timer;
 use App\Models\Worklog;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -21,17 +22,21 @@ use RuntimeException;
  */
 class TimerService
 {
-    /** Start (push) a timer for an issue. Pauses whatever ran. */
-    public function start(Issue $issue): Timer
+    /** Start (push) a timer for a subject (Issue or PullRequest). Pauses whatever ran. */
+    public function start(Model $subject): Timer
     {
-        return DB::transaction(function () use ($issue) {
-            if (Timer::live()->where('issue_id', $issue->id)->exists()) {
-                throw new RuntimeException('Issue already has a live timer.');
+        return DB::transaction(function () use ($subject) {
+            $live = Timer::live()
+                ->where('timeable_type', $subject->getMorphClass())
+                ->where('timeable_id', $subject->getKey())
+                ->exists();
+            if ($live) {
+                throw new RuntimeException('Already has a live timer.');
             }
 
             $this->closeOpenSegment();
 
-            $timer = Timer::create(['issue_id' => $issue->id]);
+            $timer = $subject->timers()->create();
             $this->openSegmentOn($timer);
 
             return $timer;
@@ -163,9 +168,17 @@ class TimerService
             ? null
             : $notes->map(fn (Note $n) => $n->created_at->setTimezone(config('fylla.display_timezone'))->format('H:i').' — '.$n->text)->implode("\n");
 
+        // Stamp the Kendo coordinates from whichever subject (ADR-0009): an
+        // Issue books to its own mirror fields, a PullRequest to its resolved
+        // ones. issue_id is provenance — set only for Issue subjects.
+        $subject = $segment->timer->timeable;
+        $coords = $subject->kendoCoords();
+
         $worklog = Worklog::create([
-            'issue_id' => $segment->timer->issue_id,
+            'issue_id' => $subject instanceof Issue ? $subject->id : null,
             'timer_id' => $segment->timer_id,
+            'kendo_project_id' => $coords['project_id'] ?? null,
+            'kendo_issue_id' => $coords['issue_id'] ?? null,
             'minutes' => $minutes,
             'started_at' => $segment->started_at,
             'comment' => $comment,

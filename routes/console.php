@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\SyncGithubPullRequests;
 use App\Jobs\SyncKendoIssues;
 use App\Jobs\SyncKendoProjects;
 use App\Jobs\SyncKendoWorklogs;
@@ -14,3 +15,4 @@ Artisan::command('inspire', function () {
 Schedule::job(new SyncKendoIssues)->everyFifteenMinutes();
 Schedule::job(new SyncKendoProjects)->everyFifteenMinutes();
 Schedule::job(new SyncKendoWorklogs)->everyFifteenMinutes();
+Schedule::job(new SyncGithubPullRequests)->everyFifteenMinutes();

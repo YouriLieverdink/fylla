@@ -83,6 +83,27 @@ class Client
     }
 
     /**
+     * Live global issue search by key/text (ADR-0009 resolution path). The PR's
+     * linked issue is usually not the user's, so it is absent from the local
+     * mirror — this reads across all Kendo issues, a deliberate ADR-0003
+     * exception bounded to key→coordinate resolution.
+     *
+     * @return array<int, array{id:int, key:string, title:?string, project_id:?int}>
+     */
+    public function searchIssues(string $query): array
+    {
+        $body = $this->request()->get('/api/issues/search', ['query' => $query])->throw()->json();
+        $rows = $body['data'] ?? $body;
+
+        return array_map(fn (array $row) => [
+            'id' => $row['id'],
+            'key' => $row['key'],
+            'title' => $row['title'] ?? null,
+            'project_id' => $row['project_id'] ?? null,
+        ], $rows);
+    }
+
+    /**
      * All Kendo projects (mirror source for the local `projects` table).
      *
      * @return array<int, array{id: int, name: string, code: ?string}>

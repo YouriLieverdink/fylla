@@ -13,10 +13,13 @@ class Worklog extends Model
 
     protected $casts = [
         'minutes' => 'integer',
+        'kendo_project_id' => 'integer',
+        'kendo_issue_id' => 'integer',
         'started_at' => 'datetime',
         'posted_at' => 'datetime',
     ];
 
+    /** Nullable provenance — PR worklogs have no local issue (ADR-0009). */
     public function issue(): BelongsTo
     {
         return $this->belongsTo(Issue::class);

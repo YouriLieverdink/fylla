@@ -35,10 +35,11 @@ class PostWorklog implements ShouldQueue
             return; // already posted — no HTTP
         }
 
-        $issue = $worklog->issue;
+        // Coordinates are stamped on the worklog at roll-up (ADR-0009), so this
+        // posts uniformly for Issue- and PR-sourced worklogs alike.
         $id = $kendo->postWorklog(
-            $issue->project_id,
-            $issue->kendo_id,
+            $worklog->kendo_project_id,
+            $worklog->kendo_issue_id,
             $worklog->minutes,
             $worklog->started_at->toIso8601String(),
             $worklog->comment,

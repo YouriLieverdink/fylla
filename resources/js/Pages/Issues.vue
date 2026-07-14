@@ -1,5 +1,6 @@
 <script setup>
 import { router, usePoll } from '@inertiajs/vue3';
+import { ref } from 'vue';
 import Card from '../Components/Card.vue';
 import AppHeader from '../Components/AppHeader.vue';
 import Chip from '../Components/Chip.vue';
@@ -8,19 +9,26 @@ import AppButton from '../Components/AppButton.vue';
 import BillableMetric from '../Components/BillableMetric.vue';
 import UtilizationTrendChart from '../Components/UtilizationTrendChart.vue';
 import TimerStack from '../Components/TimerStack.vue';
+import PullRequestList from '../Components/PullRequestList.vue';
+import SegmentedControl from '../Components/SegmentedControl.vue';
 
 const props = defineProps({
     issues: { type: Array, default: () => [] },
+    pullRequests: { type: Array, default: () => [] },
     timer: { type: Object, default: null },
     liveIssueIds: { type: Array, default: () => [] },
+    livePrIds: { type: Array, default: () => [] },
     utilization: { type: Object, default: () => ({}) },
 });
 
 const opts = { preserveScroll: true };
 
+// Which list the switcher shows (client-only view state).
+const view = ref('Work items');
+
 // keep issues fresh when the 15-min scheduled sync fires; narrow only: leaves
 // the running timer clock untouched (ticks locally off started_at)
-usePoll(60000, { only: ['issues', 'utilization'] });
+usePoll(60000, { only: ['issues', 'pullRequests', 'livePrIds', 'liveIssueIds', 'utilization'] });
 
 function syncNow() {
     router.post('/sync', {}, opts);
@@ -82,7 +90,23 @@ const cols = 'grid-cols-[66px_1fr_78px_90px_74px_96px]';
             />
         </div>
 
+        <!-- view switcher: work items ⇆ pull requests -->
+        <div class="mb-[22px]">
+            <SegmentedControl v-model="view" :options="['Work items', 'Pull requests']" />
+        </div>
+
+        <!-- pull requests -->
+        <template v-if="view === 'Pull requests'">
+            <PullRequestList v-if="pullRequests.length" :pull-requests="pullRequests" :live-pr-ids="livePrIds" />
+            <EmptyState
+                v-else
+                title="No pull requests"
+                text="No PRs are awaiting your review or assigned to you right now."
+            />
+        </template>
+
         <!-- work items -->
+        <template v-else>
         <Card v-if="issues.length" radius="24px" pad="10px 10px 12px">
             <div class="flex items-center justify-between px-5 pb-3.5 pt-4">
                 <div class="text-[16px] font-semibold tracking-[-0.01em]">Work items</div>
@@ -116,7 +140,12 @@ const cols = 'grid-cols-[66px_1fr_78px_90px_74px_96px]';
                                 :class="typeDot[issue.type] ?? 'bg-faint-2'"
                                 :title="issue.type"
                             ></span>
-                            <span class="truncate text-[14px] font-medium">{{ issue.title }}</span>
+                            <a
+                                :href="issue.kendo_url"
+                                target="_blank"
+                                class="truncate text-[14px] font-medium hover:text-accent"
+                                >{{ issue.title }}</a
+                            >
                         </div>
                         <div v-if="issue.type" class="mt-[3px] font-mono text-[11px] text-faint-3">{{ issue.type }}</div>
                     </div>
@@ -173,5 +202,6 @@ const cols = 'grid-cols-[66px_1fr_78px_90px_74px_96px]';
                 <AppButton variant="primary" size="sm" @click="syncNow">Sync now</AppButton>
             </template>
         </EmptyState>
+        </template>
     </div>
 </template>

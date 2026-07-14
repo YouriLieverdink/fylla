@@ -11,6 +11,14 @@ return [
     // Timestamps are stored UTC (app.timezone); note stamps render in this zone.
     'display_timezone' => 'Europe/Amsterdam',
 
+    // GitHub PR feed (ADR-0009). Each entry is a search filter; `is:pr is:open`
+    // is prepended, so entries take the full search syntax (org:, author:@me, …).
+    // Comma-separated in GITHUB_PR_QUERIES.
+    'github_pr_queries' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('GITHUB_PR_QUERIES', 'org:Back-to-code review-requested:@me,org:Back-to-code assignee:@me')),
+    ))),
+
     // Personal billable utilization (issue #12). Capacity = contracted hours
     // minus logged time off; target/soft-floor drive the trend, not pass/fail.
     'contracted_hours_per_week' => 32,
