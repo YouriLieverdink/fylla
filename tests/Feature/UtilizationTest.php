@@ -62,9 +62,10 @@ class UtilizationTest extends TestCase
         // time-off week it would be 60/96 = 62.5%, so the 8h shrank capacity.
         $this->assertSame(68.2, $report['value']);
         $this->assertSame([
-            ['label' => 'Jun 29', 'value' => 50.0],
-            ['label' => 'Jul 6', 'value' => 100.0],
-            ['label' => 'Jul 13', 'value' => 62.5],
+            ['label' => 'Jun 29', 'value' => 50.0, 'billableShare' => 100.0],
+            ['label' => 'Jul 6', 'value' => 100.0, 'billableShare' => 100.0],
+            // Week C: 20h billable of 60h worked (40h internal) → 33.3%.
+            ['label' => 'Jul 13', 'value' => 62.5, 'billableShare' => 33.3],
         ], $report['points']);
         $this->assertSame(32.0, $report['week']['capacityHours']);
         $this->assertSame(20.0, $report['week']['billableHours']);
@@ -109,6 +110,37 @@ class UtilizationTest extends TestCase
         $trendVals = array_column($gen['points'], 'value');
         $weekVals = array_reverse(array_map(fn ($w) => $w['utilization'], $bd['weeks']));
         $this->assertSame($trendVals, $weekVals);
+    }
+
+    public function test_breakdown_reports_billable_share_of_worked_hours(): void
+    {
+        // Same fixture as above: week C = 20h billable + 40h internal = 60h worked.
+        $now = CarbonImmutable::parse('2026-07-17 17:00');
+        $this->log(1, '2026-06-29', 16);
+        $this->log(2, '2026-07-06', 24);
+        CapacityAdjustment::create(['date' => '2026-07-08', 'hours' => -8]);
+        $this->log(3, self::CURRENT_MONDAY, 20);
+        $this->log(99, self::CURRENT_MONDAY, 40, projectId: 2);
+
+        $bd = (new UtilizationReport($now))->breakdown();
+
+        // Current week: 20 / 60 = 33.3% (all billable in A/B → 100%).
+        $this->assertSame(33.3, $bd['weeks'][0]['billableShare']);
+        $this->assertSame(100.0, $bd['weeks'][1]['billableShare']);
+        $this->assertSame(100.0, $bd['weeks'][2]['billableShare']);
+        // Totals: Σbillable 60 / Σworked 100 = 60%.
+        $this->assertSame(60.0, $bd['totals']['billableShare']);
+    }
+
+    public function test_billable_share_is_null_when_no_hours_worked(): void
+    {
+        // No worklogs at all → every week and the totals divide by zero → null.
+        $now = CarbonImmutable::parse('2026-07-17 17:00');
+
+        $bd = (new UtilizationReport($now))->breakdown();
+
+        $this->assertNull($bd['weeks'][0]['billableShare']);
+        $this->assertNull($bd['totals']['billableShare']);
     }
 
     public function test_extra_day_raises_the_week_capacity(): void

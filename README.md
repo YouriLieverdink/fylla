@@ -101,7 +101,8 @@ elapsed Mon–Fri workdays; completed weeks use full capacity.
 - **Headline** = one cumulative `Σbillable ÷ Σcapacity` over the last
   `fylla.utilization_window_weeks` weeks (default 13), with a delta vs. the
   preceding equal-length window.
-- **Trend chart** = each week's own billable %.
+- **Trend chart** = each week's own utilization %, with a second line for that
+  week's billable share (billable ÷ worked).
 - **This-week gauge** = the prorated current-week number.
 - `fylla.utilization_target` (75) is a soft target; at or above
   `fylla.utilization_soft_floor` (73) reads as "on track" — trend, not pass/fail.
@@ -110,13 +111,17 @@ elapsed Mon–Fri workdays; completed weeks use full capacity.
 
 The `/utilization` page (the **Utilization** nav tab) exposes the data behind
 the headline via `UtilizationReport::breakdown()`: window totals (Σ capacity /
-worked / billable + the cumulative %), a per-week table (`Week | Capacity |
-Worked | Billable | Utilization | Adjustments`, current week prorated,
-target-coloured — the same % as the dashboard, with that week's signed
-adjustments shown as chips), and the window's synced time entries grouped into
-collapsible week sections (newest first, current week open). Worked = Σ **all**
-worklog minutes that week (billable + non-billable) as effort context; it is
-never a denominator.
+worked / billable, billable share, + the cumulative %), and — behind a
+segmented **Weekly breakdown** ⇆ **Time entries** toggle below the totals card —
+a per-week table (`Week | Capacity | Worked | Billable | Billable share |
+Utilization | Adjustments`, current week prorated, utilization target-coloured —
+the same % as the dashboard, with that week's signed adjustments shown as
+chips), and the window's synced time entries grouped into collapsible week
+sections (newest first, current week open). Worked = Σ **all** worklog minutes
+that week (billable + non-billable) as effort context; it is never a
+denominator. Billable share = billable ÷ worked (share of worked hours that
+billed; "—" when nothing worked) — distinct from Utilization (billable ÷
+capacity).
 
 Capacity adjustments live in the Fylla-native `capacity_adjustments` table
 (`date` unique, signed `hours`, `reason`; ADR-0004/0008 — Kendo has no leave

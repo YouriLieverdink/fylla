@@ -16,7 +16,8 @@ const BOTTOM = 118;
 
 // Domain padded around the data + target so the line and target both sit inside.
 const domain = computed(() => {
-    const vals = [...props.points.map((p) => p.value), props.target];
+    const shares = props.points.map((p) => p.billableShare).filter((v) => v != null);
+    const vals = [...props.points.map((p) => p.value), ...shares, props.target];
     const lo = Math.max(0, Math.min(...vals) - 8);
     const hi = Math.max(...vals) + 8;
     return { lo, hi: hi > lo ? hi : lo + 1 };
@@ -38,6 +39,16 @@ const area = computed(() => {
     return `M ${first[0].toFixed(1)} ${BOTTOM} ${pts} L ${last[0].toFixed(1)} ${BOTTOM} Z`;
 });
 const last = computed(() => coords.value[coords.value.length - 1] ?? null);
+
+// Billable share line (billable ÷ worked). ponytail: a null week (no worked
+// hours) is dropped, so the line bridges the gap — fine, near-impossible here.
+const sharePolyline = computed(() =>
+    props.points
+        .map((p, i) => (p.billableShare == null ? null : [xFor(i, props.points.length), yFor(p.billableShare)]))
+        .filter(Boolean)
+        .map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`)
+        .join(' '),
+);
 const targetY = computed(() => yFor(props.target));
 
 const hover = ref(null); // active point index
@@ -46,9 +57,14 @@ const tip = computed(() => {
     if (hover.value == null) return null;
     const [x, y] = coords.value[hover.value];
     const p = props.points[hover.value];
-    // Anchor the label so it stays inside the viewBox at both ends.
-    const anchor = x < 60 ? 'start' : x > X1 - 40 ? 'end' : 'middle';
-    return { x, y, anchor, text: `${p.label} · ${p.value}%` };
+    const lines = [p.label, `${p.value}% utilization`];
+    if (p.billableShare != null) lines.push(`${p.billableShare}% billable`);
+    // Size the box off the longest line (~6px/char mono) and clamp inside 360w.
+    const w = Math.max(...lines.map((l) => l.length)) * 6 + 14;
+    const h = lines.length * 13 + 7;
+    const bx = Math.min(Math.max(x - w / 2, 4), 356 - w);
+    const by = Math.max(y - 12 - h, 4);
+    return { x, y, lines, bx, by, w, h };
 });
 </script>
 
@@ -61,7 +77,10 @@ const tip = computed(() => {
             </div>
             <div class="flex items-center gap-4 font-mono text-[11px] font-medium">
                 <span class="inline-flex items-center gap-1.5 text-muted">
-                    <span class="inline-block h-0.5 w-3.5 rounded-sm bg-accent"></span>billable
+                    <span class="inline-block h-0.5 w-3.5 rounded-sm bg-accent"></span>utilization
+                </span>
+                <span class="inline-flex items-center gap-1.5 text-muted">
+                    <span class="inline-block h-0.5 w-3.5 rounded-sm bg-track"></span>billable share
                 </span>
                 <span class="inline-flex items-center gap-1.5 text-faint">
                     <span class="inline-block w-3.5 border-t-[1.5px] border-dashed border-behind"></span>{{ target }}% target
@@ -79,6 +98,7 @@ const tip = computed(() => {
                         <stop offset="1" stop-color="#6c5fc9" stop-opacity="0" />
                     </linearGradient>
                 </defs>
+                <polyline v-if="sharePolyline" :points="sharePolyline" fill="none" stroke="#5c8a6f" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
                 <polyline :points="polyline" fill="none" stroke="#6c5fc9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                 <circle v-if="last" :cx="last[0]" :cy="last[1]" r="4" fill="#6c5fc9" stroke="#fff" stroke-width="2" />
                 <text :x="X0" y="140" font-family="var(--font-mono)" font-size="9" fill="#a8a498">{{ weeks }}w ago</text>
@@ -88,15 +108,17 @@ const tip = computed(() => {
                 <g v-if="tip">
                     <line :x1="tip.x" :y1="TOP" :x2="tip.x" :y2="BOTTOM" stroke="#6c5fc9" stroke-width="1" stroke-dasharray="2 3" opacity=".4" />
                     <circle :cx="tip.x" :cy="tip.y" r="4" fill="#6c5fc9" stroke="#fff" stroke-width="2" />
+                    <rect :x="tip.bx" :y="tip.by" :width="tip.w" :height="tip.h" rx="6" fill="#2b2a27" opacity="0.88" />
                     <text
-                        :x="tip.x"
-                        :y="tip.y - 10"
-                        :text-anchor="tip.anchor"
+                        v-for="(ln, i) in tip.lines"
+                        :key="i"
+                        :x="tip.bx + 7"
+                        :y="tip.by + 15 + i * 13"
                         font-family="var(--font-mono)"
                         font-size="10"
-                        font-weight="600"
-                        fill="#6c5fc9"
-                        >{{ tip.text }}</text
+                        :font-weight="i === 0 ? 600 : 400"
+                        fill="#fff"
+                        >{{ ln }}</text
                     >
                 </g>
                 <rect

@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import Card from '../Components/Card.vue';
 import AppHeader from '../Components/AppHeader.vue';
+import SegmentedControl from '../Components/SegmentedControl.vue';
 
 const props = defineProps({
     report: { type: Object, required: true }, // { weeks, totals, target, softFloor }
@@ -10,6 +11,8 @@ const props = defineProps({
 });
 
 const totals = computed(() => props.report.totals);
+
+const view = ref('Weekly breakdown');
 
 // Same target band as the dashboard: at/above target reads billable (green),
 // within the soft band neutral, below the floor behind (red). null = no data.
@@ -95,7 +98,7 @@ const toggle = (g) => (open.value[g.key] = !isOpen(g));
             <div class="mb-6 font-mono text-[11px] font-semibold uppercase tracking-[0.13em] text-faint">
                 Window totals · {{ windowWeeks }} weeks
             </div>
-            <div class="grid grid-cols-2 gap-y-6 sm:grid-cols-4">
+            <div class="grid grid-cols-2 gap-y-6 sm:grid-cols-5">
                 <div>
                     <div class="mb-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint-3">Capacity</div>
                     <div class="font-mono text-[26px] font-semibold tabular-nums text-ink">{{ totals.capacity }}h</div>
@@ -109,14 +112,23 @@ const toggle = (g) => (open.value[g.key] = !isOpen(g));
                     <div class="font-mono text-[26px] font-semibold tabular-nums text-ink">{{ totals.billable }}h</div>
                 </div>
                 <div>
+                    <div class="mb-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint-3">Billable share</div>
+                    <div class="font-mono text-[26px] font-semibold tabular-nums text-ink">{{ fmtPct(totals.billableShare) }}</div>
+                </div>
+                <div>
                     <div class="mb-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint-3">Utilization</div>
                     <div class="font-mono text-[26px] font-semibold tabular-nums text-accent">{{ fmtPct(totals.utilization) }}</div>
                 </div>
             </div>
         </Card>
 
+        <!-- view switcher: weekly breakdown ⇆ time entries -->
+        <div class="mb-[22px]">
+            <SegmentedControl v-model="view" :options="['Weekly breakdown', 'Time entries']" />
+        </div>
+
         <!-- weekly breakdown -->
-        <Card radius="24px" pad="10px 10px 14px" class="mb-[22px]">
+        <Card v-if="view === 'Weekly breakdown'" radius="24px" pad="10px 10px 14px" class="mb-[22px]">
             <div class="flex items-center justify-between px-5 pb-3.5 pt-[18px]">
                 <div class="text-[16px] font-semibold tracking-[-0.01em]">Weekly breakdown</div>
                 <span class="rounded-full bg-surface-soft px-[11px] py-1.5 font-mono text-[11px] font-medium text-faint-2">
@@ -124,15 +136,15 @@ const toggle = (g) => (open.value[g.key] = !isOpen(g));
                 </span>
             </div>
 
-            <div class="grid grid-cols-[128px_72px_72px_72px_84px_1fr] gap-3 px-5 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-faint-3">
-                <span>Week</span><span class="text-right">Capacity</span><span class="text-right">Worked</span><span class="text-right">Billable</span><span class="text-right">Utilization</span><span>Adjustments</span>
+            <div class="grid grid-cols-[repeat(6,1fr)_2fr] gap-3 px-5 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-faint-3">
+                <span>Week</span><span class="text-right">Capacity</span><span class="text-right">Worked</span><span class="text-right">Billable</span><span class="text-right">Billable share</span><span class="text-right">Utilization</span><span class="pl-5">Adjustments</span>
             </div>
 
             <div class="flex flex-col">
                 <div
                     v-for="(w, i) in report.weeks"
                     :key="w.label"
-                    class="grid grid-cols-[128px_72px_72px_72px_84px_1fr] items-center gap-3 rounded-[14px] border-t border-divider-soft px-5 py-3"
+                    class="grid grid-cols-[repeat(6,1fr)_2fr] items-center gap-3 rounded-[14px] border-t border-divider-soft px-5 py-3"
                     :class="i === 0 ? 'bg-accent-wash' : ''"
                 >
                     <div class="text-[13.5px] font-semibold">
@@ -141,10 +153,11 @@ const toggle = (g) => (open.value[g.key] = !isOpen(g));
                     <div class="text-right font-mono text-[13.5px] tabular-nums text-muted">{{ w.capacity }}h</div>
                     <div class="text-right font-mono text-[13.5px] tabular-nums text-muted">{{ w.worked }}h</div>
                     <div class="text-right font-mono text-[13.5px] tabular-nums text-muted">{{ w.billable }}h</div>
+                    <div class="text-right font-mono text-[13.5px] tabular-nums text-muted">{{ fmtPct(w.billableShare) }}</div>
                     <div class="text-right font-mono text-[14px] font-semibold tabular-nums" :class="utilClass(w.utilization)">
                         {{ fmtPct(w.utilization) }}
                     </div>
-                    <div v-if="w.adjustments.length" class="flex flex-wrap gap-1.5">
+                    <div v-if="w.adjustments.length" class="flex flex-wrap gap-1.5 pl-5">
                         <span
                             v-for="c in w.adjustments"
                             :key="c.hours"
@@ -154,13 +167,13 @@ const toggle = (g) => (open.value[g.key] = !isOpen(g));
                             {{ chipLabel(c.hours) }}<span v-if="c.count > 1" class="text-faint-3">×{{ c.count }}</span>
                         </span>
                     </div>
-                    <div v-else class="text-[12.5px] text-faint-4">—</div>
+                    <div v-else class="pl-5 text-[12.5px] text-faint-4">—</div>
                 </div>
             </div>
         </Card>
 
         <!-- time entries -->
-        <Card radius="24px" pad="10px 10px 14px">
+        <Card v-if="view === 'Time entries'" radius="24px" pad="10px 10px 14px">
             <div class="flex items-center justify-between px-5 pb-3.5 pt-[18px]">
                 <div class="text-[16px] font-semibold tracking-[-0.01em]">Time entries</div>
                 <span class="rounded-full bg-divider px-[11px] py-1.5 font-mono text-[12px] font-medium text-[#8a8578]">

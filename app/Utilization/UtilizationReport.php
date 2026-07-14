@@ -72,9 +72,11 @@ class UtilizationReport
             }
             $bill += $b;
             $cap += $c;
+            $w = ($this->workedByWeek->get($weekStart->toDateString(), 0)) / 60;
             $points[] = [
                 'label' => $weekStart->format('M j'),
                 'value' => round($b / $c * 100, 1),
+                'billableShare' => $w > 0 ? round($b / $w * 100, 1) : null,
             ];
         }
 
@@ -127,6 +129,7 @@ class UtilizationReport
                 'capacity' => round($c, 1),
                 'worked' => round($w, 1),
                 'billable' => round($b, 1),
+                'billableShare' => $w > 0 ? round($b / $w * 100, 1) : null,
                 'utilization' => $c > 0 ? round($b / $c * 100, 1) : null,
                 'adjustments' => $this->weekAdjustments($weekStart),
             ];
@@ -144,6 +147,9 @@ class UtilizationReport
                 'capacity' => round($cap, 1),
                 'worked' => round($worked, 1),
                 'billable' => round($bill, 1),
+                // ponytail: $bill sums only capacity>0 weeks, $worked sums all —
+                // off only in an all-time-off week; use displayed totals as-is.
+                'billableShare' => $worked > 0 ? round($bill / $worked * 100, 1) : null,
                 'utilization' => $cap > 0 ? round($bill / $cap * 100, 1) : null,
             ],
             'target' => $this->target,
