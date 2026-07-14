@@ -50,7 +50,7 @@ class UtilizationTest extends TestCase
         $this->log(1, '2026-06-29', 16);
         // Week B (last week): 24h billable, 8h time off → capacity 24 → 100%.
         $this->log(2, '2026-07-06', 24);
-        CapacityAdjustment::create(['date' => '2026-07-08', 'hours' => -8]);
+        CapacityAdjustment::create(['date' => '2026-07-08', 'type' => 'off', 'hours' => -8, 'status' => 'confirmed']);
         // Week C (current): 20h billable, capacity 32 → 62.5%.
         $this->log(3, self::CURRENT_MONDAY, 20);
         // A non-billable entry must never touch the numerator.
@@ -80,7 +80,7 @@ class UtilizationTest extends TestCase
         $now = CarbonImmutable::parse('2026-07-17 17:00');
         $this->log(1, '2026-06-29', 16);
         $this->log(2, '2026-07-06', 24);
-        CapacityAdjustment::create(['date' => '2026-07-08', 'hours' => -8]);
+        CapacityAdjustment::create(['date' => '2026-07-08', 'type' => 'off', 'hours' => -8, 'status' => 'confirmed']);
         $this->log(3, self::CURRENT_MONDAY, 20);
         // Non-billable: counts toward worked, never toward billable.
         $this->log(99, self::CURRENT_MONDAY, 40, projectId: 2);
@@ -118,7 +118,7 @@ class UtilizationTest extends TestCase
         $now = CarbonImmutable::parse('2026-07-17 17:00');
         $this->log(1, '2026-06-29', 16);
         $this->log(2, '2026-07-06', 24);
-        CapacityAdjustment::create(['date' => '2026-07-08', 'hours' => -8]);
+        CapacityAdjustment::create(['date' => '2026-07-08', 'type' => 'off', 'hours' => -8, 'status' => 'confirmed']);
         $this->log(3, self::CURRENT_MONDAY, 20);
         $this->log(99, self::CURRENT_MONDAY, 40, projectId: 2);
 
@@ -149,7 +149,7 @@ class UtilizationTest extends TestCase
         // lifts capacity to 40; 30h billable then reads 75%, not ~94%.
         $now = CarbonImmutable::parse('2026-07-17 17:00');
         $this->log(1, self::CURRENT_MONDAY, 30);
-        CapacityAdjustment::create(['date' => '2026-07-15', 'hours' => 8]);
+        CapacityAdjustment::create(['date' => '2026-07-15', 'type' => 'extra', 'hours' => 8, 'status' => 'confirmed']);
 
         $report = (new UtilizationReport($now))->generate();
 
@@ -175,7 +175,7 @@ class UtilizationTest extends TestCase
         // used — with a 1-week window the whole window is time off.
         config(['fylla.utilization_window_weeks' => 1]);
         $now = CarbonImmutable::parse('2026-07-13 09:00');
-        CapacityAdjustment::create(['date' => self::CURRENT_MONDAY, 'hours' => -8]);
+        CapacityAdjustment::create(['date' => self::CURRENT_MONDAY, 'type' => 'off', 'hours' => -8, 'status' => 'confirmed']);
 
         $report = (new UtilizationReport($now))->generate();
 

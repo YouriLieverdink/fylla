@@ -33,11 +33,14 @@ _Avoid_: client project (a project can be client-facing but non-billable, and vi
 The hours the user is contracted to work per week — a **32h** base, moved per week by capacity adjustments (below): time off shrinks it, an extra day grows it. The target is 75% of the hours the user *should have been working*, so a week with a day off caps at `32 − 8 = 24h` and a week with an agreed extra day rises to `32 + 8 = 40h`. This is the denominator of the billable target. The workweek is **Mon–Fri**; the **current (partial) week prorates** the base to workdays elapsed so far (`32 × elapsed÷5`), folding in only adjustments whose date has already passed, so the metric reflects pace-to-date rather than dipping every Monday. Completed weeks use the full base ± adjustments.
 
 **Capacity adjustment**:
-A dated, signed delta to a single week's contracted capacity, **owned by Fylla** — Kendo has no such concept. Negative = **time off**; positive = an **extra day**. One adjustment per date. Moves the **denominator** (capacity) only, never the billable numerator.
-_Avoid_: overtime (a positive adjustment is agreed, contracted extra work — not uncounted grind, which the metric captures in the numerator on its own)
+A dated delta to a single week's contracted capacity, **owned by Fylla** — Kendo has no such concept. One adjustment per date, carrying an explicit **type** — **time off**, **holiday**, or **extra day** — and a **planned/confirmed** status (both below). Type, not sign alone, distinguishes the kinds (time off and holiday are both negative). Moves the **denominator** (capacity) only once **confirmed**, and never the billable numerator.
+_Avoid_: overtime (an extra day is agreed, contracted extra work — not uncounted grind, which the metric captures in the numerator on its own)
 
 **Time off**:
-A negative capacity adjustment — hours not worked on a given date (PTO, holiday, sick). Dated hours (e.g. `−8` = a full day off). Falls on a **weekday** (weekend leave is meaningless against a Mon–Fri week). A week fully off contributes zero billable and zero capacity, dropping out of every average.
+A negative capacity adjustment for **vacation** — hours not worked on a given date (PTO, sick). Dated hours (e.g. `−8` = a full day off). Falls on a **weekday** (weekend leave is meaningless against a Mon–Fri week). A week fully off contributes zero billable and zero capacity, dropping out of every average. **Draws the vacation balance** (unlike a holiday).
+
+**Holiday**:
+A negative capacity adjustment for a **public holiday** — shrinks that week's capacity exactly like time off, but is **excluded from the vacation balance** (you don't spend vacation on Kingsday). Entered manually per date. The one adjustment kind that moves capacity yet is ledger-neutral.
 
 **Extra day**:
 A positive capacity adjustment — an agreed extra workday (e.g. `+8`), arranged with the user's manager and **banked toward extra vacation** taken later. Raises that week's capacity (a 40h week instead of 32) so the 75% target scales to the hours actually contracted; without it, a normal-effort extra-work week reads far above target and the metric is wrong. May fall on **any day**, including a weekend.
@@ -48,6 +51,32 @@ The total hours logged in a week — Σ of **all** Worklogs that week, billable 
 **Billable target / utilization**:
 `billable-hours ÷ contracted-capacity`, cumulative over a **rolling window of ~1–3 months** (a configurable number of weeks, default 13), target **75%**. The **headline** is that single cumulative figure; the **trend** plots each week's own utilization (per-week, not running-cumulative) to show volatility. The user's **personal** metric only (the promotion case, Jan 2027) — never computed for other developers, and distinct from the client monthly targets in Project management below. The target is **soft, not a cliff** — 73% is acceptable; 75% is the aim. Reported as a trend, not pass/fail. Distinct from hours-actually-worked: a light productive week must not inflate it, a heavy week must not be required to hit it.
 _Avoid_: productivity, efficiency (those are different, and calm mode already uses "efficiency")
+
+### Vacation ledger
+
+**Vacation ledger**:
+A per-year running account of vacation entitlement, in **vacation hours**. The same capacity-adjustment rows that move the utilization denominator double as its inflows and outflows: an **extra day** (positive) banks hours, **time off** (negative) draws them down. Purely a Fylla-owned view over dated adjustments plus a yearly accrual input — no new provider data. Carries over year to year.
+
+**Vacation hours**:
+The unit of the ledger — hours, **decimal** (e.g. `41,19`). Converted for display to **days** (`÷8`) and **weeks** (`÷32`, the contracted week). Individual day-cell adjustments are decimal too (e.g. a `1,5h` early finish), not restricted to whole days.
+
+**Vacation accrual** (Dutch: _Vakantieuren_):
+The vacation hours granted for a given year — a **manually entered decimal, one per year** (statutory accrual varies; a partial first year is smaller). The only new stored input the ledger needs.
+
+**Banked extra** (Dutch: _Meeruren_):
+Σ of the year's **positive** capacity adjustments (extra days). Adds to the balance. Derived, not stored separately.
+
+**Taken** (Dutch: _Opgenomen_):
+Σ of the year's **time-off** adjustments only (the vacation kind). A negative number that draws the balance down. **Holidays are excluded.** Derived, not stored separately.
+
+**Carryover** (Dutch: _Restant_):
+The previous year's closing balance, opening the current year. Balances roll forward indefinitely.
+
+**Vacation balance** (Dutch: _Saldo_):
+`carryover + accrual + banked-extra + taken` for a year, in vacation hours; shown also in days and weeks. Answers "how much vacation is left" and "can I afford another trip later this year". Counts **planned and confirmed** adjustments alike (see below).
+
+**Planned / confirmed**:
+A status on a capacity adjustment. **Planned** = it exists only in Fylla, still to be entered into the external system of record (the official leave tracker). **Confirmed** = already entered there. New adjustments default to **planned**. The two consumers treat status differently: the **vacation balance counts both** (so penciled-in trips show against affordability), but only **confirmed** adjustments move the **utilization capacity denominator** — until a day off is confirmed, contracted hours are unchanged for the metric. Planned cells render distinctly (hollow) so the still-to-enter work is visible at a glance.
 
 ### Estimation
 

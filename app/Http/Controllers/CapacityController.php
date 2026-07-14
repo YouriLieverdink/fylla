@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreCapacityAdjustmentRequest;
 use App\Models\CapacityAdjustment;
+use App\Models\VacationAccrual;
+use App\Vacation\VacationLedger;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -12,46 +14,73 @@ use Inertia\Response;
 
 class CapacityController extends Controller
 {
-    /** Time off & extra days: one signed row per date (ADR-0008). */
-    public function index(): Response
+    /**
+     * Time off & vacation: a year calendar grid over capacity adjustments plus a
+     * vacation ledger (ADR-0010). One row per date carries type + status; the
+     * ledger is derived from those rows plus a per-year accrual.
+     */
+    public function index(Request $request, VacationLedger $ledger): Response
     {
+        $overview = $ledger->overview((int) CarbonImmutable::now()->year);
+        $years = array_keys($overview);
+        $year = (int) ($request->integer('year') ?: CarbonImmutable::now()->year);
+        if (! in_array($year, $years, true)) {
+            $year = (int) CarbonImmutable::now()->year;
+        }
+
         return Inertia::render('Capacity', [
-            'adjustments' => CapacityAdjustment::orderByDesc('date')
-                ->get(['id', 'date', 'hours', 'reason']),
+            'year' => $year,
+            'years' => $years,
+            'adjustments' => CapacityAdjustment::whereYear('date', $year)
+                ->orderBy('date')
+                ->get(['id', 'date', 'type', 'hours', 'status', 'reason']),
+            'accrual' => VacationAccrual::where('year', $year)->value('hours'),
+            'ledger' => $overview[$year],
+            'overview' => array_values($overview),
             'baseCapacity' => (int) config('fylla.contracted_hours_per_week'),
+            'offWeekday' => (int) config('fylla.contracted_off_weekday'),
         ]);
     }
 
-    /** Upsert on date. Time off expands to weekdays; extra day is one date. */
+    /**
+     * Upsert per date. Off, holiday and sick expand over weekdays; an extra day
+     * is a single date, any day. Type is written directly (ADR-0010); the sign
+     * still follows the type (everything but extra is negative; ADR-0008).
+     */
     public function store(StoreCapacityAdjustmentRequest $request): RedirectResponse
     {
         $data = $request->validated();
-        $mag = (int) $data['hours'];
-        $signed = $data['type'] === 'off' ? -$mag : $mag;
-        $reason = $data['reason'] ?? null;
+        $signed = $data['type'] === 'extra' ? abs($data['hours']) : -abs($data['hours']);
 
         foreach ($this->dates($data) as $date) {
             CapacityAdjustment::updateOrCreate(
                 ['date' => $date],
-                ['hours' => $signed, 'reason' => $reason],
+                [
+                    'type' => $data['type'],
+                    'hours' => $signed,
+                    'status' => $data['status'] ?? 'planned',
+                    'reason' => $data['reason'] ?? null,
+                ],
             );
         }
 
         return back();
     }
 
-    /** Edit hours/reason in place; the date is immutable. */
+    /** Edit type/hours/status/reason in place; the date is immutable. */
     public function update(Request $request, CapacityAdjustment $capacityAdjustment): RedirectResponse
     {
         $data = $request->validate([
-            'type' => ['required', 'in:off,extra'],
-            'hours' => ['required', 'integer', 'between:1,24'],
+            'type' => ['required', 'in:off,holiday,sick,extra'],
+            'hours' => ['required', 'numeric', 'between:0.25,24'],
+            'status' => ['required', 'in:planned,confirmed'],
             'reason' => ['nullable', 'string', 'max:255'],
         ]);
-        $mag = (int) $data['hours'];
 
         $capacityAdjustment->update([
-            'hours' => $data['type'] === 'off' ? -$mag : $mag,
+            'type' => $data['type'],
+            'hours' => $data['type'] === 'extra' ? abs($data['hours']) : -abs($data['hours']),
+            'status' => $data['status'],
             'reason' => $data['reason'] ?? null,
         ]);
 
@@ -65,12 +94,26 @@ class CapacityController extends Controller
         return back();
     }
 
-    /** Time off → Mon–Fri days in [start, end]; extra day → [start]. */
+    /** Set the manually-entered vacation accrual for a year (Vakantieuren). */
+    public function accrual(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'year' => ['required', 'integer', 'between:2000,2100'],
+            'hours' => ['required', 'numeric', 'between:0,2000'],
+        ]);
+
+        VacationAccrual::updateOrCreate(['year' => $data['year']], ['hours' => $data['hours']]);
+
+        return back();
+    }
+
+    /** Off/holiday/sick → Mon–Fri days in [start, end] (skipping the contracted
+     * off-day); extra day → [start]. */
     private function dates(array $data): array
     {
         $start = CarbonImmutable::parse($data['start']);
 
-        if ($data['type'] !== 'off') {
+        if ($data['type'] === 'extra') {
             return [$start->toDateString()];
         }
 

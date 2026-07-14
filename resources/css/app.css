@@ -46,6 +46,21 @@
     --color-behind: #b18749;
     --color-behind-tint: #f3ecdf;
 
+    /* holiday — a distinct fourth hue for public holidays on the capacity grid
+       (ADR-0010). A dusty slate blue; accent periwinkle stays reserved for the
+       billable metric and never touches the grid. */
+    --color-holiday: #6f88a6;
+    --color-holiday-tint: #e7edf3;
+
+    /* sick — a muted rose; capacity-affecting but ledger-neutral like holiday. */
+    --color-sick: #bd8a86;
+    --color-sick-tint: #f3e9e8;
+
+    /* off (vacation) — a warm mauve-violet. Deliberately distinct from the
+       periwinkle accent, which stays reserved for the billable metric. */
+    --color-off: #9482ba;
+    --color-off-tint: #ece7f5;
+
     /* canonical radius scale: 8 · 12 · 20 · full */
     --radius-sm: 8px;
     --radius-md: 12px;

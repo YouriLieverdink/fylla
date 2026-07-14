@@ -12,8 +12,8 @@ use Illuminate\Support\Collection;
  * capacity-adjustment table; no HTTP, so it is directly testable.
  *
  * - Numerator: billable minutes only, bucketed by ISO week of started_at.
- * - Denominator (capacity) per week: contracted hours + Σ signed adjustments
- *   that week (time off is stored negative, an extra day positive; ADR-0008).
+ * - Denominator (capacity) per week: contracted hours + Σ signed *confirmed*
+ *   adjustments that week (off/holiday negative, extra positive; ADR-0008/0010).
  *   The current (partial) week prorates over Mon–Fri elapsed workdays.
  * - Headline = one cumulative Σbillable ÷ Σcapacity over the window.
  * - Trend points = each week's own billable ÷ capacity (not running-cumulative).
@@ -204,7 +204,11 @@ class UtilizationReport
 
         $this->workedByWeek = $byWeek($worklogs);
         $this->billableByWeek = $byWeek($worklogs->filter(fn ($w) => $w->billable));
-        $this->adjustments = CapacityAdjustment::whereBetween('date', [$rangeStart, $rangeEnd])->get();
+        // Only confirmed adjustments move the capacity denominator; planned ones
+        // are penciled-in and must not shift the metric (ADR-0010).
+        $this->adjustments = CapacityAdjustment::whereBetween('date', [$rangeStart, $rangeEnd])
+            ->where('status', 'confirmed')
+            ->get();
     }
 
     /** @return array{0: float, 1: float} [billableHours, capacityHours] */

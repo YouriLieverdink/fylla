@@ -3,428 +3,309 @@ import { computed, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 import Card from '../Components/Card.vue';
 import AppHeader from '../Components/AppHeader.vue';
+import CalendarGrid from '../Components/CalendarGrid.vue';
+import CellEditor from '../Components/CellEditor.vue';
 
 const props = defineProps({
+    year: { type: Number, required: true },
+    years: { type: Array, default: () => [] },
     adjustments: { type: Array, default: () => [] },
+    accrual: { default: null },
+    ledger: { type: Object, required: true },
+    overview: { type: Array, default: () => [] },
     baseCapacity: { type: Number, default: 32 },
+    offWeekday: { type: Number, default: 5 },
 });
 
 const opts = { preserveScroll: true };
 
-// Form state. hours is a magnitude (1–24); the sign comes from `type`.
-const type = ref('off'); // 'off' | 'extra'
-const start = ref('');
-const end = ref('');
-const hours = ref(8);
-const reason = ref('');
-const editingId = ref(null);
-
-const isOff = computed(() => type.value === 'off');
-
-function pickOff() {
-    type.value = 'off';
+// Dutch-style number: 2 dp, trailing zeros trimmed, dot → comma.
+function nf(n) {
+    return String(Math.round(Number(n) * 100) / 100).replace('.', ',');
 }
-function pickExtra() {
-    type.value = 'extra';
-    end.value = '';
-}
-function inc() {
-    hours.value = Math.min(24, hours.value + 1);
-}
-function dec() {
-    hours.value = Math.max(1, hours.value - 1);
+function signed(n) {
+    const v = Number(n);
+    if (v === 0) return '0';
+    return (v > 0 ? '+' : '−') + nf(Math.abs(v));
 }
 
-function reset() {
-    editingId.value = null;
-    start.value = '';
-    end.value = '';
-    reason.value = '';
-    hours.value = 8;
+function pickYear(y) {
+    router.get('/capacity', { year: y }, { preserveState: false, preserveScroll: true });
 }
 
-function submit() {
-    if (!start.value) return;
-    const payload = { type: type.value, hours: hours.value, reason: reason.value };
-
-    if (editingId.value) {
-        router.patch('/capacity/' + editingId.value, payload, { ...opts, onSuccess: reset });
+// ── Ledger accrual (inline edit) ──────────────────────────────────────────
+const editingAccrual = ref(false);
+const accrualInput = ref('');
+function editAccrual() {
+    accrualInput.value = props.accrual != null ? nf(props.accrual) : '';
+    editingAccrual.value = true;
+}
+function saveAccrual() {
+    const h = Number(String(accrualInput.value).replace(',', '.'));
+    if (Number.isNaN(h)) {
+        editingAccrual.value = false;
         return;
     }
-    payload.start = start.value;
-    if (isOff.value && end.value) payload.end = end.value;
-    router.post('/capacity', payload, { ...opts, onSuccess: reset });
-}
-
-function editRow(row) {
-    editingId.value = row.id;
-    type.value = row.hours < 0 ? 'off' : 'extra';
-    start.value = iso(row.date);
-    end.value = iso(row.date);
-    hours.value = Math.abs(row.hours);
-    reason.value = row.reason ?? '';
-}
-
-function deleteRow(row) {
-    router.delete('/capacity/' + row.id, {
+    router.post('/capacity/accrual', { year: props.year, hours: h }, {
         ...opts,
-        onSuccess: () => {
-            if (editingId.value === row.id) reset();
-        },
+        onSuccess: () => (editingAccrual.value = false),
     });
 }
 
-// dates arrive as ISO datetime strings from the model cast; keep the day only.
-function iso(d) {
-    return String(d).slice(0, 10);
+// The planned (still-to-confirm) portion already folded into the balance. The
+// balance counts planned + confirmed alike, so this is what's penciled in but
+// not yet entered into the official leave system. Holidays don't touch the
+// ledger, so this is banked + taken planned sub-sums only.
+const bankedPlanned = computed(() => Number(props.ledger.bankedPlanned));
+const takenPlanned = computed(() => Number(props.ledger.takenPlanned));
+const plannedInBalance = computed(() => bankedPlanned.value + takenPlanned.value);
+
+// ── Editor popover ────────────────────────────────────────────────────────
+const editor = ref({ open: false, x: 0, y: 0, start: '', end: '', existing: null });
+function onSelect(sel) {
+    editor.value = { open: true, ...sel };
 }
+function closeEditor() {
+    editor.value.open = false;
+}
+function save(payload) {
+    if (payload.id) {
+        router.patch('/capacity/' + payload.id, payload, { ...opts, onSuccess: closeEditor });
+    } else {
+        router.post('/capacity', payload, { ...opts, onSuccess: closeEditor });
+    }
+}
+function remove(id) {
+    router.delete('/capacity/' + id, { ...opts, onSuccess: closeEditor });
+}
+
+// ── Trips list: fold consecutive same-type/reason weekday runs ────────────
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 function parse(d) {
-    const [y, m, day] = iso(d).split('-').map(Number);
+    const [y, m, day] = String(d).slice(0, 10).split('-').map(Number);
     return new Date(y, m - 1, day);
 }
-function dateMain(d) {
-    const dt = parse(d);
-    return DOW[dt.getDay()] + ' ' + dt.getDate() + ' ' + MONTHS[dt.getMonth()];
+function iso(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
-// compact span for a collapsed run; a/b are the oldest/newest ISO dates.
-function rangeLabel(a, b) {
-    const da = parse(a);
-    const db = parse(b);
-    const sameMonth = da.getMonth() === db.getMonth() && da.getFullYear() === db.getFullYear();
-    return sameMonth
-        ? da.getDate() + ' – ' + db.getDate() + ' ' + MONTHS[db.getMonth()]
-        : da.getDate() + ' ' + MONTHS[da.getMonth()] + ' – ' + db.getDate() + ' ' + MONTHS[db.getMonth()];
-}
-// the weekday before `d` (skips Sat/Sun), so a run bridges the weekend gap.
-function prevWeekday(d) {
+// The next working day after d (skips weekends + the contracted off-day).
+function nextWorkday(d) {
     const dt = parse(d);
     do {
-        dt.setDate(dt.getDate() - 1);
-    } while (dt.getDay() === 0 || dt.getDay() === 6);
-    return fmtISO(dt);
+        dt.setDate(dt.getDate() + 1);
+    } while (dt.getDay() === 0 || dt.getDay() === 6 || (dt.getDay() === 0 ? 7 : dt.getDay()) === props.offWeekday);
+    return iso(dt);
 }
-// Date → 'YYYY-MM-DD'.
-function fmtISO(dt) {
-    return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+function dayLabel(d) {
+    const dt = parse(d);
+    return dt.getDate() + ' ' + MONTHS[dt.getMonth()];
 }
-// Fold the (date-desc) rows into runs: same signed hours + reason, and each row
-// the next weekday of the previous. Display-only — rows stay one per date.
-const groups = computed(() => {
+
+const trips = computed(() => {
     const out = [];
-    for (const r of props.adjustments) {
+    for (const a of props.adjustments) {
         const g = out[out.length - 1];
-        const head = g && g.rows[0];
         const tail = g && g.rows[g.rows.length - 1];
-        if (g && r.hours === head.hours && (r.reason || '') === (head.reason || '') && iso(r.date) === prevWeekday(tail.date)) {
-            g.rows.push(r);
+        if (
+            g &&
+            g.type === a.type &&
+            (g.reason || '') === (a.reason || '') &&
+            g.status === a.status &&
+            String(a.date).slice(0, 10) === nextWorkday(tail.date)
+        ) {
+            g.rows.push(a);
         } else {
-            out.push({ rows: [r] });
+            out.push({ type: a.type, reason: a.reason, status: a.status, rows: [a] });
         }
     }
     return out;
 });
 
-const expanded = ref({});
-function toggle(id) {
-    expanded.value[id] = !expanded.value[id];
+const typeMeta = {
+    off: { label: 'Time off', chip: 'bg-off-tint text-off' },
+    holiday: { label: 'Holiday', chip: 'bg-holiday-tint text-holiday' },
+    sick: { label: 'Sick', chip: 'bg-sick-tint text-sick' },
+    extra: { label: 'Extra day', chip: 'bg-track-tint text-track' },
+};
+function tripRange(t) {
+    const a = t.rows[0].date;
+    const b = t.rows[t.rows.length - 1].date;
+    return t.rows.length === 1 ? dayLabel(a) : dayLabel(a) + ' – ' + dayLabel(b);
 }
-
-const currentYear = new Date().getFullYear();
-
-// Group the (date-desc) runs by year so prior years can collapse. A run that
-// bridges Dec/Jan lands in its newest row's year — rare, close enough.
-const groupsByYear = computed(() => {
-    const out = [];
-    for (const g of groups.value) {
-        const y = parse(g.rows[0].date).getFullYear();
-        let bucket = out.find((b) => b.year === y);
-        if (!bucket) {
-            bucket = { year: y, groups: [], entries: 0 };
-            out.push(bucket);
-        }
-        bucket.groups.push(g);
-        bucket.entries += g.rows.length;
-    }
-    return out;
-});
-const openYears = ref({});
-function toggleYear(y) {
-    openYears.value[y] = !openYears.value[y];
+function tripHours(t) {
+    return t.rows.reduce((s, r) => s + Math.abs(Number(r.hours)), 0);
 }
-
-const offCount = computed(() => props.adjustments.filter((r) => r.hours < 0).length);
-const extraCount = computed(() => props.adjustments.filter((r) => r.hours > 0).length);
-const pill = (n, one, many) => n + (n === 1 ? one : many);
-
-const submitLabel = computed(() =>
-    editingId.value ? 'Save changes' : isOff.value ? 'Add time off' : 'Add extra day',
-);
-const helperText = computed(() =>
-    isOff.value
-        ? 'A date range, expanded to weekdays only — weekends are skipped. Each day subtracts from that week’s capacity.'
-        : 'A single date, any day of the week. Adds to that week’s capacity, banked toward vacation.',
-);
-const signPreview = computed(() => (isOff.value ? '−' : '+') + (Math.abs(hours.value) || 8) + 'h');
 </script>
 
 <template>
     <div class="mx-auto max-w-[1180px] px-11 pb-[120px] pt-11">
-        <!-- header -->
         <AppHeader />
 
-        <!-- title + formula chip -->
-        <div class="mb-8 flex items-end justify-between gap-8">
-            <div>
-                <h1 class="mb-3 text-[34px] font-bold leading-[1.05] tracking-[-0.03em]">Time off &amp; extra days</h1>
-                <p class="max-w-[56ch] text-[15px] leading-[1.55] text-muted">
-                    One signed adjustment per date against your contracted week.
-                    <strong class="font-semibold text-ink-soft">Time off</strong> subtracts hours; an agreed
-                    <strong class="font-semibold text-ink-soft">extra day</strong> adds them, banked toward vacation.
-                </p>
-            </div>
-            <div class="flex-none rounded-[18px] border border-card-border bg-surface px-[22px] py-[18px] text-right shadow-card">
-                <div class="mb-2.5 font-mono text-[10px] font-semibold uppercase tracking-[0.13em] text-faint">Weekly capacity</div>
-                <div class="flex items-baseline justify-end gap-2 font-mono text-[15px] font-medium tabular-nums text-muted">
-                    <span class="font-semibold text-ink">{{ baseCapacity }}h</span>
-                    <span class="text-faint-4">base</span>
-                    <span class="text-faint-4">±</span>
-                    <span class="text-faint-4">Σ adjustments</span>
-                </div>
-            </div>
+        <!-- title -->
+        <div class="mb-8">
+            <h1 class="mb-3 text-[34px] font-bold leading-[1.05] tracking-[-0.03em]">Time off &amp; vacation</h1>
+            <p class="max-w-[62ch] text-[15px] leading-[1.55] text-muted">
+                A year at a glance. Click a day or drag a range to plan
+                <strong class="font-semibold text-ink-soft">time off</strong>, a
+                <strong class="font-semibold text-ink-soft">holiday</strong>, or an
+                <strong class="font-semibold text-ink-soft">extra day</strong>. The ledger tracks your running vacation
+                balance in hours.
+            </p>
         </div>
 
-        <!-- two-column layout -->
-        <div class="grid items-start gap-[22px] lg:grid-cols-[400px_1fr]">
-            <!-- form -->
-            <Card radius="24px" pad="28px 30px" class="sticky top-6">
-                <div class="mb-5 flex items-center justify-between">
-                    <div class="font-mono text-[11px] font-semibold uppercase tracking-[0.13em] text-faint">
-                        {{ editingId ? 'Edit adjustment' : 'Add adjustment' }}
+        <!-- ledger panel -->
+        <Card radius="24px" pad="26px 30px" class="mb-[22px]">
+            <div class="flex flex-wrap items-end justify-between gap-8">
+                <!-- equation -->
+                <div class="flex flex-wrap items-end gap-x-6 gap-y-4">
+                    <div>
+                        <div class="mb-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.11em] text-faint">Carryover</div>
+                        <div class="font-mono text-[19px] font-semibold tabular-nums text-muted">{{ nf(ledger.carryover) }}<span class="text-[13px] text-faint-3">h</span></div>
                     </div>
-                    <button
-                        v-if="editingId"
-                        class="cursor-pointer px-1.5 py-1 text-[12px] font-semibold text-faint-2 hover:text-muted"
-                        @click="reset"
-                    >
-                        Cancel
-                    </button>
-                </div>
-
-                <!-- type toggle -->
-                <div class="mb-5 flex gap-0.5 rounded-[14px] bg-sunken p-1">
-                    <button
-                        class="flex flex-1 cursor-pointer items-center justify-center gap-[7px] rounded-[11px] py-[11px] text-[13.5px] font-semibold transition"
-                        :class="isOff ? 'bg-white text-ink shadow-[0_2px_6px_-2px_rgba(42,41,38,0.16)]' : 'text-[#8a8578]'"
-                        @click="pickOff"
-                    >
-                        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M3 7h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
-                        Time off
-                    </button>
-                    <button
-                        class="flex flex-1 cursor-pointer items-center justify-center gap-[7px] rounded-[11px] py-[11px] text-[13.5px] font-semibold transition"
-                        :class="!isOff ? 'bg-white text-ink shadow-[0_2px_6px_-2px_rgba(42,41,38,0.16)]' : 'text-[#8a8578]'"
-                        @click="pickExtra"
-                    >
-                        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 3v8M3 7h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
-                        Extra day
-                    </button>
-                </div>
-
-                <!-- helper -->
-                <div class="mb-5 flex items-start gap-[9px] rounded-[12px] border border-border-soft bg-surface-soft px-[13px] py-[11px]">
-                    <span class="mt-[5px] h-1.5 w-1.5 flex-none rounded-full" :class="isOff ? 'bg-[#8a8578]' : 'bg-track'"></span>
-                    <span class="text-[12.5px] leading-[1.45] text-muted">{{ helperText }}</span>
-                </div>
-
-                <!-- date fields -->
-                <div v-if="isOff" class="mb-4 grid grid-cols-2 gap-3">
-                    <label class="block">
-                        <span class="mb-2 block font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint">From</span>
-                        <input v-model="start" type="date" :disabled="!!editingId" class="fyl-date w-full rounded-[11px] border border-[#e0dbd0] bg-white px-3 py-[11px] font-mono text-[13px] font-medium text-ink outline-none focus:border-accent-tint-2 disabled:opacity-60" />
-                    </label>
-                    <label class="block">
-                        <span class="mb-2 block font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint">To</span>
-                        <input v-model="end" type="date" :disabled="!!editingId" class="fyl-date w-full rounded-[11px] border border-[#e0dbd0] bg-white px-3 py-[11px] font-mono text-[13px] font-medium text-ink outline-none focus:border-accent-tint-2 disabled:opacity-60" />
-                    </label>
-                </div>
-                <div v-else class="mb-4">
-                    <label class="block">
-                        <span class="mb-2 block font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint">Date</span>
-                        <input v-model="start" type="date" :disabled="!!editingId" class="fyl-date w-full rounded-[11px] border border-[#e0dbd0] bg-white px-3 py-[11px] font-mono text-[13px] font-medium text-ink outline-none focus:border-accent-tint-2 disabled:opacity-60" />
-                    </label>
-                </div>
-
-                <!-- hours stepper -->
-                <div class="mb-4">
-                    <span class="mb-2 block font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint">Hours per day</span>
-                    <div class="flex items-center gap-2.5">
-                        <button class="flex h-[42px] w-[42px] flex-none cursor-pointer items-center justify-center rounded-[11px] border border-[#e0dbd0] bg-white text-[20px] text-muted transition hover:border-accent-tint-2 hover:bg-[#faf9fd]" @click="dec">−</button>
-                        <div class="flex flex-1 items-baseline justify-center gap-1 rounded-[11px] border border-[#e0dbd0] bg-surface-soft py-[9px]">
-                            <span class="font-mono text-[22px] font-semibold tabular-nums text-ink">{{ hours }}</span>
-                            <span class="font-mono text-[13px] font-medium text-faint-2">h</span>
+                    <div class="pb-1 text-[16px] font-medium text-faint-4">+</div>
+                    <div>
+                        <div class="mb-1.5 flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.11em] text-faint">
+                            Accrual
+                            <svg v-if="!editingAccrual" width="11" height="11" viewBox="0 0 16 16" fill="none" class="cursor-pointer" @click="editAccrual"><path d="M11 2.5l2.5 2.5M3 13l7.5-7.5 2.5 2.5L5.5 15.5 2.5 16l.5-3z" stroke="#b6b1a6" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
                         </div>
-                        <button class="flex h-[42px] w-[42px] flex-none cursor-pointer items-center justify-center rounded-[11px] border border-[#e0dbd0] bg-white text-[20px] text-muted transition hover:border-accent-tint-2 hover:bg-[#faf9fd]" @click="inc">+</button>
-                    </div>
-                </div>
-
-                <!-- reason -->
-                <div class="mb-[22px]">
-                    <span class="mb-2 block font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint">
-                        Reason <span class="normal-case tracking-normal text-faint-4">· optional</span>
-                    </span>
-                    <input
-                        v-model="reason"
-                        type="text"
-                        :placeholder="isOff ? 'Holiday, sick, PTO…' : 'Agreed extra day…'"
-                        class="w-full rounded-[11px] border border-[#e0dbd0] bg-white px-3 py-[11px] text-[13.5px] text-ink outline-none placeholder:text-faint-3 focus:border-accent-tint-2"
-                    />
-                </div>
-
-                <!-- preview + submit -->
-                <div class="flex items-center gap-3">
-                    <div class="flex-1 text-[12px] leading-[1.4] text-faint-2">
-                        Stored as
-                        <span class="font-mono text-[12px] font-semibold tabular-nums" :class="isOff ? 'text-behind' : 'text-track'">{{ signPreview }}</span>
-                        {{ isOff ? ' per weekday' : ' on this date' }}
-                    </div>
-                    <button
-                        class="flex-none cursor-pointer rounded-[13px] bg-accent px-[22px] py-[13px] text-[14px] font-semibold text-white shadow-btn"
-                        @click="submit"
-                    >
-                        {{ submitLabel }}
-                    </button>
-                </div>
-            </Card>
-
-            <div class="flex flex-col gap-[22px]">
-            <!-- list -->
-            <Card radius="24px" pad="10px 10px 14px">
-                <div class="flex items-center justify-between px-5 pb-3.5 pt-[18px]">
-                    <div class="text-[16px] font-semibold tracking-[-0.01em]">All adjustments</div>
-                    <div class="flex items-center gap-2">
-                        <span class="rounded-full bg-divider px-[11px] py-1.5 font-mono text-[12px] font-medium text-[#8a8578]">{{ pill(offCount, ' day off', ' days off') }}</span>
-                        <span class="rounded-full bg-track-tint px-[11px] py-1.5 font-mono text-[12px] font-medium text-track">{{ pill(extraCount, ' extra day', ' extra days') }}</span>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-[150px_104px_1fr_76px] gap-3 px-5 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-faint-3">
-                    <span>Date</span><span>Adjustment</span><span>Reason</span><span></span>
-                </div>
-
-                <div v-if="adjustments.length" class="flex flex-col">
-                    <template v-for="bucket in groupsByYear" :key="bucket.year">
-                        <!-- prior years collapse behind a toggle; current year is always open -->
+                        <input
+                            v-if="editingAccrual"
+                            v-model="accrualInput"
+                            type="text"
+                            inputmode="decimal"
+                            autofocus
+                            class="w-[86px] rounded-[9px] border border-accent-tint-2 bg-white px-2 py-1 font-mono text-[18px] font-semibold tabular-nums text-ink outline-none"
+                            @keydown.enter="saveAccrual"
+                            @blur="saveAccrual"
+                        />
                         <button
-                            v-if="bucket.year !== currentYear"
-                            class="flex cursor-pointer items-center gap-2 border-t border-divider-soft px-5 py-3 text-left font-mono text-[12px] font-semibold text-faint-2 hover:text-muted"
-                            @click="toggleYear(bucket.year)"
+                            v-else
+                            class="cursor-pointer font-mono text-[19px] font-semibold tabular-nums text-muted hover:text-ink"
+                            @click="editAccrual"
                         >
-                            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" class="transition-transform" :class="openYears[bucket.year] ? 'rotate-90' : ''">
-                                <path d="M5 3l3.5 3.5L5 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-                            </svg>
-                            {{ bucket.year }} · {{ bucket.entries }} entries
+                            {{ accrual != null ? nf(accrual) : '—' }}<span class="text-[13px] text-faint-3">h</span>
                         </button>
-                        <template v-if="bucket.year === currentYear || openYears[bucket.year]">
-                    <template v-for="group in bucket.groups" :key="group.rows[0].id">
-                        <!-- single date: a plain row -->
-                        <div
-                            v-if="group.rows.length === 1"
-                            class="grid grid-cols-[150px_104px_1fr_76px] items-center gap-3 rounded-[14px] border-t border-divider-soft px-5 py-3.5"
-                            :class="editingId === group.rows[0].id ? 'bg-accent-wash' : ''"
-                        >
-                            <div class="min-w-0">
-                                <div class="whitespace-nowrap text-[14px] font-semibold">{{ dateMain(group.rows[0].date) }}</div>
-                                <div class="mt-[3px] font-mono text-[11px] font-medium text-faint-3">{{ parse(group.rows[0].date).getFullYear() }}</div>
-                            </div>
-                            <div>
-                                <span
-                                    class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-[12px] font-semibold tabular-nums"
-                                    :class="group.rows[0].hours < 0 ? 'bg-divider text-muted' : 'bg-track-tint text-track'"
-                                >
-                                    {{ (group.rows[0].hours < 0 ? 'Off ' : 'Extra ') + (group.rows[0].hours > 0 ? '+' : '−') + Math.abs(group.rows[0].hours) }}
-                                </span>
-                            </div>
-                            <div class="min-w-0 truncate text-[13.5px]" :class="group.rows[0].reason ? 'text-ink-soft' : 'text-faint-4'">
-                                {{ group.rows[0].reason || '—' }}
-                            </div>
-                            <div class="flex justify-end gap-1">
-                                <button title="Edit" class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-[9px] border border-transparent transition hover:border-[#e0dbd0] hover:bg-[#faf9fd]" @click="editRow(group.rows[0])">
-                                    <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M11 2.5l2.5 2.5M3 13l7.5-7.5 2.5 2.5L5.5 15.5 2.5 16l.5-3z" stroke="#8a8578" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" /></svg>
-                                </button>
-                                <button title="Delete" class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-[9px] border border-transparent transition hover:border-[#eccaca] hover:bg-[#fbf2f1]" @click="deleteRow(group.rows[0])">
-                                    <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 4.5h10M6.5 4V2.8h3V4M4.2 4.5l.6 9h6.4l.6-9" stroke="#b5877a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" /></svg>
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- run: one collapsible summary row -->
-                        <template v-else>
-                            <div
-                                class="grid cursor-pointer grid-cols-[150px_104px_1fr_76px] items-center gap-3 rounded-[14px] border-t border-divider-soft px-5 py-3.5 hover:bg-surface-soft"
-                                @click="toggle(group.rows[0].id)"
-                            >
-                                <div class="min-w-0">
-                                    <div class="whitespace-nowrap text-[14px] font-semibold">{{ rangeLabel(group.rows[group.rows.length - 1].date, group.rows[0].date) }}</div>
-                                    <div class="mt-[3px] font-mono text-[11px] font-medium text-faint-3">{{ parse(group.rows[0].date).getFullYear() }} · {{ group.rows.length }} days</div>
-                                </div>
-                                <div>
-                                    <span
-                                        class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-[12px] font-semibold tabular-nums"
-                                        :class="group.rows[0].hours < 0 ? 'bg-divider text-muted' : 'bg-track-tint text-track'"
-                                    >
-                                        {{ (group.rows[0].hours < 0 ? 'Off ' : 'Extra ') + (group.rows[0].hours > 0 ? '+' : '−') + Math.abs(group.rows[0].hours) }}
-                                    </span>
-                                </div>
-                                <div class="min-w-0 truncate text-[13.5px]" :class="group.rows[0].reason ? 'text-ink-soft' : 'text-faint-4'">
-                                    {{ group.rows[0].reason || '—' }}
-                                </div>
-                                <div class="flex justify-end pr-1.5 text-faint-2">
-                                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" class="transition-transform" :class="expanded[group.rows[0].id] ? 'rotate-90' : ''">
-                                        <path d="M5 3l3.5 3.5L5 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-                                    </svg>
-                                </div>
-                            </div>
-
-                            <!-- expanded members: edit/delete per date -->
-                            <template v-if="expanded[group.rows[0].id]">
-                                <div
-                                    v-for="row in group.rows"
-                                    :key="row.id"
-                                    class="grid grid-cols-[150px_104px_1fr_76px] items-center gap-3 rounded-[14px] bg-surface-soft py-2.5 pl-9 pr-5"
-                                    :class="editingId === row.id ? '!bg-accent-wash' : ''"
-                                >
-                                    <div class="min-w-0 whitespace-nowrap text-[13px] font-medium text-muted">{{ dateMain(row.date) }}</div>
-                                    <div></div>
-                                    <div class="min-w-0 truncate text-[13px]" :class="row.reason ? 'text-muted' : 'text-faint-4'">{{ row.reason || '—' }}</div>
-                                    <div class="flex justify-end gap-1">
-                                        <button title="Edit" class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-[9px] border border-transparent transition hover:border-[#e0dbd0] hover:bg-white" @click="editRow(row)">
-                                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11 2.5l2.5 2.5M3 13l7.5-7.5 2.5 2.5L5.5 15.5 2.5 16l.5-3z" stroke="#8a8578" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" /></svg>
-                                        </button>
-                                        <button title="Delete" class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-[9px] border border-transparent transition hover:border-[#eccaca] hover:bg-white" @click="deleteRow(row)">
-                                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 4.5h10M6.5 4V2.8h3V4M4.2 4.5l.6 9h6.4l.6-9" stroke="#b5877a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" /></svg>
-                                        </button>
-                                    </div>
-                                </div>
-                            </template>
-                        </template>
-                    </template>
-                        </template>
-                    </template>
+                    </div>
+                    <div class="pb-1 text-[16px] font-medium text-faint-4">+</div>
+                    <div>
+                        <div class="mb-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.11em] text-faint">Banked extra</div>
+                        <div class="font-mono text-[19px] font-semibold tabular-nums text-track">{{ signed(ledger.banked) }}<span class="text-[13px] text-faint-3">h</span></div>
+                        <div v-if="bankedPlanned !== 0" class="mt-1 font-mono text-[10px] text-behind">of which {{ signed(bankedPlanned) }} planned</div>
+                    </div>
+                    <div class="pb-1 text-[16px] font-medium text-faint-4">+</div>
+                    <div>
+                        <div class="mb-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.11em] text-faint">Taken</div>
+                        <div class="font-mono text-[19px] font-semibold tabular-nums text-muted">{{ signed(ledger.taken) }}<span class="text-[13px] text-faint-3">h</span></div>
+                        <div v-if="takenPlanned !== 0" class="mt-1 font-mono text-[10px] text-behind">of which {{ signed(takenPlanned) }} planned</div>
+                    </div>
+                    <div class="pb-1 text-[16px] font-medium text-faint-4">=</div>
                 </div>
 
-                <div v-else class="px-7 py-[52px] text-center">
-                    <div class="mx-auto mb-4 flex h-[52px] w-[52px] items-center justify-center rounded-[16px] border border-border-soft bg-canvas">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="15" rx="2.5" stroke="#c2bdb1" stroke-width="1.5" /><path d="M4 9.5h16M8 3v4M16 3v4" stroke="#c2bdb1" stroke-width="1.5" stroke-linecap="round" /></svg>
+                <!-- balance hero -->
+                <div class="text-right">
+                    <div class="mb-1 font-mono text-[10px] font-semibold uppercase tracking-[0.13em] text-faint">Balance {{ year }}</div>
+                    <div class="font-mono text-[38px] font-bold leading-none tabular-nums tracking-[-0.02em] text-ink">
+                        {{ nf(ledger.balance) }}<span class="text-[22px] text-faint-3">h</span>
                     </div>
-                    <div class="mb-1.5 text-[15px] font-semibold">No adjustments yet</div>
-                    <div class="mx-auto max-w-[38ch] text-[13px] leading-[1.55] text-faint-2">
-                        Add time off or an extra day on the left. Every date sits at your contracted {{ baseCapacity }}h until then.
+                    <div class="mt-2 font-mono text-[13px] font-medium tabular-nums text-muted">
+                        {{ nf(ledger.days) }} days · {{ nf(ledger.weeks) }} weeks left
                     </div>
+                    <div v-if="plannedInBalance !== 0" class="mt-1 font-mono text-[12px] font-medium tabular-nums text-behind">
+                        incl. {{ signed(plannedInBalance) }}h still planned · {{ nf(Number(ledger.balance) - plannedInBalance) }}h confirmed
+                    </div>
+                </div>
+            </div>
+        </Card>
+
+        <!-- year switcher -->
+        <div class="mb-[22px] inline-flex gap-0.5 rounded-[14px] bg-sunken p-1">
+            <button
+                v-for="y in years"
+                :key="y"
+                class="cursor-pointer rounded-[11px] px-[18px] py-2 font-mono text-[13px] font-semibold tabular-nums transition"
+                :class="y === year ? 'bg-surface text-ink shadow-[0_2px_6px_-2px_rgba(42,41,38,0.14)]' : 'text-[#8a8578]'"
+                @click="pickYear(y)"
+            >
+                {{ y }}
+            </button>
+        </div>
+
+        <!-- calendar grid -->
+        <Card radius="24px" pad="22px 24px" class="mb-[22px]">
+            <CalendarGrid :year="year" :adjustments="adjustments" :off-weekday="offWeekday" @select="onSelect" />
+
+            <!-- legend -->
+            <div class="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-divider pt-4 font-mono text-[11px] text-faint-2">
+                <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded-[4px] bg-off"></span> Time off</span>
+                <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded-[4px] bg-sick"></span> Sick</span>
+                <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded-[4px] bg-holiday"></span> Holiday</span>
+                <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded-[4px] bg-track"></span> Extra day</span>
+                <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded-[4px] bg-surface ring-1 ring-inset ring-faint-3"></span> Planned (hollow)</span>
+                <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded-[4px] bg-sunken"></span> Non-working</span>
+            </div>
+        </Card>
+
+        <!-- trips + overview -->
+        <div class="grid items-start gap-[22px] lg:grid-cols-[1fr_1fr]">
+            <!-- trips this year -->
+            <Card radius="24px" pad="10px 10px 14px">
+                <div class="px-5 pb-3 pt-[18px] text-[16px] font-semibold tracking-[-0.01em]">Trips &amp; days · {{ year }}</div>
+                <div v-if="trips.length" class="flex flex-col">
+                    <div
+                        v-for="(t, i) in trips"
+                        :key="i"
+                        class="flex items-center gap-3 rounded-[12px] border-t border-divider-soft px-5 py-3"
+                    >
+                        <span class="w-[120px] flex-none whitespace-nowrap font-mono text-[13px] font-semibold tabular-nums text-ink-soft">{{ tripRange(t) }}</span>
+                        <span class="flex-none rounded-md px-2 py-1 font-mono text-[10.5px] font-semibold" :class="typeMeta[t.type].chip">{{ typeMeta[t.type].label }}</span>
+                        <span class="min-w-0 flex-1 truncate text-[13.5px]" :class="t.reason ? 'text-muted' : 'text-faint-4'">{{ t.reason || '—' }}</span>
+                        <span class="flex-none font-mono text-[12px] tabular-nums text-faint-2">{{ nf(tripHours(t)) }}h</span>
+                        <span v-if="t.status === 'planned'" class="flex-none font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-behind">planned</span>
+                    </div>
+                </div>
+                <div v-else class="px-5 py-10 text-center text-[13px] text-faint-2">
+                    Nothing booked for {{ year }} yet. Click a day in the grid to start.
                 </div>
             </Card>
-            </div>
+
+            <!-- multi-year overzicht -->
+            <Card radius="24px" pad="10px 10px 14px">
+                <div class="px-5 pb-3 pt-[18px] text-[16px] font-semibold tracking-[-0.01em]">Overzicht · balance by year</div>
+                <div class="grid grid-cols-[1fr_repeat(4,minmax(0,1fr))] gap-2 px-5 py-2 font-mono text-[9.5px] font-semibold uppercase tracking-[0.08em] text-faint-3">
+                    <span>Year</span><span class="text-right">Accrual</span><span class="text-right">Banked</span><span class="text-right">Taken</span><span class="text-right">Balance</span>
+                </div>
+                <button
+                    v-for="row in overview"
+                    :key="row.year"
+                    class="grid w-full cursor-pointer grid-cols-[1fr_repeat(4,minmax(0,1fr))] gap-2 rounded-[10px] border-t border-divider-soft px-5 py-2.5 text-right font-mono text-[13px] tabular-nums transition hover:bg-surface-soft"
+                    :class="row.year === year ? 'bg-accent-wash' : ''"
+                    @click="pickYear(row.year)"
+                >
+                    <span class="text-left font-semibold text-ink">{{ row.year }}</span>
+                    <span class="text-muted">{{ nf(row.accrual) }}</span>
+                    <span class="flex flex-col items-end text-track">
+                        {{ signed(row.banked) }}
+                        <span v-if="Number(row.bankedPlanned) !== 0" class="text-[9px] text-behind">{{ signed(row.bankedPlanned) }} pl.</span>
+                    </span>
+                    <span class="flex flex-col items-end text-muted">
+                        {{ signed(row.taken) }}
+                        <span v-if="Number(row.takenPlanned) !== 0" class="text-[9px] text-behind">{{ signed(row.takenPlanned) }} pl.</span>
+                    </span>
+                    <span class="font-semibold text-ink">{{ nf(row.balance) }}</span>
+                </button>
+            </Card>
         </div>
+
+        <CellEditor
+            :open="editor.open"
+            :x="editor.x"
+            :y="editor.y"
+            :start="editor.start"
+            :end="editor.end"
+            :existing="editor.existing"
+            @save="save"
+            @delete="remove"
+            @close="closeEditor"
+        />
     </div>
 </template>

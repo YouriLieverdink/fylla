@@ -19,6 +19,7 @@ Route::get('/utilization', [UtilizationController::class, 'index'])->name('utili
 
 Route::get('/capacity', [CapacityController::class, 'index'])->name('capacity.index');
 Route::post('/capacity', [CapacityController::class, 'store'])->name('capacity.store');
+Route::post('/capacity/accrual', [CapacityController::class, 'accrual'])->name('capacity.accrual');
 Route::patch('/capacity/{capacityAdjustment}', [CapacityController::class, 'update'])->name('capacity.update');
 Route::delete('/capacity/{capacityAdjustment}', [CapacityController::class, 'destroy'])->name('capacity.destroy');
 

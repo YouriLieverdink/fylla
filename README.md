@@ -95,8 +95,10 @@ re-sync. Manage the list at `/projects` (`PATCH /projects/{project}`).
 The home page headlines personal utilization (`App\Utilization\UtilizationReport`,
 issue #12). Utilization = billable hours ÷ **capacity**, where weekly capacity is
 `fylla.contracted_hours_per_week` (default 32) **± the signed capacity
-adjustments** that week (ADR-0008). The current (partial) week prorates over
-elapsed Mon–Fri workdays; completed weeks use full capacity.
+adjustments** that week (ADR-0008/0010). Only **confirmed** adjustments move
+capacity — planned ones are penciled-in and do not shift the metric. The current
+(partial) week prorates over elapsed Mon–Fri workdays; completed weeks use full
+capacity.
 
 - **Headline** = one cumulative `Σbillable ÷ Σcapacity` over the last
   `fylla.utilization_window_weeks` weeks (default 13), with a delta vs. the
@@ -123,21 +125,38 @@ denominator. Billable share = billable ÷ worked (share of worked hours that
 billed; "—" when nothing worked) — distinct from Utilization (billable ÷
 capacity).
 
-Capacity adjustments live in the Fylla-native `capacity_adjustments` table
-(`date` unique, signed `hours`, `reason`; ADR-0004/0008 — Kendo has no leave
-concept). One signed row per date: **negative = time off**, **positive = an
-extra day** (a 40h week banked toward vacation). Manage them on the `/capacity`
-page (the **Capacity** nav tab):
+### Time off & vacation
 
-- `GET /capacity` · `POST /capacity` · `PATCH /capacity/{capacityAdjustment}` ·
-  `DELETE /capacity/{capacityAdjustment}`.
-- Time off is entered as a date range, expanded to **worked weekdays** —
-  weekends and the contracted non-working day (`fylla.contracted_off_weekday`,
-  default Friday) are skipped, so a full week off is 4 × 8h = −32h against the
-  32h contract; an extra day is a single date, **any day** allowed.
-- Each date upserts (`updateOrCreate` on `date`); magnitude is 1–24h.
-- The page is just the form and the adjustment list (grouped by year, prior
-  years collapsed). The per-week capacity view moved to `/utilization`.
+Capacity adjustments live in the Fylla-native `capacity_adjustments` table
+(`date` unique, `type`, signed decimal `hours`, `status`, `reason`;
+ADR-0004/0008/0010 — Kendo has no leave concept). One row per date carries an
+explicit **`type`** — `off` (vacation), `holiday` (public holiday), `sick`, or
+`extra` (an agreed extra day, banked toward vacation) — and a **`status`** of
+`planned` (exists only in Fylla) or `confirmed` (entered in the external leave
+system). Off/holiday/sick store negative hours, extra positive. `holiday` and
+`sick` shrink capacity but are **excluded from the vacation ledger** (you don't
+spend vacation on Kingsday or a sick day); only `off` draws the balance.
+
+The `/capacity` page (the **Capacity** nav tab) is a **year calendar grid**
+(12 month-rows × 31 day-columns) with a running **vacation ledger** above it:
+
+- `GET /capacity?year=Y` · `POST /capacity` · `PATCH /capacity/{capacityAdjustment}` ·
+  `DELETE /capacity/{capacityAdjustment}` · `POST /capacity/accrual` (per-year
+  vacation accrual upsert).
+- Click a day or drag a range → a popover sets type / decimal hours / trip name /
+  planned↔confirmed. Off and holiday expand over **worked weekdays** — weekends
+  and the contracted non-working day (`fylla.contracted_off_weekday`, default
+  Friday) are skipped, so a full week off is 4 × 8h = −32h against the 32h
+  contract; an extra day is a single date, **any day** allowed. Each date upserts
+  (`updateOrCreate` on `date`); hours are decimal, 0.25–24h.
+- The **vacation ledger** (`App\Vacation\VacationLedger`) is derived per year:
+  `balance = carryover + accrual + banked-extra + taken`, where `taken` = Σ off
+  hours (holidays and sick days **excluded**), `banked` = Σ extra hours, `carryover` = the
+  previous year's closing balance (rolls forward). Accrual is one manually-entered
+  decimal per year (`vacation_accruals` table), edited inline in the ledger panel.
+  The ledger counts planned + confirmed alike; balance is shown in hours, days
+  (÷8), and weeks (÷32). A multi-year **Overzicht** table and a trips-this-year
+  list sit below the grid. The per-week capacity view lives on `/utilization`.
 
 ## Setup
 
