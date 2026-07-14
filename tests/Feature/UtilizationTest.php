@@ -180,7 +180,8 @@ class UtilizationTest extends TestCase
         $report = (new UtilizationReport($now))->generate();
 
         $this->assertNull($report['value']);
-        $this->assertSame([], $report['points']);
+        // Zero-capacity weeks render as gaps (null value), not dropped.
+        $this->assertSame([['label' => 'Jul 13', 'value' => null, 'billableShare' => null]], $report['points']);
         $this->assertNull($report['week']['value']);
     }
 }

@@ -68,7 +68,15 @@ class UtilizationReport
             }
 
             if ($c <= 0) {
-                continue; // zero-capacity week: not a data point, not in the sums
+                // Zero-capacity week (all time off): a gap in the trend, kept out
+                // of the sums. Null value so the chart breaks the line here.
+                $points[] = [
+                    'label' => $weekStart->format('M j'),
+                    'value' => null,
+                    'billableShare' => null,
+                ];
+
+                continue;
             }
             $bill += $b;
             $cap += $c;

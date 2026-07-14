@@ -17,7 +17,8 @@ const BOTTOM = 118;
 // Domain padded around the data + target so the line and target both sit inside.
 const domain = computed(() => {
     const shares = props.points.map((p) => p.billableShare).filter((v) => v != null);
-    const vals = [...props.points.map((p) => p.value), ...shares, props.target];
+    const values = props.points.map((p) => p.value).filter((v) => v != null);
+    const vals = [...values, ...shares, props.target];
     const lo = Math.max(0, Math.min(...vals) - 8);
     const hi = Math.max(...vals) + 8;
     return { lo, hi: hi > lo ? hi : lo + 1 };
@@ -29,42 +30,65 @@ const yFor = (v) => {
 };
 const xFor = (i, n) => (n <= 1 ? X0 : X0 + (i / (n - 1)) * (X1 - X0));
 
-const coords = computed(() => props.points.map((p, i) => [xFor(i, props.points.length), yFor(p.value)]));
-const polyline = computed(() => coords.value.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' '));
-const area = computed(() => {
-    if (!coords.value.length) return '';
-    const pts = coords.value.map(([x, y]) => `L ${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
-    const first = coords.value[0];
-    const last = coords.value[coords.value.length - 1];
-    return `M ${first[0].toFixed(1)} ${BOTTOM} ${pts} L ${last[0].toFixed(1)} ${BOTTOM} Z`;
-});
-const last = computed(() => coords.value[coords.value.length - 1] ?? null);
+// Split a coord array (nulls = gaps) into runs of consecutive plotted points.
+const runs = (cs) => {
+    const segs = [];
+    let cur = [];
+    for (const c of cs) {
+        if (c) cur.push(c);
+        else if (cur.length) (segs.push(cur), (cur = []));
+    }
+    if (cur.length) segs.push(cur);
+    return segs;
+};
+const lineOf = (cs) => runs(cs).map((seg) => 'M ' + seg.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(' L ')).join(' ');
 
-// Billable share line (billable ÷ worked). ponytail: a null week (no worked
-// hours) is dropped, so the line bridges the gap — fine, near-impossible here.
-const sharePolyline = computed(() =>
-    props.points
-        .map((p, i) => (p.billableShare == null ? null : [xFor(i, props.points.length), yFor(p.billableShare)]))
-        .filter(Boolean)
-        .map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`)
+// null value = a zero-capacity week (all time off): a gap, not a plotted point.
+const coords = computed(() =>
+    props.points.map((p, i) => (p.value == null ? null : [xFor(i, props.points.length), yFor(p.value)])),
+);
+const linePath = computed(() => lineOf(coords.value));
+const area = computed(() =>
+    runs(coords.value)
+        .map((seg) => {
+            const pts = seg.map(([x, y]) => `L ${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+            return `M ${seg[0][0].toFixed(1)} ${BOTTOM} ${pts} L ${seg[seg.length - 1][0].toFixed(1)} ${BOTTOM} Z`;
+        })
         .join(' '),
 );
+// x positions of gap weeks, for the baseline "off" markers.
+const gaps = computed(() =>
+    props.points.map((p, i) => (p.value == null ? xFor(i, props.points.length) : null)).filter((x) => x != null),
+);
+const last = computed(() => {
+    for (let i = coords.value.length - 1; i >= 0; i--) if (coords.value[i]) return coords.value[i];
+    return null;
+});
+
+// Billable share line (billable ÷ worked). Breaks at the same gaps as the
+// utilization line (and any week with no worked hours), rather than bridging.
+const shareCoords = computed(() =>
+    props.points.map((p, i) => (p.billableShare == null ? null : [xFor(i, props.points.length), yFor(p.billableShare)])),
+);
+const sharePath = computed(() => lineOf(shareCoords.value));
 const targetY = computed(() => yFor(props.target));
 
 const hover = ref(null); // active point index
 const bandW = computed(() => (props.points.length <= 1 ? X1 - X0 : (X1 - X0) / (props.points.length - 1)));
 const tip = computed(() => {
     if (hover.value == null) return null;
-    const [x, y] = coords.value[hover.value];
     const p = props.points[hover.value];
-    const lines = [p.label, `${p.value}% utilization`];
-    if (p.billableShare != null) lines.push(`${p.billableShare}% billable`);
+    const c = coords.value[hover.value];
+    const x = c ? c[0] : xFor(hover.value, props.points.length);
+    const y = c ? c[1] : BOTTOM;
+    const lines = c ? [p.label, `${p.value}% utilization`] : [p.label, 'week off'];
+    if (c && p.billableShare != null) lines.push(`${p.billableShare}% billable`);
     // Size the box off the longest line (~6px/char mono) and clamp inside 360w.
     const w = Math.max(...lines.map((l) => l.length)) * 6 + 14;
     const h = lines.length * 13 + 7;
     const bx = Math.min(Math.max(x - w / 2, 4), 356 - w);
     const by = Math.max(y - 12 - h, 4);
-    return { x, y, lines, bx, by, w, h };
+    return { x, y, lines, bx, by, w, h, gap: !c };
 });
 </script>
 
@@ -88,7 +112,7 @@ const tip = computed(() => {
             </div>
         </div>
         <div class="mt-2 flex flex-1 items-center">
-            <svg v-if="points.length" viewBox="0 0 360 150" width="100%" class="block">
+            <svg v-if="points.some((p) => p.value != null)" viewBox="0 0 360 150" width="100%" class="block">
                 <line :x1="X0" :y1="targetY" :x2="X1" :y2="targetY" stroke="#b18749" stroke-width="1.25" stroke-dasharray="3 4" opacity=".85" />
                 <text :x="X1" :y="targetY - 5" text-anchor="end" font-family="var(--font-mono)" font-size="9" fill="#b18749">{{ target }}%</text>
                 <path :d="area" fill="url(#utilFill)" />
@@ -98,8 +122,9 @@ const tip = computed(() => {
                         <stop offset="1" stop-color="#6c5fc9" stop-opacity="0" />
                     </linearGradient>
                 </defs>
-                <polyline v-if="sharePolyline" :points="sharePolyline" fill="none" stroke="#5c8a6f" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
-                <polyline :points="polyline" fill="none" stroke="#6c5fc9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                <path v-if="sharePath" :d="sharePath" fill="none" stroke="#5c8a6f" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
+                <path :d="linePath" fill="none" stroke="#6c5fc9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                <circle v-for="(gx, i) in gaps" :key="'gap' + i" :cx="gx" :cy="BOTTOM" r="2.5" fill="none" stroke="#a8a498" stroke-width="1.25" />
                 <circle v-if="last" :cx="last[0]" :cy="last[1]" r="4" fill="#6c5fc9" stroke="#fff" stroke-width="2" />
                 <text :x="X0" y="140" font-family="var(--font-mono)" font-size="9" fill="#a8a498">{{ weeks }}w ago</text>
                 <text :x="X1" y="140" text-anchor="end" font-family="var(--font-mono)" font-size="9" fill="#a8a498">now</text>
@@ -107,7 +132,7 @@ const tip = computed(() => {
                 <!-- hover layer: a full-height band per point, tooltip on the active one -->
                 <g v-if="tip">
                     <line :x1="tip.x" :y1="TOP" :x2="tip.x" :y2="BOTTOM" stroke="#6c5fc9" stroke-width="1" stroke-dasharray="2 3" opacity=".4" />
-                    <circle :cx="tip.x" :cy="tip.y" r="4" fill="#6c5fc9" stroke="#fff" stroke-width="2" />
+                    <circle :cx="tip.x" :cy="tip.y" r="4" :fill="tip.gap ? 'none' : '#6c5fc9'" :stroke="tip.gap ? '#a8a498' : '#fff'" stroke-width="2" />
                     <rect :x="tip.bx" :y="tip.by" :width="tip.w" :height="tip.h" rx="6" fill="#2b2a27" opacity="0.88" />
                     <text
                         v-for="(ln, i) in tip.lines"
@@ -122,9 +147,9 @@ const tip = computed(() => {
                     >
                 </g>
                 <rect
-                    v-for="(c, i) in coords"
+                    v-for="(p, i) in points"
                     :key="i"
-                    :x="c[0] - bandW / 2"
+                    :x="xFor(i, points.length) - bandW / 2"
                     :y="TOP"
                     :width="bandW"
                     :height="BOTTOM - TOP"
