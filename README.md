@@ -114,12 +114,16 @@ capacity.
 The `/utilization` page (the **Utilization** nav tab) exposes the data behind
 the headline via `UtilizationReport::breakdown()`: window totals (Σ capacity /
 worked / billable, billable share, + the cumulative %), and — behind a
-segmented **Weekly breakdown** ⇆ **Time entries** toggle below the totals card —
-a per-week table (`Week | Capacity | Worked | Billable | Billable share |
-Utilization | Adjustments`, current week prorated, utilization target-coloured —
-the same % as the dashboard, with that week's signed adjustments shown as
-chips), and the window's synced time entries grouped into collapsible week
-sections (newest first, current week open). Worked = Σ **all** worklog minutes
+segmented **Weekly breakdown** ⇆ **Time entries** ⇆ **By project** toggle below
+the totals card — a per-week table (`Week | Capacity | Worked | Billable |
+Billable share | Utilization | Adjustments`, current week prorated, utilization
+target-coloured — the same % as the dashboard, with that week's signed
+adjustments shown as chips), the window's synced time entries grouped into
+collapsible week sections (newest first, current week open), and a **By
+project** breakdown (collapsible project → issue rows with hours subtotals,
+billable/internal badge, each project's share of total worked hours, and a
+per-week hours sparkline across the window; hours-desc, all collapsed by
+default). The active view is reflected in `?view=` (`weekly`/`entries`/`projects`). Worked = Σ **all** worklog minutes
 that week (billable + non-billable) as effort context; it is never a
 denominator. Billable share = billable ÷ worked (share of worked hours that
 billed; "—" when nothing worked) — distinct from Utilization (billable ÷

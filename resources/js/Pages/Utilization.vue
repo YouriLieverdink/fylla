@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import Card from '../Components/Card.vue';
 import AppHeader from '../Components/AppHeader.vue';
 import SegmentedControl from '../Components/SegmentedControl.vue';
@@ -12,7 +12,15 @@ const props = defineProps({
 
 const totals = computed(() => props.report.totals);
 
-const view = ref('Weekly breakdown');
+// View synced to ?view= (client-only tab state, no server round-trip).
+const VIEWS = { weekly: 'Weekly breakdown', projects: 'By project', entries: 'Time entries' };
+const urlView = new URLSearchParams(window.location.search).get('view');
+const view = ref(VIEWS[urlView] ?? 'Weekly breakdown');
+watch(view, (v) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', Object.keys(VIEWS).find((k) => VIEWS[k] === v));
+    window.history.replaceState({}, '', url);
+});
 
 // Same target band as the dashboard: at/above target reads billable (green),
 // within the soft band neutral, below the floor behind (red). null = no data.
@@ -54,6 +62,18 @@ function monday(dt) {
 }
 const curMonKey = monday(new Date()).toDateString();
 
+// The window's 13 week-start Mondays, oldest→newest — the sparkline's x-axis.
+const weekIndex = (() => {
+    const m = monday(new Date());
+    const idx = new Map();
+    for (let i = 0; i < props.windowWeeks; i++) {
+        const d = new Date(m);
+        d.setDate(m.getDate() - i * 7);
+        idx.set(d.toDateString(), props.windowWeeks - 1 - i);
+    }
+    return idx;
+})();
+
 // Entries arrive newest-first, so same-week rows are already adjacent: fold
 // them into week sections with an hours subtotal. Labels match the breakdown
 // table's "Mon j" (e.g. "Jul 13").
@@ -77,6 +97,61 @@ const weekGroups = computed(() => {
 const open = ref({});
 const isOpen = (g) => open.value[g.key] ?? g.isCurrent;
 const toggle = (g) => (open.value[g.key] = !isOpen(g));
+
+// Group the window's worklogs by project → issue with hours subtotals and a
+// share of total worked minutes. Billability is a project property, so it's
+// read off any entry. Sorted hours-desc at both levels.
+const projectGroups = computed(() => {
+    const total = props.entries.reduce((s, e) => s + e.minutes, 0);
+    const byProject = new Map();
+    for (const e of props.entries) {
+        const name = e.project || '—';
+        let p = byProject.get(name);
+        if (!p) {
+            p = { name, billable: e.billable, minutes: 0, issues: new Map(), weekly: new Array(props.windowWeeks).fill(0) };
+            byProject.set(name, p);
+        }
+        p.minutes += e.minutes;
+        const wi = weekIndex.get(monday(parseDate(e.date)).toDateString());
+        if (wi !== undefined) p.weekly[wi] += e.minutes;
+        const key = (e.issueKey || '') + '|' + (e.issueTitle || '');
+        let iss = p.issues.get(key);
+        if (!iss) {
+            iss = { key, issueKey: e.issueKey, issueTitle: e.issueTitle, minutes: 0 };
+            p.issues.set(key, iss);
+        }
+        iss.minutes += e.minutes;
+    }
+    return [...byProject.values()]
+        .map((p) => ({
+            ...p,
+            share: total ? Math.round((p.minutes / total) * 100) : 0,
+            spark: spark(p.weekly, Math.max(...p.weekly, 1)),
+            issues: [...p.issues.values()].sort((a, b) => b.minutes - a.minutes),
+        }))
+        .sort((a, b) => b.minutes - a.minutes);
+});
+
+// Mini line sparkline (purple, matching the dashboard utilization trend), one
+// point per window week, scaled to the project's peak week. Returns line + area
+// paths for a fixed viewBox.
+const SPARK_W = 76;
+const SPARK_H = 22;
+function spark(weekly, peak) {
+    const n = weekly.length;
+    const x = (i) => (n <= 1 ? 0 : (i / (n - 1)) * SPARK_W);
+    const y = (v) => SPARK_H - 2 - (v / peak) * (SPARK_H - 4);
+    const pts = weekly.map((v, i) => `${x(i).toFixed(1)} ${y(v).toFixed(1)}`);
+    return {
+        line: 'M ' + pts.join(' L '),
+        area: `M ${x(0).toFixed(1)} ${SPARK_H - 2} L ` + pts.join(' L ') + ` L ${x(n - 1).toFixed(1)} ${SPARK_H - 2} Z`,
+    };
+}
+
+// All projects collapsed by default.
+const openProj = ref({});
+const isProjOpen = (p) => openProj.value[p.name] ?? false;
+const toggleProj = (p) => (openProj.value[p.name] = !isProjOpen(p));
 </script>
 
 <template>
@@ -124,7 +199,7 @@ const toggle = (g) => (open.value[g.key] = !isOpen(g));
 
         <!-- view switcher: weekly breakdown ⇆ time entries -->
         <div class="mb-[22px]">
-            <SegmentedControl v-model="view" :options="['Weekly breakdown', 'Time entries']" />
+            <SegmentedControl v-model="view" :options="Object.values(VIEWS)" />
         </div>
 
         <!-- weekly breakdown -->
@@ -230,6 +305,69 @@ const toggle = (g) => (open.value[g.key] = !isOpen(g));
                             </span>
                         </div>
                         <div class="text-right font-mono text-[13.5px] tabular-nums text-ink">{{ hm(e.minutes) }}</div>
+                    </div>
+                </template>
+            </div>
+
+            <div v-else class="px-7 py-[52px] text-center">
+                <div class="mb-1.5 text-[15px] font-semibold">No time entries in this window</div>
+                <div class="mx-auto max-w-[38ch] text-[13px] leading-[1.55] text-faint-2">
+                    Worklogs synced from Kendo over the last {{ windowWeeks }} weeks will appear here.
+                </div>
+            </div>
+        </Card>
+
+        <!-- by project -->
+        <Card v-if="view === 'By project'" radius="24px" pad="10px 10px 14px">
+            <div class="flex items-center justify-between px-5 pb-3.5 pt-[18px]">
+                <div class="text-[16px] font-semibold tracking-[-0.01em]">By project</div>
+                <span class="rounded-full bg-divider px-[11px] py-1.5 font-mono text-[12px] font-medium text-[#8a8578]">
+                    {{ projectGroups.length }}{{ projectGroups.length === 1 ? ' project' : ' projects' }}
+                </span>
+            </div>
+
+            <div class="grid grid-cols-[1fr_100px_170px_80px_64px] gap-3 px-5 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-faint-3">
+                <span>Project</span><span>{{ windowWeeks }}-wk hours</span><span>Billability</span><span class="text-right">Share</span><span class="text-right">Time</span>
+            </div>
+
+            <div v-if="projectGroups.length" class="flex flex-col">
+                <template v-for="p in projectGroups" :key="p.name">
+                    <!-- project header: click to expand -->
+                    <button
+                        class="grid cursor-pointer grid-cols-[1fr_100px_170px_80px_64px] items-center gap-3 border-t border-divider-soft px-5 py-3 text-left hover:bg-surface-soft"
+                        @click="toggleProj(p)"
+                    >
+                        <div class="flex min-w-0 items-center gap-2.5">
+                            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" class="text-faint-2 transition-transform" :class="isProjOpen(p) ? 'rotate-90' : ''">
+                                <path d="M5 3l3.5 3.5L5 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                            <span class="truncate text-[13.5px] font-semibold">{{ p.name }}</span>
+                        </div>
+                        <svg :width="SPARK_W" :height="SPARK_H" :viewBox="`0 0 ${SPARK_W} ${SPARK_H}`" class="shrink-0">
+                            <path :d="p.spark.area" fill="#6c5fc9" fill-opacity="0.12" />
+                            <path :d="p.spark.line" fill="none" stroke="#6c5fc9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                        <span
+                            class="inline-flex w-fit items-center rounded-md px-2 py-0.5 font-mono text-[11px] font-semibold"
+                            :class="p.billable ? 'bg-track-tint text-track' : 'bg-divider text-muted'"
+                        >
+                            {{ p.billable ? 'billable' : 'internal' }}
+                        </span>
+                        <span class="text-right font-mono text-[12.5px] tabular-nums text-faint-2">{{ fmtPct(p.share) }}</span>
+                        <span class="text-right font-mono text-[13.5px] font-semibold tabular-nums text-muted">{{ hm(p.minutes) }}</span>
+                    </button>
+
+                    <!-- project's issues -->
+                    <div
+                        v-for="iss in isProjOpen(p) ? p.issues : []"
+                        :key="iss.key"
+                        class="grid grid-cols-[1fr_64px] items-start gap-3 bg-surface-soft px-5 py-3"
+                    >
+                        <div class="min-w-0 truncate text-[13.5px] font-semibold text-ink">
+                            <span v-if="iss.issueKey" class="font-mono text-[12px] text-faint-2">{{ iss.issueKey }}</span>
+                            {{ iss.issueTitle || '—' }}
+                        </div>
+                        <div class="text-right font-mono text-[13.5px] tabular-nums text-ink">{{ hm(iss.minutes) }}</div>
                     </div>
                 </template>
             </div>
