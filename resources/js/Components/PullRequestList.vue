@@ -12,9 +12,13 @@ const props = defineProps({
 
 const opts = { preserveScroll: true };
 
-// Per-PR manual-pick UI state, keyed by PR id.
-const picking = reactive({}); // id → { q, results, loading }
-const errors = reactive({}); // id → message
+const errors = reactive({}); // pr id → message
+
+// Manual-pick modal state (one modal, whichever PR is being linked).
+const pickingPr = ref(null);
+const pickQ = ref('');
+const pickResults = ref([]);
+const pickLoading = ref(false);
 
 function confirmKey(pr) {
     resolve(pr, pr.suggested_key);
@@ -26,29 +30,34 @@ function resolve(pr, key) {
         onError: (e) => (errors[pr.id] = e.resolve ?? 'Could not resolve.'),
         onSuccess: () => {
             delete errors[pr.id];
-            delete picking[pr.id];
+            closePick();
         },
     });
 }
 
 function openPick(pr) {
-    picking[pr.id] = { q: pr.suggested_key ?? '', results: [], loading: false };
-    if (picking[pr.id].q) search(pr.id);
+    pickingPr.value = pr;
+    pickQ.value = pr.suggested_key ?? '';
+    pickResults.value = [];
+    if (pickQ.value) search();
 }
 
-async function search(id) {
-    const state = picking[id];
-    const q = state.q.trim();
+function closePick() {
+    pickingPr.value = null;
+}
+
+async function search() {
+    const q = pickQ.value.trim();
     if (!q) {
-        state.results = [];
+        pickResults.value = [];
         return;
     }
-    state.loading = true;
+    pickLoading.value = true;
     const res = await fetch(`/kendo/issues/search?q=${encodeURIComponent(q)}`, {
         headers: { Accept: 'application/json' },
     });
-    state.results = res.ok ? await res.json() : [];
-    state.loading = false;
+    pickResults.value = res.ok ? await res.json() : [];
+    pickLoading.value = false;
 }
 
 function startTimer(pr) {
@@ -106,50 +115,22 @@ const cols = 'grid-cols-[1fr_190px_96px]';
                         >{{ pr.kendo_key }}</a
                     >
 
-                    <!-- unresolved: confirm suggested + manual pick -->
+                    <!-- unresolved: confirm suggested + manual pick (two buttons) -->
                     <template v-else>
-                        <div v-if="!picking[pr.id]" class="flex flex-col gap-1.5">
+                        <div class="flex items-center gap-2">
                             <button
                                 v-if="pr.suggested_key"
-                                class="w-fit cursor-pointer rounded-[8px] border border-[#e0dbd0] bg-white px-2.5 py-1.5 font-mono text-[12px] font-semibold text-ink-soft hover:border-accent-tint-2"
+                                class="cursor-pointer rounded-[8px] border border-[#e0dbd0] bg-white px-2.5 py-1.5 font-mono text-[12px] font-semibold text-ink-soft hover:border-accent-tint-2"
                                 @click="confirmKey(pr)"
                             >
                                 Confirm {{ pr.suggested_key }}
                             </button>
                             <button
-                                class="w-fit cursor-pointer font-mono text-[11px] text-faint-2 hover:text-accent"
+                                class="cursor-pointer rounded-[8px] border border-[#e0dbd0] bg-white px-2.5 py-1.5 font-mono text-[12px] font-medium text-faint-2 hover:border-accent-tint-2 hover:text-accent"
                                 @click="openPick(pr)"
                             >
-                                {{ pr.suggested_key ? 'pick another' : 'link an issue' }}
+                                {{ pr.suggested_key ? 'Pick another' : 'Link an issue' }}
                             </button>
-                        </div>
-
-                        <!-- manual live search -->
-                        <div v-else class="flex flex-col gap-1.5">
-                            <input
-                                v-model="picking[pr.id].q"
-                                type="text"
-                                placeholder="Search Kendo issues…"
-                                class="rounded-[8px] border border-[#e0dbd0] bg-white px-2 py-1 font-mono text-[12px] outline-none focus:border-accent-tint-2"
-                                @input="search(pr.id)"
-                                @keydown.esc="delete picking[pr.id]"
-                            />
-                            <div v-if="picking[pr.id].loading" class="font-mono text-[11px] text-faint-3">searching…</div>
-                            <div v-else class="flex flex-col gap-1">
-                                <button
-                                    v-for="c in picking[pr.id].results"
-                                    :key="c.id"
-                                    class="w-fit cursor-pointer text-left font-mono text-[11px] text-ink-soft hover:text-accent"
-                                    @click="resolve(pr, c.key)"
-                                >
-                                    <span class="font-semibold">{{ c.key }}</span> {{ c.title }}
-                                </button>
-                                <span
-                                    v-if="picking[pr.id].q && !picking[pr.id].results.length"
-                                    class="font-mono text-[11px] text-faint-3"
-                                    >no matches</span
-                                >
-                            </div>
                         </div>
                         <span v-if="errors[pr.id]" class="mt-1 block font-mono text-[11px] text-behind">{{ errors[pr.id] }}</span>
                     </template>
@@ -178,4 +159,49 @@ const cols = 'grid-cols-[1fr_190px_96px]';
             </div>
         </div>
     </Card>
+
+    <!-- manual-pick modal: live Kendo search -->
+    <Teleport to="body">
+        <div
+            v-if="pickingPr"
+            class="fixed inset-0 z-50 flex items-start justify-center bg-black/30 p-4 pt-[15vh]"
+            @click.self="closePick"
+            @keydown.esc="closePick"
+        >
+            <div class="w-full max-w-[520px] rounded-[18px] border border-[#ebe7de] bg-surface p-5 shadow-[0_20px_60px_-15px_rgba(42,41,38,0.4)]">
+                <div class="mb-1 flex items-center justify-between">
+                    <div class="text-[15px] font-semibold tracking-[-0.01em]">Link Kendo issue</div>
+                    <button class="cursor-pointer px-1 text-[18px] leading-none text-faint-2 hover:text-ink-soft" title="Close" @click="closePick">×</button>
+                </div>
+                <div class="mb-3 font-mono text-[11px] text-faint-3">{{ pickingPr.repo }}#{{ pickingPr.number }} · {{ pickingPr.title }}</div>
+
+                <input
+                    v-model="pickQ"
+                    type="text"
+                    autofocus
+                    placeholder="Search Kendo issues…"
+                    class="w-full rounded-[10px] border border-[#e0dbd0] bg-white px-3 py-2.5 font-mono text-[13px] outline-none focus:border-accent-tint-2"
+                    @input="search"
+                    @keydown.esc="closePick"
+                />
+
+                <div class="mt-3 flex max-h-[320px] flex-col gap-0.5 overflow-auto">
+                    <div v-if="pickLoading" class="px-1 py-2 font-mono text-[12px] text-faint-3">searching…</div>
+                    <template v-else>
+                        <button
+                            v-for="c in pickResults"
+                            :key="c.id"
+                            class="cursor-pointer rounded-[8px] px-2 py-2 text-left font-mono text-[12px] text-ink-soft hover:bg-surface-soft hover:text-accent"
+                            @click="resolve(pickingPr, c.key)"
+                        >
+                            <span class="font-semibold">{{ c.key }}</span> {{ c.title }}
+                        </button>
+                        <span v-if="pickQ && !pickResults.length" class="px-1 py-2 font-mono text-[12px] text-faint-3">no matches</span>
+                    </template>
+                </div>
+
+                <span v-if="pickingPr && errors[pickingPr.id]" class="mt-2 block font-mono text-[11px] text-behind">{{ errors[pickingPr.id] }}</span>
+            </div>
+        </div>
+    </Teleport>
 </template>
