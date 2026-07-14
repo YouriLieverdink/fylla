@@ -78,6 +78,7 @@ class IssueController extends Controller
             'active' => $row($top) + [
                 'running' => (bool) $open,
                 'started_at' => $open?->started_at,
+                'started_at_hm' => $open?->started_at->setTimezone(config('fylla.display_timezone'))->format('H:i'),
                 // Notes of the open segment only (ADR-0005); empty when paused.
                 'notes' => $open
                     ? $open->notes->sortBy('created_at')->values()->map(fn ($n) => [

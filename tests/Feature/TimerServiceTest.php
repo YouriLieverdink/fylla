@@ -166,6 +166,38 @@ class TimerServiceTest extends TestCase
         $this->assertStringContainsString('seg two', $second->comment);
     }
 
+    public function test_set_start_time_backdates_the_open_segment_in_display_tz(): void
+    {
+        config(['fylla.display_timezone' => 'Europe/Amsterdam']);
+        $this->travelTo(CarbonImmutable::parse('2026-07-13 12:00:00', 'UTC')); // 14:00 Amsterdam
+
+        $this->svc->start($this->issue('A-1'));   // started 14:00 Amsterdam
+        $this->svc->setStartTime('13:00');        // pull back an hour
+
+        $open = Segment::whereNull('ended_at')->sole();
+        $this->assertSame(3600, $open->seconds()); // 13:00 → now (14:00) = 1h
+    }
+
+    public function test_set_start_time_in_the_future_is_rejected(): void
+    {
+        config(['fylla.display_timezone' => 'Europe/Amsterdam']);
+        $this->travelTo(CarbonImmutable::parse('2026-07-13 12:00:00', 'UTC')); // 14:00 Amsterdam
+
+        $this->svc->start($this->issue('A-1'));
+
+        $this->expectException(\RuntimeException::class);
+        $this->svc->setStartTime('15:00');
+    }
+
+    public function test_set_start_time_without_an_open_segment_throws(): void
+    {
+        $this->svc->start($this->issue('A-1'));
+        $this->svc->pause();
+
+        $this->expectException(\RuntimeException::class);
+        $this->svc->setStartTime('09:00');
+    }
+
     public function test_state_survives_reload_through_the_route(): void
     {
         $a = $this->issue('A-1');

@@ -89,6 +89,32 @@ class TimerService
         $segment->notes()->create(['text' => $text, 'created_at' => now()]);
     }
 
+    /**
+     * Correct the open segment's start (a forgotten/late start). `$hm` is a
+     * wall-clock "H:i" in the display tz, applied to the segment's existing
+     * start date. Must be at or before now; may fall before the previous
+     * (already-posted) segment — overlap is the user's to reconcile. No-op-safe
+     * only when a segment is open, else throws.
+     */
+    public function setStartTime(string $hm): void
+    {
+        $segment = $this->openSegment();
+        if (! $segment) {
+            throw new RuntimeException('No running timer to edit.');
+        }
+
+        [$h, $m] = array_map('intval', explode(':', $hm));
+        $at = $segment->started_at
+            ->setTimezone(config('fylla.display_timezone'))
+            ->setTime($h, $m, 0);
+
+        if ($at->isFuture()) {
+            throw new RuntimeException('Start time must be in the past.');
+        }
+
+        $segment->update(['started_at' => $at->utc()]);
+    }
+
     /** Seconds accumulated in closed segments of a timer (excludes any open one). */
     public function accumulatedSeconds(Timer $timer): int
     {

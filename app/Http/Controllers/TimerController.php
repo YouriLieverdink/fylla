@@ -40,6 +40,19 @@ class TimerController extends Controller
         return back();
     }
 
+    public function startTime(Request $request): RedirectResponse
+    {
+        $request->validate(['time' => ['required', 'date_format:H:i']]);
+
+        try {
+            $this->timers->setStartTime((string) $request->string('time'));
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['time' => $e->getMessage()]);
+        }
+
+        return back();
+    }
+
     public function note(Request $request): RedirectResponse
     {
         $this->timers->addNote((string) $request->input('text', ''));

@@ -1,10 +1,11 @@
 <script setup>
+import { router } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, ref } from 'vue';
 import Card from './Card.vue';
 import EmptyState from './EmptyState.vue';
 
 const props = defineProps({
-    // { issue_id, key, title, accumulated_seconds, running, started_at, notes: [{at,text}] } | null
+    // { issue_id, key, title, accumulated_seconds, running, started_at, started_at_hm, notes: [{at,text}] } | null
     active: { type: Object, default: null },
     // [{ issue_id, key, title, accumulated_seconds }]
     paused: { type: Array, default: () => [] },
@@ -40,6 +41,31 @@ const activeTime = computed(() => {
 });
 
 const notes = computed(() => props.active?.notes ?? []);
+
+// Inline edit of the open segment's start time (display-tz H:i).
+const editingStart = ref(false);
+const startDraft = ref('');
+const startError = ref('');
+function openStartEdit() {
+    if (!props.active?.running) return;
+    startDraft.value = props.active.started_at_hm;
+    startError.value = '';
+    editingStart.value = true;
+}
+function submitStart() {
+    router.post(
+        '/timers/start-time',
+        { time: startDraft.value },
+        {
+            preserveScroll: true,
+            onSuccess: () => {
+                editingStart.value = false;
+                startError.value = '';
+            },
+            onError: (e) => (startError.value = e.time ?? 'Invalid time.'),
+        },
+    );
+}
 </script>
 
 <template>
@@ -76,9 +102,38 @@ const notes = computed(() => props.active?.notes ?? []);
                     <div class="mb-auto text-[16px] font-semibold tracking-[-0.01em]">{{ active.title }}</div>
 
                     <div class="mt-[18px] flex items-end justify-between">
-                        <span class="font-mono text-[36px] font-semibold tabular-nums tracking-[-0.02em] text-accent">{{
-                            activeTime
-                        }}</span>
+                        <div class="flex flex-col gap-1">
+                            <span class="font-mono text-[36px] font-semibold tabular-nums tracking-[-0.02em] text-accent">{{
+                                activeTime
+                            }}</span>
+                            <template v-if="active.running">
+                                <button
+                                    v-if="!editingStart"
+                                    class="w-fit cursor-pointer font-mono text-[11px] font-medium text-faint-2 hover:text-accent"
+                                    title="Edit start time"
+                                    @click="openStartEdit"
+                                >
+                                    started {{ active.started_at_hm }} · edit
+                                </button>
+                                <div v-else class="flex items-center gap-1.5">
+                                    <input
+                                        v-model="startDraft"
+                                        type="time"
+                                        class="rounded-[8px] border border-[#e0dbd0] bg-white px-2 py-1 font-mono text-[12px] outline-none focus:border-accent-tint-2"
+                                        @keydown.enter.prevent="submitStart"
+                                        @keydown.esc="editingStart = false"
+                                    />
+                                    <button
+                                        class="rounded-[8px] bg-accent px-2.5 py-1 font-sans text-[12px] font-semibold text-white shadow-btn"
+                                        @click="submitStart"
+                                    >
+                                        Set
+                                    </button>
+                                    <button class="px-1 text-[14px] text-faint-2 hover:text-ink-soft" title="Cancel" @click="editingStart = false">×</button>
+                                </div>
+                                <span v-if="startError" class="font-mono text-[11px] text-behind">{{ startError }}</span>
+                            </template>
+                        </div>
                         <div class="flex gap-2">
                             <button
                                 v-if="active.running"

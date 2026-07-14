@@ -61,8 +61,14 @@ UTC; stamps render in `fylla.display_timezone` (default `Europe/Amsterdam`). The
 notes panel shows only the open segment's notes and is disabled while paused
 (ADR-0005).
 
+The active timer's start is editable inline ("started HH:MM · edit"): sets the
+open segment's `started_at` to any wall-clock time at or before now (display tz),
+correcting a forgotten/late start. Pulling it before the previous stretch may
+overlap an already-posted worklog — accepted, user-reconciled in Kendo. Only
+available while running; a future time is rejected.
+
 Routes: `POST /timers` (start), `POST /timers/pause`, `POST /timers/resume`,
-`POST /timers/stop`, `POST /timers/notes`.
+`POST /timers/stop`, `POST /timers/notes`, `POST /timers/start-time`.
 
 ### Billable projects & synced worklogs
 
