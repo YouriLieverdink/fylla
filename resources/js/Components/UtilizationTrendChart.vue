@@ -64,6 +64,10 @@ const last = computed(() => {
     for (let i = coords.value.length - 1; i >= 0; i--) if (coords.value[i]) return coords.value[i];
     return null;
 });
+// Isolated plotted points (a gap on both sides): a 1-point path stroke renders
+// nothing, so mark them explicitly. Applies to both series.
+const dotsOf = (cs) => runs(cs).filter((seg) => seg.length === 1).map((seg) => seg[0]);
+const utilDots = computed(() => dotsOf(coords.value));
 
 // Billable share line (billable ÷ worked). Breaks at the same gaps as the
 // utilization line (and any week with no worked hours), rather than bridging.
@@ -71,6 +75,7 @@ const shareCoords = computed(() =>
     props.points.map((p, i) => (p.billableShare == null ? null : [xFor(i, props.points.length), yFor(p.billableShare)])),
 );
 const sharePath = computed(() => lineOf(shareCoords.value));
+const shareDots = computed(() => dotsOf(shareCoords.value));
 const targetY = computed(() => yFor(props.target));
 
 const hover = ref(null); // active point index
@@ -123,7 +128,9 @@ const tip = computed(() => {
                     </linearGradient>
                 </defs>
                 <path v-if="sharePath" :d="sharePath" fill="none" stroke="#5c8a6f" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
+                <circle v-for="([dx, dy], i) in shareDots" :key="'share' + i" :cx="dx" :cy="dy" r="2.5" fill="#5c8a6f" />
                 <path :d="linePath" fill="none" stroke="#6c5fc9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                <circle v-for="([dx, dy], i) in utilDots" :key="'util' + i" :cx="dx" :cy="dy" r="2.75" fill="#6c5fc9" />
                 <circle v-for="(gx, i) in gaps" :key="'gap' + i" :cx="gx" :cy="BOTTOM" r="2.5" fill="none" stroke="#a8a498" stroke-width="1.25" />
                 <circle v-if="last" :cx="last[0]" :cy="last[1]" r="4" fill="#6c5fc9" stroke="#fff" stroke-width="2" />
                 <text :x="X0" y="140" font-family="var(--font-mono)" font-size="9" fill="#a8a498">{{ weeks }}w ago</text>
