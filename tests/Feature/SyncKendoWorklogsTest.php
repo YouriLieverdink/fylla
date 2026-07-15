@@ -124,6 +124,21 @@ class SyncKendoWorklogsTest extends TestCase
         $this->assertSame('Acme', Project::whereKendoId(1)->sole()->client->name);
     }
 
+    public function test_manual_entry_without_started_at_falls_back_to_created_at(): void
+    {
+        // Kendo manual entries carry minutes but no clock start; without a date
+        // to bucket by, the NOT NULL column used to abort the whole team sync.
+        Project::create(['kendo_id' => 1, 'name' => 'Client A', 'billable' => true]);
+        $created = now()->subDays(2)->startOfSecond();
+
+        $this->fakeEntries([$this->entry(10, 1, ['started_at' => null, 'created_at' => $created->toISOString()])]);
+        SyncKendoWorklogs::dispatchSync();
+
+        $this->assertTrue(
+            $created->eq(SyncedWorklog::where('kendo_worklog_id', 10)->sole()->started_at),
+        );
+    }
+
     public function test_deletes_in_window_rows_absent_from_feed_but_keeps_older(): void
     {
         Project::create(['kendo_id' => 1, 'name' => 'Client A', 'billable' => true]);

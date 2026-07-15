@@ -140,7 +140,9 @@ class Client
             'issue_id' => $row['issue_id'] ?? null,
             'project_id' => $row['project_id'] ?? null,
             'minutes' => $row['minutes_spent'] ?? 0,
-            'started_at' => $row['started_at'],
+            // Manual entries omit a clock start; created_at (the log date) is the
+            // only date they carry, and every reader buckets by started_at.
+            'started_at' => $row['started_at'] ?? $row['created_at'],
             'note' => $row['note'] ?? null,
             'issue_key' => $row['issue_key'] ?? null,
             'issue_title' => $row['issue_title'] ?? null,
