@@ -23,6 +23,23 @@ _Avoid_: time tracker (use only for the external product, not the role)
 A record of time spent — a duration with a start time, attributed to a unit of work. Posted to Kendo, read back to measure progress against targets.
 _Avoid_: timesheet; time entry (Kendo's wire word — it's a Worklog on our side)
 
+### Work items
+
+**Work item**:
+A schedulable unit on the worklist — the provider-agnostic umbrella over a **Kendo issue**, a **GitHub PR**, and a Fylla-native **draft**. Only provider-backed items are **timeable** (a timer books through to Kendo); a draft is not until promoted. The worklist orders Work items regardless of source.
+_Avoid_: task (reserve for the provider role, "task provider")
+
+**Draft**:
+A Fylla-native Work item with **no provider** — owned entirely by Fylla, never synced to or from Kendo/GitHub. For jotting to-dos that shouldn't be a Kendo ticket yet ("email this client", "talk to this person"): captured in one gesture, no external round-trip. Un-timeable while a draft (no Kendo coordinates to book against, per the Kendo-only worklog rule). Lives in the worklist alongside provider items.
+_Avoid_: note (a Note is timer commentary — a different thing)
+
+**Promote (a draft)**:
+Convert a draft into a real Kendo issue so it becomes timeable. **One-way** — once promoted it is an ordinary Kendo-mirrored issue and the draft ceases to exist as such.
+
+**Worklist**:
+The single ordered list of open Work items the user attacks top-to-bottom — Fylla's original purpose: one place to see everything there is to do, prioritized, spanning all three sources.
+_Avoid_: backlog (Kendo's word for its own unstarted pile; the worklist is the user's cross-source ordering)
+
 ### Billable tracking
 
 **Billable project**:
