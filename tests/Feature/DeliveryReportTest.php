@@ -84,6 +84,57 @@ class DeliveryReportTest extends TestCase
         $this->assertSame(8, $card['hours']);
         $this->assertNull($card['target']);
         $this->assertSame('', $card['status']);
+        $this->assertNull($card['overUnder']); // no target → nothing to pace against
+    }
+
+    public function test_projection_scales_delivered_by_working_days(): void
+    {
+        // July 2026 has 23 working days (Mon–Fri). Through the 15th, 11 have elapsed
+        // (Jul 1 is a Wednesday). Under-delivering → behind the target.
+        $now = CarbonImmutable::parse('2026-07-15 12:00', 'Europe/Amsterdam');
+
+        $client = Client::create(['name' => 'Meridian Studio', 'monthly_target_hours' => 160]);
+        Project::create(['kendo_id' => 1, 'name' => 'App', 'billable' => true, 'client_id' => $client->id]);
+        $this->log(1, '2026-07-02', 30, 1, self::ME);
+        $this->log(2, '2026-07-10', 30, 1, 43);
+
+        $card = (new DeliveryReport($now))->cards()[0];
+
+        $this->assertSame(60, $card['hours']);
+        $this->assertSame(125, $card['projected']);   // round(60 * 23 / 11)
+        $this->assertSame(-35, $card['overUnder']);    // 125 − 160, will land under
+    }
+
+    public function test_projection_over_target(): void
+    {
+        $now = CarbonImmutable::parse('2026-07-15 12:00', 'Europe/Amsterdam');
+
+        $client = Client::create(['name' => 'Meridian Studio', 'monthly_target_hours' => 160]);
+        Project::create(['kendo_id' => 1, 'name' => 'App', 'billable' => true, 'client_id' => $client->id]);
+        $this->log(1, '2026-07-02', 100, 1, self::ME);
+
+        $card = (new DeliveryReport($now))->cards()[0];
+
+        $this->assertSame(100, $card['hours']);
+        $this->assertSame(209, $card['projected']);   // round(100 * 23 / 11)
+        $this->assertSame(49, $card['overUnder']);     // over the agreed hours
+    }
+
+    public function test_cumulative_series_buckets_by_day_of_month(): void
+    {
+        $now = CarbonImmutable::parse('2026-07-04 12:00', 'Europe/Amsterdam');
+
+        $client = Client::create(['name' => 'Meridian Studio', 'monthly_target_hours' => 160]);
+        Project::create(['kendo_id' => 1, 'name' => 'App', 'billable' => true, 'client_id' => $client->id]);
+        $this->log(1, '2026-07-01', 4, 1, self::ME);
+        $this->log(2, '2026-07-03', 6, 1, 43);
+
+        $card = (new DeliveryReport($now))->cards()[0];
+
+        // Day 1..4 cumulative: 4, 4, 10, 10.
+        $this->assertSame([4, 4, 10, 10], $card['series']);
+        $this->assertSame(4, $card['today']);
+        $this->assertSame(31, $card['daysInMonth']);
     }
 
     public function test_personal_utilization_ignores_teammate_rows(): void

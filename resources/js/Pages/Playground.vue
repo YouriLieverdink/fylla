@@ -11,7 +11,7 @@ import EmptyState from '../Components/EmptyState.vue';
 import BillableMetric from '../Components/BillableMetric.vue';
 import TimerStack from '../Components/TimerStack.vue';
 import UtilizationTrendChart from '../Components/UtilizationTrendChart.vue';
-import SprintPacingChart from '../Components/SprintPacingChart.vue';
+import DeliveryProjectionChart from '../Components/DeliveryProjectionChart.vue';
 import WorkItemsTable from '../Components/WorkItemsTable.vue';
 import EstimateBias from '../Components/EstimateBias.vue';
 import ClientCard from '../Components/ClientCard.vue';
@@ -185,7 +185,19 @@ const team = [
                     :paused="paused"
                     hint="stop active → FYL-228 resumes"
                 />
-                <SprintPacingChart />
+                <DeliveryProjectionChart
+                    initials="MS"
+                    name="Meridian Studio"
+                    meta="3 projects · 4 developers"
+                    :hours="90"
+                    :target="160"
+                    :projected="186"
+                    :over-under="26"
+                    :series="[6, 14, 22, 30, 41, 52, 60, 72, 84, 90]"
+                    :today="10"
+                    :days-in-month="31"
+                    days-left="15 working days left"
+                />
             </div>
         </section>
 

@@ -1,6 +1,6 @@
 <script setup>
 import AppHeader from '../Components/AppHeader.vue';
-import ClientCard from '../Components/ClientCard.vue';
+import DeliveryProjectionChart from '../Components/DeliveryProjectionChart.vue';
 import EmptyState from '../Components/EmptyState.vue';
 
 defineProps({
@@ -22,7 +22,7 @@ defineProps({
         </div>
 
         <div v-if="clients.length" class="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <ClientCard
+            <DeliveryProjectionChart
                 v-for="c in clients"
                 :key="c.id"
                 :initials="c.initials"
@@ -30,8 +30,11 @@ defineProps({
                 :meta="c.meta"
                 :hours="c.hours"
                 :target="c.target"
-                :pct="c.pct"
-                :status="c.status"
+                :projected="c.projected"
+                :over-under="c.overUnder"
+                :series="c.series"
+                :today="c.today"
+                :days-in-month="c.daysInMonth"
                 :days-left="c.daysLeft"
             />
         </div>

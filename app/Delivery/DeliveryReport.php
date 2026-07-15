@@ -43,12 +43,33 @@ class DeliveryReport
     {
         $logs = SyncedWorklog::whereIn('kendo_project_id', $client->projects->pluck('kendo_id'))
             ->whereBetween('started_at', [$this->monthStart, $this->monthEnd])
-            ->get(['minutes', 'kendo_user_id']);
+            ->get(['minutes', 'kendo_user_id', 'started_at']);
 
         $hours = (int) round($logs->sum('minutes') / 60);
         $developers = $logs->pluck('kendo_user_id')->unique()->count();
         $projects = $client->projects->count();
         $target = $client->monthly_target_hours;
+
+        // Run-rate projection: delivered scaled by working days in month / elapsed.
+        $tz = config('fylla.display_timezone');
+        $totalWorkingDays = $this->workingDaysBetween($this->now->startOfMonth(), $this->now->endOfMonth());
+        $elapsedWorkingDays = $this->workingDaysBetween($this->now->startOfMonth(), $this->now);
+        $projected = $elapsedWorkingDays > 0
+            ? (int) round($hours * $totalWorkingDays / $elapsedWorkingDays)
+            : null;
+
+        // Cumulative delivered hours by day-of-month, day 1 through today — the actual line.
+        $minutesByDay = [];
+        foreach ($logs as $log) {
+            $day = $log->started_at->setTimezone($tz)->day;
+            $minutesByDay[$day] = ($minutesByDay[$day] ?? 0) + $log->minutes;
+        }
+        $series = [];
+        $cumulative = 0;
+        for ($day = 1; $day <= $this->now->day; $day++) {
+            $cumulative += $minutesByDay[$day] ?? 0;
+            $series[] = (int) round($cumulative / 60);
+        }
 
         return [
             'id' => $client->id,
@@ -60,6 +81,11 @@ class DeliveryReport
             'pct' => $target ? (int) round($hours / $target * 100) : 0,
             'status' => $target ? (int) round($hours / $target * 100).'%' : '',
             'daysLeft' => $this->daysLeft(),
+            'projected' => $projected,
+            'overUnder' => $target && $projected !== null ? $projected - $target : null,
+            'series' => $series,
+            'today' => $this->now->day,
+            'daysInMonth' => $this->now->daysInMonth,
         ];
     }
 
@@ -75,13 +101,19 @@ class DeliveryReport
     /** Mon–Fri days left in the current month, including today. */
     private function daysLeft(): string
     {
+        return $this->workingDaysBetween($this->now, $this->now->endOfMonth()).' working days left';
+    }
+
+    /** Mon–Fri days from $from through $to, inclusive (both in display tz). */
+    private function workingDaysBetween(CarbonImmutable $from, CarbonImmutable $to): int
+    {
         $count = 0;
-        for ($d = $this->now->startOfDay(); $d->lte($this->now->endOfMonth()); $d = $d->addDay()) {
+        for ($d = $from->startOfDay(); $d->lte($to); $d = $d->addDay()) {
             if ($d->isWeekday()) {
                 $count++;
             }
         }
 
-        return $count.' working days left';
+        return $count;
     }
 }

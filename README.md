@@ -99,13 +99,18 @@ worklog sync to the whole team; unassigned projects stay yours-only.
 
 ### Delivery
 
-The `/delivery` page (the **Delivery** nav tab) shows one card per client:
-team-aggregate hours logged against the client's projects this calendar month
-vs its `monthly_target_hours`. `App\Delivery\DeliveryReport` reads
-`synced_worklogs` **unscoped** (ADR-0011) — every developer's hours plus your
-own, billable and non-billable — bucketing `started_at` by month in
-`config('fylla.display_timezone')`. Clients without a target show delivered
-hours alone (no progress bar). Distinct from the `/clients` management tab.
+The `/delivery` page (the **Delivery** nav tab) shows one projection chart per
+client (`DeliveryProjectionChart.vue`): cumulative team-aggregate hours logged
+against the client's projects this calendar month, a dashed run-rate
+**projection** to month-end, and the client's `monthly_target_hours` as a
+reference line. `App\Delivery\DeliveryReport` reads `synced_worklogs`
+**unscoped** (ADR-0011) — every developer's hours plus your own, billable and
+non-billable — bucketing `started_at` by month/day in
+`config('fylla.display_timezone')`. Projection = delivered × working days in
+month ÷ working days elapsed (Mon–Fri, not holiday-adjusted; CONTEXT.md →
+_Delivery projection_). Clients without a target show the delivered burn-up
+alone (no projection or target line). Distinct from the `/clients` management
+tab.
 
 ### Utilization dashboard
 
