@@ -98,6 +98,9 @@ A party work is done for. The work hierarchy: **Client → one or more Kendo pro
 A per-client goal of **hours to deliver each month**, met by the whole team assigned to that client — all developers' logged hours **plus the manager's own project hours** count toward it. This is **team-aggregate**, and orthogonal to personal utilization (the same manager hours count toward both). A Fylla-owned figure edited per client in the UI, fixed and manually maintained; not auto-scaled for holidays.
 _Avoid_: capacity (that is the personal, per-week denominator — a different thing)
 
+**Delivered**:
+The team-aggregate hours logged against a client's projects in a calendar month — the sum of every developer's Worklogs plus the manager's own, billable and non-billable alike, on projects belonging to that client. The numerator weighed against the **Client monthly target**; a Worklog counts toward the month containing its start. Shown per client on the Delivery view; clients without a target show delivered hours alone, with nothing to pace against.
+
 **Sprint pacing**:
 Because a month holds one or more sprints, a client's monthly target must be spread across them rather than back-loaded. The pacing check: cumulative committed/estimated hours by sprint N should reach that sprint's proportional share of the monthly target (with two sprints, ≥50% by the first). A sprint is attributed to the month containing its **end date** (no proportional splitting across the boundary). Sprint dates come from Kendo. The sprint view shows, per managed client, two series against the pace line: **committed estimate** (the plan, read at planning time) and **accumulated actual** (the delivered reality, watched mid-sprint).
 
@@ -119,6 +122,8 @@ _Avoid_: comment (the old single-per-segment field this supersedes)
 ## Flagged ambiguities
 
 - **"Project"** is overloaded. Kendo and GitHub each have their own projects/repos; the billable-projects list and every worklog key off **Kendo projects**. A reviewed PR books its hours to its linked Kendo issue (below), whose project may differ from anything implied by the repo.
+
+- **Engagement type** (future, not yet modeled). Every client is currently assumed to carry a recurring **monthly** hour target (retainer-style, resets each month). Not represented yet: **fixed-hours** engagements — a client or project with a one-off budget of X hours total, drawn down once rather than reset monthly. When added, "target" splits into per-month vs total-budget kinds.
 
 **PR review**:
 Reviewing a GitHub pull request — about half of all work. A first-class timed work item, timed through the same **timer stack** as an issue, its hours posted as a **Worklog**. Every PR is linked to a **Kendo issue** (by convention: the branch name, else the PR body, carries the issue key `{PROJECT_KEY}-NNNN`), so review hours book to *that issue*, and the issue's Kendo project decides billability. The linked issue is usually **not the user's own** — they are reviewing someone else's work — so it is not in the personal task feed; resolution looks it up across **all** Kendo issues (a live global search by key), not the local mirror. Resolution — parse the key, confirm the match, or fall back to a manual pick when none is found — is **required before the PR can be timed** (a Worklog cannot post without a resolved issue).

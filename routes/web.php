@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\CapacityController;
 use App\Http\Controllers\ClientController;
+use App\Http\Controllers\DeliveryController;
 use App\Http\Controllers\IssueController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\PullRequestController;
@@ -18,6 +19,8 @@ Route::patch('/projects/{project}', [ProjectController::class, 'update'])->name(
 Route::post('/clients', [ClientController::class, 'store'])->name('clients.store');
 Route::patch('/clients/{client}', [ClientController::class, 'update'])->name('clients.update');
 Route::delete('/clients/{client}', [ClientController::class, 'destroy'])->name('clients.destroy');
+
+Route::get('/delivery', [DeliveryController::class, 'index'])->name('delivery.index');
 
 Route::get('/utilization', [UtilizationController::class, 'index'])->name('utilization.index');
 

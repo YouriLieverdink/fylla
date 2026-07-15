@@ -1,4 +1,5 @@
 <script setup>
+import { computed } from 'vue';
 import Card from './Card.vue';
 import ProgressBar from './ProgressBar.vue';
 
@@ -7,12 +8,14 @@ const props = defineProps({
     name: { type: String, default: '' },
     meta: { type: String, default: '' },
     hours: { type: [String, Number], default: '' },
-    target: { type: [String, Number], default: '' },
+    target: { type: [String, Number], default: null }, // null = no target: show hours alone
     pct: { type: Number, default: 0 },
     tone: { type: String, default: 'track' }, // track | behind
     status: { type: String, default: '' },
     daysLeft: { type: String, default: '' },
 });
+
+const hasTarget = computed(() => props.target !== null && props.target !== '');
 
 const avatar = {
     track: 'bg-track-tint text-track',
@@ -38,12 +41,12 @@ const statusColor = { track: 'text-track', behind: 'text-behind' };
             </div>
             <div class="text-right">
                 <div class="font-mono text-[15px] font-semibold tabular-nums">
-                    {{ hours }}<span class="text-[12px] text-faint-4"> / {{ target }}h</span>
+                    {{ hours }}<span class="text-[12px] text-faint-4">{{ hasTarget ? ' / ' + target + 'h' : 'h' }}</span>
                 </div>
                 <div class="mt-[3px] text-[11px] text-faint-2">this month</div>
             </div>
         </div>
-        <ProgressBar :value="pct" :tone="tone" class="mb-[9px]" />
+        <ProgressBar v-if="hasTarget" :value="pct" :tone="tone" class="mb-[9px]" />
         <div class="flex justify-between font-mono text-[11.5px] font-medium text-faint">
             <span :class="statusColor[tone]">{{ status }}</span>
             <span>{{ daysLeft }}</span>

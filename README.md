@@ -97,6 +97,16 @@ set/clear `monthly_target_hours`), `DELETE /clients/{client}` (nulls its
 projects' `client_id`, no cascade). Assigning a project to a client widens its
 worklog sync to the whole team; unassigned projects stay yours-only.
 
+### Delivery
+
+The `/delivery` page (the **Delivery** nav tab) shows one card per client:
+team-aggregate hours logged against the client's projects this calendar month
+vs its `monthly_target_hours`. `App\Delivery\DeliveryReport` reads
+`synced_worklogs` **unscoped** (ADR-0011) — every developer's hours plus your
+own, billable and non-billable — bucketing `started_at` by month in
+`config('fylla.display_timezone')`. Clients without a target show delivered
+hours alone (no progress bar). Distinct from the `/clients` management tab.
+
 ### Utilization dashboard
 
 The home page headlines personal utilization (`App\Utilization\UtilizationReport`,
