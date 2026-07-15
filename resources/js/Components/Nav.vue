@@ -7,7 +7,7 @@ const tabs = [
     { label: 'Personal', href: '/' },
     { label: 'Utilization', href: '/utilization' },
     { label: 'Capacity', href: '/capacity' },
-    { label: 'Projects', href: '/projects' },
+    { label: 'Clients', href: '/clients' },
 ];
 
 // '/' matches only the root; other tabs match their prefix.

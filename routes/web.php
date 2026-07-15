@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\CapacityController;
+use App\Http\Controllers\ClientController;
 use App\Http\Controllers\IssueController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\PullRequestController;
@@ -12,8 +13,11 @@ use Inertia\Inertia;
 Route::get('/', [IssueController::class, 'index']);
 Route::post('/sync', [IssueController::class, 'sync'])->name('sync');
 
-Route::get('/projects', [ProjectController::class, 'index'])->name('projects.index');
+Route::get('/clients', [ProjectController::class, 'index'])->name('clients.index');
 Route::patch('/projects/{project}', [ProjectController::class, 'update'])->name('projects.update');
+Route::post('/clients', [ClientController::class, 'store'])->name('clients.store');
+Route::patch('/clients/{client}', [ClientController::class, 'update'])->name('clients.update');
+Route::delete('/clients/{client}', [ClientController::class, 'destroy'])->name('clients.destroy');
 
 Route::get('/utilization', [UtilizationController::class, 'index'])->name('utilization.index');
 

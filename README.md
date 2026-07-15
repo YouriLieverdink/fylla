@@ -87,8 +87,15 @@ queued jobs run alongside the issues sync (every 15 min, and on **Sync now**):
 
 **Billability is a property of the project, not the worklog.** A worklog is
 billable iff its project's `billable` flag is set, derived at read time — so
-toggling a project on the `/projects` page re-classifies every worklog with no
-re-sync. Manage the list at `/projects` (`PATCH /projects/{project}`).
+toggling a project on the `/clients` page re-classifies every worklog with no
+re-sync. Manage the list at `/clients` (`PATCH /projects/{project}`).
+
+**Clients group projects (ADR-0011).** The `/clients` page assigns each project
+to a Fylla-owned client via `PATCH /projects/{project}` (`client_id`). Clients
+are managed inline — `POST /clients`, `PATCH /clients/{client}` (rename,
+set/clear `monthly_target_hours`), `DELETE /clients/{client}` (nulls its
+projects' `client_id`, no cascade). Assigning a project to a client widens its
+worklog sync to the whole team; unassigned projects stay yours-only.
 
 ### Utilization dashboard
 
