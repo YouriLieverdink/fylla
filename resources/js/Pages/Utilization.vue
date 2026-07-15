@@ -52,6 +52,10 @@ function entryDate(d) {
     const dt = parseDate(d);
     return DOW[dt.getDay()] + ' ' + dt.getDate() + ' ' + MONTHS[dt.getMonth()];
 }
+// JS Date → "YYYY-MM-DD", matching the controller's toDateString() entry dates.
+function iso(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
 
 // Monday of the week containing dt, matching PHP startOfWeek(MONDAY).
 function monday(dt) {
@@ -84,11 +88,28 @@ const weekGroups = computed(() => {
         const key = m.toDateString();
         let g = out[out.length - 1];
         if (!g || g.key !== key) {
-            g = { key, label: MONTHS[m.getMonth()] + ' ' + m.getDate(), minutes: 0, entries: [], isCurrent: key === curMonKey };
+            g = { key, mDate: m, label: MONTHS[m.getMonth()] + ' ' + m.getDate(), minutes: 0, entries: [], isCurrent: key === curMonKey };
             out.push(g);
         }
         g.entries.push(e);
         g.minutes += e.minutes;
+    }
+    // Day tier: Mon–Fri as a skeleton (render at 0h), Sat/Sun only when worked,
+    // current week stops at today. Days descend (newest first); entries within a
+    // day inherit the newest-first order from g.entries.
+    const todayStr = iso(new Date());
+    for (const g of out) {
+        const days = [];
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(g.mDate);
+            d.setDate(g.mDate.getDate() + i);
+            const ds = iso(d);
+            if (g.isCurrent && ds > todayStr) continue;
+            const entries = g.entries.filter((e) => e.date === ds);
+            if (i >= 5 && !entries.length) continue;
+            days.push({ dateStr: ds, minutes: entries.reduce((s, e) => s + e.minutes, 0), entries });
+        }
+        g.days = days.reverse();
     }
     return out;
 });
@@ -256,8 +277,8 @@ const toggleProj = (p) => (openProj.value[p.name] = !isProjOpen(p));
                 </span>
             </div>
 
-            <div class="grid grid-cols-[120px_1fr_170px_64px] gap-3 px-5 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-faint-3">
-                <span>Date</span><span>Issue</span><span>Project</span><span class="text-right">Time</span>
+            <div class="grid grid-cols-[56px_1fr_170px_64px] gap-3 px-5 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-faint-3">
+                <span>Start</span><span>Issue</span><span>Project</span><span class="text-right">Time</span>
             </div>
 
             <div v-if="entries.length" class="flex flex-col">
@@ -281,14 +302,18 @@ const toggleProj = (p) => (openProj.value[p.name] = !isProjOpen(p));
                         </div>
                     </button>
 
-                    <!-- week's entries -->
-                    <div
-                        v-for="e in isOpen(g) ? g.entries : []"
-                        :key="e.id"
-                        class="grid grid-cols-[120px_1fr_170px_64px] items-start gap-3 bg-surface-soft px-5 py-3"
-                    >
-                        <div class="whitespace-nowrap text-[13px] font-medium text-muted">{{ entryDate(e.date) }}</div>
-                        <div class="min-w-0">
+                    <!-- week's days (static sub-headers) → entries -->
+                    <template v-for="d in isOpen(g) ? g.days : []" :key="d.dateStr">
+                        <div class="border-t border-divider-soft bg-surface-soft px-5 pb-1 pt-2.5 font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-faint-3">
+                            {{ entryDate(d.dateStr) }} · {{ hm(d.minutes) }}
+                        </div>
+                        <div
+                            v-for="e in d.entries"
+                            :key="e.id"
+                            class="grid grid-cols-[56px_1fr_170px_64px] items-start gap-3 bg-surface-soft px-5 py-3"
+                        >
+                            <div class="whitespace-nowrap font-mono text-[13px] tabular-nums text-faint-2">{{ e.time }}</div>
+                            <div class="min-w-0">
                             <div class="truncate text-[13.5px] font-semibold text-ink">
                                 <span v-if="e.issueKey" class="font-mono text-[12px] text-faint-2">{{ e.issueKey }}</span>
                                 {{ e.issueTitle || '—' }}
@@ -304,8 +329,9 @@ const toggleProj = (p) => (openProj.value[p.name] = !isProjOpen(p));
                                 {{ e.billable ? 'billable' : 'internal' }}
                             </span>
                         </div>
-                        <div class="text-right font-mono text-[13.5px] tabular-nums text-ink">{{ hm(e.minutes) }}</div>
-                    </div>
+                            <div class="text-right font-mono text-[13.5px] tabular-nums text-ink">{{ hm(e.minutes) }}</div>
+                        </div>
+                    </template>
                 </template>
             </div>
 

@@ -25,6 +25,7 @@ class UtilizationController extends Controller
             ->map(fn (SyncedWorklog $w) => [
                 'id' => $w->id,
                 'date' => $w->started_at->toDateString(),
+                'time' => $w->started_at->format('H:i'),
                 'issueKey' => $w->issue_key,
                 'issueTitle' => $w->issue_title,
                 'project' => $w->project?->name,
