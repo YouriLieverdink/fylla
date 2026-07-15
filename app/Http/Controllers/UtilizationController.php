@@ -25,8 +25,10 @@ class UtilizationController extends Controller
             ->get()
             ->map(fn (SyncedWorklog $w) => [
                 'id' => $w->id,
-                'date' => $w->started_at->toDateString(),
-                'time' => $w->started_at->format('H:i'),
+                // Stored UTC; render in the display zone (Amsterdam) so the wall
+                // clock matches when the work happened.
+                'date' => $w->started_at->timezone(config('fylla.display_timezone'))->toDateString(),
+                'time' => $w->started_at->timezone(config('fylla.display_timezone'))->format('H:i'),
                 'issueKey' => $w->issue_key,
                 'issueTitle' => $w->issue_title,
                 'project' => $w->project?->name,
