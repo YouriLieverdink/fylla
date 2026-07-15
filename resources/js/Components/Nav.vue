@@ -4,7 +4,7 @@ import { Link, usePage } from '@inertiajs/vue3';
 
 const url = computed(() => usePage().url);
 const tabs = [
-    { label: 'Personal', href: '/' },
+    { label: 'Worklist', href: '/' },
     { label: 'Utilization', href: '/utilization' },
     { label: 'Capacity', href: '/capacity' },
     { label: 'Clients', href: '/clients' },

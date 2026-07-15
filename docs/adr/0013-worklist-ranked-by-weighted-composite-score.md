@@ -44,6 +44,18 @@ Default weights (from the Go app): `priority 0.45, due 0.30, estimate 0.15`,
 - **Weights are hardcoded to the proven defaults for now.** A settings page to
   tune them live (as the Go TUI's Tuning tab did) is a deferred fast-follow, not
   a launch requirement.
+- **PRs are scored via a synthetic due date, not a constant.** A PR carries none
+  of the scoring fields (no priority/type/estimate, no `up_next`/`not_before`),
+  yet PR review is ~half the work and blocks a teammate, so it must rank high and
+  escalate if left. Rather than a magic baseline, a PR is fed to the same scorer
+  as `priority = High` with `due_date = opened_at + 1 day` (a review grace),
+  `up_next = false`. It therefore lands high the day it opens and climbs to the
+  top once past the grace (overdue → full due + crunch), matching the intent
+  "review within a day or two, don't let it sit a week." This needs the PR's
+  GitHub `created_at` persisted (`opened_at`), which already rides along in the
+  search feed. The grace and base priority are hardcoded consts alongside the
+  weights. A future reader will otherwise try to "simplify" this to a flat
+  constant and lose the age escalation.
 
 ## Consequences
 

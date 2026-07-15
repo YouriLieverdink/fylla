@@ -25,9 +25,10 @@ class IssuesPageTest extends TestCase
         $this->get('/')
             ->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page
-                ->component('Issues')
-                ->has('issues', 1)
-                ->where('issues.0.key', 'A-1')
+                ->component('Worklist')
+                ->has('items', 1)
+                ->where('items.0.key', 'A-1')
+                ->where('items.0.reason', 'High')
                 ->where('lastSyncedAt', fn ($v) => $v !== null));
     }
 
@@ -46,8 +47,8 @@ class IssuesPageTest extends TestCase
         $this->get('/')
             ->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page
-                ->has('issues', 1)
-                ->where('issues.0.key', 'OPEN-1'));
+                ->has('items', 1)
+                ->where('items.0.key', 'OPEN-1'));
     }
 
     public function test_sync_now_dispatches_the_job(): void

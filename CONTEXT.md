@@ -40,6 +40,21 @@ Convert a draft into a real Kendo issue so it becomes timeable. **One-way** — 
 The single ordered list of open Work items the user attacks top-to-bottom — Fylla's original purpose: one place to see everything there is to do, prioritized, spanning all three sources.
 _Avoid_: backlog (Kendo's word for its own unstarted pile; the worklist is the user's cross-source ordering)
 
+### Scheduling fields
+
+Fylla-native annotations a user sets on a Work item to steer where it lands on the worklist. **Owned locally** (ADR-0004), never synced to or from a provider, and set through Fylla's own UI. Distinct from **priority**, which is a Kendo-owned field (edited in Fylla but stored in Kendo).
+
+**Up next**:
+A user-set **pin** marking a Work item as committed-to-next. Applies a large additive score boost (ADR-0013) so it rises near the top — a strong nudge, not an absolute lock. Manual on/off; **several may be pinned at once** and pinned items still order among themselves by score.
+_Avoid_: starred, flagged (reserve for other affordances)
+
+**Due date**:
+A user-set **deadline** on a Work item. Drives the due-date and crunch score components (climbs as it nears, overdue tops out). A Fylla concept — Kendo issues carry no due date Fylla mirrors.
+
+**Not before**:
+A user-set **earliest-actionable date**. **Demotes, never hides** — the item stays on the worklist but its score is multiplied down until the date passes, so deferred work sinks without vanishing.
+_Avoid_: snooze, hide (it does neither — the item stays visible)
+
 ### Billable tracking
 
 **Billable project**:

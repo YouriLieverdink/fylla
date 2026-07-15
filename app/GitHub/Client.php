@@ -15,8 +15,7 @@ class Client
     public function __construct(
         private HttpFactory $http,
         private string $token,
-    ) {
-    }
+    ) {}
 
     private function request(): PendingRequest
     {
@@ -38,7 +37,7 @@ class Client
      * sync: absence from a capped page is not conclusive, so the reconcile-delete
      * is skipped when set.
      *
-     * @return array{prs: array<int, array{github_id:int, number:int, repo:string, title:string, body:?string, url:string, state:string}>, truncated: bool}
+     * @return array{prs: array<int, array{github_id:int, number:int, repo:string, title:string, body:?string, url:string, state:string, opened_at:?string}>, truncated: bool}
      */
     public function searchPullRequests(string $query): array
     {
@@ -57,6 +56,8 @@ class Client
             'body' => $row['body'] ?? null,
             'url' => $row['html_url'],
             'state' => $row['state'],
+            // Feeds the worklist synthetic due (ADR-0013); nullable if absent.
+            'opened_at' => $row['created_at'] ?? null,
         ], $items);
 
         // ponytail: single page of 100. Add pagination if a query ever exceeds it.

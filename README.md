@@ -36,6 +36,27 @@ label. The page also polls every 60s so scheduled syncs surface without a
 manual refresh. Fylla-native scheduling fields (due, not-before, up-next,
 no-split, recurrence) are owned locally and never written back to Kendo (ADR-0004).
 
+### Worklist ranking
+
+The home page (`/`) is the **Worklist**: open issues and GitHub PRs merged into
+one list, ranked by a weighted composite score recomputed on every render
+(`App\Services\WorklistScorer`, ADR-0013) — never hand-dragged. The score
+weights priority, due date, and estimate, boosts items in a crunch window or
+pinned via `up_next`, and demotes (never hides) those with a future
+`not_before`. Each row shows a single "why" string (e.g. "2 days overdue",
+"quick win", "pinned"). A PR carries none of these fields, so it is scored via a
+synthetic due date (`opened_at + 1 day` grace, High priority): high the day it
+opens, climbing to the top once it sits past the grace. This needs the PR's
+GitHub `created_at` persisted as `opened_at` on `pull_requests`.
+
+Issue rows are editable inline (`PATCH /issues/{issue}`, ADR-0014): a 📌 toggle
+pins/unpins `up_next` on click, and a `⋯` popover sets `priority`, `due_date`,
+`not_before`, and the estimate (hours). Scheduling fields are local-only writes;
+`priority` and the estimate are Kendo-mirror fields written back synchronously
+(one read-modify-write on the full issue) — on failure Fylla keeps its values and
+shows an inline error, while any scheduling-field edits in the same save still
+persist. PRs get no edit UI.
+
 ### Timer stack
 
 Each issue row has a **Start** button. Starting a timer while one runs pushes a
@@ -196,6 +217,10 @@ php artisan key:generate
 #   KENDO_BASE_URL=https://<tenant>.kendo.dev
 #   KENDO_TOKEN=<bearer token>
 #   FYLLA_KENDO_USER_ID=<your Kendo user id>   # required: filters worklogs to you
+#
+# Optional GitHub PR feed overrides:
+#   GITHUB_PR_QUERIES=<comma-separated search filters>
+#   GITHUB_PR_EXCLUDE_REPOS=<comma-separated owner/name repos to hide>
 
 php artisan migrate
 npm run build

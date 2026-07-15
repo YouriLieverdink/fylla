@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
 Route::get('/', [IssueController::class, 'index']);
+Route::patch('/issues/{issue}', [IssueController::class, 'update'])->name('issues.update');
 Route::post('/sync', [IssueController::class, 'sync'])->name('sync');
 
 Route::get('/clients', [ProjectController::class, 'index'])->name('clients.index');

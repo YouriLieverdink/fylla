@@ -14,6 +14,7 @@ class PullRequest extends Model
     protected $casts = [
         'synced_at' => 'datetime',
         'resolved_at' => 'datetime',
+        'opened_at' => 'datetime',
     ];
 
     public function timers(): MorphMany

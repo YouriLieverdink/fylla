@@ -29,13 +29,19 @@ class SyncGithubPullRequests implements ShouldQueue
     {
         $now = now();
 
-        // Union across queries, de-duplicating by GitHub PR id.
+        // Union across queries, de-duplicating by GitHub PR id. PRs from excluded
+        // repos are dropped here, so they never enter the mirror (and existing
+        // rows fall out of $seen below → reconcile-deleted).
+        $exclude = config('fylla.github_pr_exclude_repos', []);
         $prs = [];
         $truncated = false;
         foreach (config('fylla.github_pr_queries', []) as $query) {
             $result = $github->searchPullRequests($query);
             $truncated = $truncated || $result['truncated'];
             foreach ($result['prs'] as $pr) {
+                if (in_array($pr['repo'], $exclude, true)) {
+                    continue;
+                }
                 $prs[$pr['github_id']] = $pr;
             }
         }
@@ -52,6 +58,7 @@ class SyncGithubPullRequests implements ShouldQueue
                     'title' => $pr['title'],
                     'url' => $pr['url'],
                     'state' => $pr['state'],
+                    'opened_at' => $pr['opened_at'] ?? null,
                     'suggested_key' => $this->parseKey($pr['title'], $pr['body']),
                     'synced_at' => $now,
                 ],

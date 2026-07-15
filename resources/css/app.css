@@ -45,6 +45,7 @@
     --color-track-tint: #e9efe9;
     --color-behind: #b18749;
     --color-behind-tint: #f3ecdf;
+    --color-over: #c2493d; /* budget spent — remaining hit 0 */
 
     /* holiday — a distinct fourth hue for public holidays on the capacity grid
        (ADR-0010). A dusty slate blue; accent periwinkle stays reserved for the

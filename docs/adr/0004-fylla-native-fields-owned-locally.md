@@ -42,3 +42,10 @@ Kendo title and never writes them into one.
   for "my open work") will drop a row's local fields when an issue leaves the
   feed. Accepted while these fields are low-stakes and re-enterable; revisit
   (soft-delete / preserve-on-absent) if that changes.
+- **Update:** `up_next`, `due_date`, and `not_before` are now user-editable
+  (worklist edit UI; priority edits go through Kendo per ADR-0014). The
+  loss-on-feed-absence stance above was revisited and **reaffirmed**: sync
+  preserves the fields on every normal pass, deletion is guarded by the
+  timer-history and truncation checks, and the only remaining loss is an issue
+  genuinely leaving the user's open work — when a due date or pin no longer
+  matters. `no_split` / `recurrence` stay reserved (no consumer yet).

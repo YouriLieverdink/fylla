@@ -149,6 +149,41 @@ class Client
         ], $rows);
     }
 
+    /** Kendo priority label → wire int (0 Highest … 4 Lowest); null if unknown. */
+    public static function priorityToInt(string $label): ?int
+    {
+        return array_flip(self::PRIORITIES)[$label] ?? null;
+    }
+
+    /**
+     * Fetch one issue's full Kendo object — the read half of the priority
+     * read-modify-write (ADR-0014). Returned as-is (unmapped) so it can be
+     * mutated and PUT back without losing unmirrored fields (e.g. description).
+     *
+     * @return array<string, mixed>
+     */
+    public function getIssue(int $projectId, int $issueId): array
+    {
+        return $this->request()
+            ->get("/api/projects/{$projectId}/issues/{$issueId}")
+            ->throw()
+            ->json();
+    }
+
+    /**
+     * Full-replace update of one issue (no PATCH exists). Caller passes the
+     * whole object from getIssue() with fields mutated — reconstructing it from
+     * Fylla's partial mirror would clobber unmirrored fields (ADR-0014).
+     *
+     * @param  array<string, mixed>  $issue
+     */
+    public function updateIssue(int $projectId, int $issueId, array $issue): void
+    {
+        $this->request()
+            ->put("/api/projects/{$projectId}/issues/{$issueId}", $issue)
+            ->throw();
+    }
+
     /**
      * Log a time entry against an issue. One entry per local Worklog (ADR-0005);
      * returns the Kendo entry id.
