@@ -14,10 +14,10 @@ class UtilizationPageTest extends TestCase
 
     public function test_index_renders_breakdown_and_entries(): void
     {
-        config(['fylla.utilization_window_weeks' => 3]);
+        config(['fylla.kendo_user_id' => 42, 'fylla.utilization_window_weeks' => 3]);
         Project::create(['kendo_id' => 1, 'name' => 'Client A', 'billable' => true]);
         SyncedWorklog::create([
-            'kendo_worklog_id' => 1, 'kendo_project_id' => 1, 'minutes' => 120,
+            'kendo_worklog_id' => 1, 'kendo_user_id' => 42, 'kendo_project_id' => 1, 'minutes' => 120,
             'started_at' => now()->toDateString().' 09:00:00',
             'issue_key' => 'A-1', 'issue_title' => 'Task', 'note' => 'did work',
         ]);

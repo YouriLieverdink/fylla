@@ -40,4 +40,15 @@ class SyncedWorklog extends Model
     {
         return $query->whereHas('project', fn (Builder $q) => $q->where('billable', true));
     }
+
+    /**
+     * The user's own worklogs only. The mirror holds teammates' rows for
+     * managed-client projects (ADR-0011); EVERY personal reader must apply this
+     * scope or teammate hours inflate the utilization metric. Guarded by a
+     * regression test — this is not dead code.
+     */
+    public function scopeMine(Builder $query): Builder
+    {
+        return $query->where('kendo_user_id', config('fylla.kendo_user_id'));
+    }
 }

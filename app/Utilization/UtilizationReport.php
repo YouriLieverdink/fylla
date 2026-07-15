@@ -194,7 +194,8 @@ class UtilizationReport
         $rangeStart = $this->currentMonday->subWeeks(2 * $this->windowWeeks - 1);
         $rangeEnd = $this->currentMonday->addWeek();
 
-        $worklogs = SyncedWorklog::whereBetween('started_at', [$rangeStart, $rangeEnd])
+        $worklogs = SyncedWorklog::mine()
+            ->whereBetween('started_at', [$rangeStart, $rangeEnd])
             ->with('project:kendo_id,billable')
             ->get(['minutes', 'started_at', 'kendo_project_id']);
 

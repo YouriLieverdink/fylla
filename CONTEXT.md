@@ -92,10 +92,10 @@ The systemic gap between estimates and actuals over finished issues (e.g. "under
 ### Client & project management
 
 **Client**:
-A party work is done for. The work hierarchy: **Client → one or more Kendo projects → one or more repositories → PRs/issues.** A client maps to a configured set of Kendo projects; an unmapped project defaults to a client of its own name. For clients the user **manages** (PM role), the client is the unit a monthly hour target and delivery pacing attach to; for others it is just a grouping lens over synced Kendo data (a context view — active issues, logged hours, sprint status — to brief before a call). Fylla stores no client communications; reminders and send-email/Slack are **out of scope**.
+A party work is done for. The work hierarchy: **Client → one or more Kendo projects → one or more repositories → PRs/issues.** A client is a **Fylla-owned entity** (name + monthly target), created and edited in Fylla's UI; projects are assigned to it in the UI. An unassigned project defaults to a client of its own name. For clients the user **manages** (PM role), the client is the unit a monthly hour target and delivery pacing attach to; for others it is just a grouping lens over synced Kendo data (a context view — active issues, logged hours, sprint status — to brief before a call). Fylla stores no client communications; reminders and send-email/Slack are **out of scope**.
 
 **Client monthly target**:
-A per-client goal of **hours to deliver each month**, met by the whole team assigned to that client — all developers' logged hours **plus the manager's own project hours** count toward it. This is **team-aggregate**, and orthogonal to personal utilization (the same manager hours count toward both). Configured as a simple list of `client → target hours/month`, fixed and manually maintained; not auto-scaled for holidays.
+A per-client goal of **hours to deliver each month**, met by the whole team assigned to that client — all developers' logged hours **plus the manager's own project hours** count toward it. This is **team-aggregate**, and orthogonal to personal utilization (the same manager hours count toward both). A Fylla-owned figure edited per client in the UI, fixed and manually maintained; not auto-scaled for holidays.
 _Avoid_: capacity (that is the personal, per-week denominator — a different thing)
 
 **Sprint pacing**:

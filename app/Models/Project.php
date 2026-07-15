@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Project extends Model
 {
@@ -15,4 +16,10 @@ class Project extends Model
         'synced_at' => 'datetime',
         'billable' => 'boolean',
     ];
+
+    /** The client this project is assigned to; null = unmanaged, yours-only. */
+    public function client(): BelongsTo
+    {
+        return $this->belongsTo(Client::class);
+    }
 }

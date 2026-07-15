@@ -18,7 +18,8 @@ class UtilizationController extends Controller
             ->startOfWeek(CarbonImmutable::MONDAY)
             ->subWeeks($windowWeeks - 1);
 
-        $entries = SyncedWorklog::where('started_at', '>=', $windowStart)
+        $entries = SyncedWorklog::mine()
+            ->where('started_at', '>=', $windowStart)
             ->with('project:kendo_id,name,billable')
             ->orderByDesc('started_at')
             ->get()
