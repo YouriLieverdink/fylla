@@ -29,6 +29,8 @@ class PostWorklogTest extends TestCase
         return Worklog::create(array_merge([
             'issue_id' => $issue->id,
             'timer_id' => $issue->timers()->create()->id,
+            'kendo_project_id' => 7,
+            'kendo_issue_id' => 42,
             'minutes' => 30,
             'started_at' => now(),
             'comment' => 'did stuff',

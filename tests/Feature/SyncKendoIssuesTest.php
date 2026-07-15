@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Jobs\SyncKendoIssues;
 use App\Models\Issue;
-use App\Models\Timer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -96,7 +95,7 @@ class SyncKendoIssuesTest extends TestCase
 
         // Track time on issue 2, then re-sync: it must not be deleted (FK + intent).
         $issue2 = Issue::where('kendo_id', 2)->sole();
-        Timer::create(['issue_id' => $issue2->id]);
+        $issue2->timers()->create();
 
         SyncKendoIssues::dispatchSync();
 

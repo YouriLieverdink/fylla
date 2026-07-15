@@ -54,13 +54,13 @@ class TimerServiceTest extends TestCase
         $this->svc->start($b);
         $this->assertSame(2, Timer::live()->count());
         $this->assertSame(1, $this->openCount());
-        $this->assertSame($b->id, Timer::live()->first()->issue_id);
+        $this->assertSame($b->id, Timer::live()->first()->timeable_id);
 
         // stopping the top pops B and auto-resumes A
         $this->svc->stop();
         $this->assertSame(1, Timer::live()->count());
         $this->assertSame(1, $this->openCount());
-        $this->assertSame($a->id, Timer::live()->first()->issue_id);
+        $this->assertSame($a->id, Timer::live()->first()->timeable_id);
 
         $this->svc->stop();
         $this->assertSame(0, Timer::live()->count());
@@ -207,7 +207,7 @@ class TimerServiceTest extends TestCase
         $this->post('/timers/pause')->assertRedirect();
 
         $this->get('/')->assertInertia(fn ($page) => $page
-            ->where('timer.active.issue_id', $a->id)
+            ->where('timer.active.key', 'A-1')
             ->where('timer.active.running', false)
             ->where('timer.active.accumulated_seconds', 120));
     }
