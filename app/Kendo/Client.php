@@ -186,22 +186,55 @@ class Client
     /**
      * Create a new issue (ADR-0012 promote). Assigned to the caller so it comes
      * back in the my-issues feed and syncs into the local mirror like any other
-     * issue. Returns the new Kendo issue id.
+     * issue, and dropped into the project's first lane + active sprint (Kendo
+     * requires lane_id/type/description explicitly on create). A draft carries
+     * no description or type, so the title doubles as the description and the
+     * type defaults to Task. Returns the new Kendo issue id.
      */
     public function createIssue(int $projectId, string $title, ?int $priority, ?int $assigneeId): int
     {
-        $payload = ['title' => $title, 'description' => ''];
+        $payload = [
+            'title' => $title,
+            'description' => $title,
+            'lane_id' => $this->firstLaneId($projectId),
+            'type' => 2, // Task
+        ];
         if ($priority !== null) {
             $payload['priority'] = $priority;
         }
         if ($assigneeId !== null) {
             $payload['assignee_id'] = $assigneeId;
         }
+        if (($sprintId = $this->activeSprintId($projectId)) !== null) {
+            $payload['sprint_id'] = $sprintId;
+        }
 
         return (int) $this->request()
             ->post("/api/projects/{$projectId}/issues", $payload)
             ->throw()
             ->json('id');
+    }
+
+    /** First lane (lowest order) of a project — the create default column. */
+    private function firstLaneId(int $projectId): int
+    {
+        $lanes = $this->request()->get("/api/projects/{$projectId}/lanes")->throw()->json();
+        usort($lanes, fn (array $a, array $b) => ($a['order'] ?? 0) <=> ($b['order'] ?? 0));
+
+        return (int) $lanes[0]['id'];
+    }
+
+    /** The project's active sprint id (status 1), or null if none is running. */
+    private function activeSprintId(int $projectId): ?int
+    {
+        $sprints = $this->request()->get("/api/projects/{$projectId}/sprints")->throw()->json();
+        foreach ($sprints as $sprint) {
+            if (($sprint['status'] ?? null) === 1) {
+                return (int) $sprint['id'];
+            }
+        }
+
+        return null;
     }
 
     /**

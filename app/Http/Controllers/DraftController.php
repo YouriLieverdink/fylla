@@ -6,6 +6,7 @@ use App\Jobs\SyncKendoIssues;
 use App\Kendo\Client as KendoClient;
 use App\Models\Draft;
 use App\Services\WorklistScorer;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -74,7 +75,10 @@ class DraftController extends Controller
                 $assignee !== null ? (int) $assignee : null,
             );
         } catch (\Throwable $e) {
-            return back()->withErrors(['promote' => 'Could not create the Kendo issue.']);
+            report($e); // log the real reason; the draft stays put
+            $reason = $e instanceof RequestException ? $e->response->body() : $e->getMessage();
+
+            return back()->withErrors(['promote' => 'Could not create the Kendo issue: '.$reason]);
         }
 
         try {

@@ -1,6 +1,6 @@
 <script setup>
 import { router, usePoll } from '@inertiajs/vue3';
-import { reactive, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import Card from '../Components/Card.vue';
 import AppHeader from '../Components/AppHeader.vue';
 import Chip from '../Components/Chip.vue';
@@ -87,22 +87,25 @@ function togglePin(item) {
     });
 }
 
-// composite key: issue and draft ids can collide but share this popover
+// composite key: issue and draft ids can collide but share this modal
 const rowKey = (item) => item.kind + '-' + item.id;
 
-// flip the popover above the trigger when there isn't room below it
-const dropUp = ref(false);
+// lock body scroll while the edit modal is open
+watch(editing, (open) => {
+    document.body.style.overflow = open ? 'hidden' : '';
+});
 
-function openEdit(item, event) {
+function openEdit(item) {
     editing.value = editing.value === rowKey(item) ? null : rowKey(item);
-    const rect = event?.currentTarget.getBoundingClientRect();
-    dropUp.value = rect ? window.innerHeight - rect.bottom < 360 : false;
     draft.title = item.title ?? '';
     draft.priority = item.priority ?? 'Medium';
     draft.due_date = item.due_date ?? '';
     draft.not_before = item.not_before ?? '';
     draft.estimate_hours = item.estimated_minutes != null ? item.estimated_minutes / 60 : '';
-    if (item.kind === 'draft') promoteProject.value = props.projects[0]?.kendo_id ?? '';
+    if (item.kind === 'draft') {
+        promoteProject.value = '';
+        promoteQuery.value = '';
+    }
 }
 
 // priority/estimate may fail (Kendo write-through); dates/up_next always persist (ADR-0014).
@@ -142,10 +145,37 @@ function deleteDraft(item) {
 }
 
 // promote a draft into a Kendo issue (ADR-0012); one-way, draft is removed on success
-const promoteProject = ref('');
+// search-select the promote target so it scales past a dropdown's worth of projects
+const promoteProject = ref(''); // selected kendo_id, '' = none
+const promoteQuery = ref('');
+const promoteMatches = computed(() => {
+    const q = promoteQuery.value.trim().toLowerCase();
+    const list = q ? props.projects.filter((p) => p.name.toLowerCase().includes(q)) : props.projects;
+    return list.slice(0, 8); // a short menu; refine the query for the rest
+});
+function pickProject(p) {
+    promoteProject.value = p.kendo_id;
+    promoteQuery.value = p.name;
+}
+// resolve the target from an explicit pick, else an exact or single query match —
+// so typing a name and hitting Promote works without a separate dropdown click
+function resolvePromoteTarget() {
+    if (promoteProject.value) return promoteProject.value;
+    const q = promoteQuery.value.trim().toLowerCase();
+    if (!q) return null;
+    const exact = props.projects.find((p) => p.name.toLowerCase() === q);
+    if (exact) return exact.kendo_id;
+    return promoteMatches.value.length === 1 ? promoteMatches.value[0].kendo_id : null;
+}
 function promote(item) {
-    if (!promoteProject.value) return;
-    router.post(`/drafts/${item.id}/promote`, { project_id: promoteProject.value }, {
+    const pid = resolvePromoteTarget();
+    if (!pid) {
+        errors[rowKey(item)] = promoteQuery.value.trim()
+            ? 'Multiple projects match — pick one from the list.'
+            : 'Search and pick a project first.';
+        return;
+    }
+    router.post(`/drafts/${item.id}/promote`, { project_id: pid }, {
         ...opts,
         onError: (e) => (errors[rowKey(item)] = e.promote ?? e.project_id ?? 'Could not promote.'),
         onSuccess: () => {
@@ -344,21 +374,25 @@ async function search() {
                             <button
                                 class="cursor-pointer rounded-[8px] px-1.5 py-1 font-mono text-[15px] leading-none text-faint-2 transition hover:bg-divider hover:text-ink-soft"
                                 title="Edit priority & scheduling"
-                                @click="openEdit(item, $event)"
+                                @click="openEdit(item)"
                             >
                                 ⋯
                             </button>
 
-                            <!-- click-outside backdrop; popover sits above it (z-40 > z-30) -->
-                            <div v-if="editing === rowKey(item)" class="fixed inset-0 z-30" @click="editing = null"></div>
+                            <!-- centered modal (matches the Clients add-project dialog) -->
                             <div
                                 v-if="editing === rowKey(item)"
-                                class="absolute right-0 z-40 w-[240px] rounded-[14px] border border-[#ebe7de] bg-surface p-3.5 shadow-[0_16px_44px_-14px_rgba(42,41,38,0.38)]"
-                                :class="dropUp ? 'bottom-full mb-1.5' : 'top-full mt-1.5'"
+                                class="fixed inset-0 z-50 flex items-start justify-center bg-black/30 px-4 pt-[15vh]"
+                                @click.self="editing = null"
                                 @keydown.esc.window="editing = null"
                             >
+                                <Card radius="18px" pad="18px 20px" class="max-h-[70vh] w-full max-w-[440px] overflow-y-auto">
+                                    <div class="mb-3 flex items-center justify-between">
+                                        <h2 class="text-[15px] font-semibold">{{ item.kind === 'draft' ? 'Edit draft' : 'Edit ' + item.key }}</h2>
+                                        <button class="cursor-pointer font-mono text-[11px] uppercase tracking-[0.1em] text-faint-3 hover:text-ink" @click="editing = null">Close</button>
+                                    </div>
                                 <template v-if="item.kind === 'draft'">
-                                    <label class="mb-1 block font-mono text-[10px] uppercase tracking-[0.08em] text-faint-3">Title</label>
+                                    <label class="mb-1.5 block font-mono text-[11px] uppercase tracking-[0.08em] text-faint-3">Title</label>
                                     <textarea
                                         v-model="draft.title"
                                         rows="3"
@@ -366,85 +400,104 @@ async function search() {
                                         data-bwignore="true"
                                         data-1p-ignore
                                         data-lpignore="true"
-                                        class="mb-3 w-full resize-none rounded-[9px] border border-[#e0dbd0] bg-white px-2.5 py-2 text-[12px] leading-snug outline-none focus:border-accent-tint-2"
+                                        class="mb-4 w-full resize-none rounded-[11px] border border-[#e0dbd0] bg-surface px-3.5 py-2.5 text-[14px] leading-snug outline-none focus:border-accent"
                                     ></textarea>
                                 </template>
 
-                                <label class="mb-1 block font-mono text-[10px] uppercase tracking-[0.08em] text-faint-3">Priority</label>
+                                <label class="mb-1.5 block font-mono text-[11px] uppercase tracking-[0.08em] text-faint-3">Priority</label>
                                 <select
                                     v-model="draft.priority"
-                                    class="mb-3 w-full rounded-[9px] border border-[#e0dbd0] bg-white px-2.5 py-2 font-mono text-[12px] outline-none focus:border-accent-tint-2"
+                                    class="mb-4 w-full rounded-[11px] border border-[#e0dbd0] bg-surface px-3.5 py-2.5 text-[14px] outline-none focus:border-accent"
                                 >
                                     <option v-for="p in PRIORITIES" :key="p" :value="p">{{ p }}</option>
                                 </select>
 
-                                <label class="mb-1 block font-mono text-[10px] uppercase tracking-[0.08em] text-faint-3">Due date</label>
-                                <div class="mb-3 flex items-center gap-1.5">
+                                <label class="mb-1.5 block font-mono text-[11px] uppercase tracking-[0.08em] text-faint-3">Due date</label>
+                                <div class="mb-4 flex items-center gap-2">
                                     <input
                                         v-model="draft.due_date"
                                         type="date"
-                                        class="min-w-0 flex-1 rounded-[9px] border border-[#e0dbd0] bg-white px-2.5 py-2 font-mono text-[12px] outline-none focus:border-accent-tint-2"
+                                        class="min-w-0 flex-1 rounded-[11px] border border-[#e0dbd0] bg-surface px-3.5 py-2.5 text-[14px] outline-none focus:border-accent"
                                     />
-                                    <button v-if="draft.due_date" class="cursor-pointer px-1 text-[16px] leading-none text-faint-2 hover:text-behind" title="Clear" @click="draft.due_date = ''">×</button>
+                                    <button v-if="draft.due_date" class="cursor-pointer px-1 text-[18px] leading-none text-faint-2 hover:text-behind" title="Clear" @click="draft.due_date = ''">×</button>
                                 </div>
 
-                                <label class="mb-1 block font-mono text-[10px] uppercase tracking-[0.08em] text-faint-3">Not before</label>
-                                <div class="mb-3.5 flex items-center gap-1.5">
+                                <label class="mb-1.5 block font-mono text-[11px] uppercase tracking-[0.08em] text-faint-3">Not before</label>
+                                <div class="mb-4 flex items-center gap-2">
                                     <input
                                         v-model="draft.not_before"
                                         type="date"
-                                        class="min-w-0 flex-1 rounded-[9px] border border-[#e0dbd0] bg-white px-2.5 py-2 font-mono text-[12px] outline-none focus:border-accent-tint-2"
+                                        class="min-w-0 flex-1 rounded-[11px] border border-[#e0dbd0] bg-surface px-3.5 py-2.5 text-[14px] outline-none focus:border-accent"
                                     />
-                                    <button v-if="draft.not_before" class="cursor-pointer px-1 text-[16px] leading-none text-faint-2 hover:text-behind" title="Clear" @click="draft.not_before = ''">×</button>
+                                    <button v-if="draft.not_before" class="cursor-pointer px-1 text-[18px] leading-none text-faint-2 hover:text-behind" title="Clear" @click="draft.not_before = ''">×</button>
                                 </div>
 
-                                <!-- promote target: a draft has no project, so pick one (ADR-0012) -->
+                                <!-- promote target: a draft has no project, so search + pick one (ADR-0012) -->
                                 <template v-if="item.kind === 'draft' && projects.length">
-                                    <label class="mb-1 block font-mono text-[10px] uppercase tracking-[0.08em] text-faint-3">Promote to project</label>
-                                    <select
-                                        v-model="promoteProject"
-                                        class="mb-3.5 w-full rounded-[9px] border border-[#e0dbd0] bg-white px-2.5 py-2 font-mono text-[12px] outline-none focus:border-accent-tint-2"
-                                    >
-                                        <option v-for="p in projects" :key="p.kendo_id" :value="p.kendo_id">{{ p.name }}</option>
-                                    </select>
+                                    <label class="mb-1.5 block font-mono text-[11px] uppercase tracking-[0.08em] text-faint-3">Promote to project</label>
+                                    <input
+                                        v-model="promoteQuery"
+                                        type="text"
+                                        placeholder="Search projects…"
+                                        autocomplete="off"
+                                        data-bwignore="true"
+                                        data-1p-ignore
+                                        data-lpignore="true"
+                                        class="w-full rounded-[11px] border border-[#e0dbd0] bg-surface px-3.5 py-2.5 text-[14px] outline-none focus:border-accent"
+                                        @input="promoteProject = ''"
+                                        @keydown.enter.prevent="promoteMatches[0] && pickProject(promoteMatches[0])"
+                                    />
+                                    <ul v-if="promoteQuery.trim() && !promoteProject" class="mb-4 mt-1.5 max-h-[160px] overflow-y-auto rounded-[11px] border border-[#ebe7de]">
+                                        <li
+                                            v-for="p in promoteMatches"
+                                            :key="p.kendo_id"
+                                            class="cursor-pointer px-3.5 py-2 text-[14px] text-ink-soft hover:bg-accent-chip hover:text-accent"
+                                            @click="pickProject(p)"
+                                        >
+                                            {{ p.name }}
+                                        </li>
+                                        <li v-if="!promoteMatches.length" class="px-3.5 py-2 text-[13px] text-faint-3">No match</li>
+                                    </ul>
+                                    <div v-else class="mb-4"></div>
                                 </template>
 
                                 <!-- estimate is a Kendo-mirror field; drafts have none (ADR-0012) -->
                                 <template v-if="item.kind === 'issue'">
-                                    <label class="mb-1 block font-mono text-[10px] uppercase tracking-[0.08em] text-faint-3">Estimate (hours)</label>
-                                    <div class="mb-3.5 flex items-center gap-1.5">
+                                    <label class="mb-1.5 block font-mono text-[11px] uppercase tracking-[0.08em] text-faint-3">Estimate (hours)</label>
+                                    <div class="mb-4 flex items-center gap-2">
                                         <input
                                             v-model="draft.estimate_hours"
                                             type="number"
                                             min="0"
                                             step="0.25"
                                             placeholder="—"
-                                            class="min-w-0 flex-1 rounded-[9px] border border-[#e0dbd0] bg-white px-2.5 py-2 font-mono text-[12px] outline-none focus:border-accent-tint-2"
+                                            class="min-w-0 flex-1 rounded-[11px] border border-[#e0dbd0] bg-surface px-3.5 py-2.5 text-[14px] outline-none focus:border-accent"
                                         />
-                                        <button v-if="draft.estimate_hours !== ''" class="cursor-pointer px-1 text-[16px] leading-none text-faint-2 hover:text-behind" title="Clear" @click="draft.estimate_hours = ''">×</button>
+                                        <button v-if="draft.estimate_hours !== ''" class="cursor-pointer px-1 text-[18px] leading-none text-faint-2 hover:text-behind" title="Clear" @click="draft.estimate_hours = ''">×</button>
                                     </div>
                                 </template>
 
                                 <div class="flex items-center justify-between">
-                                    <span v-if="errors[rowKey(item)]" class="font-mono text-[10px] text-behind">{{ errors[rowKey(item)] }}</span>
+                                    <span v-if="errors[rowKey(item)]" class="font-mono text-[11px] text-behind">{{ errors[rowKey(item)] }}</span>
                                     <span v-else></span>
                                     <div class="flex items-center gap-2">
                                         <button
                                             v-if="item.kind === 'draft' && projects.length"
-                                            class="cursor-pointer rounded-[9px] border border-[#e0dbd0] bg-white px-3 py-1.5 font-sans text-[12px] font-semibold text-ink-soft transition hover:border-accent-tint-2 hover:text-accent"
+                                            class="cursor-pointer rounded-[11px] border border-[#e0dbd0] bg-surface px-4 py-2 font-sans text-[13px] font-semibold text-ink-soft transition hover:border-accent hover:text-accent"
                                             title="Create a Kendo issue from this draft"
                                             @click="promote(item)"
                                         >
                                             Promote
                                         </button>
                                         <button
-                                            class="cursor-pointer rounded-[9px] bg-accent px-3.5 py-1.5 font-sans text-[12px] font-semibold text-white transition hover:bg-accent-deep"
+                                            class="cursor-pointer rounded-[11px] bg-accent px-4 py-2 font-sans text-[13px] font-semibold text-white transition hover:bg-accent-deep"
                                             @click="saveEdit(item)"
                                         >
                                             Done
                                         </button>
                                     </div>
                                 </div>
+                                </Card>
                             </div>
                         </div>
                     </template>

@@ -86,15 +86,21 @@ class DraftsTest extends TestCase
         Project::create(['kendo_id' => 3, 'name' => 'Acme']);
         $draft = Draft::create(['title' => 'Formalize this', 'priority' => 'High', 'up_next' => true]);
 
-        // create POST returns the new id; the follow-up sync's my-issues feed
-        // returns it as an ordinary assigned issue, so it mirrors in and is timeable.
+        // create resolves the first lane + active sprint, then POSTs; the follow-up
+        // sync's my-issues feed returns it as an ordinary assigned, timeable issue.
         Http::fake(function ($request) {
             $url = $request->url();
+            if (str_contains($url, '/lanes')) {
+                return Http::response([['id' => 11, 'order' => 2], ['id' => 10, 'order' => 1]]);
+            }
+            if (str_contains($url, '/sprints')) {
+                return Http::response([['id' => 77, 'status' => 1]]);
+            }
             if (str_contains($url, '/api/issues/my')) {
                 return Http::response([
                     'data' => [[
                         'id' => 5001, 'key' => 'ACME-1', 'title' => 'Formalize this',
-                        'priority' => 1, 'type' => 2, 'lane_id' => 9, 'project_id' => 3,
+                        'priority' => 1, 'type' => 2, 'lane_id' => 10, 'project_id' => 3,
                         'epic_id' => null, 'updated_at' => '2026-07-16T08:00:00+00:00',
                     ]],
                     'meta' => ['truncated' => false, 'count' => 1, 'limit' => 500],
@@ -111,7 +117,10 @@ class DraftsTest extends TestCase
 
         Http::assertSent(fn ($r) => $r->method() === 'POST'
             && str_contains($r->url(), '/api/projects/3/issues')
-            && $r['title'] === 'Formalize this');
+            && $r['title'] === 'Formalize this'
+            && $r['lane_id'] === 10  // lowest order wins
+            && $r['sprint_id'] === 77 // the active sprint
+            && $r['type'] === 2);
 
         $this->assertDatabaseMissing('drafts', ['id' => $draft->id]);
         // Mirrored in via the inline sync — a normal, timeable Kendo issue.

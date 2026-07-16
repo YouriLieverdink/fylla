@@ -70,12 +70,14 @@ ADR-0006) — the row's action is a **Done** button that removes it
 (`DELETE /drafts/{draft}`).
 
 **Promote (ADR-0012)** turns a draft into a real, timeable Kendo issue. Pick a
-target project in the `⋯` popover and hit **Promote** (`POST
-/drafts/{draft}/promote`): the controller creates the issue via
-`Kendo\Client::createIssue` (assigned to `FYLLA_KENDO_USER_ID` so it returns in
-the my-issues feed), runs a sync so it mirrors in immediately as an ordinary
-timeable issue, and deletes the draft. One-way: a create failure leaves the
-draft intact and surfaces the error; there is no demote.
+target project (search-and-select, so it scales past a dropdown) in the `⋯`
+popover and hit **Promote** (`POST /drafts/{draft}/promote`): the controller
+creates the issue via `Kendo\Client::createIssue` — assigned to
+`FYLLA_KENDO_USER_ID` (so it returns in the my-issues feed), dropped in the
+project's first lane and active sprint, typed Task, with the title doubling as
+the required description — then runs a sync so it mirrors in immediately as an
+ordinary timeable issue, and deletes the draft. One-way: a create failure
+leaves the draft intact and surfaces the error; there is no demote.
 
 ### Timer stack
 
