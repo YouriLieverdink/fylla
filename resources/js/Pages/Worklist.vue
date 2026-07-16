@@ -70,7 +70,7 @@ const typeDot = { Feature: 'bg-accent-soft', Bug: 'bg-behind', Task: 'bg-faint-2
 // --- issue editing: priority (Kendo write-through) + scheduling (local) ---
 const PRIORITIES = ['Highest', 'High', 'Medium', 'Low', 'Lowest'];
 const editing = ref(null); // issue id with the edit popover open
-const draft = reactive({ priority: 'Medium', due_date: '', not_before: '', estimate_hours: '' });
+const draft = reactive({ title: '', priority: 'Medium', due_date: '', not_before: '', estimate_hours: '' });
 
 // drafts are Fylla-owned (ADR-0012), issues write priority through to Kendo (ADR-0014)
 function editUrl(item) {
@@ -88,8 +88,14 @@ function togglePin(item) {
 // composite key: issue and draft ids can collide but share this popover
 const rowKey = (item) => item.kind + '-' + item.id;
 
-function openEdit(item) {
+// flip the popover above the trigger when there isn't room below it
+const dropUp = ref(false);
+
+function openEdit(item, event) {
     editing.value = editing.value === rowKey(item) ? null : rowKey(item);
+    const rect = event?.currentTarget.getBoundingClientRect();
+    dropUp.value = rect ? window.innerHeight - rect.bottom < 360 : false;
+    draft.title = item.title ?? '';
     draft.priority = item.priority ?? 'Medium';
     draft.due_date = item.due_date ?? '';
     draft.not_before = item.not_before ?? '';
@@ -104,7 +110,9 @@ function saveEdit(item) {
         due_date: draft.due_date || null,
         not_before: draft.not_before || null,
     };
-    if (item.kind !== 'draft') {
+    if (item.kind === 'draft') {
+        payload.title = draft.title.trim() || item.title; // title is a draft's whole content; never blank it
+    } else {
         payload.estimated_minutes = draft.estimate_hours === '' ? null : Math.round(draft.estimate_hours * 60);
     }
     router.patch(editUrl(item), payload, {
@@ -219,12 +227,16 @@ async function search() {
                 v-model="newDraft"
                 type="text"
                 placeholder="Jot a to-do — a client to email, a person to talk to…"
+                autocomplete="off"
+                data-bwignore="true"
+                data-1p-ignore
+                data-lpignore="true"
                 class="min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-faint-3"
                 @keydown.enter="captureDraft"
             />
             <button
-                v-if="newDraft.trim()"
                 class="flex-none cursor-pointer rounded-[9px] bg-accent px-3.5 py-1.5 font-sans text-[12px] font-semibold text-white transition hover:bg-accent-deep"
+                :class="{ invisible: !newDraft.trim() }"
                 @click="captureDraft"
             >
                 Add
@@ -315,15 +327,32 @@ async function search() {
                             <button
                                 class="cursor-pointer rounded-[8px] px-1.5 py-1 font-mono text-[15px] leading-none text-faint-2 transition hover:bg-divider hover:text-ink-soft"
                                 title="Edit priority & scheduling"
-                                @click="openEdit(item)"
+                                @click="openEdit(item, $event)"
                             >
                                 ⋯
                             </button>
 
+                            <!-- click-outside backdrop; popover sits above it (z-40 > z-30) -->
+                            <div v-if="editing === rowKey(item)" class="fixed inset-0 z-30" @click="editing = null"></div>
                             <div
                                 v-if="editing === rowKey(item)"
-                                class="absolute right-0 top-full z-40 mt-1.5 w-[240px] rounded-[14px] border border-[#ebe7de] bg-surface p-3.5 shadow-[0_16px_44px_-14px_rgba(42,41,38,0.38)]"
+                                class="absolute right-0 z-40 w-[240px] rounded-[14px] border border-[#ebe7de] bg-surface p-3.5 shadow-[0_16px_44px_-14px_rgba(42,41,38,0.38)]"
+                                :class="dropUp ? 'bottom-full mb-1.5' : 'top-full mt-1.5'"
+                                @keydown.esc.window="editing = null"
                             >
+                                <template v-if="item.kind === 'draft'">
+                                    <label class="mb-1 block font-mono text-[10px] uppercase tracking-[0.08em] text-faint-3">Title</label>
+                                    <textarea
+                                        v-model="draft.title"
+                                        rows="3"
+                                        autocomplete="off"
+                                        data-bwignore="true"
+                                        data-1p-ignore
+                                        data-lpignore="true"
+                                        class="mb-3 w-full resize-none rounded-[9px] border border-[#e0dbd0] bg-white px-2.5 py-2 text-[12px] leading-snug outline-none focus:border-accent-tint-2"
+                                    ></textarea>
+                                </template>
+
                                 <label class="mb-1 block font-mono text-[10px] uppercase tracking-[0.08em] text-faint-3">Priority</label>
                                 <select
                                     v-model="draft.priority"
@@ -419,10 +448,11 @@ async function search() {
                         <!-- drafts are un-timeable (ADR-0012): remove-when-done, no timer -->
                         <button
                             v-if="item.kind === 'draft'"
-                            class="inline-flex cursor-pointer items-center gap-[7px] rounded-[10px] border border-[#e0dbd0] bg-white px-[13px] py-2 font-sans text-[12.5px] font-semibold text-faint-2 transition hover:border-behind hover:text-behind"
-                            title="Remove draft"
+                            class="inline-flex cursor-pointer items-center gap-[7px] rounded-[10px] border border-[#e0dbd0] bg-white px-[13px] py-2 font-sans text-[12.5px] font-semibold text-ink-soft transition hover:border-behind hover:text-behind"
+                            title="Mark done & remove"
                             @click="deleteDraft(item)"
                         >
+                            <span class="text-[13px] leading-none text-accent">✓</span>
                             Done
                         </button>
                         <span
