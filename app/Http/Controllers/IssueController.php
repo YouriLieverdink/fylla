@@ -7,6 +7,7 @@ use App\Jobs\SyncKendoIssues;
 use App\Jobs\SyncKendoProjects;
 use App\Jobs\SyncKendoWorklogs;
 use App\Kendo\Client as KendoClient;
+use App\Models\Draft;
 use App\Models\Issue;
 use App\Models\PullRequest;
 use App\Models\Timer;
@@ -76,9 +77,26 @@ class IssueController extends Controller
                 'kendo_url' => $p->kendo_url,
             ] + $scorer->scorePr($p, $now));
 
+        // Fylla-native drafts (ADR-0012): a third source, ranked by the same
+        // scorer. No provider, so no timer affordance and no Kendo write-through.
+        $drafts = Draft::get()
+            ->map(fn (Draft $d) => [
+                'kind' => 'draft',
+                'id' => $d->id,
+                'title' => $d->title,
+                'priority' => $d->priority,
+                'up_next' => (bool) $d->up_next,
+                'due_date' => $d->due_date?->toDateString(),
+                'not_before' => $d->not_before?->toDateString(),
+            ] + $scorer->scoreDraft($d, $now));
+
         // Score desc; a stable key breaks ties (sort isn't guaranteed stable).
-        $tie = fn (array $x) => $x['kind'] === 'issue' ? (string) $x['key'] : $x['repo'].'#'.$x['number'];
-        $items = $issues->concat($prs)
+        $tie = fn (array $x) => match ($x['kind']) {
+            'issue' => (string) $x['key'],
+            'pr' => $x['repo'].'#'.$x['number'],
+            'draft' => 'draft#'.$x['id'],
+        };
+        $items = $issues->concat($prs)->concat($drafts)
             ->sort(fn ($a, $b) => $b['score'] <=> $a['score'] ?: strcmp($tie($a), $tie($b)))
             ->values();
 

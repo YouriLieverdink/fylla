@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Draft;
 use App\Models\Issue;
 use App\Models\PullRequest;
 use Carbon\Carbon;
@@ -56,6 +57,21 @@ class WorklistScorer
 
         $score = $this->composite($priority, $due, $mins, $issue->type, $upNext, $notBefore, $now);
         $reason = $this->issueReason($issue->priority, $due, $mins, $notBefore, $upNext, $now);
+
+        return ['score' => $score, 'reason' => $reason];
+    }
+
+    /**
+     * Score a draft (ADR-0012): same math as an issue, but it carries no
+     * estimate or type, so the quick-win and type-bonus components contribute 0.
+     * Priority defaults to Medium at the column level.
+     */
+    public function scoreDraft(Draft $draft, Carbon $now): array
+    {
+        $priority = self::PRIORITY_RANK[$draft->priority] ?? null;
+
+        $score = $this->composite($priority, $draft->due_date, null, null, (bool) $draft->up_next, $draft->not_before, $now);
+        $reason = $this->issueReason($draft->priority, $draft->due_date, null, $draft->not_before, (bool) $draft->up_next, $now);
 
         return ['score' => $score, 'reason' => $reason];
     }

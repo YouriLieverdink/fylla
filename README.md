@@ -38,8 +38,9 @@ no-split, recurrence) are owned locally and never written back to Kendo (ADR-000
 
 ### Worklist ranking
 
-The home page (`/`) is the **Worklist**: open issues and GitHub PRs merged into
-one list, ranked by a weighted composite score recomputed on every render
+The home page (`/`) is the **Worklist**: open issues, GitHub PRs, and
+Fylla-native drafts merged into one list, ranked by a weighted composite score
+recomputed on every render
 (`App\Services\WorklistScorer`, ADR-0013) — never hand-dragged. The score
 weights priority, due date, and estimate, boosts items in a crunch window or
 pinned via `up_next`, and demotes (never hides) those with a future
@@ -56,6 +57,17 @@ pins/unpins `up_next` on click, and a `⋯` popover sets `priority`, `due_date`,
 (one read-modify-write on the full issue) — on failure Fylla keeps its values and
 shows an inline error, while any scheduling-field edits in the same save still
 persist. PRs get no edit UI.
+
+**Drafts (ADR-0012)** are a third, Fylla-owned work source — lightweight to-dos
+("email this client") that shouldn't be a Kendo ticket yet. Capture one in a
+single gesture from the input above the list (`POST /drafts`); it lands in the
+worklist ranked by the same scorer, defaulting to Medium priority. Drafts live
+in their own `drafts` table with no `kendo_id`, so the Kendo sync never touches
+or deletes them. They share the issue edit UI (📌 pin, `⋯` popover for priority
+and scheduling — all local, no Kendo write) via `PATCH /drafts/{draft}`, and are
+**not timeable** (no start-timer affordance; Kendo is the sole worklog provider,
+ADR-0006) — the row's action is a **Done** button that removes it
+(`DELETE /drafts/{draft}`). Promotion to a real Kendo issue is a later slice.
 
 ### Timer stack
 

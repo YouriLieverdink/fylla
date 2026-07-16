@@ -31,6 +31,7 @@ function syncNow() {
 
 // ids collide across morph types, so live checks are kind-scoped.
 function isLive(item) {
+    if (item.kind === 'draft') return false; // drafts are un-timeable (ADR-0012)
     return item.kind === 'issue'
         ? props.liveIssueIds.includes(item.id)
         : props.livePrIds.includes(item.id);
@@ -71,37 +72,62 @@ const PRIORITIES = ['Highest', 'High', 'Medium', 'Low', 'Lowest'];
 const editing = ref(null); // issue id with the edit popover open
 const draft = reactive({ priority: 'Medium', due_date: '', not_before: '', estimate_hours: '' });
 
+// drafts are Fylla-owned (ADR-0012), issues write priority through to Kendo (ADR-0014)
+function editUrl(item) {
+    return item.kind === 'draft' ? `/drafts/${item.id}` : `/issues/${item.id}`;
+}
+
 // instant local-only write; never auto-cleared (ADR-0004)
 function togglePin(item) {
-    router.patch(`/issues/${item.id}`, { up_next: !item.up_next }, {
+    router.patch(editUrl(item), { up_next: !item.up_next }, {
         ...opts,
-        onError: (e) => (errors[item.id] = e.priority ?? 'Could not update.'),
+        onError: (e) => (errors[rowKey(item)] = e.priority ?? 'Could not update.'),
     });
 }
 
+// composite key: issue and draft ids can collide but share this popover
+const rowKey = (item) => item.kind + '-' + item.id;
+
 function openEdit(item) {
-    editing.value = editing.value === item.id ? null : item.id;
+    editing.value = editing.value === rowKey(item) ? null : rowKey(item);
     draft.priority = item.priority ?? 'Medium';
     draft.due_date = item.due_date ?? '';
     draft.not_before = item.not_before ?? '';
     draft.estimate_hours = item.estimated_minutes != null ? item.estimated_minutes / 60 : '';
 }
 
-// priority/estimate may fail (Kendo write-through); dates/up_next always persist (ADR-0014)
+// priority/estimate may fail (Kendo write-through); dates/up_next always persist (ADR-0014).
+// Drafts carry no estimate, so that field is omitted for them.
 function saveEdit(item) {
-    router.patch(`/issues/${item.id}`, {
+    const payload = {
         priority: draft.priority,
         due_date: draft.due_date || null,
         not_before: draft.not_before || null,
-        estimated_minutes: draft.estimate_hours === '' ? null : Math.round(draft.estimate_hours * 60),
-    }, {
+    };
+    if (item.kind !== 'draft') {
+        payload.estimated_minutes = draft.estimate_hours === '' ? null : Math.round(draft.estimate_hours * 60);
+    }
+    router.patch(editUrl(item), payload, {
         ...opts,
-        onError: (e) => (errors[item.id] = e.priority ?? 'Could not save.'),
+        onError: (e) => (errors[rowKey(item)] = e.priority ?? 'Could not save.'),
         onSuccess: () => {
-            delete errors[item.id];
+            delete errors[rowKey(item)];
             editing.value = null;
         },
     });
+}
+
+// --- draft capture / removal (ADR-0012) ---
+const newDraft = ref('');
+
+function captureDraft() {
+    const title = newDraft.value.trim();
+    if (!title) return;
+    router.post('/drafts', { title }, { ...opts, onSuccess: () => (newDraft.value = '') });
+}
+
+function deleteDraft(item) {
+    router.delete(`/drafts/${item.id}`, opts);
 }
 
 // --- PR resolution (ported from PullRequestList) ---
@@ -114,9 +140,9 @@ const pickLoading = ref(false);
 function resolve(pr, key) {
     router.post(`/pull-requests/${pr.id}/resolve`, { key }, {
         ...opts,
-        onError: (e) => (errors[pr.id] = e.resolve ?? 'Could not resolve.'),
+        onError: (e) => (errors[rowKey(pr)] = e.resolve ?? 'Could not resolve.'),
         onSuccess: () => {
-            delete errors[pr.id];
+            delete errors[rowKey(pr)];
             closePick();
         },
     });
@@ -186,6 +212,25 @@ async function search() {
             />
         </div>
 
+        <!-- draft capture: one gesture — type a to-do, hit enter (ADR-0012) -->
+        <div class="mb-[22px] flex items-center gap-3 rounded-[16px] border border-divider-soft bg-surface px-4 py-3">
+            <span class="flex-none font-mono text-[15px] leading-none text-faint-2">✎</span>
+            <input
+                v-model="newDraft"
+                type="text"
+                placeholder="Jot a to-do — a client to email, a person to talk to…"
+                class="min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-faint-3"
+                @keydown.enter="captureDraft"
+            />
+            <button
+                v-if="newDraft.trim()"
+                class="flex-none cursor-pointer rounded-[9px] bg-accent px-3.5 py-1.5 font-sans text-[12px] font-semibold text-white transition hover:bg-accent-deep"
+                @click="captureDraft"
+            >
+                Add
+            </button>
+        </div>
+
         <!-- worklist -->
         <Card v-if="items.length" radius="24px" pad="10px 10px 12px">
             <div class="flex items-center justify-between px-5 pb-3.5 pt-4">
@@ -200,13 +245,14 @@ async function search() {
                     class="flex items-center gap-4 rounded-[14px] border-t border-divider-soft px-5 py-3.5 transition"
                     :class="isLive(item) ? 'bg-surface-soft' : 'hover:bg-surface-soft'"
                 >
-                    <!-- key / repo#number -->
+                    <!-- key / repo#number / draft marker -->
                     <span
                         class="w-[120px] flex-none truncate font-mono text-[12px] font-semibold text-muted"
-                        :title="item.kind === 'issue' ? item.key : item.repo + '#' + item.number"
+                        :title="item.kind === 'issue' ? item.key : item.kind === 'pr' ? item.repo + '#' + item.number : 'Draft'"
                     >
                         <template v-if="item.kind === 'issue'">{{ item.key }}</template>
-                        <template v-else>{{ item.repo.split('/').pop() }}#{{ item.number }}</template>
+                        <template v-else-if="item.kind === 'pr'">{{ item.repo.split('/').pop() }}#{{ item.number }}</template>
+                        <span v-else class="text-faint-3">draft</span>
                     </span>
 
                     <!-- title + reason -->
@@ -219,25 +265,32 @@ async function search() {
                                 :title="item.type"
                             ></span>
                             <span
-                                v-else
+                                v-else-if="item.kind === 'pr'"
                                 class="flex-none rounded-[5px] bg-accent-chip px-[6px] py-[1px] font-mono text-[9px] font-semibold uppercase tracking-[0.08em] text-accent"
                                 >PR</span
                             >
+                            <span
+                                v-else
+                                class="flex-none rounded-[5px] bg-divider px-[6px] py-[1px] font-mono text-[9px] font-semibold uppercase tracking-[0.08em] text-faint-2"
+                                >Draft</span
+                            >
                             <a
+                                v-if="item.kind !== 'draft'"
                                 :href="item.kind === 'issue' ? item.kendo_url : item.url"
                                 target="_blank"
                                 class="truncate text-[14px] font-medium hover:text-accent"
                                 >{{ item.title }}</a
                             >
+                            <span v-else class="truncate text-[14px] font-medium">{{ item.title }}</span>
                         </div>
                         <div class="mt-[3px] font-mono text-[11px] text-faint-3">
-                            {{ item.kind === 'pr' ? item.reason : 'score ' + Math.round(item.score) }}
+                            {{ item.kind === 'issue' ? 'score ' + Math.round(item.score) : item.reason }}
                         </div>
                     </div>
 
-                    <!-- issue meta: estimate / remaining / priority -->
-                    <template v-if="item.kind === 'issue'">
-                        <div class="hidden flex-none text-right font-mono text-[12px] tabular-nums text-muted sm:block">
+                    <!-- issue/draft meta: (estimate) / priority / pin / edit -->
+                    <template v-if="item.kind === 'issue' || item.kind === 'draft'">
+                        <div v-if="item.kind === 'issue'" class="hidden flex-none text-right font-mono text-[12px] tabular-nums text-muted sm:block">
                             est {{ hrs(item.estimated_minutes) }} · rem
                             <span :class="remClass(item)">{{ remSpent(item) ? '0h' : hrs(item.remaining_minutes) }}</span>
                         </div>
@@ -268,7 +321,7 @@ async function search() {
                             </button>
 
                             <div
-                                v-if="editing === item.id"
+                                v-if="editing === rowKey(item)"
                                 class="absolute right-0 top-full z-40 mt-1.5 w-[240px] rounded-[14px] border border-[#ebe7de] bg-surface p-3.5 shadow-[0_16px_44px_-14px_rgba(42,41,38,0.38)]"
                             >
                                 <label class="mb-1 block font-mono text-[10px] uppercase tracking-[0.08em] text-faint-3">Priority</label>
@@ -299,21 +352,24 @@ async function search() {
                                     <button v-if="draft.not_before" class="cursor-pointer px-1 text-[16px] leading-none text-faint-2 hover:text-behind" title="Clear" @click="draft.not_before = ''">×</button>
                                 </div>
 
-                                <label class="mb-1 block font-mono text-[10px] uppercase tracking-[0.08em] text-faint-3">Estimate (hours)</label>
-                                <div class="mb-3.5 flex items-center gap-1.5">
-                                    <input
-                                        v-model="draft.estimate_hours"
-                                        type="number"
-                                        min="0"
-                                        step="0.25"
-                                        placeholder="—"
-                                        class="min-w-0 flex-1 rounded-[9px] border border-[#e0dbd0] bg-white px-2.5 py-2 font-mono text-[12px] outline-none focus:border-accent-tint-2"
-                                    />
-                                    <button v-if="draft.estimate_hours !== ''" class="cursor-pointer px-1 text-[16px] leading-none text-faint-2 hover:text-behind" title="Clear" @click="draft.estimate_hours = ''">×</button>
-                                </div>
+                                <!-- estimate is a Kendo-mirror field; drafts have none (ADR-0012) -->
+                                <template v-if="item.kind === 'issue'">
+                                    <label class="mb-1 block font-mono text-[10px] uppercase tracking-[0.08em] text-faint-3">Estimate (hours)</label>
+                                    <div class="mb-3.5 flex items-center gap-1.5">
+                                        <input
+                                            v-model="draft.estimate_hours"
+                                            type="number"
+                                            min="0"
+                                            step="0.25"
+                                            placeholder="—"
+                                            class="min-w-0 flex-1 rounded-[9px] border border-[#e0dbd0] bg-white px-2.5 py-2 font-mono text-[12px] outline-none focus:border-accent-tint-2"
+                                        />
+                                        <button v-if="draft.estimate_hours !== ''" class="cursor-pointer px-1 text-[16px] leading-none text-faint-2 hover:text-behind" title="Clear" @click="draft.estimate_hours = ''">×</button>
+                                    </div>
+                                </template>
 
                                 <div class="flex items-center justify-between">
-                                    <span v-if="errors[item.id]" class="font-mono text-[10px] text-behind">{{ errors[item.id] }}</span>
+                                    <span v-if="errors[rowKey(item)]" class="font-mono text-[10px] text-behind">{{ errors[rowKey(item)] }}</span>
                                     <span v-else></span>
                                     <button
                                         class="cursor-pointer rounded-[9px] bg-accent px-3.5 py-1.5 font-sans text-[12px] font-semibold text-white transition hover:bg-accent-deep"
@@ -327,7 +383,7 @@ async function search() {
                     </template>
 
                     <!-- pr meta: resolution state -->
-                    <template v-else>
+                    <template v-else-if="item.kind === 'pr'">
                         <div class="min-w-0 flex-none">
                             <a
                                 v-if="item.resolved_at"
@@ -353,15 +409,24 @@ async function search() {
                                         {{ item.suggested_key ? 'Pick another' : 'Link an issue' }}
                                     </button>
                                 </div>
-                                <span v-if="errors[item.id]" class="mt-1 block font-mono text-[11px] text-behind">{{ errors[item.id] }}</span>
+                                <span v-if="errors[rowKey(item)]" class="mt-1 block font-mono text-[11px] text-behind">{{ errors[rowKey(item)] }}</span>
                             </template>
                         </div>
                     </template>
 
                     <!-- action -->
                     <div class="flex w-[92px] flex-none justify-end">
+                        <!-- drafts are un-timeable (ADR-0012): remove-when-done, no timer -->
+                        <button
+                            v-if="item.kind === 'draft'"
+                            class="inline-flex cursor-pointer items-center gap-[7px] rounded-[10px] border border-[#e0dbd0] bg-white px-[13px] py-2 font-sans text-[12.5px] font-semibold text-faint-2 transition hover:border-behind hover:text-behind"
+                            title="Remove draft"
+                            @click="deleteDraft(item)"
+                        >
+                            Done
+                        </button>
                         <span
-                            v-if="isLive(item)"
+                            v-else-if="isLive(item)"
                             class="inline-flex items-center gap-1.5 rounded-[10px] bg-accent-tint px-3 py-2 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-accent-deep"
                         >
                             <span class="h-1.5 w-1.5 rounded-full bg-accent" style="animation: fyl-pulse 2s ease-in-out infinite"></span>
@@ -433,7 +498,7 @@ async function search() {
                     </template>
                 </div>
 
-                <span v-if="pickingPr && errors[pickingPr.id]" class="mt-2 block font-mono text-[11px] text-behind">{{ errors[pickingPr.id] }}</span>
+                <span v-if="pickingPr && errors[rowKey(pickingPr)]" class="mt-2 block font-mono text-[11px] text-behind">{{ errors[rowKey(pickingPr)] }}</span>
             </div>
         </div>
     </Teleport>
