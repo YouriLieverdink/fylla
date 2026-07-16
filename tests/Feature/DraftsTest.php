@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Jobs\SyncKendoIssues;
 use App\Models\Draft;
 use App\Models\Issue;
+use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -78,5 +79,58 @@ class DraftsTest extends TestCase
 
         $this->delete("/drafts/{$draft->id}")->assertRedirect();
         $this->assertDatabaseMissing('drafts', ['id' => $draft->id]);
+    }
+
+    public function test_promote_creates_a_kendo_issue_and_removes_the_draft(): void
+    {
+        Project::create(['kendo_id' => 3, 'name' => 'Acme']);
+        $draft = Draft::create(['title' => 'Formalize this', 'priority' => 'High', 'up_next' => true]);
+
+        // create POST returns the new id; the follow-up sync's my-issues feed
+        // returns it as an ordinary assigned issue, so it mirrors in and is timeable.
+        Http::fake(function ($request) {
+            $url = $request->url();
+            if (str_contains($url, '/api/issues/my')) {
+                return Http::response([
+                    'data' => [[
+                        'id' => 5001, 'key' => 'ACME-1', 'title' => 'Formalize this',
+                        'priority' => 1, 'type' => 2, 'lane_id' => 9, 'project_id' => 3,
+                        'epic_id' => null, 'updated_at' => '2026-07-16T08:00:00+00:00',
+                    ]],
+                    'meta' => ['truncated' => false, 'count' => 1, 'limit' => 500],
+                ]);
+            }
+            if ($request->method() === 'POST') {
+                return Http::response(['id' => 5001, 'key' => 'ACME-1']);
+            }
+
+            return Http::response([]); // per-project estimates feed
+        });
+
+        $this->post("/drafts/{$draft->id}/promote", ['project_id' => 3])->assertRedirect();
+
+        Http::assertSent(fn ($r) => $r->method() === 'POST'
+            && str_contains($r->url(), '/api/projects/3/issues')
+            && $r['title'] === 'Formalize this');
+
+        $this->assertDatabaseMissing('drafts', ['id' => $draft->id]);
+        // Mirrored in via the inline sync — a normal, timeable Kendo issue.
+        $issue = Issue::where('kendo_id', 5001)->sole();
+        $this->assertSame('ACME-1', $issue->key);
+        $this->assertSame(3, $issue->project_id);
+    }
+
+    public function test_promote_failure_leaves_the_draft_intact(): void
+    {
+        Project::create(['kendo_id' => 3, 'name' => 'Acme']);
+        $draft = Draft::create(['title' => 'Keep me']);
+
+        Http::fake(['*' => Http::response('boom', 500)]);
+
+        $this->post("/drafts/{$draft->id}/promote", ['project_id' => 3])
+            ->assertSessionHasErrors('promote');
+
+        $this->assertDatabaseHas('drafts', ['id' => $draft->id]);
+        $this->assertDatabaseMissing('issues', ['kendo_id' => 5001]);
     }
 }

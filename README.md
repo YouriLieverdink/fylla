@@ -67,7 +67,15 @@ or deletes them. They share the issue edit UI (📌 pin, `⋯` popover for prior
 and scheduling — all local, no Kendo write) via `PATCH /drafts/{draft}`, and are
 **not timeable** (no start-timer affordance; Kendo is the sole worklog provider,
 ADR-0006) — the row's action is a **Done** button that removes it
-(`DELETE /drafts/{draft}`). Promotion to a real Kendo issue is a later slice.
+(`DELETE /drafts/{draft}`).
+
+**Promote (ADR-0012)** turns a draft into a real, timeable Kendo issue. Pick a
+target project in the `⋯` popover and hit **Promote** (`POST
+/drafts/{draft}/promote`): the controller creates the issue via
+`Kendo\Client::createIssue` (assigned to `FYLLA_KENDO_USER_ID` so it returns in
+the my-issues feed), runs a sync so it mirrors in immediately as an ordinary
+timeable issue, and deletes the draft. One-way: a create failure leaves the
+draft intact and surfaces the error; there is no demote.
 
 ### Timer stack
 

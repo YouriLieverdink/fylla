@@ -18,6 +18,7 @@ Route::post('/sync', [IssueController::class, 'sync'])->name('sync');
 
 Route::post('/drafts', [DraftController::class, 'store'])->name('drafts.store');
 Route::patch('/drafts/{draft}', [DraftController::class, 'update'])->name('drafts.update');
+Route::post('/drafts/{draft}/promote', [DraftController::class, 'promote'])->name('drafts.promote');
 Route::delete('/drafts/{draft}', [DraftController::class, 'destroy'])->name('drafts.destroy');
 
 Route::get('/clients', [ProjectController::class, 'index'])->name('clients.index');

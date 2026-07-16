@@ -17,6 +17,8 @@ const props = defineProps({
     liveIssueIds: { type: Array, default: () => [] },
     livePrIds: { type: Array, default: () => [] },
     utilization: { type: Object, default: () => ({}) },
+    // { kendo_id, name } — promote targets for a draft (ADR-0012).
+    projects: { type: Array, default: () => [] },
 });
 
 const opts = { preserveScroll: true };
@@ -100,6 +102,7 @@ function openEdit(item, event) {
     draft.due_date = item.due_date ?? '';
     draft.not_before = item.not_before ?? '';
     draft.estimate_hours = item.estimated_minutes != null ? item.estimated_minutes / 60 : '';
+    if (item.kind === 'draft') promoteProject.value = props.projects[0]?.kendo_id ?? '';
 }
 
 // priority/estimate may fail (Kendo write-through); dates/up_next always persist (ADR-0014).
@@ -136,6 +139,20 @@ function captureDraft() {
 
 function deleteDraft(item) {
     router.delete(`/drafts/${item.id}`, opts);
+}
+
+// promote a draft into a Kendo issue (ADR-0012); one-way, draft is removed on success
+const promoteProject = ref('');
+function promote(item) {
+    if (!promoteProject.value) return;
+    router.post(`/drafts/${item.id}/promote`, { project_id: promoteProject.value }, {
+        ...opts,
+        onError: (e) => (errors[rowKey(item)] = e.promote ?? e.project_id ?? 'Could not promote.'),
+        onSuccess: () => {
+            delete errors[rowKey(item)];
+            editing.value = null;
+        },
+    });
 }
 
 // --- PR resolution (ported from PullRequestList) ---
@@ -381,6 +398,17 @@ async function search() {
                                     <button v-if="draft.not_before" class="cursor-pointer px-1 text-[16px] leading-none text-faint-2 hover:text-behind" title="Clear" @click="draft.not_before = ''">×</button>
                                 </div>
 
+                                <!-- promote target: a draft has no project, so pick one (ADR-0012) -->
+                                <template v-if="item.kind === 'draft' && projects.length">
+                                    <label class="mb-1 block font-mono text-[10px] uppercase tracking-[0.08em] text-faint-3">Promote to project</label>
+                                    <select
+                                        v-model="promoteProject"
+                                        class="mb-3.5 w-full rounded-[9px] border border-[#e0dbd0] bg-white px-2.5 py-2 font-mono text-[12px] outline-none focus:border-accent-tint-2"
+                                    >
+                                        <option v-for="p in projects" :key="p.kendo_id" :value="p.kendo_id">{{ p.name }}</option>
+                                    </select>
+                                </template>
+
                                 <!-- estimate is a Kendo-mirror field; drafts have none (ADR-0012) -->
                                 <template v-if="item.kind === 'issue'">
                                     <label class="mb-1 block font-mono text-[10px] uppercase tracking-[0.08em] text-faint-3">Estimate (hours)</label>
@@ -400,12 +428,22 @@ async function search() {
                                 <div class="flex items-center justify-between">
                                     <span v-if="errors[rowKey(item)]" class="font-mono text-[10px] text-behind">{{ errors[rowKey(item)] }}</span>
                                     <span v-else></span>
-                                    <button
-                                        class="cursor-pointer rounded-[9px] bg-accent px-3.5 py-1.5 font-sans text-[12px] font-semibold text-white transition hover:bg-accent-deep"
-                                        @click="saveEdit(item)"
-                                    >
-                                        Done
-                                    </button>
+                                    <div class="flex items-center gap-2">
+                                        <button
+                                            v-if="item.kind === 'draft' && projects.length"
+                                            class="cursor-pointer rounded-[9px] border border-[#e0dbd0] bg-white px-3 py-1.5 font-sans text-[12px] font-semibold text-ink-soft transition hover:border-accent-tint-2 hover:text-accent"
+                                            title="Create a Kendo issue from this draft"
+                                            @click="promote(item)"
+                                        >
+                                            Promote
+                                        </button>
+                                        <button
+                                            class="cursor-pointer rounded-[9px] bg-accent px-3.5 py-1.5 font-sans text-[12px] font-semibold text-white transition hover:bg-accent-deep"
+                                            @click="saveEdit(item)"
+                                        >
+                                            Done
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>

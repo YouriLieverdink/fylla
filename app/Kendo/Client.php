@@ -19,8 +19,7 @@ class Client
         private HttpFactory $http,
         private string $baseUrl,
         private string $token,
-    ) {
-    }
+    ) {}
 
     private function request(): PendingRequest
     {
@@ -182,6 +181,27 @@ class Client
         $this->request()
             ->put("/api/projects/{$projectId}/issues/{$issueId}", $issue)
             ->throw();
+    }
+
+    /**
+     * Create a new issue (ADR-0012 promote). Assigned to the caller so it comes
+     * back in the my-issues feed and syncs into the local mirror like any other
+     * issue. Returns the new Kendo issue id.
+     */
+    public function createIssue(int $projectId, string $title, ?int $priority, ?int $assigneeId): int
+    {
+        $payload = ['title' => $title, 'description' => ''];
+        if ($priority !== null) {
+            $payload['priority'] = $priority;
+        }
+        if ($assigneeId !== null) {
+            $payload['assignee_id'] = $assigneeId;
+        }
+
+        return (int) $this->request()
+            ->post("/api/projects/{$projectId}/issues", $payload)
+            ->throw()
+            ->json('id');
     }
 
     /**

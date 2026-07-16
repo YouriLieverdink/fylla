@@ -9,6 +9,7 @@ use App\Jobs\SyncKendoWorklogs;
 use App\Kendo\Client as KendoClient;
 use App\Models\Draft;
 use App\Models\Issue;
+use App\Models\Project;
 use App\Models\PullRequest;
 use App\Models\Timer;
 use App\Services\TimerService;
@@ -106,6 +107,8 @@ class IssueController extends Controller
             'livePrIds' => $this->liveIds($live, PullRequest::class),
             'timer' => $this->stack($live),
             'utilization' => (new UtilizationReport)->generate(),
+            // Target projects for promoting a draft to a Kendo issue (ADR-0012).
+            'projects' => Project::orderBy('name')->get(['kendo_id', 'name']),
         ]);
     }
 
