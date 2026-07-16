@@ -42,6 +42,7 @@ Route::post('/pull-requests/{pullRequest}/resolve', [PullRequestController::clas
 Route::post('/pull-requests/{pullRequest}/timer', [PullRequestController::class, 'startTimer'])->name('pull-requests.timer');
 
 Route::post('/timers', [TimerController::class, 'start'])->name('timers.start');
+Route::post('/timers/adhoc', [TimerController::class, 'adhoc'])->name('timers.adhoc');
 Route::post('/timers/pause', [TimerController::class, 'pause'])->name('timers.pause');
 Route::post('/timers/resume', [TimerController::class, 'resume'])->name('timers.resume');
 Route::post('/timers/stop', [TimerController::class, 'stop'])->name('timers.stop');

@@ -40,6 +40,10 @@ Convert a draft into a real Kendo issue so it becomes timeable. **One-way** — 
 The single ordered list of open Work items the user attacks top-to-bottom — Fylla's original purpose: one place to see everything there is to do, prioritized, spanning all three sources.
 _Avoid_: backlog (Kendo's word for its own unstarted pile; the worklist is the user's cross-source ordering)
 
+**Ad-hoc timing**:
+Timing an arbitrary Kendo issue that is **not** on the worklist — an unassigned PM task (a shared "anyone logs here" bucket) or a review of a ticket assigned to someone else — so its hours still post to Kendo. **Transient by design**: the issue is searched for, timed, and gone the moment the timer stops; it surfaces only as the running timer, never as a Work item on the list. Self-assigning would be the wrong fix — it would either break the shared bucket or steal another developer's ticket.
+_Avoid_: borrowed issue, foreign issue (jargon; it is just a Kendo issue you time without owning)
+
 ### Scheduling fields
 
 Fylla-native annotations a user sets on a Work item to steer where it lands on the worklist. **Owned locally** (ADR-0004), never synced to or from a provider, and set through Fylla's own UI. Distinct from **priority**, which is a Kendo-owned field (edited in Fylla but stored in Kendo).

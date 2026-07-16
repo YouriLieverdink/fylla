@@ -113,6 +113,14 @@ available while running; a future time is rejected.
 Routes: `POST /timers` (start), `POST /timers/pause`, `POST /timers/resume`,
 `POST /timers/stop`, `POST /timers/notes`, `POST /timers/start-time`.
 
+**Ad-hoc timing** (ADR-0015) times work that never reaches your worklist —
+unassigned PM tasks, reviews of others' tickets. "Log time on another task"
+(under the timer stack) opens a live Kendo search; picking a result starts a
+timer immediately (`POST /timers/adhoc`). The picked issue is stored only as the
+timer's subject with `synced_at` left unstamped, so it never renders as a card
+and is gone once the timer stops. The worklog posts to Kendo on stop like any
+other.
+
 ### Billable projects & synced worklogs
 
 A separate read path measures personal utilization (ADR-0007). Two
