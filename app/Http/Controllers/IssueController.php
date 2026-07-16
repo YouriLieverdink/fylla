@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\SyncGithubPullRequests;
+use App\Jobs\SyncKendoFinishedIssues;
 use App\Jobs\SyncKendoIssues;
 use App\Jobs\SyncKendoProjects;
 use App\Jobs\SyncKendoWorklogs;
@@ -175,6 +176,8 @@ class IssueController extends Controller
             SyncKendoProjects::dispatchSync();
             SyncKendoWorklogs::dispatchSync();
             SyncGithubPullRequests::dispatchSync();
+            // Depends on synced_worklogs (project list + last-worked), so runs last.
+            SyncKendoFinishedIssues::dispatchSync();
         } catch (\Throwable $e) {
             return back()->with('syncError', true);
         }

@@ -1,6 +1,7 @@
 <?php
 
 use App\Jobs\SyncGithubPullRequests;
+use App\Jobs\SyncKendoFinishedIssues;
 use App\Jobs\SyncKendoIssues;
 use App\Jobs\SyncKendoProjects;
 use App\Jobs\SyncKendoWorklogs;
@@ -16,3 +17,5 @@ Schedule::job(new SyncKendoIssues)->everyFifteenMinutes();
 Schedule::job(new SyncKendoProjects)->everyFifteenMinutes();
 Schedule::job(new SyncKendoWorklogs)->everyFifteenMinutes();
 Schedule::job(new SyncGithubPullRequests)->everyFifteenMinutes();
+// Finished-issue estimates are slow-changing and depend on synced_worklogs — daily is plenty.
+Schedule::job(new SyncKendoFinishedIssues)->daily();

@@ -6,6 +6,7 @@ const url = computed(() => usePage().url);
 const tabs = [
     { label: 'Worklist', href: '/' },
     { label: 'Utilization', href: '/utilization' },
+    { label: 'Estimation', href: '/estimation' },
     { label: 'Capacity', href: '/capacity' },
     { label: 'Clients', href: '/clients' },
     { label: 'Delivery', href: '/delivery' },

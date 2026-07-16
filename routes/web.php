@@ -4,6 +4,7 @@ use App\Http\Controllers\CapacityController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\DeliveryController;
 use App\Http\Controllers\DraftController;
+use App\Http\Controllers\EstimationController;
 use App\Http\Controllers\IssueController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\PullRequestController;
@@ -30,6 +31,8 @@ Route::delete('/clients/{client}', [ClientController::class, 'destroy'])->name('
 Route::get('/delivery', [DeliveryController::class, 'index'])->name('delivery.index');
 
 Route::get('/utilization', [UtilizationController::class, 'index'])->name('utilization.index');
+
+Route::get('/estimation', [EstimationController::class, 'index'])->name('estimation.index');
 
 Route::get('/capacity', [CapacityController::class, 'index'])->name('capacity.index');
 Route::post('/capacity', [CapacityController::class, 'store'])->name('capacity.store');

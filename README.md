@@ -163,6 +163,27 @@ _Delivery projection_). Clients without a target show the delivered burn-up
 alone (no projection or target line). Distinct from the `/clients` management
 tab.
 
+### Estimation
+
+The `/estimation` page (the **Estimation** nav tab) is the personal estimation
+feedback loop (issue #17): per finished issue, the Kendo estimate vs. the hours
+actually logged, plus a single **rolling bias** (positive % = you underestimate)
+over the last 20 estimated issues. Sliceable by project (label-slicing deferred
+until labels are synced).
+
+The data source is the `finished_issues` mirror, filled by the
+`SyncKendoFinishedIssues` job (scheduled **daily** — slow-changing — and run by
+"Sync now"). The open my-issues feed excludes the done lane, so finished issues
+are read from the **per-project issues feed** (`GET /api/projects/{id}/issues`),
+which carries each issue's `estimated_minutes` and `logged_minutes` (the actual).
+The job fetches only the projects the user has logged time in (distinct on their
+own `synced_worklogs`), so calls scale with projects worked, not the total
+project count. For each it finds the **Done lane** (a lane titled "Done", else the
+rightmost by `order` — Kendo exposes no done flag) and mirrors that project's
+issues that are **assigned to the user** and **in the done lane**. `App\Estimation\
+EstimationReport` reads that table: actual = the issue's `logged_minutes`, ordered
+most-recently-worked first; issues without an estimate list but sit out the bias.
+
 ### Utilization dashboard
 
 The home page headlines personal utilization (`App\Utilization\UtilizationReport`,

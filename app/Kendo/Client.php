@@ -82,6 +82,47 @@ class Client
     }
 
     /**
+     * All of a project's issues (open AND done), with the fields the estimation
+     * feedback loop needs (issue #17): the estimate, the issue's logged (actual)
+     * minutes, its lane, and its assignee. One call returns the whole project;
+     * the caller filters to the user's done issues.
+     *
+     * @return array<int, array{id:int, key:string, title:string, estimated_minutes:?int, logged_minutes:?int, lane_id:?int, assignee_id:?int}>
+     */
+    public function getProjectIssues(int $projectId): array
+    {
+        $body = $this->request()->get("/api/projects/{$projectId}/issues")->throw()->json();
+        $rows = $body['data'] ?? $body;
+
+        return array_map(fn (array $row) => [
+            'id' => $row['id'],
+            'key' => $row['key'],
+            'title' => $row['title'],
+            'estimated_minutes' => $row['estimated_minutes'] ?? null,
+            'logged_minutes' => $row['logged_minutes'] ?? null,
+            'lane_id' => $row['lane_id'] ?? null,
+            'assignee_id' => $row['assignee_id'] ?? null,
+        ], $rows);
+    }
+
+    /**
+     * A project's lanes as {id, order}. The estimation sync uses this to find the
+     * done lane (Kendo exposes no done flag — see SyncKendoFinishedIssues).
+     *
+     * @return array<int, array{id:int, title:?string, order:int}>
+     */
+    public function getProjectLanes(int $projectId): array
+    {
+        $lanes = $this->request()->get("/api/projects/{$projectId}/lanes")->throw()->json();
+
+        return array_map(fn (array $lane) => [
+            'id' => (int) $lane['id'],
+            'title' => $lane['title'] ?? null,
+            'order' => (int) ($lane['order'] ?? 0),
+        ], $lanes);
+    }
+
+    /**
      * Live global issue search by key/text (ADR-0009 resolution path). The PR's
      * linked issue is usually not the user's, so it is absent from the local
      * mirror — this reads across all Kendo issues, a deliberate ADR-0003
