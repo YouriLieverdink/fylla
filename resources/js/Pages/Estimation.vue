@@ -5,6 +5,7 @@ import AppHeader from '../Components/AppHeader.vue';
 import Card from '../Components/Card.vue';
 import EmptyState from '../Components/EmptyState.vue';
 import { usePageCursor } from '../Composables/usePageCursor';
+import { useAction } from '../Composables/useAction';
 
 const props = defineProps({
     bias: { type: Object, default: () => ({}) },
@@ -61,6 +62,14 @@ function biasClass(pct) {
 // is 'bias', rows are keyed by issue key.
 const focusTargets = computed(() => (props.issues.length ? ['bias', ...props.issues.map((i) => 'iss-' + i.key)] : []));
 const cursor = usePageCursor(() => focusTargets.value);
+
+// View-switcher keyset (#45, table #35): `c` clears the project filter (empty =
+// all). Clears the saved selection too, so it stays cleared on the next visit.
+// Listed in the `?`-palette under `estimation`.
+useAction({ id: 'estimation:clear', label: 'Clear project filter', keys: 'c', scope: 'estimation', run: () => {
+    localStorage.removeItem(STORAGE_KEY);
+    apply([]);
+} });
 </script>
 
 <template>

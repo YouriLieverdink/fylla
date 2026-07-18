@@ -8,6 +8,7 @@ import SegmentedControl from '../Components/SegmentedControl.vue';
 import ProjectRow from '../Components/ProjectRow.vue';
 import { usePageCursor } from '../Composables/usePageCursor';
 import { useModalGuard } from '../Composables/useModalGuard';
+import { useAction } from '../Composables/useAction';
 
 const props = defineProps({
     projects: { type: Array, default: () => [] },
@@ -106,6 +107,11 @@ const focusTargets = computed(() =>
         : props.projects.map((p) => 'pr-' + p.id),
 );
 const cursor = usePageCursor(() => focusTargets.value);
+
+// View-switcher keyset (#45, table #35): one key per view. Listed in the
+// `?`-palette under `clients`.
+useAction({ id: 'clients:by-client', label: 'By client', keys: 'c', scope: 'clients', run: () => (view.value = 'By client') });
+useAction({ id: 'clients:by-project', label: 'By project', keys: 'p', scope: 'clients', run: () => (view.value = 'By project') });
 </script>
 
 <template>

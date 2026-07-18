@@ -353,6 +353,12 @@ keystroke destroys data in one press. Page verbs: `c` capture a draft (focuses
 the field), `a` log time on another task, `p` pause/resume the timer, `s` stop
 it, `n` add a timer note (focuses the field).
 
+A few pages earn a small view-switcher keyset (rule #33, table #35, issue #45),
+registered under their own scope (independent of the row cursor): **Utilization**
+`w` weekly breakdown, `p` by project, `t` time entries; **Clients** `c` by
+client, `p` by project; **Estimation** `c` clears the project filter. Capacity,
+Delivery, Settings and Playground register no action keys.
+
 While a **blocking modal** is open (edit, promote-pick, manual-pick, ad-hoc,
 add-project, or the `?` cheat-sheet) the global listener early-returns
 (`useModalGuard`, issue #43): every binding beneath the scrim — page-local,

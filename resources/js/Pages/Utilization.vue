@@ -4,6 +4,7 @@ import Card from '../Components/Card.vue';
 import AppHeader from '../Components/AppHeader.vue';
 import SegmentedControl from '../Components/SegmentedControl.vue';
 import { usePageCursor } from '../Composables/usePageCursor';
+import { useAction } from '../Composables/useAction';
 
 const props = defineProps({
     report: { type: Object, required: true }, // { weeks, totals, target, softFloor }
@@ -195,6 +196,12 @@ const focusTargets = computed(() => {
     return out;
 });
 const cursor = usePageCursor(() => focusTargets.value);
+
+// View-switcher keyset (#45, table #35): one key per view, no row cursor. Rides
+// the layout's guarded listener; listed in the `?`-palette under `utilization`.
+useAction({ id: 'util:weekly', label: VIEWS.weekly, keys: 'w', scope: 'utilization', run: () => (view.value = VIEWS.weekly) });
+useAction({ id: 'util:projects', label: VIEWS.projects, keys: 'p', scope: 'utilization', run: () => (view.value = VIEWS.projects) });
+useAction({ id: 'util:entries', label: VIEWS.entries, keys: 't', scope: 'utilization', run: () => (view.value = VIEWS.entries) });
 </script>
 
 <template>
