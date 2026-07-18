@@ -315,5 +315,6 @@ screens.
 ## Test
 
 ```bash
-php artisan test
+php artisan test   # backend (PHPUnit)
+npm test           # front-end (Vitest) — keybinding registry, composables
 ```
