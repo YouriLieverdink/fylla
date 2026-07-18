@@ -322,6 +322,10 @@ tinykeys, no timeout logic of our own) — Inertia visits to each page:
 
 `.` — Sync now.
 
+`?` opens a searchable cheat-sheet overlay listing every live binding grouped
+by scope (reads the registry, so a page's bindings show only while it's
+mounted); `Escape` closes it.
+
 ## Design system
 
 Ported from a Claude Design UI kit. Tokens (colours, type, radii, shadows) live

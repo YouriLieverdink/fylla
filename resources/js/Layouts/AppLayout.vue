@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { tinykeys, defaultKeybindingsHandlerIgnore } from 'tinykeys';
 import { useAction, registry } from '../Composables/useAction';
+import CheatSheet from '../Components/CheatSheet.vue';
 
 // Persistent Inertia layout (assigned via page.default.layout in app.js's
 // resolve): this instance survives in-app navigation and partial reloads, so
@@ -77,4 +78,5 @@ onUnmounted(() => unsubscribe?.());
 
 <template>
     <slot />
+    <CheatSheet />
 </template>

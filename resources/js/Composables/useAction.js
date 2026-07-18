@@ -19,8 +19,8 @@ export function unregisterAction(id) {
 // Declare an action inline in any component. Auto-registers on mount, drops on
 // unmount. Envelope: {id, label, keys, scope, run}.
 //
-// `scope` is carried but unused for now — only global actions exist; scope
-// filtering lands with the focus/targeting slice.
+// `scope` groups bindings in the `?` cheat-sheet (#41); only global actions
+// exist so far. Scope-based key *filtering* lands with the focus/targeting slice.
 // ponytail: last writer wins on key collision — no conflict handling until two
 // real actions actually clash.
 export function useAction(action) {
