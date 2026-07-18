@@ -1,11 +1,16 @@
 <script setup>
+import { computed } from 'vue';
 import AppHeader from '../Components/AppHeader.vue';
 import DeliveryProjectionChart from '../Components/DeliveryProjectionChart.vue';
 import EmptyState from '../Components/EmptyState.vue';
+import { usePageCursor } from '../Composables/usePageCursor';
 
-defineProps({
+const props = defineProps({
     clients: { type: Array, default: () => [] },
 });
+
+// j/k cursor over the client projection cards, row-major (#43).
+const cursor = usePageCursor(() => props.clients.map((c) => 'd-' + c.id));
 </script>
 
 <template>
@@ -25,6 +30,9 @@ defineProps({
             <DeliveryProjectionChart
                 v-for="c in clients"
                 :key="c.id"
+                :data-row="'d-' + c.id"
+                class="scroll-my-12"
+                :class="cursor.isActive('d-' + c.id) && 'ring-2 ring-accent'"
                 :initials="c.initials"
                 :name="c.name"
                 :meta="c.meta"

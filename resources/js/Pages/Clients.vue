@@ -6,6 +6,7 @@ import AppHeader from '../Components/AppHeader.vue';
 import AppButton from '../Components/AppButton.vue';
 import SegmentedControl from '../Components/SegmentedControl.vue';
 import ProjectRow from '../Components/ProjectRow.vue';
+import { usePageCursor } from '../Composables/usePageCursor';
 
 const props = defineProps({
     projects: { type: Array, default: () => [] },
@@ -91,6 +92,15 @@ function setTarget(client, value) {
 function deleteClient(client) {
     router.delete('/clients/' + client.id, { preserveScroll: true });
 }
+
+// j/k cursor over the active view's cards/rows (#43): client cards under "By
+// client", flat project rows under "By project".
+const focusTargets = computed(() =>
+    view.value === 'By client'
+        ? groups.value.map((g) => 'cl-' + g.client.id)
+        : props.projects.map((p) => 'pr-' + p.id),
+);
+const cursor = usePageCursor(() => focusTargets.value);
 </script>
 
 <template>
@@ -134,7 +144,7 @@ function deleteClient(client) {
         <!-- By client: half-width client cards -->
         <template v-if="view === 'By client'">
             <div v-if="clients.length" class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <Card v-for="{ client, projects: assigned } in groups" :key="client.id" radius="22px" pad="18px 20px 16px">
+                <Card v-for="{ client, projects: assigned } in groups" :key="client.id" :data-row="'cl-' + client.id" radius="22px" pad="18px 20px 16px" class="scroll-my-12" :class="cursor.isActive('cl-' + client.id) && 'ring-2 ring-accent'">
                     <div class="mb-3 flex items-center gap-3">
                         <input
                             :value="client.name"

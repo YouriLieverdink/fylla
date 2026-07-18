@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import Card from '../Components/Card.vue';
 import AppHeader from '../Components/AppHeader.vue';
 import SegmentedControl from '../Components/SegmentedControl.vue';
+import { usePageCursor } from '../Composables/usePageCursor';
 
 const props = defineProps({
     report: { type: Object, required: true }, // { weeks, totals, target, softFloor }
@@ -173,6 +174,27 @@ function spark(weekly, peak) {
 const openProj = ref({});
 const isProjOpen = (p) => openProj.value[p.name] ?? false;
 const toggleProj = (p) => (openProj.value[p.name] = !isProjOpen(p));
+
+// j/k cursor over the totals card then the active view's visible rows (#43).
+// Recomputes on tab switch / expand, so only currently-shown rows are targets.
+const focusTargets = computed(() => {
+    const out = ['totals'];
+    if (view.value === 'Weekly breakdown') {
+        out.push(...props.report.weeks.map((w) => 'wk-' + w.label));
+    } else if (view.value === 'Time entries') {
+        for (const g of weekGroups.value) {
+            out.push('teg-' + g.key);
+            if (isOpen(g)) for (const d of g.days) for (const e of d.entries) out.push('te-' + e.id);
+        }
+    } else {
+        for (const p of projectGroups.value) {
+            out.push('pg-' + p.name);
+            if (isProjOpen(p)) for (const iss of p.issues) out.push('pi-' + iss.key);
+        }
+    }
+    return out;
+});
+const cursor = usePageCursor(() => focusTargets.value);
 </script>
 
 <template>
@@ -190,7 +212,7 @@ const toggleProj = (p) => (openProj.value[p.name] = !isProjOpen(p));
         </div>
 
         <!-- window totals -->
-        <Card radius="24px" pad="28px 30px" accent class="mb-[22px]">
+        <Card radius="24px" pad="28px 30px" accent data-row="totals" class="mb-[22px] scroll-my-12" :class="cursor.isActive('totals') && 'ring-2 ring-accent'">
             <div class="mb-6 font-mono text-[11px] font-semibold uppercase tracking-[0.13em] text-faint">
                 Window totals · {{ windowWeeks }} weeks
             </div>
@@ -240,8 +262,9 @@ const toggleProj = (p) => (openProj.value[p.name] = !isProjOpen(p));
                 <div
                     v-for="(w, i) in report.weeks"
                     :key="w.label"
-                    class="grid grid-cols-[repeat(6,1fr)_2fr] items-center gap-3 rounded-[14px] border-t border-divider-soft px-5 py-3"
-                    :class="i === 0 ? 'bg-accent-wash' : ''"
+                    :data-row="'wk-' + w.label"
+                    class="grid scroll-my-12 grid-cols-[repeat(6,1fr)_2fr] items-center gap-3 rounded-[14px] border-t border-divider-soft px-5 py-3"
+                    :class="[i === 0 ? 'bg-accent-wash' : '', cursor.isActive('wk-' + w.label) && 'ring-2 ring-inset ring-accent']"
                 >
                     <div class="text-[13.5px] font-semibold">
                         {{ w.label }}<span v-if="i === 0" class="mt-[3px] block font-mono text-[11px] font-medium text-faint-3">this week</span>
@@ -285,8 +308,9 @@ const toggleProj = (p) => (openProj.value[p.name] = !isProjOpen(p));
                 <template v-for="g in weekGroups" :key="g.key">
                     <!-- week header: click to expand -->
                     <button
-                        class="grid cursor-pointer grid-cols-[1fr_auto] items-center gap-3 border-t border-divider-soft px-5 py-3 text-left hover:bg-surface-soft"
-                        :class="g.isCurrent ? 'bg-accent-wash' : ''"
+                        :data-row="'teg-' + g.key"
+                        class="grid cursor-pointer scroll-my-12 grid-cols-[1fr_auto] items-center gap-3 border-t border-divider-soft px-5 py-3 text-left hover:bg-surface-soft"
+                        :class="[g.isCurrent ? 'bg-accent-wash' : '', cursor.isActive('teg-' + g.key) && 'ring-2 ring-inset ring-accent']"
                         @click="toggle(g)"
                     >
                         <div class="flex items-center gap-2.5">
@@ -310,7 +334,9 @@ const toggleProj = (p) => (openProj.value[p.name] = !isProjOpen(p));
                         <div
                             v-for="e in d.entries"
                             :key="e.id"
-                            class="grid grid-cols-[56px_1fr_170px_64px] items-start gap-3 bg-surface-soft px-5 py-3"
+                            :data-row="'te-' + e.id"
+                            class="grid scroll-my-12 grid-cols-[56px_1fr_170px_64px] items-start gap-3 bg-surface-soft px-5 py-3"
+                            :class="cursor.isActive('te-' + e.id) && 'ring-2 ring-inset ring-accent'"
                         >
                             <div class="whitespace-nowrap font-mono text-[13px] tabular-nums text-faint-2">{{ e.time }}</div>
                             <div class="min-w-0">
@@ -360,7 +386,9 @@ const toggleProj = (p) => (openProj.value[p.name] = !isProjOpen(p));
                 <template v-for="p in projectGroups" :key="p.name">
                     <!-- project header: click to expand -->
                     <button
-                        class="grid cursor-pointer grid-cols-[1fr_100px_170px_80px_64px] items-center gap-3 border-t border-divider-soft px-5 py-3 text-left hover:bg-surface-soft"
+                        :data-row="'pg-' + p.name"
+                        class="grid cursor-pointer scroll-my-12 grid-cols-[1fr_100px_170px_80px_64px] items-center gap-3 border-t border-divider-soft px-5 py-3 text-left hover:bg-surface-soft"
+                        :class="cursor.isActive('pg-' + p.name) && 'ring-2 ring-inset ring-accent'"
                         @click="toggleProj(p)"
                     >
                         <div class="flex min-w-0 items-center gap-2.5">
@@ -387,7 +415,9 @@ const toggleProj = (p) => (openProj.value[p.name] = !isProjOpen(p));
                     <div
                         v-for="iss in isProjOpen(p) ? p.issues : []"
                         :key="iss.key"
-                        class="grid grid-cols-[1fr_64px] items-start gap-3 bg-surface-soft px-5 py-3"
+                        :data-row="'pi-' + iss.key"
+                        class="grid scroll-my-12 grid-cols-[1fr_64px] items-start gap-3 bg-surface-soft px-5 py-3"
+                        :class="cursor.isActive('pi-' + iss.key) && 'ring-2 ring-inset ring-accent'"
                     >
                         <div class="min-w-0 truncate text-[13.5px] font-semibold text-ink">
                             <span v-if="iss.issueKey" class="font-mono text-[12px] text-faint-2">{{ iss.issueKey }}</span>

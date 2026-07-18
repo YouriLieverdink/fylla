@@ -5,6 +5,7 @@ import Card from '../Components/Card.vue';
 import AppHeader from '../Components/AppHeader.vue';
 import CalendarGrid from '../Components/CalendarGrid.vue';
 import CellEditor from '../Components/CellEditor.vue';
+import { usePageCursor } from '../Composables/usePageCursor';
 
 const props = defineProps({
     year: { type: Number, required: true },
@@ -135,6 +136,16 @@ function tripRange(t) {
 function tripHours(t) {
     return t.rows.reduce((s, r) => s + Math.abs(Number(r.hours)), 0);
 }
+
+// j/k cursor over the ledger + calendar cards, then trip rows, then overview
+// rows (#43).
+const focusTargets = computed(() => [
+    'ledger',
+    'calendar',
+    ...trips.value.map((_, i) => 'trip-' + i),
+    ...props.overview.map((r) => 'ovr-' + r.year),
+]);
+const cursor = usePageCursor(() => focusTargets.value);
 </script>
 
 <template>
@@ -154,7 +165,7 @@ function tripHours(t) {
         </div>
 
         <!-- ledger panel -->
-        <Card radius="24px" pad="26px 30px" class="mb-[22px]">
+        <Card radius="24px" pad="26px 30px" data-row="ledger" class="mb-[22px] scroll-my-12" :class="cursor.isActive('ledger') && 'ring-2 ring-accent'">
             <div class="flex flex-wrap items-end justify-between gap-8">
                 <!-- equation -->
                 <div class="flex flex-wrap items-end gap-x-6 gap-y-4">
@@ -231,7 +242,7 @@ function tripHours(t) {
         </div>
 
         <!-- calendar grid -->
-        <Card radius="24px" pad="22px 24px" class="mb-[22px]">
+        <Card radius="24px" pad="22px 24px" data-row="calendar" class="mb-[22px] scroll-my-12" :class="cursor.isActive('calendar') && 'ring-2 ring-accent'">
             <CalendarGrid :year="year" :adjustments="adjustments" :off-weekday="offWeekday" @select="onSelect" />
 
             <!-- legend -->
@@ -254,7 +265,9 @@ function tripHours(t) {
                     <div
                         v-for="(t, i) in trips"
                         :key="i"
-                        class="flex items-center gap-3 rounded-[12px] border-t border-divider-soft px-5 py-3"
+                        :data-row="'trip-' + i"
+                        class="flex scroll-my-12 items-center gap-3 rounded-[12px] border-t border-divider-soft px-5 py-3"
+                        :class="cursor.isActive('trip-' + i) && 'ring-2 ring-inset ring-accent'"
                     >
                         <span class="w-[120px] flex-none whitespace-nowrap font-mono text-[13px] font-semibold tabular-nums text-ink-soft">{{ tripRange(t) }}</span>
                         <span class="flex-none rounded-md px-2 py-1 font-mono text-[10.5px] font-semibold" :class="typeMeta[t.type].chip">{{ typeMeta[t.type].label }}</span>
@@ -277,8 +290,9 @@ function tripHours(t) {
                 <button
                     v-for="row in overview"
                     :key="row.year"
-                    class="grid w-full cursor-pointer grid-cols-[1fr_repeat(4,minmax(0,1fr))] gap-2 rounded-[10px] border-t border-divider-soft px-5 py-2.5 text-right font-mono text-[13px] tabular-nums transition hover:bg-surface-soft"
-                    :class="row.year === year ? 'bg-accent-wash' : ''"
+                    :data-row="'ovr-' + row.year"
+                    class="grid w-full cursor-pointer scroll-my-12 grid-cols-[1fr_repeat(4,minmax(0,1fr))] gap-2 rounded-[10px] border-t border-divider-soft px-5 py-2.5 text-right font-mono text-[13px] tabular-nums transition hover:bg-surface-soft"
+                    :class="[row.year === year ? 'bg-accent-wash' : '', cursor.isActive('ovr-' + row.year) && 'ring-2 ring-inset ring-accent']"
                     @click="pickYear(row.year)"
                 >
                     <span class="text-left font-semibold text-ink">{{ row.year }}</span>

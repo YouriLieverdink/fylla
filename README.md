@@ -322,18 +322,22 @@ tinykeys, no timeout logic of our own) — Inertia visits to each page:
 
 `.` — Sync now.
 
-On the Worklist, a persistent **cursor** (`useListCursor`) navigates the page's
-focus sequence — the utilization and timer summary cards, then the worklist rows.
-`j`/`k` move down/up (focused target ringed and scrolled into view), digits
-`1`–`9` jump to that position (1 = utilization, 2 = timer, 3 = row 1). `g g` /
-`G` jump to the top / bottom of the page; `k` past the first target and `j` past
-the last both **deselect and scroll to that page edge**, so the cursor never
-traps you inside the list. It's unset and invisible until the first `j`/`k`,
-tracks the same target by id across re-sort/sync, and reserves `j`/`k`/`1`–`9`/
-`g g`/`G` app-wide (never bound as page-local action keys). On cursorless pages
-those keys drive the viewport instead (`j`/`k` smooth-scroll, `g g`/`G` jump to
-page top/bottom) — a global fallback bound only while no cursor is live. Holding
-`j`/`k` repeats. A static **Navigation** section in the `?`-overlay documents it.
+Every page with cards/rows carries a persistent **cursor** (`useListCursor`,
+wired for full-page use by `usePageCursor`) that navigates its focus sequence —
+its summary cards, then its rows. On the Worklist that's the utilization and
+timer cards then the worklist rows; the Estimation, Utilization, Capacity,
+Clients and Delivery pages walk their own cards + visible table/grid rows the
+same way (tab- and expand-gated: only currently-shown rows are targets, in DOM
+order). `j`/`k` move down/up (focused target ringed and scrolled into view),
+digits `1`–`9` jump to that position. `g g` / `G` jump to the top / bottom of
+the page; `k` past the first target and `j` past the last both **deselect and
+scroll to that page edge**, so the cursor never traps you inside the list. It's
+unset and invisible until the first `j`/`k`, tracks the same target by key
+across re-sort/sync, and reserves `j`/`k`/`1`–`9`/`g g`/`G` app-wide (never
+bound as page-local action keys). On any page without a cursor those keys drive
+the viewport instead (`j`/`k` smooth-scroll, `g g`/`G` jump to page top/bottom)
+— a global fallback bound only while no cursor is live. Holding `j`/`k` repeats.
+A static **Navigation** section in the `?`-overlay documents it.
 
 `?` opens a searchable cheat-sheet overlay listing every live binding grouped
 by scope (reads the registry, so a page's bindings show only while it's

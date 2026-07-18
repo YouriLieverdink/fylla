@@ -1,6 +1,6 @@
 <script setup>
 import { router, usePoll } from '@inertiajs/vue3';
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import Card from '../Components/Card.vue';
 import AppHeader from '../Components/AppHeader.vue';
 import Chip from '../Components/Chip.vue';
@@ -9,7 +9,7 @@ import AppButton from '../Components/AppButton.vue';
 import BillableMetric from '../Components/BillableMetric.vue';
 import UtilizationTrendChart from '../Components/UtilizationTrendChart.vue';
 import TimerStack from '../Components/TimerStack.vue';
-import { useListCursor } from '../Composables/useListCursor';
+import { usePageCursor } from '../Composables/usePageCursor';
 
 const props = defineProps({
     // One ranked list of { kind:'issue'|'pr', id, title, reason, score, ... }.
@@ -100,21 +100,7 @@ const cards = {
     timer: { focusKey: 'timer' },
 };
 const focusTargets = computed(() => [cards.utilization, cards.timer, ...props.items]);
-const cursor = useListCursor(() => focusTargets.value, (t) => t.focusKey ?? rowKey(t), {
-    // k past the top / j past the bottom (and g g / G) deselect and scroll the
-    // page to that edge, so the cursor never traps you inside the list.
-    onEscapeTop: () => window.scrollTo({ top: 0, behavior: 'smooth' }),
-    onEscapeBottom: () => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }),
-});
-
-// Keep the focused row on screen. `block: 'nearest'` only scrolls when the row
-// is actually off-screen, so a visible cursor never jumps the page.
-watch(() => cursor.activeKey.value, (key) => {
-    if (key == null) return;
-    nextTick(() => {
-        document.querySelector(`[data-row="${CSS.escape(key)}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    });
-});
+const cursor = usePageCursor(() => focusTargets.value, (t) => t.focusKey ?? rowKey(t));
 
 // lock body scroll while the edit modal is open
 watch(editing, (open) => {

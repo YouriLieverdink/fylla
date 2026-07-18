@@ -1,9 +1,10 @@
 <script setup>
-import { onMounted } from 'vue';
+import { computed, onMounted } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppHeader from '../Components/AppHeader.vue';
 import Card from '../Components/Card.vue';
 import EmptyState from '../Components/EmptyState.vue';
+import { usePageCursor } from '../Composables/usePageCursor';
 
 const props = defineProps({
     bias: { type: Object, default: () => ({}) },
@@ -55,6 +56,11 @@ function biasClass(pct) {
     if (pct === null || pct === 0) return 'text-muted';
     return pct > 0 ? 'text-rose-500' : 'text-emerald-500';
 }
+
+// j/k cursor over the bias card then each issue row (#43). String keys: the card
+// is 'bias', rows are keyed by issue key.
+const focusTargets = computed(() => (props.issues.length ? ['bias', ...props.issues.map((i) => 'iss-' + i.key)] : []));
+const cursor = usePageCursor(() => focusTargets.value);
 </script>
 
 <template>
@@ -72,7 +78,7 @@ function biasClass(pct) {
 
         <template v-if="issues.length">
             <div class="mb-6 flex items-end justify-between gap-6">
-                <Card accent pad="22px 28px" class="min-w-[280px]">
+                <Card accent pad="22px 28px" data-row="bias" class="min-w-[280px] scroll-my-12" :class="cursor.isActive('bias') && 'ring-2 ring-accent'">
                     <div class="mb-1 font-mono text-[11px] uppercase tracking-[0.16em] text-faint">
                         Rolling estimation bias
                     </div>
@@ -125,7 +131,9 @@ function biasClass(pct) {
                         <tr
                             v-for="issue in issues"
                             :key="issue.key"
+                            :data-row="'iss-' + issue.key"
                             class="border-b border-divider-soft last:border-0"
+                            :class="cursor.isActive('iss-' + issue.key) && 'bg-accent-wash'"
                         >
                             <td class="px-6 py-3">
                                 <a :href="issue.kendo_url" target="_blank" class="text-ink hover:text-accent">
