@@ -343,6 +343,16 @@ A static **Navigation** section in the `?`-overlay documents it.
 by scope (reads the registry, so a page's bindings show only while it's
 mounted); `Escape` closes it.
 
+The **Worklist** is the one page that earns a full action keyset (rule #33,
+table #35), registered under the `worklist` scope. Per-item verbs act on the
+cursor's current row (a no-op while the cursor is unset or on a summary card):
+`t` start timer, `o` open the work item, `e` edit priority/scheduling, `u`
+toggle up-next, `m` promote a draft, `r` resolve a PR (confirm its suggested key
+or open the pick modal), `d` mark a draft done — **confirm-gated** so no
+keystroke destroys data in one press. Page verbs: `c` capture a draft (focuses
+the field), `a` log time on another task, `p` pause/resume the timer, `s` stop
+it, `n` add a timer note (focuses the field).
+
 While a **blocking modal** is open (edit, promote-pick, manual-pick, ad-hoc,
 add-project, or the `?` cheat-sheet) the global listener early-returns
 (`useModalGuard`, issue #43): every binding beneath the scrim — page-local,

@@ -11,6 +11,7 @@ import UtilizationTrendChart from '../Components/UtilizationTrendChart.vue';
 import TimerStack from '../Components/TimerStack.vue';
 import { usePageCursor } from '../Composables/usePageCursor';
 import { useModalGuard } from '../Composables/useModalGuard';
+import { useAction } from '../Composables/useAction';
 
 const props = defineProps({
     // One ranked list of { kind:'issue'|'pr', id, title, reason, score, ... }.
@@ -45,6 +46,13 @@ function startTimer(item) {
     const url = item.kind === 'issue' ? '/timers' : `/pull-requests/${item.id}/timer`;
     const body = item.kind === 'issue' ? { issue_id: item.id } : {};
     router.post(url, body, opts);
+}
+
+// Start eligibility, shared by the row's Start button (:disabled) and the `t`
+// keybinding (#44): drafts are un-timeable, a live row is already running, an
+// unresolved PR must resolve first.
+function canStart(item) {
+    return item.kind !== 'draft' && !isLive(item) && !(item.kind === 'pr' && !item.resolved_at);
 }
 
 // minutes → "6h" / "1.5h"; em-dash when unset
@@ -281,6 +289,70 @@ function timeAdhoc(c) {
         onSuccess: () => (adhocOpen.value = false),
     });
 }
+
+// --- Worklist keyset (#44, table #35) ---
+// The one page that earns a full keyset. Per-item verbs act over the cursor;
+// page verbs drive the timer / capture surfaces. All register in the `worklist`
+// scope and ride the layout's guarded listener (suppressed while typing / under
+// a modal). The focus/timer inputs live in native fields or TimerStack.
+const captureInput = ref(null);
+const timerStack = ref(null);
+
+function toggleTimer() {
+    if (!props.timer?.active) return;
+    router.post(props.timer.active.running ? '/timers/pause' : '/timers/resume', {}, opts);
+}
+function stopTimer() {
+    if (props.timer?.active) router.post('/timers/stop', {}, opts);
+}
+
+// The focused work item, or null when the cursor is unset or parked on a summary
+// card — so a per-item verb off a real row is a no-op (#44).
+function currentRow() {
+    const t = cursor.current.value;
+    return t && t.kind ? t : null;
+}
+
+// per-item verbs (over cursor.current)
+useAction({ id: 'wl:timer', label: 'Start timer', keys: 't', scope: 'worklist', run: () => {
+    const it = currentRow();
+    if (it && canStart(it)) startTimer(it);
+} });
+useAction({ id: 'wl:open', label: 'Open work item', keys: 'o', scope: 'worklist', run: () => {
+    const it = currentRow();
+    if (!it || it.kind === 'draft') return; // drafts have no external link
+    window.open(it.kind === 'issue' ? it.kendo_url : it.url, '_blank');
+} });
+useAction({ id: 'wl:edit', label: 'Edit priority & scheduling', keys: 'e', scope: 'worklist', run: () => {
+    const it = currentRow();
+    if (it && it.kind !== 'pr') openEdit(it); // PRs have no edit popover
+} });
+useAction({ id: 'wl:up-next', label: 'Toggle up next', keys: 'u', scope: 'worklist', run: () => {
+    const it = currentRow();
+    if (it && it.kind !== 'pr') togglePin(it);
+} });
+useAction({ id: 'wl:promote', label: 'Promote draft', keys: 'm', scope: 'worklist', run: () => {
+    const it = currentRow();
+    if (it && it.kind === 'draft') openEdit(it); // Promote lives in the edit modal (ADR-0012)
+} });
+useAction({ id: 'wl:resolve', label: 'Resolve PR', keys: 'r', scope: 'worklist', run: () => {
+    const it = currentRow();
+    if (!it || it.kind !== 'pr' || it.resolved_at) return;
+    it.suggested_key ? resolve(it, it.suggested_key) : openPick(it);
+} });
+useAction({ id: 'wl:done', label: 'Mark draft done', keys: 'd', scope: 'worklist', run: () => {
+    const it = currentRow();
+    // confirm-gated: no single-keystroke data loss (#33 refined by #35).
+    // ponytail: native confirm; swap for an in-app dialog if the design demands.
+    if (it && it.kind === 'draft' && window.confirm(`Mark "${it.title}" done?`)) deleteDraft(it);
+} });
+
+// page verbs
+useAction({ id: 'wl:capture', label: 'Capture draft', keys: 'c', scope: 'worklist', run: () => captureInput.value?.focus() });
+useAction({ id: 'wl:adhoc', label: 'Log time on another task', keys: 'a', scope: 'worklist', run: openAdhoc });
+useAction({ id: 'wl:pause', label: 'Pause / resume timer', keys: 'p', scope: 'worklist', run: toggleTimer });
+useAction({ id: 'wl:stop', label: 'Stop timer', keys: 's', scope: 'worklist', run: stopTimer });
+useAction({ id: 'wl:note', label: 'Add timer note', keys: 'n', scope: 'worklist', run: () => timerStack.value?.focusNote?.() });
 </script>
 
 <template>
@@ -324,6 +396,7 @@ function timeAdhoc(c) {
             :class="cursor.isActive(cards.timer) && 'ring-2 ring-accent'"
         >
             <TimerStack
+                ref="timerStack"
                 :active="timer?.active ?? null"
                 :paused="timer?.paused ?? []"
                 @pause="router.post('/timers/pause', {}, opts)"
@@ -346,6 +419,7 @@ function timeAdhoc(c) {
         <div class="mb-[22px] flex items-center gap-3 rounded-[16px] border border-divider-soft bg-surface px-4 py-3">
             <span class="flex-none font-mono text-[15px] leading-none text-faint-2">✎</span>
             <input
+                ref="captureInput"
                 v-model="newDraft"
                 type="text"
                 placeholder="Jot a to-do — a client to email, a person to talk to…"
@@ -631,7 +705,7 @@ function timeAdhoc(c) {
                         </span>
                         <button
                             v-else
-                            :disabled="item.kind === 'pr' && !item.resolved_at"
+                            :disabled="!canStart(item)"
                             :title="item.kind === 'pr' && !item.resolved_at ? 'Resolve the linked Kendo issue first' : 'Start timer'"
                             class="inline-flex cursor-pointer items-center gap-[7px] rounded-[10px] border border-[#e0dbd0] bg-white px-[13px] py-2 font-sans text-[12.5px] font-semibold text-ink-soft transition hover:border-accent-tint-2 hover:bg-[#faf9fd] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#e0dbd0] disabled:hover:bg-white"
                             @click="startTimer(item)"

@@ -25,6 +25,11 @@ function addNote() {
     noteDraft.value = '';
 }
 
+// Worklist's `n` keybinding (#44) focuses the note field — the keyboard entry to
+// the existing type-then-Enter flow. No-op when disabled (paused/no timer).
+const noteInput = ref(null);
+defineExpose({ focusNote: () => noteInput.value?.focus() });
+
 function hms(seconds) {
     const s = Math.max(0, Math.floor(seconds));
     const p = (n) => String(n).padStart(2, '0');
@@ -213,6 +218,7 @@ function submitStart() {
 
                     <div class="flex items-center gap-2">
                         <input
+                            ref="noteInput"
                             v-model="noteDraft"
                             type="text"
                             :disabled="!active.running"
