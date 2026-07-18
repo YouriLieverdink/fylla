@@ -322,6 +322,13 @@ tinykeys, no timeout logic of our own) — Inertia visits to each page:
 
 `.` — Sync now.
 
+On the Worklist, a persistent **row cursor** (`useListCursor`) navigates the
+list: `j`/`k` move down/up (clamped at the ends), digits `1`–`9` jump to that
+visible row (10+ via `j`/`k`). It's unset and invisible until the first `j`/`k`,
+tracks the same row by id across re-sort/sync, and reserves `j`/`k`/`1`–`9`
+app-wide (never bound as page-local action keys). A static **Navigation** section
+in the `?`-overlay documents it.
+
 `?` opens a searchable cheat-sheet overlay listing every live binding grouped
 by scope (reads the registry, so a page's bindings show only while it's
 mounted); `Escape` closes it.

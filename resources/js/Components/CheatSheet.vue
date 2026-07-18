@@ -27,11 +27,26 @@ useAction({
     },
 });
 
+// Static Navigation section (#34/#42): the j/k/digit cursor keys register in the
+// `navigation` scope but are described here as a fixed pair of rows, not one entry
+// per digit. Filterable like the rest.
+const NAV_HELP = [
+    { label: 'Move cursor down / up', keys: ['j', 'k'] },
+    { label: 'Jump to row 1–9', keys: ['1', '–', '9'] },
+];
+const navRows = computed(() => {
+    const q = query.value.trim().toLowerCase();
+    if (!q) return NAV_HELP;
+    return NAV_HELP.filter((r) => r.label.toLowerCase().includes(q) || r.keys.join(' ').toLowerCase().includes(q));
+});
+
 // Group the (optionally filtered) live registry by scope for per-scope headers.
+// The `navigation` scope is rendered as the static section above, not here.
 const groups = computed(() => {
     const q = query.value.trim().toLowerCase();
     const byScope = new Map();
     for (const a of registry.values()) {
+        if (a.scope === 'navigation') continue;
         if (q && !a.label.toLowerCase().includes(q) && !a.keys.toLowerCase().includes(q)) continue;
         if (!byScope.has(a.scope)) byScope.set(a.scope, []);
         byScope.get(a.scope).push(a);
@@ -84,6 +99,22 @@ watch(open, (isOpen) => {
             </div>
 
             <div class="max-h-[60vh] overflow-y-auto p-3">
+                <div v-if="navRows.length" class="mb-3">
+                    <div class="mb-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+                        Navigation
+                    </div>
+                    <div v-for="row in navRows" :key="row.label" class="flex items-center justify-between gap-4 py-1.5">
+                        <span class="text-[13px] text-ink">{{ row.label }}</span>
+                        <span class="flex gap-1">
+                            <kbd
+                                v-for="(token, i) in row.keys"
+                                :key="i"
+                                class="rounded-[6px] bg-sunken px-2 py-0.5 font-mono text-[11px] font-semibold text-muted"
+                            >{{ token }}</kbd>
+                        </span>
+                    </div>
+                </div>
+
                 <div v-for="group in groups" :key="group.scope" class="mb-3 last:mb-0">
                     <div class="mb-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
                         {{ group.scope }}
@@ -103,7 +134,7 @@ watch(open, (isOpen) => {
                         </span>
                     </div>
                 </div>
-                <div v-if="!groups.length" class="py-2 text-[13px] text-faint">No matching shortcuts.</div>
+                <div v-if="!groups.length && !navRows.length" class="py-2 text-[13px] text-faint">No matching shortcuts.</div>
             </div>
         </div>
     </div>

@@ -58,4 +58,15 @@ describe('CheatSheet', () => {
         expect(w.text()).toContain('Capacity');
         expect(w.text()).not.toContain('Sync now');
     });
+
+    it('shows a static Navigation section, not per-digit registry rows', async () => {
+        const w = mount(CheatSheet);
+        // navigation-scope entries (the cursor keys) must not render individually.
+        registerAction(action({ id: 'cursor:jump-1', label: 'Jump to row 1', keys: '1', scope: 'navigation' }));
+        await open();
+        expect(w.text()).toContain('Navigation');
+        expect(w.text()).toContain('Move cursor down / up');
+        // A leaked navigation-scope group would render a lowercase 'navigation' header.
+        expect(w.text()).not.toContain('navigation');
+    });
 });

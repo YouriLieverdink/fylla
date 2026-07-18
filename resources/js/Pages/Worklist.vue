@@ -1,6 +1,6 @@
 <script setup>
 import { router, usePoll } from '@inertiajs/vue3';
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
 import Card from '../Components/Card.vue';
 import AppHeader from '../Components/AppHeader.vue';
 import Chip from '../Components/Chip.vue';
@@ -9,6 +9,7 @@ import AppButton from '../Components/AppButton.vue';
 import BillableMetric from '../Components/BillableMetric.vue';
 import UtilizationTrendChart from '../Components/UtilizationTrendChart.vue';
 import TimerStack from '../Components/TimerStack.vue';
+import { useListCursor } from '../Composables/useListCursor';
 
 const props = defineProps({
     // One ranked list of { kind:'issue'|'pr', id, title, reason, score, ... }.
@@ -89,6 +90,19 @@ function togglePin(item) {
 
 // composite key: issue and draft ids can collide but share this modal
 const rowKey = (item) => item.kind + '-' + item.id;
+
+// j/k/digit row cursor over the worklist — the page's one primary list (#34/#42).
+// Keyed by rowKey so it tracks the same row across re-sort/sync.
+const cursor = useListCursor(() => props.items, rowKey);
+
+// Keep the focused row on screen. `block: 'nearest'` only scrolls when the row
+// is actually off-screen, so a visible cursor never jumps the page.
+watch(() => cursor.activeKey.value, (key) => {
+    if (key == null) return;
+    nextTick(() => {
+        document.querySelector(`[data-row="${CSS.escape(key)}"]`)?.scrollIntoView({ block: 'nearest' });
+    });
+});
 
 // lock body scroll while the edit modal is open
 watch(editing, (open) => {
@@ -344,8 +358,9 @@ function timeAdhoc(c) {
                 <div
                     v-for="item in items"
                     :key="item.kind + item.id"
+                    :data-row="rowKey(item)"
                     class="flex items-center gap-4 rounded-[14px] border-t border-divider-soft px-5 py-3.5 transition"
-                    :class="isLive(item) ? 'bg-surface-soft' : 'hover:bg-surface-soft'"
+                    :class="[isLive(item) ? 'bg-surface-soft' : 'hover:bg-surface-soft', cursor.isActive(item) && 'ring-2 ring-inset ring-accent']"
                 >
                     <!-- key / repo#number / draft marker -->
                     <span
