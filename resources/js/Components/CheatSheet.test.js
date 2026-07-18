@@ -65,7 +65,7 @@ describe('CheatSheet', () => {
         registerAction(action({ id: 'cursor:jump-1', label: 'Jump to row 1', keys: '1', scope: 'navigation' }));
         await open();
         expect(w.text()).toContain('Navigation');
-        expect(w.text()).toContain('Move cursor down / up');
+        expect(w.text()).toContain('Move cursor / scroll page');
         // A leaked navigation-scope group would render a lowercase 'navigation' header.
         expect(w.text()).not.toContain('navigation');
     });

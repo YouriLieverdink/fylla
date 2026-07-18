@@ -100,7 +100,7 @@ const cursor = useListCursor(() => props.items, rowKey);
 watch(() => cursor.activeKey.value, (key) => {
     if (key == null) return;
     nextTick(() => {
-        document.querySelector(`[data-row="${CSS.escape(key)}"]`)?.scrollIntoView({ block: 'nearest' });
+        document.querySelector(`[data-row="${CSS.escape(key)}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
 });
 

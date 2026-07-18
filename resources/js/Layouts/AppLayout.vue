@@ -2,7 +2,8 @@
 import { onMounted, onUnmounted, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { tinykeys, defaultKeybindingsHandlerIgnore } from 'tinykeys';
-import { useAction, registry } from '../Composables/useAction';
+import { useAction, registerAction, unregisterAction, registry } from '../Composables/useAction';
+import { activeCursorCount } from '../Composables/useListCursor';
 import CheatSheet from '../Components/CheatSheet.vue';
 
 // Persistent Inertia layout (assigned via page.default.layout in app.js's
@@ -43,6 +44,19 @@ for (const { keys, href, label } of NAV) {
     });
 }
 
+// Global j/k viewport scroll — the cursorless-page fallback (#42). Bound only
+// while no list cursor is live (activeCursorCount === 0); on Worklist the cursor
+// owns j/k. Same `navigation` scope → the CheatSheet's static Navigation section
+// covers both, no dynamic-group clutter.
+const SCROLL_STEP = 80;
+const SCROLL = [
+    { id: 'scroll-down', label: 'Scroll / cursor down', keys: 'j', scope: 'navigation', run: () => window.scrollBy({ top: SCROLL_STEP, behavior: 'smooth' }) },
+    { id: 'scroll-up', label: 'Scroll / cursor up', keys: 'k', scope: 'navigation', run: () => window.scrollBy({ top: -SCROLL_STEP, behavior: 'smooth' }) },
+];
+watch(activeCursorCount, (n) => {
+    for (const a of SCROLL) n > 0 ? unregisterAction(a.id) : registerAction(a);
+}, { immediate: true });
+
 // Focus guard (#39, spec #30): Escape is the sole exception, so a bound Escape
 // still fires in any context. `data-kb-ignore` is the opt-out hatch for custom
 // popovers (e.g. CellEditor) that aren't natively editable — ancestor-aware.
@@ -51,6 +65,12 @@ for (const { keys, href, label } of NAV) {
 function ignore(event) {
     if (event.key === 'Escape') return false;
     if (event.target instanceof Element && event.target.closest('[data-kb-ignore]')) return true;
+    // j/k (cursor move / page scroll) fire on key-repeat too, so holding continues
+    // — the default ignore drops event.repeat. Still suppressed in editable contexts.
+    if (event.key === 'j' || event.key === 'k') {
+        const t = event.target;
+        return event.isComposing || (t !== event.currentTarget && t instanceof Element && t.matches('[contenteditable],input,select,textarea'));
+    }
     return defaultKeybindingsHandlerIgnore(event);
 }
 

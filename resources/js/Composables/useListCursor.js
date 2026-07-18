@@ -1,5 +1,10 @@
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useAction } from './useAction';
+
+// How many list cursors are live (0 on cursorless pages). The layout's global
+// j/k scroll fallback (#42) is bound only while this is 0, so exactly one owner
+// of j/k exists at a time — order-independent, unlike last-writer-wins.
+export const activeCursorCount = ref(0);
 
 // Persistent j/k/digit row cursor over one primary list (#34, #42).
 //
@@ -52,6 +57,9 @@ export function useListCursor(items, keyOf = (item) => item.id) {
         }
         place(Math.min(index.value, next.length - 1));
     });
+
+    onMounted(() => activeCursorCount.value++);
+    onUnmounted(() => activeCursorCount.value--);
 
     useAction({ id: 'cursor:down', label: 'Move cursor down', keys: 'j', scope: 'navigation', run: () => move(1) });
     useAction({ id: 'cursor:up', label: 'Move cursor up', keys: 'k', scope: 'navigation', run: () => move(-1) });

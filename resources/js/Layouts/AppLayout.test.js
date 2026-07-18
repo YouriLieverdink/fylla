@@ -7,6 +7,7 @@ vi.mock('@inertiajs/vue3', () => ({ router: { post, visit } }));
 
 import AppLayout from './AppLayout.vue';
 import { useAction, registry } from '../Composables/useAction';
+import { useListCursor } from '../Composables/useListCursor';
 
 // tinykeys ignores events missing `code` (its isKeyboardEvent guard), so both
 // key and code must be set for the synthetic keystroke to match.
@@ -27,6 +28,39 @@ describe('AppLayout keybinding wiring', () => {
         const wrapper = mount(AppLayout);
         press('.', 'Period');
         expect(post).toHaveBeenCalledWith('/sync', {}, { preserveScroll: true });
+        wrapper.unmount();
+    });
+
+    it('j/k scroll the viewport on a cursorless page (#42 fallback)', () => {
+        window.scrollBy = vi.fn();
+        const wrapper = mount(AppLayout);
+        press('j', 'KeyJ');
+        expect(window.scrollBy).toHaveBeenCalledWith({ top: 80, behavior: 'smooth' });
+        press('k', 'KeyK');
+        expect(window.scrollBy).toHaveBeenCalledWith({ top: -80, behavior: 'smooth' });
+        wrapper.unmount();
+    });
+
+    it('a live list cursor takes j/k from the scroll fallback', async () => {
+        window.scrollBy = vi.fn();
+        const Child = defineComponent({
+            setup() { useListCursor(() => [{ kind: 'issue', id: 1 }], (it) => it.kind + it.id); return () => h('div'); },
+        });
+        const wrapper = mount(AppLayout, { slots: { default: () => h(Child) } });
+        await nextTick();
+        // Cursor owns j/k → the scroll fallback is unregistered, not just outranked.
+        expect(registry.has('scroll-down')).toBe(false);
+        expect(registry.has('cursor:down')).toBe(true);
+        press('j', 'KeyJ');
+        expect(window.scrollBy).not.toHaveBeenCalled();
+        wrapper.unmount();
+    });
+
+    it('holding j keeps firing (key-repeat is not ignored for j/k)', () => {
+        window.scrollBy = vi.fn();
+        const wrapper = mount(AppLayout);
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', code: 'KeyJ', repeat: true }));
+        expect(window.scrollBy).toHaveBeenCalled();
         wrapper.unmount();
     });
 

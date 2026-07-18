@@ -31,7 +31,7 @@ useAction({
 // `navigation` scope but are described here as a fixed pair of rows, not one entry
 // per digit. Filterable like the rest.
 const NAV_HELP = [
-    { label: 'Move cursor down / up', keys: ['j', 'k'] },
+    { label: 'Move cursor / scroll page', keys: ['j', 'k'] },
     { label: 'Jump to row 1–9', keys: ['1', '–', '9'] },
 ];
 const navRows = computed(() => {
