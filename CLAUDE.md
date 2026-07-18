@@ -43,6 +43,10 @@ php artisan queue:work            # database queue
   `updateOrCreate` preserves them across sync.
 - **Page:** one Inertia page (`resources/js/Pages/Issues.vue`) via
   `IssueController@index`, reading the local `Issue` model.
+- **UI-editable config (ADR-0016):** the `config/fylla.php` tuning values are
+  overridable from `/settings`. The file stays the default; a `settings` row
+  (`key`, JSON `value`) overrides it, and `SettingsProvider@boot` applies every
+  row onto `config('fylla.*')` per request. Secrets stay in `.env`.
 
 ## Conventions
 

@@ -8,6 +8,7 @@ use App\Http\Controllers\EstimationController;
 use App\Http\Controllers\IssueController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\PullRequestController;
+use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\TimerController;
 use App\Http\Controllers\UtilizationController;
 use Illuminate\Support\Facades\Route;
@@ -51,5 +52,8 @@ Route::post('/timers/resume', [TimerController::class, 'resume'])->name('timers.
 Route::post('/timers/stop', [TimerController::class, 'stop'])->name('timers.stop');
 Route::post('/timers/start-time', [TimerController::class, 'startTime'])->name('timers.start-time');
 Route::post('/timers/notes', [TimerController::class, 'note'])->name('timers.notes');
+
+Route::get('/settings', [SettingsController::class, 'edit'])->name('settings.edit');
+Route::put('/settings', [SettingsController::class, 'update'])->name('settings.update');
 
 Route::get('/playground', fn () => Inertia::render('Playground'))->name('playground');

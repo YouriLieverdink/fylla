@@ -164,3 +164,8 @@ _Avoid_: comment (the old single-per-segment field this supersedes)
 
 **PR review**:
 Reviewing a GitHub pull request — about half of all work. A first-class timed work item, timed through the same **timer stack** as an issue, its hours posted as a **Worklog**. Every PR is linked to a **Kendo issue** (by convention: the branch name, else the PR body, carries the issue key `{PROJECT_KEY}-NNNN`), so review hours book to *that issue*, and the issue's Kendo project decides billability. The linked issue is usually **not the user's own** — they are reviewing someone else's work — so it is not in the personal task feed; resolution looks it up across **all** Kendo issues (a live global search by key), not the local mirror. Resolution — parse the key, confirm the match, or fall back to a manual pick when none is found — is **required before the PR can be timed** (a Worklog cannot post without a resolved issue).
+
+### Configuration
+
+**Setting**:
+A runtime override of a `config/fylla.php` tuning default (ADR-0016), edited from `/settings`. The file value stays the built-in default; a Setting exists only for a key the user has changed, stored as a `settings` row (`key`, JSON `value`) and applied onto `config('fylla.*')` on every request. Deleting the row restores the default. Scope is the tuning knobs only — **secrets stay in `.env`**, never a Setting.

@@ -256,6 +256,20 @@ The `/capacity` page (the **Capacity** nav tab) is a **year calendar grid**
   (÷8), and weeks (÷32). A multi-year **Overzicht** table and a trips-this-year
   list sit below the grid. The per-week capacity view lives on `/utilization`.
 
+### Settings
+
+The `/settings` page (the **Settings** nav tab) edits the tuning knobs in
+`config/fylla.php` without touching the file (ADR-0016): the utilization
+target/soft-floor, contracted hours and day off, the trend window, the worklog
+sync window, `kendo_user_id`, the GitHub PR queries and excluded repos, and the
+display timezone. Routes: `GET /settings` (edit), `PUT /settings` (save).
+
+The file values stay the built-in defaults; a save writes a row to the
+`settings` table (`key`, JSON `value`), and `SettingsProvider` reads that table
+on every request and overrides the matching `config('fylla.*')` — so edits apply
+with no restart. Deleting a row restores the default. **Secrets** (`KENDO_TOKEN`,
+`GITHUB_TOKEN`, …) are deliberately not editable here; they stay in `.env`.
+
 ## Setup
 
 ```bash

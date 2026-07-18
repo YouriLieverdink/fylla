@@ -10,6 +10,7 @@ const tabs = [
     { label: 'Capacity', href: '/capacity' },
     { label: 'Clients', href: '/clients' },
     { label: 'Delivery', href: '/delivery' },
+    { label: 'Settings', href: '/settings' },
 ];
 
 // '/' matches only the root; other tabs match their prefix.
