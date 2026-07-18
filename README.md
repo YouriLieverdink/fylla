@@ -303,6 +303,25 @@ php artisan queue:work     # processes the database queue
 
 Then open `/`. Hit **Sync now** to pull issues immediately (or press `.`).
 
+## Keyboard
+
+Bindings are registered through the `useAction` composable into a reactive
+registry; the persistent `AppLayout` rebinds one guarded tinykeys listener from
+it, so shortcuts fire from any page and are suppressed while typing in an
+editable context (focus guard, ADR/issue #39).
+
+Global `g`-leader navigation (depth-2 sequences dispatched natively by
+tinykeys, no timeout logic of our own) — Inertia visits to each page:
+
+| Keys | Page | Keys | Page |
+|---|---|---|---|
+| `g w` | Worklist | `g e` | Estimation |
+| `g u` | Utilization | `g l` | Clients (c**l**ients) |
+| `g c` | Capacity | `g d` | Delivery |
+| `g s` | Settings | | |
+
+`.` — Sync now.
+
 ## Design system
 
 Ported from a Claude Design UI kit. Tokens (colours, type, radii, shadows) live

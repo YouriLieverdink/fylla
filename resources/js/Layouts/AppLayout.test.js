@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { defineComponent, h, nextTick } from 'vue';
 import { mount } from '@vue/test-utils';
 
-const { post } = vi.hoisted(() => ({ post: vi.fn() }));
-vi.mock('@inertiajs/vue3', () => ({ router: { post } }));
+const { post, visit } = vi.hoisted(() => ({ post: vi.fn(), visit: vi.fn() }));
+vi.mock('@inertiajs/vue3', () => ({ router: { post, visit } }));
 
 import AppLayout from './AppLayout.vue';
 import { useAction, registry } from '../Composables/useAction';
@@ -13,7 +13,15 @@ import { useAction, registry } from '../Composables/useAction';
 const press = (key, code) => window.dispatchEvent(new KeyboardEvent('keydown', { key, code }));
 
 describe('AppLayout keybinding wiring', () => {
-    beforeEach(() => { registry.clear(); post.mockClear(); });
+    beforeEach(() => { registry.clear(); post.mockClear(); visit.mockClear(); });
+
+    it('g u sequence dispatches an Inertia visit to /utilization (#40)', () => {
+        const wrapper = mount(AppLayout);
+        press('g', 'KeyG');
+        press('u', 'KeyU');
+        expect(visit).toHaveBeenCalledWith('/utilization');
+        wrapper.unmount();
+    });
 
     it('. flows through the registry to Sync now', () => {
         const wrapper = mount(AppLayout);

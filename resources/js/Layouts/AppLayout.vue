@@ -20,6 +20,28 @@ useAction({
     run: () => router.post('/sync', {}, { preserveScroll: true }),
 });
 
+// Global g-leader navigation (#40; grammar #29, map #35). Depth-2 leader
+// sequences dispatched natively by tinykeys — no timeout logic of our own.
+// `g c` = Capacity, `g l` = cLients: mnemonic split of the c-collision (#29).
+const NAV = [
+    { keys: 'g w', href: '/',            label: 'Worklist' },
+    { keys: 'g u', href: '/utilization', label: 'Utilization' },
+    { keys: 'g c', href: '/capacity',    label: 'Capacity' },
+    { keys: 'g e', href: '/estimation',  label: 'Estimation' },
+    { keys: 'g l', href: '/clients',     label: 'Clients' },
+    { keys: 'g d', href: '/delivery',    label: 'Delivery' },
+    { keys: 'g s', href: '/settings',    label: 'Settings' },
+];
+for (const { keys, href, label } of NAV) {
+    useAction({
+        id: `nav:${href}`,
+        label: `Go to ${label}`,
+        keys,
+        scope: 'global',
+        run: () => router.visit(href),
+    });
+}
+
 // Focus guard (#39, spec #30): Escape is the sole exception, so a bound Escape
 // still fires in any context. `data-kb-ignore` is the opt-out hatch for custom
 // popovers (e.g. CellEditor) that aren't natively editable — ancestor-aware.
