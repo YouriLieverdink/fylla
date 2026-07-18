@@ -301,7 +301,7 @@ php artisan schedule:work  # runs the 15-minute sync
 php artisan queue:work     # processes the database queue
 ```
 
-Then open `/`. Hit **Sync now** to pull issues immediately.
+Then open `/`. Hit **Sync now** to pull issues immediately (or press `.`).
 
 ## Design system
 
