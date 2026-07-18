@@ -343,6 +343,15 @@ A static **Navigation** section in the `?`-overlay documents it.
 by scope (reads the registry, so a page's bindings show only while it's
 mounted); `Escape` closes it.
 
+While a **blocking modal** is open (edit, promote-pick, manual-pick, ad-hoc,
+add-project, or the `?` cheat-sheet) the global listener early-returns
+(`useModalGuard`, issue #43): every binding beneath the scrim — page-local,
+`j`/`k` cursor, and global (`g`-nav / `.` / `?`) — is suppressed regardless of
+focus, so no keystroke reaches a hidden row. `Escape` is the sole exit, closing
+the modal via its own native handler. One modal at a time (single-layer
+invariant, asserted). `CellEditor`'s inline popover is excluded — it stays on
+the focus-guard / `data-kb-ignore` path.
+
 ## Design system
 
 Ported from a Claude Design UI kit. Tokens (colours, type, radii, shadows) live

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue';
 import { registry, useAction } from '../Composables/useAction';
+import { useModalGuard } from '../Composables/useModalGuard';
 
 // `?`-triggered cheat-sheet overlay (#41, prototype variant C of #32): an
 // on-demand, searchable reference of every live binding, grouped by scope.
@@ -13,6 +14,11 @@ import { registry, useAction } from '../Composables/useAction';
 const open = ref(false);
 const query = ref('');
 const input = ref(null);
+
+// Modal guard (#43): the cheat-sheet is a blocking modal — while open it
+// suppresses every keybinding beneath it (its own toggle included, so `?` and
+// Escape close it via the local handlers below, not the registry).
+useModalGuard(() => open.value);
 
 useAction({
     id: 'help',

@@ -10,6 +10,7 @@ import BillableMetric from '../Components/BillableMetric.vue';
 import UtilizationTrendChart from '../Components/UtilizationTrendChart.vue';
 import TimerStack from '../Components/TimerStack.vue';
 import { usePageCursor } from '../Composables/usePageCursor';
+import { useModalGuard } from '../Composables/useModalGuard';
 
 const props = defineProps({
     // One ranked list of { kind:'issue'|'pr', id, title, reason, score, ... }.
@@ -246,6 +247,13 @@ const adhocOpen = ref(false);
 const adhocQ = ref('');
 const adhocResults = ref([]);
 const adhocLoading = ref(false);
+
+// Modal guard (#43): the three blocking modals on this page (edit — which holds
+// the promote-pick — plus manual-pick and ad-hoc) suppress every keybinding
+// beneath the scrim while open; Escape (each modal's own handler) is the exit.
+useModalGuard(() => editing.value !== null);
+useModalGuard(() => pickingPr.value !== null);
+useModalGuard(() => adhocOpen.value);
 
 function openAdhoc() {
     adhocOpen.value = true;
@@ -653,7 +661,7 @@ function timeAdhoc(c) {
             v-if="pickingPr"
             class="fixed inset-0 z-50 flex items-start justify-center bg-black/30 p-4 pt-[15vh]"
             @click.self="closePick"
-            @keydown.esc="closePick"
+            @keydown.esc.window="closePick"
         >
             <div class="w-full max-w-[520px] rounded-[18px] border border-[#ebe7de] bg-surface p-5 shadow-[0_20px_60px_-15px_rgba(42,41,38,0.4)]">
                 <div class="mb-1 flex items-center justify-between">
@@ -669,7 +677,6 @@ function timeAdhoc(c) {
                     placeholder="Search Kendo issues…"
                     class="w-full rounded-[10px] border border-[#e0dbd0] bg-white px-3 py-2.5 font-mono text-[13px] outline-none focus:border-accent-tint-2"
                     @input="search"
-                    @keydown.esc="closePick"
                 />
 
                 <div class="mt-3 flex max-h-[320px] flex-col gap-0.5 overflow-auto">
@@ -698,7 +705,7 @@ function timeAdhoc(c) {
             v-if="adhocOpen"
             class="fixed inset-0 z-50 flex items-start justify-center bg-black/30 p-4 pt-[15vh]"
             @click.self="adhocOpen = false"
-            @keydown.esc="adhocOpen = false"
+            @keydown.esc.window="adhocOpen = false"
         >
             <div class="w-full max-w-[520px] rounded-[18px] border border-[#ebe7de] bg-surface p-5 shadow-[0_20px_60px_-15px_rgba(42,41,38,0.4)]">
                 <div class="mb-1 flex items-center justify-between">
@@ -714,7 +721,6 @@ function timeAdhoc(c) {
                     placeholder="Search Kendo issues…"
                     class="w-full rounded-[10px] border border-[#e0dbd0] bg-white px-3 py-2.5 font-mono text-[13px] outline-none focus:border-accent-tint-2"
                     @input="adhocSearch"
-                    @keydown.esc="adhocOpen = false"
                 />
 
                 <div class="mt-3 flex max-h-[320px] flex-col gap-0.5 overflow-auto">

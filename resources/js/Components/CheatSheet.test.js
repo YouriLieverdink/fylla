@@ -3,6 +3,7 @@ import { nextTick } from 'vue';
 import { mount } from '@vue/test-utils';
 import CheatSheet from './CheatSheet.vue';
 import { registry, registerAction } from '../Composables/useAction';
+import { openModalCount } from '../Composables/useModalGuard';
 
 const action = (over = {}) => ({
     id: 'a', label: 'Sync now', keys: '.', scope: 'global', run: () => {}, ...over,
@@ -16,7 +17,9 @@ function open() {
 }
 
 describe('CheatSheet', () => {
-    beforeEach(() => registry.clear());
+    // openModalCount is module-level shared state; these tests don't unmount
+    // between cases, so reset it or the ≤1 guard trips as opens accumulate.
+    beforeEach(() => { registry.clear(); openModalCount.value = 0; });
 
     it('? opens, Escape closes', async () => {
         const w = mount(CheatSheet);

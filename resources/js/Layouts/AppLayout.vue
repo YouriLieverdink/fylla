@@ -4,6 +4,7 @@ import { router } from '@inertiajs/vue3';
 import { tinykeys, defaultKeybindingsHandlerIgnore } from 'tinykeys';
 import { useAction, registerAction, unregisterAction, registry } from '../Composables/useAction';
 import { activeCursorCount } from '../Composables/useListCursor';
+import { openModalCount } from '../Composables/useModalGuard';
 import CheatSheet from '../Components/CheatSheet.vue';
 
 // Persistent Inertia layout (assigned via page.default.layout in app.js's
@@ -67,6 +68,11 @@ watch(activeCursorCount, (n) => {
 // Everything else defers to tinykeys' own ignore (editable contexts +
 // repeat/isComposing). Native Tab/Shift-Tab flow is untouched: nothing binds them.
 function ignore(event) {
+    // Modal guard (#43): while a blocking modal is open, suppress every registry
+    // binding — page-local, j/k cursor, and global (g-nav / . / ?) alike, and
+    // Escape too. The open modal exits via its own native @keydown.esc handler,
+    // not the registry, so nothing survives beneath the scrim.
+    if (openModalCount.value > 0) return true;
     if (event.key === 'Escape') return false;
     if (event.target instanceof Element && event.target.closest('[data-kb-ignore]')) return true;
     // j/k (cursor move / page scroll) fire on key-repeat too, so holding continues

@@ -7,6 +7,7 @@ import AppButton from '../Components/AppButton.vue';
 import SegmentedControl from '../Components/SegmentedControl.vue';
 import ProjectRow from '../Components/ProjectRow.vue';
 import { usePageCursor } from '../Composables/usePageCursor';
+import { useModalGuard } from '../Composables/useModalGuard';
 
 const props = defineProps({
     projects: { type: Array, default: () => [] },
@@ -22,6 +23,10 @@ const newTarget = ref('');
 const addingTo = ref(null);
 const search = ref('');
 const searchInput = ref(null);
+
+// Modal guard (#43): the add-project dialog suppresses every keybinding beneath
+// the scrim while open; Escape (its own handler below) is the sole exit.
+useModalGuard(() => addingTo.value !== null);
 
 function focusSearch() {
     nextTick(() => searchInput.value?.focus());
@@ -228,6 +233,7 @@ const cursor = usePageCursor(() => focusTargets.value);
             v-if="addingTo"
             class="fixed inset-0 z-50 flex items-start justify-center bg-black/30 px-4 pt-[15vh]"
             @click.self="addingTo = null"
+            @keydown.esc.window="addingTo = null"
         >
             <Card radius="18px" pad="16px 18px" class="w-full max-w-[440px]">
                 <div class="mb-3 flex items-center justify-between">

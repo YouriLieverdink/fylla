@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { defineComponent, h, nextTick } from 'vue';
+import { defineComponent, h, nextTick, ref } from 'vue';
 import { mount } from '@vue/test-utils';
 
 const { post, visit } = vi.hoisted(() => ({ post: vi.fn(), visit: vi.fn() }));
@@ -8,13 +8,14 @@ vi.mock('@inertiajs/vue3', () => ({ router: { post, visit } }));
 import AppLayout from './AppLayout.vue';
 import { useAction, registry } from '../Composables/useAction';
 import { useListCursor } from '../Composables/useListCursor';
+import { useModalGuard, openModalCount } from '../Composables/useModalGuard';
 
 // tinykeys ignores events missing `code` (its isKeyboardEvent guard), so both
 // key and code must be set for the synthetic keystroke to match.
 const press = (key, code) => window.dispatchEvent(new KeyboardEvent('keydown', { key, code }));
 
 describe('AppLayout keybinding wiring', () => {
-    beforeEach(() => { registry.clear(); post.mockClear(); visit.mockClear(); });
+    beforeEach(() => { registry.clear(); post.mockClear(); visit.mockClear(); openModalCount.value = 0; });
 
     it('g u sequence dispatches an Inertia visit to /utilization (#40)', () => {
         const wrapper = mount(AppLayout);
@@ -73,6 +74,53 @@ describe('AppLayout keybinding wiring', () => {
         await nextTick();
         press('x', 'KeyX');
         expect(run).toHaveBeenCalled();
+        wrapper.unmount();
+    });
+
+    // Modal guard (#43): while a blocking modal is open the global listener
+    // early-returns, so no binding beneath the scrim fires; closing it restores them.
+    it('suppresses all bindings while a modal is open, restores on close', () => {
+        const wrapper = mount(AppLayout);
+        openModalCount.value = 1;
+        press('.', 'Period'); // Sync now
+        press('g', 'KeyG');
+        press('u', 'KeyU'); // g u → Utilization
+        expect(post).not.toHaveBeenCalled();
+        expect(visit).not.toHaveBeenCalled();
+        openModalCount.value = 0;
+        press('.', 'Period');
+        expect(post).toHaveBeenCalledWith('/sync', {}, { preserveScroll: true });
+        wrapper.unmount();
+    });
+
+    it('useModalGuard counts open/close and decrements when unmounted mid-open', async () => {
+        const isOpen = ref(false);
+        const Child = defineComponent({
+            setup() { useModalGuard(() => isOpen.value); return () => h('div'); },
+        });
+        const wrapper = mount(Child);
+        isOpen.value = true; await nextTick();
+        expect(openModalCount.value).toBe(1);
+        isOpen.value = false; await nextTick();
+        expect(openModalCount.value).toBe(0);
+        // Still counted at unmount → cleaned up, so a modal open during nav can't stick.
+        isOpen.value = true; await nextTick();
+        wrapper.unmount();
+        expect(openModalCount.value).toBe(0);
+    });
+
+    it('asserts a single layer — a second modal open throws', async () => {
+        const a = ref(false);
+        const b = ref(false);
+        const errors = [];
+        const Two = defineComponent({
+            setup() { useModalGuard(() => a.value); useModalGuard(() => b.value); return () => h('div'); },
+        });
+        const wrapper = mount(Two, { global: { config: { errorHandler: (e) => errors.push(e) } } });
+        a.value = true; await nextTick();
+        b.value = true; await nextTick();
+        expect(errors.some((e) => /single-layer invariant/.test(e.message))).toBe(true);
+        a.value = false; b.value = false;
         wrapper.unmount();
     });
 
