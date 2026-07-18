@@ -258,7 +258,7 @@ The `/capacity` page (the **Capacity** nav tab) is a **year calendar grid**
 
 ### Settings
 
-The `/settings` page (the **Settings** nav tab) edits the tuning knobs in
+The `/settings` page (the **gear icon** in the header) edits the tuning knobs in
 `config/fylla.php` without touching the file (ADR-0016): the utilization
 target/soft-floor, contracted hours and day off, the trend window, the worklog
 sync window, `kendo_user_id`, the GitHub PR queries and excluded repos, and the
