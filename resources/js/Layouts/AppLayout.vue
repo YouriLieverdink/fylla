@@ -86,12 +86,29 @@ function ignore(event) {
 
 let unsubscribe;
 
-// Rebuild the tinykeys keymap from the live registry.
+// Rebuild the tinykeys keymap from the live registry. Two tinykeys quirks bite a
+// single long-lived listener that mixes `g`-leader sequences with the bare page
+// keys they collide on (e.g. `g c` nav vs `c` capture) — both are handled here.
+const isSequence = (action) => action.keys.includes(' '); // multi-press leader binding, e.g. `g c`
 function bind() {
     unsubscribe?.();
     const keymap = {};
-    for (const action of registry.values()) {
-        keymap[action.keys] = action.run;
+    // (1) Iteration order. tinykeys walks the keymap in insertion order and, on the
+    // first complete match, fires + `break`s. Child pages mount before this layout,
+    // so their bare keys register first — a bare `c` would then win over `g c` on
+    // the second keypress. Register multi-key sequences first so a leader sequence
+    // always beats a bare key that shares its final letter, whatever the mount order.
+    const actions = [...registry.values()].sort((a, b) => isSequence(b) - isSequence(a));
+    for (const action of actions) {
+        // (2) Stale progress. On a completed sequence tinykeys `break`s without
+        // clearing the sibling sequences it armed on the leader press; those linger
+        // until the 1s timeout and disarm the next leader press within that window
+        // (so a second `g`-nav soon after falls through to a bare key). Rebind after
+        // a sequence fires to drop them. Single keys arm nothing, so they skip it —
+        // hold-to-repeat j/k stays churn-free.
+        keymap[action.keys] = isSequence(action)
+            ? (event) => { action.run(event); bind(); }
+            : action.run;
     }
     unsubscribe = tinykeys(window, keymap, { ignore });
 }

@@ -25,6 +25,24 @@ describe('AppLayout keybinding wiring', () => {
         wrapper.unmount();
     });
 
+    // Regression: with one long-lived handler, tinykeys left stale sibling-sequence
+    // progress after a sequence fired, so a `g`-nav pressed soon after another one
+    // fell through to a colliding bare key (e.g. `g c` → bare `c` = capture draft).
+    it('g-nav stays reliable back-to-back and never triggers a colliding bare key', async () => {
+        const bareC = vi.fn();
+        const Child = defineComponent({
+            setup() { useAction({ id: 'cap', label: 'Capture', keys: 'c', scope: 'page', run: bareC }); return () => h('div'); },
+        });
+        const wrapper = mount(AppLayout, { slots: { default: () => h(Child) } });
+        await nextTick();
+        press('g', 'KeyG'); press('u', 'KeyU'); // g u first
+        press('g', 'KeyG'); press('c', 'KeyC'); // g c immediately after — used to fire bare c
+        expect(visit).toHaveBeenNthCalledWith(1, '/utilization');
+        expect(visit).toHaveBeenNthCalledWith(2, '/capacity');
+        expect(bareC).not.toHaveBeenCalled();
+        wrapper.unmount();
+    });
+
     it('. flows through the registry to Sync now', () => {
         const wrapper = mount(AppLayout);
         press('.', 'Period');

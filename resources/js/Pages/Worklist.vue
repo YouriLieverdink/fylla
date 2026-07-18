@@ -429,6 +429,7 @@ useAction({ id: 'wl:note', label: 'Add timer note', keys: 'n', scope: 'worklist'
                 data-lpignore="true"
                 class="min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-faint-3"
                 @keydown.enter="captureDraft"
+                @keydown.esc="captureInput?.blur()"
             />
             <button
                 class="flex-none cursor-pointer rounded-[9px] bg-accent px-3.5 py-1.5 font-sans text-[12px] font-semibold text-white transition hover:bg-accent-deep"

@@ -225,6 +225,7 @@ function submitStart() {
                             :placeholder="active.running ? 'Add a note…' : 'Paused — resume to add notes'"
                             class="min-w-0 flex-1 rounded-[11px] border border-[#e0dbd0] bg-white px-3 py-2.5 text-[13px] outline-none focus:border-accent-tint-2 disabled:cursor-not-allowed disabled:bg-transparent disabled:text-faint-3"
                             @keydown.enter.prevent="addNote"
+                            @keydown.esc="noteInput?.blur()"
                         />
                         <button
                             :disabled="!active.running"
