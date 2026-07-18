@@ -44,17 +44,21 @@ for (const { keys, href, label } of NAV) {
     });
 }
 
-// Global j/k viewport scroll — the cursorless-page fallback (#42). Bound only
-// while no list cursor is live (activeCursorCount === 0); on Worklist the cursor
-// owns j/k. Same `navigation` scope → the CheatSheet's static Navigation section
+// Cursorless-page navigation fallback (#42): j/k scroll the viewport, g g / G
+// jump to page top / bottom. Bound only while no list cursor is live
+// (activeCursorCount === 0); on a page with a cursor those keys drive the cursor
+// instead. Same `navigation` scope → the CheatSheet's static Navigation section
 // covers both, no dynamic-group clutter.
 const SCROLL_STEP = 80;
-const SCROLL = [
+const smoothTo = (top) => window.scrollTo({ top, behavior: 'smooth' });
+const FALLBACK = [
     { id: 'scroll-down', label: 'Scroll / cursor down', keys: 'j', scope: 'navigation', run: () => window.scrollBy({ top: SCROLL_STEP, behavior: 'smooth' }) },
     { id: 'scroll-up', label: 'Scroll / cursor up', keys: 'k', scope: 'navigation', run: () => window.scrollBy({ top: -SCROLL_STEP, behavior: 'smooth' }) },
+    { id: 'jump-top', label: 'Jump to top', keys: 'g g', scope: 'navigation', run: () => smoothTo(0) },
+    { id: 'jump-bottom', label: 'Jump to bottom', keys: 'Shift+G', scope: 'navigation', run: () => smoothTo(document.body.scrollHeight) },
 ];
 watch(activeCursorCount, (n) => {
-    for (const a of SCROLL) n > 0 ? unregisterAction(a.id) : registerAction(a);
+    for (const a of FALLBACK) n > 0 ? unregisterAction(a.id) : registerAction(a);
 }, { immediate: true });
 
 // Focus guard (#39, spec #30): Escape is the sole exception, so a bound Escape

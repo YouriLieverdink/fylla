@@ -33,6 +33,7 @@ useAction({
 const NAV_HELP = [
     { label: 'Move cursor / scroll page', keys: ['j', 'k'] },
     { label: 'Jump to row 1–9', keys: ['1', '–', '9'] },
+    { label: 'Jump to top / bottom', keys: ['g', 'g', '/', 'G'] },
 ];
 const navRows = computed(() => {
     const q = query.value.trim().toLowerCase();

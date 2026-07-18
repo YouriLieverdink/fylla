@@ -18,21 +18,47 @@ export const activeCursorCount = ref(0);
 // focus guard (#39) applies for free. j/k/1–9 are reserved app-wide — the
 // `navigation` scope keeps them out of the page alphabet and out of the dynamic
 // cheat-sheet (CheatSheet renders a static Navigation section instead).
-export function useListCursor(items, keyOf = (item) => item.id) {
+export function useListCursor(items, keyOf = (item) => item.id, { onEscapeTop, onEscapeBottom } = {}) {
     const list = () => (typeof items === 'function' ? items() : items.value);
 
     const index = ref(null); // null = unset & invisible
     let trackedKey = null;
+    // Which edge we last escaped past while unset: 'top' | 'bottom' | null (cold
+    // start). Governs re-entry so j-past-the-bottom doesn't wrap around to the top.
+    let escapedEdge = null;
 
     function place(i) {
         index.value = i;
         trackedKey = keyOf(list()[i]);
+        escapedEdge = null;
+    }
+
+    // Deselect and escape past an end of the list (e.g. scroll to page top/bottom).
+    function escapeTop() {
+        index.value = null;
+        trackedKey = null;
+        escapedEdge = 'top';
+        onEscapeTop?.();
+    }
+    function escapeBottom() {
+        index.value = null;
+        trackedKey = null;
+        escapedEdge = 'bottom';
+        onEscapeBottom?.();
     }
 
     function move(delta) {
         const n = list().length;
         if (n === 0) return;
-        if (index.value === null) return place(0); // first j/k → row 1
+        if (index.value === null) {
+            // Re-enter from the edge we escaped past; only the first press from a
+            // cold start jumps to the first target. No wrap-around.
+            if (escapedEdge === 'bottom') return delta < 0 ? place(n - 1) : undefined;
+            if (escapedEdge === 'top') return delta > 0 ? place(0) : undefined;
+            return place(0);
+        }
+        if (delta < 0 && index.value === 0 && onEscapeTop) return escapeTop(); // k past the first target
+        if (delta > 0 && index.value === n - 1 && onEscapeBottom) return escapeBottom(); // j past the last target
         place(Math.min(Math.max(index.value + delta, 0), n - 1)); // clamp at ends
     }
 
@@ -66,6 +92,8 @@ export function useListCursor(items, keyOf = (item) => item.id) {
     for (let d = 1; d <= 9; d++) {
         useAction({ id: `cursor:jump-${d}`, label: `Jump to row ${d}`, keys: String(d), scope: 'navigation', run: () => jump(d) });
     }
+    useAction({ id: 'cursor:top', label: 'Jump to top', keys: 'g g', scope: 'navigation', run: escapeTop });
+    useAction({ id: 'cursor:bottom', label: 'Jump to bottom', keys: 'Shift+G', scope: 'navigation', run: escapeBottom });
 
     const activeKey = computed(() => {
         if (index.value === null) return null;
@@ -75,5 +103,5 @@ export function useListCursor(items, keyOf = (item) => item.id) {
     const current = computed(() => (index.value === null ? null : list()[index.value] ?? null));
     const isActive = (item) => activeKey.value !== null && keyOf(item) === activeKey.value;
 
-    return { index, activeKey, current, isActive, move, jump };
+    return { index, activeKey, current, isActive, move, jump, escapeTop, escapeBottom };
 }

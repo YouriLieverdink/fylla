@@ -91,9 +91,21 @@ function togglePin(item) {
 // composite key: issue and draft ids can collide but share this modal
 const rowKey = (item) => item.kind + '-' + item.id;
 
-// j/k/digit row cursor over the worklist — the page's one primary list (#34/#42).
-// Keyed by rowKey so it tracks the same row across re-sort/sync.
-const cursor = useListCursor(() => props.items, rowKey);
+// j/k/digit cursor over the page's focus sequence: the two summary cards first,
+// then the worklist rows ([utilization, timer, ...items]). First j lands on the
+// utilization card; digits count from there (1 = utilization, 2 = timer, 3 = row 1).
+// Cards carry a `focusKey`; rows fall back to rowKey so id-tracking still holds.
+const cards = {
+    utilization: { focusKey: 'utilization' },
+    timer: { focusKey: 'timer' },
+};
+const focusTargets = computed(() => [cards.utilization, cards.timer, ...props.items]);
+const cursor = useListCursor(() => focusTargets.value, (t) => t.focusKey ?? rowKey(t), {
+    // k past the top / j past the bottom (and g g / G) deselect and scroll the
+    // page to that edge, so the cursor never traps you inside the list.
+    onEscapeTop: () => window.scrollTo({ top: 0, behavior: 'smooth' }),
+    onEscapeBottom: () => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }),
+});
 
 // Keep the focused row on screen. `block: 'nearest'` only scrolls when the row
 // is actually off-screen, so a visible cursor never jumps the page.
@@ -290,7 +302,10 @@ function timeAdhoc(c) {
         </div>
 
         <!-- metrics row -->
-        <div class="mb-[22px] grid items-stretch gap-[22px] lg:grid-cols-[400px_1fr]">
+        <div
+            data-row="utilization"
+            class="mb-[22px] grid scroll-my-12 items-stretch gap-[22px] lg:grid-cols-[400px_1fr]"
+        >
             <BillableMetric
                 :value="utilization.value"
                 :status="utilization.status"
@@ -299,12 +314,21 @@ function timeAdhoc(c) {
                 :target="utilization.target"
                 :note="utilization.note"
                 :week="utilization.week"
+                :class="cursor.isActive(cards.utilization) && 'ring-2 ring-accent'"
             />
-            <UtilizationTrendChart :points="utilization.points" :target="utilization.target" />
+            <UtilizationTrendChart
+                :points="utilization.points"
+                :target="utilization.target"
+                :class="cursor.isActive(cards.utilization) && 'ring-2 ring-accent'"
+            />
         </div>
 
         <!-- timer stack -->
-        <div class="mb-[22px]">
+        <div
+            data-row="timer"
+            class="mb-[22px] scroll-my-12 rounded-[24px]"
+            :class="cursor.isActive(cards.timer) && 'ring-2 ring-accent'"
+        >
             <TimerStack
                 :active="timer?.active ?? null"
                 :paused="timer?.paused ?? []"
@@ -359,7 +383,7 @@ function timeAdhoc(c) {
                     v-for="item in items"
                     :key="item.kind + item.id"
                     :data-row="rowKey(item)"
-                    class="flex items-center gap-4 rounded-[14px] border-t border-divider-soft px-5 py-3.5 transition"
+                    class="flex scroll-my-12 items-center gap-4 rounded-[14px] border-t border-divider-soft px-5 py-3.5 transition"
                     :class="[isLive(item) ? 'bg-surface-soft' : 'hover:bg-surface-soft', cursor.isActive(item) && 'ring-2 ring-inset ring-accent']"
                 >
                     <!-- key / repo#number / draft marker -->
