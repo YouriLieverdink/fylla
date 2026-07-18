@@ -55,3 +55,17 @@ php artisan queue:work            # database queue
 - Tests: PHPUnit under `tests/Feature`; fake HTTP with `Http::fake()` /
   `Http::sequence()`. The sync reconciliation branch is the piece worth testing.
 - Update `README.md` whenever config keys, commands, routes, or UI change.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs live in the YouriLieverdink/fylla GitHub Issues, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical roles, default label strings (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at repo root. See `docs/agents/domain.md`.
