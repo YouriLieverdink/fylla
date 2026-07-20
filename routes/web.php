@@ -24,7 +24,6 @@ Route::patch('/drafts/{draft}', [DraftController::class, 'update'])->name('draft
 Route::post('/drafts/{draft}/promote', [DraftController::class, 'promote'])->name('drafts.promote');
 Route::delete('/drafts/{draft}', [DraftController::class, 'destroy'])->name('drafts.destroy');
 
-Route::get('/clients', [ProjectController::class, 'index'])->name('clients.index');
 Route::patch('/projects/{project}', [ProjectController::class, 'update'])->name('projects.update');
 Route::post('/clients', [ClientController::class, 'store'])->name('clients.store');
 Route::patch('/clients/{client}', [ClientController::class, 'update'])->name('clients.update');

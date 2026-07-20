@@ -138,10 +138,10 @@ queued jobs run alongside the issues sync (every 15 min, and on **Sync now**):
 
 **Billability is a property of the project, not the worklog.** A worklog is
 billable iff its project's `billable` flag is set, derived at read time — so
-toggling a project on the `/clients` page re-classifies every worklog with no
-re-sync. Manage the list at `/clients` (`PATCH /projects/{project}`).
+toggling a project on the `/delivery` page re-classifies every worklog with no
+re-sync. Manage the list at `/delivery` (`PATCH /projects/{project}`).
 
-**Clients group projects (ADR-0011).** The `/clients` page assigns each project
+**Clients group projects (ADR-0011).** The `/delivery` page assigns each project
 to a Fylla-owned client via `PATCH /projects/{project}` (`client_id`). Clients
 are managed inline — `POST /clients`, `PATCH /clients/{client}` (rename,
 set/clear `monthly_target_hours`), `DELETE /clients/{client}` (nulls its
@@ -175,7 +175,7 @@ unassigned project (`PATCH /projects/{project}` setting `client_id`); `Delete`
 opens a confirm modal (projects fall back to unassigned, worklog history kept,
 irreversible — `DELETE /clients/{client}`). All three use the `useModalGuard`
 pattern (#43): keybindings beneath the scrim are suppressed, Escape is the sole
-exit. The `/clients` management tab still exists this slice.
+exit.
 
 A **By client ⇆ By project** segmented toggle switches between the projection
 cards and a flat list of **all** projects (assigned + unassigned), one
@@ -365,17 +365,16 @@ tinykeys, no timeout logic of our own) — Inertia visits to each page:
 | Keys | Page | Keys | Page |
 |---|---|---|---|
 | `g w` | Worklist | `g e` | Estimation |
-| `g u` | Utilization | `g l` | Clients (c**l**ients) |
-| `g c` | Capacity | `g d` | Delivery |
-| `g s` | Settings | | |
+| `g u` | Utilization | `g d` | Delivery |
+| `g c` | Capacity | `g s` | Settings |
 
 `.` — Sync now.
 
 Every page with cards/rows carries a persistent **cursor** (`useListCursor`,
 wired for full-page use by `usePageCursor`) that navigates its focus sequence —
 its summary cards, then its rows. On the Worklist that's the utilization and
-timer cards then the worklist rows; the Estimation, Utilization, Capacity,
-Clients and Delivery pages walk their own cards + visible table/grid rows the
+timer cards then the worklist rows; the Estimation, Utilization, Capacity and
+Delivery pages walk their own cards + visible table/grid rows the
 same way (tab- and expand-gated: only currently-shown rows are targets, in DOM
 order). `j`/`k` move down/up (focused target ringed and scrolled into view),
 digits `1`–`9` jump to that position. `g g` / `G` jump to the top / bottom of
@@ -404,8 +403,8 @@ it, `n` add a timer note (focuses the field).
 
 A few pages earn a small view-switcher keyset (rule #33, table #35, issue #45),
 registered under their own scope (independent of the row cursor): **Utilization**
-`w` weekly breakdown, `p` by project, `t` time entries; **Clients** and
-**Delivery** `c` by client, `p` by project; **Estimation** `c` clears the
+`w` weekly breakdown, `p` by project, `t` time entries; **Delivery** `c` by
+client, `p` by project; **Estimation** `c` clears the
 project filter. Capacity, Settings and Playground register no action keys.
 
 While a **blocking modal** is open (edit, promote-pick, manual-pick, ad-hoc,

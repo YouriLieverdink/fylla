@@ -25,13 +25,12 @@ useAction({
 
 // Global g-leader navigation (#40; grammar #29, map #35). Depth-2 leader
 // sequences dispatched natively by tinykeys — no timeout logic of our own.
-// `g c` = Capacity, `g l` = cLients: mnemonic split of the c-collision (#29).
+// `g c` = Capacity (#29).
 const NAV = [
     { keys: 'g w', href: '/',            label: 'Worklist' },
     { keys: 'g u', href: '/utilization', label: 'Utilization' },
     { keys: 'g c', href: '/capacity',    label: 'Capacity' },
     { keys: 'g e', href: '/estimation',  label: 'Estimation' },
-    { keys: 'g l', href: '/clients',     label: 'Clients' },
     { keys: 'g d', href: '/delivery',    label: 'Delivery' },
     { keys: 'g s', href: '/settings',    label: 'Settings' },
 ];

@@ -129,8 +129,8 @@ function deleteClient() {
                 <h1 class="mb-3 text-[34px] font-bold leading-[1.05] tracking-[-0.03em]">Delivery</h1>
                 <p class="max-w-[62ch] text-[15px] leading-[1.55] text-muted">
                     Team-aggregate hours delivered this month per client — every developer's worklogs plus
-                    your own, billable and non-billable, against each client's monthly target. Set targets
-                    and flag billable inline; clients without a target show delivered hours alone.
+                    your own, billable and non-billable, against each client's monthly target. Set targets,
+                    assign projects, and flag billable inline; clients without a target show delivered hours alone.
                 </p>
             </div>
             <div class="flex flex-[2] justify-end">

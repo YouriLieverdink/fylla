@@ -530,7 +530,7 @@ useAction({ id: 'wl:note', label: 'Add timer note', keys: 'n', scope: 'worklist'
                                 ⋯
                             </button>
 
-                            <!-- centered modal (matches the Clients add-project dialog) -->
+                            <!-- centered modal (matches the Delivery add-project dialog) -->
                             <div
                                 v-if="editing === rowKey(item)"
                                 class="fixed inset-0 z-50 flex items-start justify-center bg-black/30 px-4 pt-[15vh]"

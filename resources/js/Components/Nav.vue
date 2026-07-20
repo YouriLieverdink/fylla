@@ -13,7 +13,6 @@ const groups = {
     ],
     Team: [
         { label: 'Estimation', href: '/estimation' },
-        { label: 'Clients', href: '/clients' },
         { label: 'Delivery', href: '/delivery' },
     ],
 };
