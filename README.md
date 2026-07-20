@@ -163,6 +163,37 @@ _Delivery projection_). Clients without a target show the delivered burn-up
 alone (no projection or target line). Distinct from the `/clients` management
 tab.
 
+### Client context
+
+Clicking a Delivery card opens `/delivery/{client}` (`delivery.show`,
+`ClientContextController`) — a read-only, single-column report over the team
+issue mirror + roster, scoped to one managed client. `App\ClientContext\
+ClientContextReport` builds four sections: a **brief stat-band** (team hours vs
+target this month, active issues, current sprint `done/total`, needs-attention
+count), a full-width **per-developer estimate-vs-actual** table (median est/act,
+±15% within-target rate, and a rolling-20 bias marker reusing
+`EstimationReport::biasPct`; window ordered uniformly by `lane_entered_at` desc,
+nulls last), and two attention panels — **overrunning now** (in-flight issues
+where `logged > estimate`, worst first) and **in-progress aging** (middle-lane
+issues by time in lane, longest first).
+
+Its data comes from three background jobs (all run by "Sync now" and scheduled
+**daily**):
+
+- `SyncKendoProjectIssues` (the renamed, generalized ex-`SyncKendoFinishedIssues`)
+  mirrors **every** issue — all assignees, all lanes — for the union of
+  managed-client projects and the projects you've logged time in, into
+  `synced_issues`. Per row it stamps `assignee_id`, `lane_position`
+  (`first`/`middle`/`done`, classified from lane order), `lane_name`, `sprint_id`,
+  and a forward-only `lane_entered_at` (Kendo exposes no transition time, so
+  Fylla records it on first sight and re-stamps on a lane change; aging resolves
+  to days). It also mirrors each board's sprints into `sprints` for the brief's
+  sprint tile. The mirror carries no local history, so reconcile is a plain
+  delete within the refetched project set.
+- `SyncKendoUsers` mirrors the whole Kendo roster (`GET /api/users`) into
+  `developers` (`kendo_id`, name, email, `active`, `avatar_url`) — one global
+  call — so an issue's `assignee_id` resolves to a name.
+
 ### Estimation
 
 The `/estimation` page (the **Estimation** nav tab) is the personal estimation
@@ -171,18 +202,15 @@ actually logged, plus a single **rolling bias** (positive % = you underestimate)
 over the last 20 estimated issues. Sliceable by project (label-slicing deferred
 until labels are synced).
 
-The data source is the `finished_issues` mirror, filled by the
-`SyncKendoFinishedIssues` job (scheduled **daily** — slow-changing — and run by
+The data source is the `synced_issues` mirror, filled by the
+`SyncKendoProjectIssues` job (scheduled **daily** — slow-changing — and run by
 "Sync now"). The open my-issues feed excludes the done lane, so finished issues
 are read from the **per-project issues feed** (`GET /api/projects/{id}/issues`),
 which carries each issue's `estimated_minutes` and `logged_minutes` (the actual).
-The job fetches only the projects the user has logged time in (distinct on their
-own `synced_worklogs`), so calls scale with projects worked, not the total
-project count. For each it finds the **Done lane** (a lane titled "Done", else the
-rightmost by `order` — Kendo exposes no done flag) and mirrors that project's
-issues that are **assigned to the user** and **in the done lane**. `App\Estimation\
-EstimationReport` reads that table: actual = the issue's `logged_minutes`, ordered
-most-recently-worked first; issues without an estimate list but sit out the bias.
+`App\Estimation\EstimationReport` reads that table filtered to **your own
+done-lane issues** (`assignee_id` = `FYLLA_KENDO_USER_ID`, `lane_position` =
+`done`): actual = the issue's `logged_minutes`, ordered most-recently-worked
+first; issues without an estimate list but sit out the bias.
 
 ### Utilization dashboard
 

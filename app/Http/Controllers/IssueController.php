@@ -3,9 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\SyncGithubPullRequests;
-use App\Jobs\SyncKendoFinishedIssues;
 use App\Jobs\SyncKendoIssues;
+use App\Jobs\SyncKendoProjectIssues;
 use App\Jobs\SyncKendoProjects;
+use App\Jobs\SyncKendoUsers;
 use App\Jobs\SyncKendoWorklogs;
 use App\Kendo\Client as KendoClient;
 use App\Models\Draft;
@@ -176,8 +177,11 @@ class IssueController extends Controller
             SyncKendoProjects::dispatchSync();
             SyncKendoWorklogs::dispatchSync();
             SyncGithubPullRequests::dispatchSync();
-            // Depends on synced_worklogs (project list + last-worked), so runs last.
-            SyncKendoFinishedIssues::dispatchSync();
+            // Roster + team issue mirror feed the Client context page (#56); the
+            // issue job depends on synced_worklogs (project list + last-worked),
+            // so it runs after them (D2: one button refreshes everything).
+            SyncKendoUsers::dispatchSync();
+            SyncKendoProjectIssues::dispatchSync();
         } catch (\Throwable $e) {
             return back()->with('syncError', true);
         }

@@ -3,8 +3,8 @@
 namespace Tests\Feature;
 
 use App\Estimation\EstimationReport;
-use App\Models\FinishedIssue;
 use App\Models\Project;
+use App\Models\SyncedIssue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -12,15 +12,26 @@ class EstimationReportTest extends TestCase
 {
     use RefreshDatabase;
 
+    private const ME = 4;
+
     private int $kendoId = 1;
 
-    private function finished(int $estimateMinutes, int $loggedMinutes, int $projectId = 1, ?string $lastWorked = '2026-07-10 09:00:00'): FinishedIssue
+    protected function setUp(): void
     {
-        return FinishedIssue::create([
+        parent::setUp();
+        config(['fylla.kendo_user_id' => self::ME]);
+    }
+
+    /** A done issue assigned to the user — the personal-loop slice of the mirror. */
+    private function finished(int $estimateMinutes, int $loggedMinutes, int $projectId = 1, ?string $lastWorked = '2026-07-10 09:00:00'): SyncedIssue
+    {
+        return SyncedIssue::create([
             'kendo_id' => $this->kendoId++,
             'key' => 'K-'.$this->kendoId,
             'title' => 'Issue '.$this->kendoId,
             'project_id' => $projectId,
+            'assignee_id' => self::ME,
+            'lane_position' => 'done',
             'estimated_minutes' => $estimateMinutes,
             'logged_minutes' => $loggedMinutes,
             'last_worked_at' => $lastWorked,
@@ -103,6 +114,27 @@ class EstimationReportTest extends TestCase
         $this->assertSame(100, $sliced['bias']['pct']);
         // Options list every project with finished work, regardless of the slice.
         $this->assertSame(['Alpha', 'Beta'], array_column($sliced['projects'], 'name'));
+    }
+
+    public function test_only_my_done_issues_count_teammates_and_open_work_excluded(): void
+    {
+        $this->finished(estimateMinutes: 120, loggedMinutes: 120); // mine + done ✓
+        // A teammate's done issue, and my own still-open issue — both sit out.
+        SyncedIssue::create([
+            'kendo_id' => 900, 'key' => 'K-900', 'title' => 'Teammate',
+            'project_id' => 1, 'assignee_id' => 99, 'lane_position' => 'done',
+            'estimated_minutes' => 60, 'logged_minutes' => 600,
+        ]);
+        SyncedIssue::create([
+            'kendo_id' => 901, 'key' => 'K-901', 'title' => 'Still open',
+            'project_id' => 1, 'assignee_id' => self::ME, 'lane_position' => 'middle',
+            'estimated_minutes' => 60, 'logged_minutes' => 600,
+        ]);
+
+        $report = (new EstimationReport)->generate();
+
+        $this->assertCount(1, $report['issues']);
+        $this->assertSame(0, $report['bias']['pct']); // only the 2h/2h issue
     }
 
     public function test_no_finished_issues_yields_empty_report(): void

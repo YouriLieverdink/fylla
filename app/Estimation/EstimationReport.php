@@ -2,8 +2,9 @@
 
 namespace App\Estimation;
 
-use App\Models\FinishedIssue;
 use App\Models\Project;
+use App\Models\SyncedIssue;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 /**
@@ -11,8 +12,8 @@ use Illuminate\Support\Collection;
  * Kendo estimate against the hours logged against it, and rolls that up into a
  * single bias figure (positive % = you underestimate).
  *
- * Reads the `finished_issues` mirror (Done-lane issues assigned to the user,
- * synced by SyncKendoFinishedIssues) — never local timer worklogs, which are
+ * Reads the `synced_issues` mirror filtered to the user's own done issues
+ * (synced by SyncKendoProjectIssues) — never local timer worklogs, which are
  * only a partial record. Actual = the issue's Kendo `logged_minutes` (the
  * authoritative total, since Fylla worklogs post to Kendo too). Estimates are
  * hours, so the comparison is direct.
@@ -31,24 +32,32 @@ class EstimationReport
         $projectNames = Project::pluck('name', 'kendo_id');
 
         // Most-recently-worked first; issues never timed sort last.
-        $finished = FinishedIssue::query()
+        $finished = $this->mine()
             ->when($projectIds, fn ($q) => $q->whereIn('project_id', $projectIds))
             ->orderByRaw('last_worked_at is null, last_worked_at desc')
             ->get();
 
         return [
             'bias' => $this->bias($finished),
-            'issues' => $finished->map(fn (FinishedIssue $i) => $this->row($i, $projectNames))->all(),
+            'issues' => $finished->map(fn (SyncedIssue $i) => $this->row($i, $projectNames))->all(),
             'projects' => $this->projectOptions($projectNames),
             'projectIds' => $projectIds,
         ];
     }
 
-    /** @param  Collection<int,FinishedIssue>  $finished */
+    /** The user's own done issues — the personal-loop slice of the team mirror. */
+    private function mine(): Builder
+    {
+        return SyncedIssue::query()
+            ->where('assignee_id', (int) config('fylla.kendo_user_id'))
+            ->where('lane_position', 'done');
+    }
+
+    /** @param  Collection<int,SyncedIssue>  $finished */
     private function bias(Collection $finished): array
     {
         // Only issues that carry an estimate can contribute a bias.
-        $sample = $finished->filter(fn (FinishedIssue $i) => (int) $i->estimated_minutes > 0)->take(self::WINDOW);
+        $sample = $finished->filter(fn (SyncedIssue $i) => (int) $i->estimated_minutes > 0)->take(self::WINDOW);
 
         $estimate = (int) $sample->sum('estimated_minutes');
         $actual = (int) $sample->sum('logged_minutes');
@@ -57,12 +66,12 @@ class EstimationReport
             'sampleSize' => $sample->count(),
             'estimateHours' => $this->hours($estimate),
             'actualHours' => $this->hours($actual),
-            'pct' => $this->biasPct($estimate, $actual),
+            'pct' => self::biasPct($estimate, $actual),
         ];
     }
 
     /** @param  Collection<int|string,string>  $projectNames */
-    private function row(FinishedIssue $issue, Collection $projectNames): array
+    private function row(SyncedIssue $issue, Collection $projectNames): array
     {
         $estimate = (int) $issue->estimated_minutes;
         $actual = (int) $issue->logged_minutes;
@@ -74,7 +83,7 @@ class EstimationReport
             'kendo_url' => $issue->kendo_url,
             'estimateHours' => $estimate > 0 ? $this->hours($estimate) : null,
             'actualHours' => $this->hours($actual),
-            'biasPct' => $this->biasPct($estimate, $actual),
+            'biasPct' => self::biasPct($estimate, $actual),
             'lastWorked' => $issue->last_worked_at
                 ?->setTimezone(config('fylla.display_timezone'))->format('M j, Y'),
         ];
@@ -89,7 +98,7 @@ class EstimationReport
      */
     private function projectOptions(Collection $projectNames): array
     {
-        return FinishedIssue::distinct()
+        return $this->mine()->distinct()
             ->pluck('project_id')
             ->filter()
             ->map(fn (int $id) => ['id' => $id, 'name' => $projectNames[$id] ?? null])
@@ -104,8 +113,12 @@ class EstimationReport
         return round($minutes / 60, 1);
     }
 
-    /** +% = logged more than estimated (underestimated); −% = overestimated. Null without an estimate. */
-    private function biasPct(int $estimate, int $actual): ?int
+    /**
+     * +% = logged more than estimated (underestimated); −% = overestimated. Null
+     * without an estimate. Public + static so the team Client-context report
+     * (#56) rolls up per-developer bias with the same formula (D1).
+     */
+    public static function biasPct(int $estimate, int $actual): ?int
     {
         return $estimate > 0 ? (int) round(($actual - $estimate) / $estimate * 100) : null;
     }

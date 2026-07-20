@@ -82,12 +82,12 @@ class Client
     }
 
     /**
-     * All of a project's issues (open AND done), with the fields the estimation
-     * feedback loop needs (issue #17): the estimate, the issue's logged (actual)
-     * minutes, its lane, and its assignee. One call returns the whole project;
-     * the caller filters to the user's done issues.
+     * All of a project's issues (open AND done), with the mirror fields the team
+     * issue sync needs (issue #55): the estimate, the issue's logged (actual)
+     * minutes, its lane, assignee, and active-sprint membership. One call returns
+     * the whole project; callers classify lanes and filter as they need.
      *
-     * @return array<int, array{id:int, key:string, title:string, estimated_minutes:?int, logged_minutes:?int, lane_id:?int, assignee_id:?int}>
+     * @return array<int, array{id:int, key:string, title:string, estimated_minutes:?int, logged_minutes:?int, lane_id:?int, assignee_id:?int, sprint_id:?int}>
      */
     public function getProjectIssues(int $projectId): array
     {
@@ -102,12 +102,56 @@ class Client
             'logged_minutes' => $row['logged_minutes'] ?? null,
             'lane_id' => $row['lane_id'] ?? null,
             'assignee_id' => $row['assignee_id'] ?? null,
+            'sprint_id' => $row['sprint_id'] ?? null,
         ], $rows);
     }
 
     /**
-     * A project's lanes as {id, order}. The estimation sync uses this to find the
-     * done lane (Kendo exposes no done flag — see SyncKendoFinishedIssues).
+     * A project's sprints (minimal mirror for the Client brief, issue #56). Kendo
+     * status: 1 = active. Field names are mapped defensively — only `status` is
+     * confirmed against live data (activeSprintId).
+     *
+     * ponytail: name/date keys guessed (name??title, start/end); verify against live API.
+     *
+     * @return array<int, array{id:int, name:?string, status:?int, starts_at:?string, ends_at:?string}>
+     */
+    public function getSprints(int $projectId): array
+    {
+        $body = $this->request()->get("/api/projects/{$projectId}/sprints")->throw()->json();
+        $rows = $body['data'] ?? $body;
+
+        return array_map(fn (array $row) => [
+            'id' => (int) $row['id'],
+            'name' => $row['name'] ?? $row['title'] ?? null,
+            'status' => $row['status'] ?? null,
+            'starts_at' => $row['starts_at'] ?? $row['start_date'] ?? null,
+            'ends_at' => $row['ends_at'] ?? $row['end_date'] ?? null,
+        ], $rows);
+    }
+
+    /**
+     * The whole Kendo user roster (issue #55 / R2). One global call; the id joins
+     * to issue assignee_id and worklog user_id. `deleted_at` null = active.
+     *
+     * @return array<int, array{id:int, name:string, email:?string, active:bool, avatar_url:?string}>
+     */
+    public function getUsers(): array
+    {
+        $body = $this->request()->get('/api/users')->throw()->json();
+        $rows = $body['data'] ?? $body;
+
+        return array_map(fn (array $row) => [
+            'id' => (int) $row['id'],
+            'name' => trim(($row['first_name'] ?? '').' '.($row['last_name'] ?? '')),
+            'email' => $row['email'] ?? null,
+            'active' => ($row['deleted_at'] ?? null) === null,
+            'avatar_url' => $row['profile_picture']['webp'] ?? null,
+        ], $rows);
+    }
+
+    /**
+     * A project's lanes as {id, order}. The issue sync uses this to classify each
+     * lane (Kendo exposes no done flag — see SyncKendoProjectIssues).
      *
      * @return array<int, array{id:int, title:?string, order:int}>
      */

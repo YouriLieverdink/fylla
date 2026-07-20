@@ -1,9 +1,10 @@
 <?php
 
 use App\Jobs\SyncGithubPullRequests;
-use App\Jobs\SyncKendoFinishedIssues;
 use App\Jobs\SyncKendoIssues;
+use App\Jobs\SyncKendoProjectIssues;
 use App\Jobs\SyncKendoProjects;
+use App\Jobs\SyncKendoUsers;
 use App\Jobs\SyncKendoWorklogs;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -17,5 +18,7 @@ Schedule::job(new SyncKendoIssues)->everyFifteenMinutes();
 Schedule::job(new SyncKendoProjects)->everyFifteenMinutes();
 Schedule::job(new SyncKendoWorklogs)->everyFifteenMinutes();
 Schedule::job(new SyncGithubPullRequests)->everyFifteenMinutes();
-// Finished-issue estimates are slow-changing and depend on synced_worklogs — daily is plenty.
-Schedule::job(new SyncKendoFinishedIssues)->daily();
+// Team issue mirror + roster are slow-changing (and the issue job depends on
+// synced_worklogs) — daily is plenty. Feed the estimation loop + Client page.
+Schedule::job(new SyncKendoUsers)->daily();
+Schedule::job(new SyncKendoProjectIssues)->daily();

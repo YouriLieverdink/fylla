@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\CapacityController;
+use App\Http\Controllers\ClientContextController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\DeliveryController;
 use App\Http\Controllers\DraftController;
@@ -30,6 +31,7 @@ Route::patch('/clients/{client}', [ClientController::class, 'update'])->name('cl
 Route::delete('/clients/{client}', [ClientController::class, 'destroy'])->name('clients.destroy');
 
 Route::get('/delivery', [DeliveryController::class, 'index'])->name('delivery.index');
+Route::get('/delivery/{client}', [ClientContextController::class, 'show'])->name('delivery.show');
 
 Route::get('/utilization', [UtilizationController::class, 'index'])->name('utilization.index');
 

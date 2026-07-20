@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { Link } from '@inertiajs/vue3';
 import AppHeader from '../Components/AppHeader.vue';
 import DeliveryProjectionChart from '../Components/DeliveryProjectionChart.vue';
 import EmptyState from '../Components/EmptyState.vue';
@@ -27,24 +27,28 @@ const cursor = usePageCursor(() => props.clients.map((c) => 'd-' + c.id));
         </div>
 
         <div v-if="clients.length" class="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <DeliveryProjectionChart
+            <Link
                 v-for="c in clients"
                 :key="c.id"
+                :href="`/delivery/${c.id}`"
                 :data-row="'d-' + c.id"
-                class="scroll-my-12"
+                class="scroll-my-12 block rounded-[24px] transition hover:opacity-95"
                 :class="cursor.isActive('d-' + c.id) && 'ring-2 ring-accent'"
-                :initials="c.initials"
-                :name="c.name"
-                :meta="c.meta"
-                :hours="c.hours"
-                :target="c.target"
-                :projected="c.projected"
-                :over-under="c.overUnder"
-                :series="c.series"
-                :today="c.today"
-                :days-in-month="c.daysInMonth"
-                :days-left="c.daysLeft"
-            />
+            >
+                <DeliveryProjectionChart
+                    :initials="c.initials"
+                    :name="c.name"
+                    :meta="c.meta"
+                    :hours="c.hours"
+                    :target="c.target"
+                    :projected="c.projected"
+                    :over-under="c.overUnder"
+                    :series="c.series"
+                    :today="c.today"
+                    :days-in-month="c.daysInMonth"
+                    :days-left="c.daysLeft"
+                />
+            </Link>
         </div>
         <EmptyState
             v-else
