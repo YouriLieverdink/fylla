@@ -46,14 +46,9 @@ class ClientContextReport
     {
         $projectIds = $client->projects->pluck('kendo_id')->all();
 
-        $done = SyncedIssue::whereIn('project_id', $projectIds)
-            ->where('lane_position', 'done')
-            ->orderByRaw('lane_entered_at is null, lane_entered_at desc')
-            ->get();
-
         $overrunning = $this->overrunning($projectIds);
         $aging = $this->aging($projectIds);
-        $developers = $this->developers($done);
+        $developers = $this->developers($projectIds);
 
         return [
             'client' => $this->brief($client, $projectIds, $overrunning, $aging, $developers),
@@ -134,43 +129,70 @@ class ClientContextReport
     }
 
     /**
-     * Per-developer estimate-vs-actual over done issues (D1): rolling-20 ordered
-     * uniformly by lane_entered_at desc, median est/act, bias, within-±15%.
-     * Developers with no estimated done issue sit out (no bias to show).
+     * One row per developer with any work (any lane) on the client — the client's
+     * dev team, not just the ones with completed estimates. Where a developer has
+     * done+estimated issues, the row carries estimate-vs-actual over their
+     * rolling-20 window (D1: ordered uniformly by lane_entered_at desc, nulls
+     * last, median est/act, bias, within-±15%); otherwise it's a data-less row
+     * (hasData=false). Rows with data sort first, then alphabetical.
      *
-     * @param  Collection<int,SyncedIssue>  $done  already ordered lane_entered_at desc, nulls last
+     * @param  array<int,int>  $projectIds
      * @return array<int,array<string,mixed>>
      */
-    private function developers(Collection $done): array
+    private function developers(array $projectIds): array
     {
         $names = Developer::pluck('name', 'kendo_id');
 
-        return $done
-            ->filter(fn (SyncedIssue $i) => $i->assignee_id !== null && (int) $i->estimated_minutes > 0)
-            ->groupBy('assignee_id')
-            ->map(function (Collection $issues, int $assigneeId) use ($names) {
-                $sample = $issues->take(self::WINDOW);
-                $estimate = (int) $sample->sum('estimated_minutes');
-                $actual = (int) $sample->sum('logged_minutes');
-                $within = $sample->filter(function (SyncedIssue $i) {
-                    $pct = EstimationReport::biasPct((int) $i->estimated_minutes, (int) $i->logged_minutes);
+        // Rolling-20 estimate-vs-actual sample per developer, keyed by assignee.
+        $samples = SyncedIssue::whereIn('project_id', $projectIds)
+            ->where('lane_position', 'done')
+            ->where('estimated_minutes', '>', 0)
+            ->whereNotNull('assignee_id')
+            ->orderByRaw('lane_entered_at is null, lane_entered_at desc')
+            ->get()
+            ->groupBy('assignee_id');
 
-                    return $pct !== null && abs($pct) <= self::WITHIN;
-                })->count();
+        // Every developer assigned any issue on the client (excludes unassigned).
+        $assigneeIds = SyncedIssue::whereIn('project_id', $projectIds)
+            ->whereNotNull('assignee_id')
+            ->distinct()
+            ->pluck('assignee_id');
 
-                return [
-                    'id' => $assigneeId,
-                    'name' => $names[$assigneeId] ?? "User {$assigneeId}",
-                    'medianEst' => $this->median($sample->map(fn (SyncedIssue $i) => (int) $i->estimated_minutes)),
-                    'medianActual' => $this->median($sample->map(fn (SyncedIssue $i) => (int) $i->logged_minutes)),
-                    'biasPct' => EstimationReport::biasPct($estimate, $actual) ?? 0,
-                    'withinPct' => (int) round($within / $sample->count() * 100),
-                    'sample' => $sample->count(),
-                ];
-            })
-            ->sortBy('name')
+        return $assigneeIds
+            ->map(fn (int $id) => $this->developerRow($id, $names[$id] ?? "User {$id}", ($samples->get($id) ?? collect())->take(self::WINDOW)))
+            ->sortBy(fn (array $d) => ($d['hasData'] ? '0' : '1').'_'.mb_strtolower($d['name']))
             ->values()
             ->all();
+    }
+
+    /** @param  Collection<int,SyncedIssue>  $sample */
+    private function developerRow(int $id, string $name, Collection $sample): array
+    {
+        if ($sample->isEmpty()) {
+            return [
+                'id' => $id, 'name' => $name, 'hasData' => false,
+                'medianEst' => null, 'medianActual' => null, 'biasPct' => null, 'withinPct' => null, 'sample' => 0,
+            ];
+        }
+
+        $estimate = (int) $sample->sum('estimated_minutes');
+        $actual = (int) $sample->sum('logged_minutes');
+        $within = $sample->filter(function (SyncedIssue $i) {
+            $pct = EstimationReport::biasPct((int) $i->estimated_minutes, (int) $i->logged_minutes);
+
+            return $pct !== null && abs($pct) <= self::WITHIN;
+        })->count();
+
+        return [
+            'id' => $id,
+            'name' => $name,
+            'hasData' => true,
+            'medianEst' => $this->median($sample->map(fn (SyncedIssue $i) => (int) $i->estimated_minutes)),
+            'medianActual' => $this->median($sample->map(fn (SyncedIssue $i) => (int) $i->logged_minutes)),
+            'biasPct' => EstimationReport::biasPct($estimate, $actual) ?? 0,
+            'withinPct' => (int) round($within / $sample->count() * 100),
+            'sample' => $sample->count(),
+        ];
     }
 
     /**

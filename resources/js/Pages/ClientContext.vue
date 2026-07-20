@@ -91,21 +91,24 @@ const devName = (id) => devById[id]?.name ?? 'Unassigned';
                 :key="d.id"
                 class="grid grid-cols-[1fr_120px_120px_1fr_80px] items-center gap-3 border-t border-divider-soft px-5 py-4"
             >
-                <span class="text-[14px] font-semibold">{{ d.name }}</span>
-                <span class="text-right font-mono text-[13px] tabular-nums text-muted">{{ d.medianEst.toFixed(1) }}h</span>
-                <span class="text-right font-mono text-[13px] tabular-nums text-muted">{{ d.medianActual.toFixed(1) }}h</span>
-                <div class="px-4">
-                    <div class="relative h-1.5 rounded-full" style="background: linear-gradient(90deg, #e6e2d9, #edeae3, #e6e2d9)">
-                        <div class="absolute -top-[3px] left-1/2 h-3 w-px -translate-x-1/2 bg-[#cbc6ba]"></div>
-                        <div
-                            class="absolute -top-1 h-3.5 w-3.5 -translate-x-1/2 rounded-full border-[2.5px] border-white shadow-[0_2px_6px_rgba(42,41,38,0.15)]"
-                            :class="onTarget(d.biasPct) ? 'bg-track' : 'bg-behind'"
-                            :style="{ left: biasPos(d.biasPct) + '%' }"
-                        ></div>
+                <span class="text-[14px] font-semibold" :class="!d.hasData && 'text-muted'">{{ d.name }}</span>
+                <template v-if="d.hasData">
+                    <span class="text-right font-mono text-[13px] tabular-nums text-muted">{{ d.medianEst.toFixed(1) }}h</span>
+                    <span class="text-right font-mono text-[13px] tabular-nums text-muted">{{ d.medianActual.toFixed(1) }}h</span>
+                    <div class="px-4">
+                        <div class="relative h-1.5 rounded-full" style="background: linear-gradient(90deg, #e6e2d9, #edeae3, #e6e2d9)">
+                            <div class="absolute -top-[3px] left-1/2 h-3 w-px -translate-x-1/2 bg-[#cbc6ba]"></div>
+                            <div
+                                class="absolute -top-1 h-3.5 w-3.5 -translate-x-1/2 rounded-full border-[2.5px] border-white shadow-[0_2px_6px_rgba(42,41,38,0.15)]"
+                                :class="onTarget(d.biasPct) ? 'bg-track' : 'bg-behind'"
+                                :style="{ left: biasPos(d.biasPct) + '%' }"
+                            ></div>
+                        </div>
+                        <div class="mt-1.5 text-center font-mono text-[11px] font-medium" :class="onTarget(d.biasPct) ? 'text-track' : 'text-behind'">{{ sign(d.biasPct) }}</div>
                     </div>
-                    <div class="mt-1.5 text-center font-mono text-[11px] font-medium" :class="onTarget(d.biasPct) ? 'text-track' : 'text-behind'">{{ sign(d.biasPct) }}</div>
-                </div>
-                <span class="text-right font-mono text-[13px] tabular-nums" :class="d.withinPct >= 50 ? 'text-track' : 'text-behind'">{{ d.withinPct }}%</span>
+                    <span class="text-right font-mono text-[13px] tabular-nums" :class="d.withinPct >= 50 ? 'text-track' : 'text-behind'">{{ d.withinPct }}%</span>
+                </template>
+                <span v-else class="col-span-4 font-mono text-[12px] text-faint-3">No completed estimates yet</span>
             </div>
             <EmptyState
                 v-if="!developers.length"

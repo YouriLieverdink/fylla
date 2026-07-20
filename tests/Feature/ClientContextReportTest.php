@@ -122,13 +122,25 @@ class ClientContextReportTest extends TestCase
         $this->assertSame(2, $dev['sample']);
     }
 
-    public function test_developers_without_estimated_done_issues_sit_out(): void
+    public function test_developers_with_any_work_appear_even_without_estimate_data(): void
     {
-        // Only open work, and only estimateless done work → no bias to show.
+        Developer::create(['kendo_id' => 7, 'name' => 'Zoe Active', 'email' => 'z@x.io']);
+        Developer::create(['kendo_id' => 8, 'name' => 'Amy Doneish', 'email' => 'a@x.io']);
+        Developer::create(['kendo_id' => 9, 'name' => 'Bea Estimator', 'email' => 'b@x.io']);
+        // 7: only open work. 8: done but no estimate. 9: done + estimate (has data).
         $this->issue(['assignee_id' => 7, 'lane_position' => 'middle', 'estimated_minutes' => 60, 'logged_minutes' => 60]);
         $this->issue(['assignee_id' => 8, 'lane_position' => 'done', 'estimated_minutes' => 0, 'logged_minutes' => 120]);
+        $this->issue(['assignee_id' => 9, 'lane_position' => 'done', 'estimated_minutes' => 120, 'logged_minutes' => 120]);
+        // Unassigned work must not spawn a phantom row.
+        $this->issue(['assignee_id' => null, 'lane_position' => 'middle', 'estimated_minutes' => 60, 'logged_minutes' => 60]);
 
-        $this->assertCount(0, $this->report()['developers']);
+        $devs = $this->report()['developers'];
+
+        $this->assertSame(['Bea Estimator', 'Amy Doneish', 'Zoe Active'], array_column($devs, 'name')); // data first, then alpha
+        $this->assertTrue($devs[0]['hasData']);
+        $this->assertFalse($devs[1]['hasData']);
+        $this->assertFalse($devs[2]['hasData']);
+        $this->assertNull($devs[1]['biasPct']);
     }
 
     public function test_rolling_window_caps_at_20_newest_by_lane_entered_at(): void
