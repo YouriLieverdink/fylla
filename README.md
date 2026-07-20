@@ -169,8 +169,13 @@ to `/delivery/{client}`; a **config footer strip** below never navigates. The
 footer holds an inline **target** input (`PATCH /clients/{client}`), clickable
 **billable pills** for the client's assigned projects (`PATCH
 /projects/{project}`, colour/dot reflects state), and `+ project`/`Delete`
-buttons (modals land in a later slice). The `/clients` management tab still
-exists this slice.
+buttons that open modals. A header-row **+ New client** button opens a create
+modal (`POST /clients`); `+ project` opens a search modal that assigns an
+unassigned project (`PATCH /projects/{project}` setting `client_id`); `Delete`
+opens a confirm modal (projects fall back to unassigned, worklog history kept,
+irreversible — `DELETE /clients/{client}`). All three use the `useModalGuard`
+pattern (#43): keybindings beneath the scrim are suppressed, Escape is the sole
+exit. The `/clients` management tab still exists this slice.
 
 ### Client context
 

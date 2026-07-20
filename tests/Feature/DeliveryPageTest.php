@@ -56,4 +56,32 @@ class DeliveryPageTest extends TestCase
 
         $this->assertTrue($project->fresh()->billable);
     }
+
+    public function test_new_client_modal_creates_via_client_route(): void
+    {
+        $this->post('/clients', ['name' => 'Acme', 'monthly_target_hours' => 160])->assertRedirect();
+
+        $this->assertDatabaseHas('clients', ['name' => 'Acme', 'monthly_target_hours' => 160]);
+    }
+
+    public function test_add_project_modal_assigns_via_project_route(): void
+    {
+        $client = Client::create(['name' => 'Acme']);
+        $project = Project::create(['kendo_id' => 1, 'name' => 'App', 'billable' => false]);
+
+        $this->patch('/projects/'.$project->id, ['client_id' => $client->id])->assertRedirect();
+
+        $this->assertSame($client->id, $project->fresh()->client_id);
+    }
+
+    public function test_delete_modal_removes_client_and_unassigns_projects(): void
+    {
+        $client = Client::create(['name' => 'Acme']);
+        $project = Project::create(['kendo_id' => 1, 'name' => 'App', 'billable' => false, 'client_id' => $client->id]);
+
+        $this->delete('/clients/'.$client->id)->assertRedirect();
+
+        $this->assertDatabaseMissing('clients', ['id' => $client->id]);
+        $this->assertNull($project->fresh()->client_id);
+    }
 }
