@@ -1,8 +1,10 @@
 <script setup>
-// Client context (#56): read-only, single-column report over the synced_issues
-// mirror + developer roster, scoped to one managed client. Variant A layout
-// (#57): brief stat-band → per-developer estimate-vs-actual table → two
-// side-by-side attention panels. Reached from a Delivery card.
+// Client board (#56): read-only. A totals band (with run-rate pace) + a filter
+// bar + a per-developer subtotal strip over one full-bleed kanban for the whole
+// client — columns are the client's real Kendo lanes, cards its issues (colored
+// per developer, flagged when overrunning or stuck). Filtering is client-side.
+// Reached from a Delivery card.
+import { computed, ref } from 'vue';
 import { Link } from '@inertiajs/vue3';
 import AppHeader from '../Components/AppHeader.vue';
 import Card from '../Components/Card.vue';
@@ -11,22 +13,56 @@ import EmptyState from '../Components/EmptyState.vue';
 import ProgressBar from '../Components/ProgressBar.vue';
 
 const props = defineProps({ data: { type: Object, required: true } });
-const { client, developers, overrunning, aging, devById } = props.data;
+const { client, developers, lanes, issues, currentSprintId } = props.data;
 
-const needsAttention = client.overrunningCount + client.agingCount;
+const STUCK_HELP = 'Stuck = an in-progress issue with no time logged and no lane change in the last 5 working days.';
 
-// Bias marker: 0% sits centre, clamped so extremes stay on the track.
-const biasPos = (pct) => Math.max(4, Math.min(96, 50 + pct * 0.9));
-const onTarget = (pct) => Math.abs(pct) <= 15;
-const sign = (n) => (n > 0 ? '+' : '') + n + '%';
-const devName = (id) => devById[id]?.name ?? 'Unassigned';
+// Stable per-developer colors (muted, distinct hues); unassigned = grey.
+const PALETTE = ['#6b7cff', '#e0873c', '#3fae7d', '#c15b8a', '#5aa0c4', '#9a6bd0', '#b59a3f', '#cf6b52', '#4f9e9e', '#a86b4f'];
+const colorMap = Object.fromEntries(developers.map((d, i) => [d.id, PALETTE[i % PALETTE.length]]));
+const colorFor = (id) => (id === null ? '#c2bcb0' : (colorMap[id] ?? '#c2bcb0'));
+
+const selectedDevs = ref([]); // empty = all developers
+const onlyOver = ref(false);
+const onlyStuck = ref(false);
+const currentSprint = ref(currentSprintId !== null);
+
+// Everything except the developer filter — drives the subtotal counts so they
+// don't all collapse to zero when one developer is selected.
+const scoped = computed(() =>
+    issues.filter((i) => {
+        if (currentSprint.value && currentSprintId !== null && i.sprint !== currentSprintId) return false;
+        if (onlyOver.value && !i.over) return false;
+        if (onlyStuck.value && !i.stuck) return false;
+        return true;
+    }),
+);
+const filtered = computed(() =>
+    scoped.value.filter((i) => !selectedDevs.value.length || selectedDevs.value.includes(i.assignee)),
+);
+const inLane = (lane) => filtered.value.filter((i) => i.lane === lane);
+const countFor = (id) => scoped.value.filter((i) => i.assignee === id).length;
+
+const pace = computed(() => {
+    if (!client.target || client.projected === null) return null;
+    return { projected: client.projected, delta: client.paceDelta, onPace: Math.abs(client.paceDelta) <= client.target * 0.05 };
+});
+const isSelected = (id) => selectedDevs.value.includes(id);
+const toggleDev = (id) =>
+    (selectedDevs.value = isSelected(id) ? selectedDevs.value.filter((x) => x !== id) : [...selectedDevs.value, id]);
+
+// Only developers relevant to what's on screen: something in the current view,
+// hours logged this month, or currently selected (so a pick never vanishes).
+const visibleDevs = computed(() =>
+    developers.filter((d) => countFor(d.id) > 0 || d.hoursMonth > 0 || isSelected(d.id)),
+);
 </script>
 
 <template>
-    <div class="mx-auto max-w-[1180px] px-11 pb-[140px] pt-11">
+    <div class="mx-auto max-w-[1180px] px-11 pb-[80px] pt-11">
         <AppHeader />
 
-        <!-- client brief: hero band -->
+        <!-- header -->
         <div class="mb-3 flex items-end justify-between gap-6">
             <div>
                 <Link
@@ -43,7 +79,8 @@ const devName = (id) => devById[id]?.name ?? 'Unassigned';
             </Chip>
         </div>
 
-        <Card radius="22px" pad="22px 26px" class="mb-9">
+        <!-- totals band -->
+        <Card radius="22px" pad="22px 26px" class="mb-6">
             <div class="grid grid-cols-4 gap-6">
                 <div>
                     <div class="mb-1 font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] text-faint-3">Hours this month</div>
@@ -51,6 +88,10 @@ const devName = (id) => devById[id]?.name ?? 'Unassigned';
                         {{ client.hours }}<span v-if="client.target" class="text-[15px] text-faint-4"> / {{ client.target }}h</span>
                     </div>
                     <ProgressBar v-if="client.target" :value="client.pct" tone="accent" class="mt-2" height="6px" />
+                    <div v-if="pace" class="mt-1.5 font-mono text-[10.5px]" :class="pace.onPace ? 'text-track' : 'text-behind'">
+                        <template v-if="pace.onPace">on pace · proj. {{ pace.projected }}h</template>
+                        <template v-else>proj. {{ pace.projected }}h · {{ pace.delta > 0 ? '+' : '' }}{{ pace.delta }}h vs target</template>
+                    </div>
                 </div>
                 <div>
                     <div class="mb-1 font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] text-faint-3">Active issues</div>
@@ -70,84 +111,110 @@ const devName = (id) => devById[id]?.name ?? 'Unassigned';
                     <div v-else class="text-[15px] text-faint-3">No active sprint</div>
                 </div>
                 <div>
-                    <div class="mb-1 font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] text-faint-3">Needs attention</div>
-                    <div class="font-mono text-[26px] font-semibold tabular-nums" :class="needsAttention ? 'text-behind' : ''">{{ needsAttention }}</div>
-                    <div class="mt-2 text-[12px] text-faint-2">{{ client.overrunningCount }} overrunning · {{ client.agingCount }} aging</div>
+                    <div class="mb-1 font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] text-faint-3">Flagged</div>
+                    <div class="font-mono text-[26px] font-semibold tabular-nums" :class="client.flaggedCount ? 'text-behind' : ''">{{ client.flaggedCount }}</div>
+                    <div class="mt-2 text-[12px] text-faint-2">{{ client.overrunningCount }} overrunning · {{ client.stuckCount }} stuck</div>
                 </div>
             </div>
         </Card>
 
-        <!-- estimate vs actual: full-width per-developer table -->
-        <div class="mb-3 flex items-center justify-between">
-            <div class="text-[16px] font-semibold tracking-[-0.01em]">Estimate vs actual</div>
-            <div class="font-mono text-[11px] text-faint-3">per developer · rolling last 20</div>
-        </div>
-        <Card radius="24px" pad="8px 10px 12px" class="mb-9">
-            <div v-if="developers.length" class="grid grid-cols-[1fr_120px_120px_1fr_80px] gap-3 px-5 py-3 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-faint-3">
-                <span>Developer</span><span class="text-right">Median est</span><span class="text-right">Median act</span><span class="px-4">Bias (under → over)</span><span class="text-right">Within ±15%</span>
-            </div>
-            <div
-                v-for="d in developers"
-                :key="d.id"
-                class="grid grid-cols-[1fr_120px_120px_1fr_80px] items-center gap-3 border-t border-divider-soft px-5 py-4"
+        <!-- filter bar -->
+        <div class="mb-3 flex flex-wrap items-center gap-2">
+            <button
+                v-if="currentSprintId !== null"
+                type="button"
+                class="rounded-full border px-3 py-1.5 font-mono text-[12px] font-medium transition"
+                :class="currentSprint ? 'border-transparent bg-accent-tint text-accent-deep' : 'border-card-border text-muted hover:bg-surface-soft'"
+                @click="currentSprint = !currentSprint"
             >
-                <span class="text-[14px] font-semibold" :class="!d.hasData && 'text-muted'">{{ d.name }}</span>
-                <template v-if="d.hasData">
-                    <span class="text-right font-mono text-[13px] tabular-nums text-muted">{{ d.medianEst.toFixed(1) }}h</span>
-                    <span class="text-right font-mono text-[13px] tabular-nums text-muted">{{ d.medianActual.toFixed(1) }}h</span>
-                    <div class="px-4">
-                        <div class="relative h-1.5 rounded-full" style="background: linear-gradient(90deg, #e6e2d9, #edeae3, #e6e2d9)">
-                            <div class="absolute -top-[3px] left-1/2 h-3 w-px -translate-x-1/2 bg-[#cbc6ba]"></div>
-                            <div
-                                class="absolute -top-1 h-3.5 w-3.5 -translate-x-1/2 rounded-full border-[2.5px] border-white shadow-[0_2px_6px_rgba(42,41,38,0.15)]"
-                                :class="onTarget(d.biasPct) ? 'bg-track' : 'bg-behind'"
-                                :style="{ left: biasPos(d.biasPct) + '%' }"
-                            ></div>
-                        </div>
-                        <div class="mt-1.5 text-center font-mono text-[11px] font-medium" :class="onTarget(d.biasPct) ? 'text-track' : 'text-behind'">{{ sign(d.biasPct) }}</div>
+                Current sprint
+            </button>
+            <button
+                type="button"
+                class="rounded-full border px-3 py-1.5 font-mono text-[12px] font-medium transition"
+                :class="onlyOver ? 'border-transparent bg-behind-tint text-behind' : 'border-card-border text-muted hover:bg-surface-soft'"
+                @click="onlyOver = !onlyOver"
+            >
+                Over estimate
+            </button>
+            <button
+                type="button"
+                :title="STUCK_HELP"
+                class="rounded-full border px-3 py-1.5 font-mono text-[12px] font-medium transition"
+                :class="onlyStuck ? 'border-transparent bg-behind-tint text-behind' : 'border-card-border text-muted hover:bg-surface-soft'"
+                @click="onlyStuck = !onlyStuck"
+            >
+                Stuck
+                <span class="ml-1 text-faint-3">ⓘ</span>
+            </button>
+
+            <span class="ml-auto font-mono text-[11px] text-faint-3">{{ filtered.length }} issues</span>
+        </div>
+
+        <!-- board -->
+        <Card
+            v-if="lanes.length"
+            radius="20px"
+            pad="16px 18px"
+            class="overflow-x-auto"
+        >
+            <div class="flex h-[calc(100vh-300px)] min-h-[420px] gap-3">
+                <div v-for="lane in lanes" :key="lane.name" class="flex w-[264px] flex-none flex-col">
+                    <div class="mb-2 flex items-center justify-between px-1">
+                        <span class="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-faint-3">{{ lane.name }}</span>
+                        <span class="font-mono text-[11px] tabular-nums text-faint-4">{{ inLane(lane.name).length }}</span>
                     </div>
-                    <span class="text-right font-mono text-[13px] tabular-nums" :class="d.withinPct >= 50 ? 'text-track' : 'text-behind'">{{ d.withinPct }}%</span>
-                </template>
-                <span v-else class="col-span-4 font-mono text-[12px] text-faint-3">No completed estimates yet</span>
+                    <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-[14px] bg-surface-soft p-2">
+                        <a
+                            v-for="i in inLane(lane.name)"
+                            :key="i.key"
+                            :href="i.kendo_url"
+                            target="_blank"
+                            class="block rounded-[12px] border border-card-border border-l-4 px-3 py-2.5 shadow-[0_1px_2px_rgba(42,41,38,0.04)] transition hover:shadow-[0_2px_8px_rgba(42,41,38,0.12)]"
+                            :class="i.over ? 'bg-[#fdf3f2]' : i.stuck ? 'bg-[#fdf8ec]' : 'bg-surface'"
+                            :style="{ borderLeftColor: colorFor(i.assignee) }"
+                        >
+                            <div class="line-clamp-2 text-[13px] font-medium leading-snug">{{ i.title }}</div>
+                            <div class="mt-1.5 flex items-center justify-between gap-2">
+                                <span class="truncate font-mono text-[10px] text-faint-3">{{ i.key }}</span>
+                                <span class="flex-none font-mono text-[10px] tabular-nums text-faint-3">
+                                    {{ i.loggedHours.toFixed(1) }}<span v-if="i.estimateHours !== null">/{{ i.estimateHours.toFixed(1) }}</span>h
+                                </span>
+                            </div>
+                            <div class="mt-2 flex flex-wrap items-center gap-1.5">
+                                <span class="flex min-w-0 items-center gap-1.5">
+                                    <span class="h-2 w-2 flex-none rounded-full" :style="{ background: colorFor(i.assignee) }"></span>
+                                    <span class="truncate font-mono text-[10px] text-[#8a8578]">{{ i.assigneeName }}</span>
+                                </span>
+                                <Chip v-if="i.over" tone="behind">+{{ i.overPct }}%</Chip>
+                                <Chip v-if="i.stuck" tone="neutral" :title="STUCK_HELP">stuck<span v-if="i.idleDays !== null"> · {{ i.idleDays }}d</span></Chip>
+                            </div>
+                        </a>
+                    </div>
+                </div>
             </div>
-            <EmptyState
-                v-if="!developers.length"
-                title="No completed work yet"
-                text="Once developers finish estimated issues on this client's projects, their estimate-vs-actual bias shows up here."
-            />
         </Card>
 
-        <!-- attention: two side-by-side panels -->
-        <div class="grid grid-cols-2 items-start gap-[22px]">
-            <Card radius="24px" pad="8px 10px 12px">
-                <div class="flex items-center justify-between px-5 pb-2 pt-4">
-                    <div class="text-[16px] font-semibold tracking-[-0.01em]">Overrunning now</div>
-                    <Chip tone="behind">{{ overrunning.length }} · logged &gt; est</Chip>
-                </div>
-                <div v-for="i in overrunning" :key="i.key" class="border-t border-divider-soft px-5 py-3.5">
-                    <div class="flex items-center justify-between">
-                        <span class="truncate text-[14px] font-medium">{{ i.title }}</span>
-                        <span class="ml-3 flex-none font-mono text-[13px] font-semibold tabular-nums text-behind">+{{ i.overPct }}%</span>
-                    </div>
-                    <div class="mt-1 font-mono text-[11px] text-faint-3">{{ i.key }} · {{ devName(i.assignee) }} · {{ i.est.toFixed(1) }} → {{ i.logged.toFixed(1) }}h</div>
-                </div>
-                <div v-if="!overrunning.length" class="px-5 py-6 text-center text-[13px] text-faint-3">Nothing overrunning.</div>
-            </Card>
+        <EmptyState
+            v-else
+            title="Nothing matches"
+            text="No issues match the current filters. Try clearing a filter."
+        />
 
-            <Card radius="24px" pad="8px 10px 12px">
-                <div class="flex items-center justify-between px-5 pb-2 pt-4">
-                    <div class="text-[16px] font-semibold tracking-[-0.01em]">In-progress aging</div>
-                    <Chip tone="neutral">by time in lane</Chip>
-                </div>
-                <div v-for="i in aging" :key="i.key" class="border-t border-divider-soft px-5 py-3.5">
-                    <div class="flex items-center justify-between">
-                        <span class="truncate text-[14px] font-medium">{{ i.title }}</span>
-                        <span class="ml-3 flex-none font-mono text-[13px] font-semibold tabular-nums" :class="i.days >= 5 ? 'text-behind' : 'text-muted'">{{ i.days ?? '–' }}d</span>
-                    </div>
-                    <div class="mt-1 font-mono text-[11px] text-faint-3">{{ i.key }} · {{ devName(i.assignee) }}<span v-if="i.lane"> · {{ i.lane }}</span></div>
-                </div>
-                <div v-if="!aging.length" class="px-5 py-6 text-center text-[13px] text-faint-3">Nothing aging.</div>
-            </Card>
+        <!-- per-developer subtotals (also a color legend + quick filter) -->
+        <div class="mt-4 flex flex-wrap gap-2">
+            <button
+                v-for="d in visibleDevs"
+                :key="d.id"
+                type="button"
+                class="flex items-center gap-2 rounded-full border px-2.5 py-1 font-mono text-[11px] transition"
+                :class="isSelected(d.id) ? 'border-accent bg-surface-soft' : 'border-card-border hover:bg-surface-soft'"
+                @click="toggleDev(d.id)"
+            >
+                <span class="h-2.5 w-2.5 flex-none rounded-full" :style="{ background: colorFor(d.id) }"></span>
+                <span class="font-medium text-ink">{{ d.name }}</span>
+                <span class="tabular-nums text-faint-3">{{ countFor(d.id) }} · {{ d.hoursMonth.toFixed(0) }}h/mo</span>
+            </button>
         </div>
     </div>
 </template>

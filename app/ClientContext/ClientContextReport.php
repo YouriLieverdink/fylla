@@ -2,7 +2,6 @@
 
 namespace App\ClientContext;
 
-use App\Estimation\EstimationReport;
 use App\Models\Client;
 use App\Models\Developer;
 use App\Models\Sprint;
@@ -12,22 +11,17 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 
 /**
- * Read-only Client context page (issue #56): a single-column report over the
- * `synced_issues` team mirror + the `developers` roster, scoped to one managed
- * client. Never writes; never calls Kendo (ADR-0003) — the background jobs
- * (SyncKendoProjectIssues + SyncKendoUsers) fill the tables this reads.
- *
- * Four sections (Variant A, #57): a brief stat-band, a per-developer
- * estimate-vs-actual table (rolling-20 bias, D1), and two attention panels —
- * overrunning-now and in-progress-aging.
+ * Read-only Client board (issue #56): the whole client's work on one kanban —
+ * columns are the client's real Kendo lanes, cards are its issues, each tagged
+ * with its developer and flagged when overrunning (logged > estimate) or stuck
+ * (no activity, work or lane move, in the last 5 working days). The page filters
+ * client-side (by developer, overrunning, stuck, done); this just ships the flat
+ * data + a totals band. Never writes; never calls Kendo (ADR-0003).
  */
 class ClientContextReport
 {
-    /** Rolling window per developer, matching the personal loop (D1). */
-    private const WINDOW = 20;
-
-    /** ±this % counts as an on-target estimate. */
-    private const WITHIN = 15;
+    /** No activity (worklog or lane move) in this many working days = stuck. */
+    private const STUCK_WORKING_DAYS = 5;
 
     private CarbonImmutable $now;
     private CarbonImmutable $monthStart;
@@ -45,76 +39,177 @@ class ClientContextReport
     public function generate(Client $client): array
     {
         $projectIds = $client->projects->pluck('kendo_id')->all();
+        $names = Developer::pluck('name', 'kendo_id');
+        $lastWorked = $this->lastWorkedByIssue($projectIds);
+        $monthByUser = SyncedWorklog::whereIn('kendo_project_id', $projectIds)
+            ->whereBetween('started_at', [$this->monthStart, $this->monthEnd])
+            ->selectRaw('kendo_user_id, sum(minutes) as m')
+            ->groupBy('kendo_user_id')
+            ->pluck('m', 'kendo_user_id');
+        $sprint = $this->activeSprint($projectIds);
 
-        $overrunning = $this->overrunning($projectIds);
-        $aging = $this->aging($projectIds);
-        $developers = $this->developers($projectIds);
+        $rows = SyncedIssue::whereIn('project_id', $projectIds)
+            ->get()
+            ->map(fn (SyncedIssue $i) => $this->card($i, $names, $lastWorked));
 
         return [
-            'client' => $this->brief($client, $projectIds, $overrunning, $aging, $developers),
-            'developers' => $developers,
-            'overrunning' => $overrunning,
-            'aging' => $aging,
-            'devById' => $this->devById($developers, $overrunning, $aging),
+            'client' => $this->brief($client, $projectIds, $rows, $sprint),
+            'currentSprintId' => $sprint?->kendo_id,
+            'lanes' => $this->laneColumns($rows),
+            'developers' => $this->developerOptions($rows, $names, $monthByUser),
+            'issues' => $rows->values()->all(),
         ];
     }
 
     /**
-     * Brief stat-band: hours-vs-target this month, active issues, current sprint,
-     * needs-attention count.
-     *
-     * @param  array<int,int>  $projectIds
-     * @param  array<int,array<string,mixed>>  $overrunning
-     * @param  array<int,array<string,mixed>>  $aging
-     * @param  array<int,array<string,mixed>>  $developers
+     * @param  Collection<int|string,string>  $names
+     * @param  Collection<int|string,string>  $lastWorked
      */
-    private function brief(Client $client, array $projectIds, array $overrunning, array $aging, array $developers): array
+    private function card(SyncedIssue $i, Collection $names, Collection $lastWorked): array
     {
-        // Team hours this month (unscoped, like Delivery — every developer's rows).
+        $estimate = (int) $i->estimated_minutes;
+        $logged = (int) $i->logged_minutes;
+        $done = $i->lane_position === 'done';
+        $over = $estimate > 0 && $logged > $estimate;
+
+        // Last sign of life: a worklog on the issue, or its last lane move. Only
+        // in-flight issues can be "stuck" — a done issue isn't waiting on anyone.
+        $worklogAt = ($ts = $lastWorked[$i->kendo_id] ?? null) ? CarbonImmutable::parse($ts) : null;
+        $lastActivity = collect([$worklogAt, $i->lane_entered_at?->toImmutable()])->filter()->max();
+        $idleDays = $lastActivity ? $this->workingDaysBetween($lastActivity, $this->now->utc()) : null;
+        $stuck = ! $done && ($idleDays === null || $idleDays > self::STUCK_WORKING_DAYS);
+
+        return [
+            'key' => $i->key,
+            'title' => $i->title,
+            'kendo_url' => $i->kendo_url,
+            'lane' => $i->lane_name ?: 'No lane',
+            'position' => $i->lane_position ?? 'middle',
+            'done' => $done,
+            'sprint' => $i->sprint_id,
+            'assignee' => $i->assignee_id,
+            'assigneeName' => $i->assignee_id ? ($names[$i->assignee_id] ?? "User {$i->assignee_id}") : 'Unassigned',
+            'estimateHours' => $estimate > 0 ? $this->hours($estimate) : null,
+            'loggedHours' => $this->hours($logged),
+            'over' => $over,
+            'overPct' => $over ? (int) round(($logged - $estimate) / $estimate * 100) : null,
+            'stuck' => $stuck,
+            'idleDays' => $idleDays,
+        ];
+    }
+
+    /**
+     * @param  array<int,int>  $projectIds
+     * @param  Collection<int,array<string,mixed>>  $rows
+     */
+    private function brief(Client $client, array $projectIds, Collection $rows, ?Sprint $sprint): array
+    {
         $minutes = (int) SyncedWorklog::whereIn('kendo_project_id', $projectIds)
             ->whereBetween('started_at', [$this->monthStart, $this->monthEnd])
             ->sum('minutes');
         $hours = (int) round($minutes / 60);
         $target = $client->monthly_target_hours;
 
-        $activeIssues = SyncedIssue::whereIn('project_id', $projectIds)
-            ->where('lane_position', '!=', 'done')
-            ->count();
+        $active = $rows->where('done', false);
+        $overrunning = $active->where('over', true)->count();
+        $stuck = $active->where('stuck', true)->count();
+
+        // Run-rate pace: hours scaled by working days in month / elapsed (Mon–Fri),
+        // the same projection the Delivery card uses.
+        $totalWd = $this->weekdaysInclusive($this->now->startOfMonth(), $this->now->endOfMonth());
+        $elapsedWd = $this->weekdaysInclusive($this->now->startOfMonth(), $this->now);
+        $projected = $elapsedWd > 0 ? (int) round($hours * $totalWd / $elapsedWd) : null;
 
         return [
             'name' => $client->name,
-            'meta' => count($projectIds).' projects · '.count($developers).' developers',
+            'meta' => count($projectIds).' projects · '.$rows->pluck('assignee')->filter()->unique()->count().' developers',
             'hours' => $hours,
             'target' => $target,
             'pct' => $target ? (int) round($hours / $target * 100) : 0,
-            'activeIssues' => $activeIssues,
-            'sprint' => $this->sprint($projectIds),
-            'overrunningCount' => count($overrunning),
-            'agingCount' => count($aging),
+            'projected' => $projected,
+            'paceDelta' => $target && $projected !== null ? $projected - $target : null,
+            'activeIssues' => $active->count(),
+            'overrunningCount' => $overrunning,
+            'stuckCount' => $stuck,
+            'flaggedCount' => $overrunning + $stuck,
+            'sprint' => $sprint ? $this->sprintCard($sprint) : null,
         ];
     }
 
     /**
-     * The client's current sprint: the active one (status 1) ending soonest, if
-     * any board has one running. done/total from synced_issues membership.
+     * The client's lanes as ordered board columns: first lane, then middle lanes
+     * alphabetically, then done (Kendo exposes no reliable cross-project lane
+     * order, so this is the honest approximation).
+     *
+     * @param  Collection<int,array<string,mixed>>  $rows
+     * @return array<int,array{name:string,done:bool}>
+     */
+    private function laneColumns(Collection $rows): array
+    {
+        $rank = ['first' => 0, 'middle' => 1, 'done' => 2];
+
+        return $rows
+            ->map(fn (array $i) => ['lane' => $i['lane'], 'rank' => $rank[$i['position']] ?? 1])
+            ->unique('lane')
+            ->sortBy([['rank', 'asc'], ['lane', 'asc']])
+            ->map(fn (array $l) => ['name' => $l['lane'], 'done' => $l['rank'] === 2])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Developers to offer as filter options + per-developer subtotals: everyone
+     * assigned an issue on the client, alphabetical, with their hours logged this
+     * month.
+     *
+     * @param  Collection<int,array<string,mixed>>  $rows
+     * @param  Collection<int|string,string>  $names
+     * @param  Collection<int,int>  $monthByUser  kendo_user_id → minutes this month
+     * @return array<int,array{id:int,name:string,hoursMonth:float}>
+     */
+    private function developerOptions(Collection $rows, Collection $names, Collection $monthByUser): array
+    {
+        return $rows
+            ->pluck('assignee')
+            ->filter()
+            ->unique()
+            ->map(fn (int $id) => [
+                'id' => $id,
+                'name' => $names[$id] ?? "User {$id}",
+                'hoursMonth' => $this->hours((int) ($monthByUser[$id] ?? 0)),
+            ])
+            ->sortBy('name')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Last worklog time per issue (any developer) — the recency signal for stuck.
      *
      * @param  array<int,int>  $projectIds
+     * @return Collection<int,string>  keyed by kendo_issue_id
      */
-    private function sprint(array $projectIds): ?array
+    private function lastWorkedByIssue(array $projectIds): Collection
     {
-        $sprint = Sprint::whereIn('project_id', $projectIds)
+        return SyncedWorklog::whereIn('kendo_project_id', $projectIds)
+            ->whereNotNull('kendo_issue_id')
+            ->selectRaw('kendo_issue_id, max(started_at) as t')
+            ->groupBy('kendo_issue_id')
+            ->pluck('t', 'kendo_issue_id');
+    }
+
+    /** @param  array<int,int>  $projectIds */
+    private function activeSprint(array $projectIds): ?Sprint
+    {
+        return Sprint::whereIn('project_id', $projectIds)
             ->where('status', 1)
             ->orderByRaw('ends_at is null, ends_at asc')
             ->first();
+    }
 
-        if (! $sprint) {
-            return null;
-        }
-
+    private function sprintCard(Sprint $sprint): array
+    {
         $inSprint = SyncedIssue::where('sprint_id', $sprint->kendo_id);
-        $total = (clone $inSprint)->count();
-        $done = (clone $inSprint)->where('lane_position', 'done')->count();
-
         $tz = config('fylla.display_timezone');
         $ends = $sprint->ends_at?->setTimezone($tz);
         $starts = $sprint->starts_at?->setTimezone($tz);
@@ -122,167 +217,40 @@ class ClientContextReport
         return [
             'name' => $sprint->name ?? 'Current sprint',
             'dates' => $starts && $ends ? $starts->format('M j').' – '.$ends->format('M j') : null,
-            'done' => $done,
-            'total' => $total,
+            'done' => (clone $inSprint)->where('lane_position', 'done')->count(),
+            'total' => (clone $inSprint)->count(),
             'daysLeft' => $ends ? max(0, (int) $this->now->startOfDay()->diffInDays($ends->startOfDay(), false)) : null,
         ];
     }
 
-    /**
-     * One row per developer with any work (any lane) on the client — the client's
-     * dev team, not just the ones with completed estimates. Where a developer has
-     * done+estimated issues, the row carries estimate-vs-actual over their
-     * rolling-20 window (D1: ordered uniformly by lane_entered_at desc, nulls
-     * last, median est/act, bias, within-±15%); otherwise it's a data-less row
-     * (hasData=false). Rows with data sort first, then alphabetical.
-     *
-     * @param  array<int,int>  $projectIds
-     * @return array<int,array<string,mixed>>
-     */
-    private function developers(array $projectIds): array
+    /** Mon–Fri days from $from through $to, inclusive of both ends (for pace). */
+    private function weekdaysInclusive(CarbonImmutable $from, CarbonImmutable $to): int
     {
-        $names = Developer::pluck('name', 'kendo_id');
-
-        // Rolling-20 estimate-vs-actual sample per developer, keyed by assignee.
-        $samples = SyncedIssue::whereIn('project_id', $projectIds)
-            ->where('lane_position', 'done')
-            ->where('estimated_minutes', '>', 0)
-            ->whereNotNull('assignee_id')
-            ->orderByRaw('lane_entered_at is null, lane_entered_at desc')
-            ->get()
-            ->groupBy('assignee_id');
-
-        // Every developer assigned any issue on the client (excludes unassigned).
-        $assigneeIds = SyncedIssue::whereIn('project_id', $projectIds)
-            ->whereNotNull('assignee_id')
-            ->distinct()
-            ->pluck('assignee_id');
-
-        return $assigneeIds
-            ->map(fn (int $id) => $this->developerRow($id, $names[$id] ?? "User {$id}", ($samples->get($id) ?? collect())->take(self::WINDOW)))
-            ->sortBy(fn (array $d) => ($d['hasData'] ? '0' : '1').'_'.mb_strtolower($d['name']))
-            ->values()
-            ->all();
-    }
-
-    /** @param  Collection<int,SyncedIssue>  $sample */
-    private function developerRow(int $id, string $name, Collection $sample): array
-    {
-        if ($sample->isEmpty()) {
-            return [
-                'id' => $id, 'name' => $name, 'hasData' => false,
-                'medianEst' => null, 'medianActual' => null, 'biasPct' => null, 'withinPct' => null, 'sample' => 0,
-            ];
+        $count = 0;
+        for ($d = $from->startOfDay(); $d->lte($to); $d = $d->addDay()) {
+            if ($d->isWeekday()) {
+                $count++;
+            }
         }
 
-        $estimate = (int) $sample->sum('estimated_minutes');
-        $actual = (int) $sample->sum('logged_minutes');
-        $within = $sample->filter(function (SyncedIssue $i) {
-            $pct = EstimationReport::biasPct((int) $i->estimated_minutes, (int) $i->logged_minutes);
-
-            return $pct !== null && abs($pct) <= self::WITHIN;
-        })->count();
-
-        return [
-            'id' => $id,
-            'name' => $name,
-            'hasData' => true,
-            'medianEst' => $this->median($sample->map(fn (SyncedIssue $i) => (int) $i->estimated_minutes)),
-            'medianActual' => $this->median($sample->map(fn (SyncedIssue $i) => (int) $i->logged_minutes)),
-            'biasPct' => EstimationReport::biasPct($estimate, $actual) ?? 0,
-            'withinPct' => (int) round($within / $sample->count() * 100),
-            'sample' => $sample->count(),
-        ];
+        return $count;
     }
 
-    /**
-     * Overrunning now: in-flight issues (not done) where logged > estimate,
-     * worst overrun first.
-     *
-     * @param  array<int,int>  $projectIds
-     * @return array<int,array<string,mixed>>
-     */
-    private function overrunning(array $projectIds): array
+    /** Mon–Fri days from $from through $to (both instants), for the stuck cutoff. */
+    private function workingDaysBetween(CarbonImmutable $from, CarbonImmutable $to): int
     {
-        return SyncedIssue::whereIn('project_id', $projectIds)
-            ->where('lane_position', '!=', 'done')
-            ->where('estimated_minutes', '>', 0)
-            ->whereColumn('logged_minutes', '>', 'estimated_minutes')
-            ->get()
-            ->map(fn (SyncedIssue $i) => [
-                'key' => $i->key,
-                'title' => $i->title,
-                'assignee' => $i->assignee_id,
-                'est' => $this->hours((int) $i->estimated_minutes),
-                'logged' => $this->hours((int) $i->logged_minutes),
-                'overPct' => EstimationReport::biasPct((int) $i->estimated_minutes, (int) $i->logged_minutes),
-            ])
-            ->sortByDesc('overPct')
-            ->values()
-            ->all();
-    }
-
-    /**
-     * In-progress aging: middle-lane issues by time in lane, longest first.
-     *
-     * @param  array<int,int>  $projectIds
-     * @return array<int,array<string,mixed>>
-     */
-    private function aging(array $projectIds): array
-    {
-        return SyncedIssue::whereIn('project_id', $projectIds)
-            ->where('lane_position', 'middle')
-            ->orderByRaw('lane_entered_at is null, lane_entered_at asc')
-            ->get()
-            ->map(fn (SyncedIssue $i) => [
-                'key' => $i->key,
-                'title' => $i->title,
-                'assignee' => $i->assignee_id,
-                'lane' => $i->lane_name,
-                'days' => $i->lane_entered_at
-                    ? (int) $i->lane_entered_at->diffInDays($this->now)
-                    : null,
-            ])
-            ->all();
-    }
-
-    /**
-     * id → {name} for every developer referenced anywhere on the page (the table
-     * skips those without estimates, but they can still own flagged issues).
-     *
-     * @param  array<int,array<string,mixed>>  $developers
-     * @param  array<int,array<string,mixed>>  $overrunning
-     * @param  array<int,array<string,mixed>>  $aging
-     * @return array<int,array{name:string}>
-     */
-    private function devById(array $developers, array $overrunning, array $aging): array
-    {
-        $names = Developer::pluck('name', 'kendo_id');
-
-        $ids = collect($developers)->pluck('id')
-            ->merge(collect($overrunning)->pluck('assignee'))
-            ->merge(collect($aging)->pluck('assignee'))
-            ->filter()
-            ->unique();
-
-        return $ids->mapWithKeys(fn (int $id) => [$id => ['name' => $names[$id] ?? "User {$id}"]])->all();
-    }
-
-    /** Median of a collection of minutes → hours, one decimal (0 if empty). */
-    private function median(Collection $minutes): float
-    {
-        $sorted = $minutes->sort()->values();
-        $count = $sorted->count();
-        if ($count === 0) {
-            return 0.0;
+        if ($from->gte($to)) {
+            return 0;
         }
 
-        $mid = intdiv($count, 2);
-        $median = $count % 2
-            ? $sorted[$mid]
-            : ($sorted[$mid - 1] + $sorted[$mid]) / 2;
+        $count = 0;
+        for ($d = $from->startOfDay()->addDay(); $d->lte($to); $d = $d->addDay()) {
+            if ($d->isWeekday()) {
+                $count++;
+            }
+        }
 
-        return $this->hours((int) round($median));
+        return $count;
     }
 
     /** Minutes → hours, one decimal. */

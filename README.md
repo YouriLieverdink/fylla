@@ -166,16 +166,16 @@ tab.
 ### Client context
 
 Clicking a Delivery card opens `/delivery/{client}` (`delivery.show`,
-`ClientContextController`) — a read-only, single-column report over the team
-issue mirror + roster, scoped to one managed client. `App\ClientContext\
-ClientContextReport` builds four sections: a **brief stat-band** (team hours vs
-target this month, active issues, current sprint `done/total`, needs-attention
-count), a full-width **per-developer estimate-vs-actual** table (median est/act,
-±15% within-target rate, and a rolling-20 bias marker reusing
-`EstimationReport::biasPct`; window ordered uniformly by `lane_entered_at` desc,
-nulls last), and two attention panels — **overrunning now** (in-flight issues
-where `logged > estimate`, worst first) and **in-progress aging** (middle-lane
-issues by time in lane, longest first).
+`ClientContextController`) — a read-only board over the team issue mirror +
+roster, scoped to one managed client. `App\ClientContext\ClientContextReport`
+ships a **totals band** (team hours vs target this month with a run-rate **pace**
+line, active issues, current sprint `done/total`, flagged count), a flat issue
+list, the client's lanes, and **per-developer subtotals** (month hours). The page
+(`resources/js/Pages/ClientContext.vue`) renders a **kanban** whose columns are
+the client's real Kendo lanes and whose cards are its issues — colored per
+developer, flagged **overrunning** (`logged > estimate`) or **stuck** (no worklog
+or lane move in the last 5 working days). Filtering is client-side: current
+sprint (default on), overrunning, stuck, and a multi-select developer legend.
 
 Its data comes from three background jobs (all run by "Sync now" and scheduled
 **daily**):
