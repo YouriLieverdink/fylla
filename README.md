@@ -160,12 +160,21 @@ non-billable — bucketing `started_at` by month/day in
 `config('fylla.display_timezone')`. Projection = delivered × working days in
 month ÷ working days elapsed (Mon–Fri, not holiday-adjusted; CONTEXT.md →
 _Delivery projection_). Clients without a target show the delivered burn-up
-alone (no projection or target line). Distinct from the `/clients` management
-tab.
+alone (no projection or target line), with an accent-highlighted empty target
+input. The controller also passes raw `projects` rows (`id, name, code,
+billable, client_id`) driving the footer.
+
+Each card has two zones: the **chart region** (top) is the `<Link>` drill-down
+to `/delivery/{client}`; a **config footer strip** below never navigates. The
+footer holds an inline **target** input (`PATCH /clients/{client}`), clickable
+**billable pills** for the client's assigned projects (`PATCH
+/projects/{project}`, colour/dot reflects state), and `+ project`/`Delete`
+buttons (modals land in a later slice). The `/clients` management tab still
+exists this slice.
 
 ### Client context
 
-Clicking a Delivery card opens `/delivery/{client}` (`delivery.show`,
+Clicking a Delivery card's chart opens `/delivery/{client}` (`delivery.show`,
 `ClientContextController`) — a read-only board over the team issue mirror +
 roster, scoped to one managed client. `App\ClientContext\ClientContextReport`
 ships a **totals band** (team hours vs target this month with a run-rate **pace**

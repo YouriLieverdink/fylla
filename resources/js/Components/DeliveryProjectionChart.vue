@@ -1,8 +1,11 @@
 <script setup>
 import { computed } from 'vue';
+import { Link } from '@inertiajs/vue3';
 import Card from './Card.vue';
 
 const props = defineProps({
+    // When set, the chart region (not the footer slot) becomes a drill-down Link.
+    href: { type: String, default: null },
     initials: { type: String, default: '' },
     name: { type: String, default: '' },
     meta: { type: String, default: '' },
@@ -73,7 +76,13 @@ const LINE = '#8074cf';
 </script>
 
 <template>
-    <Card radius="24px" pad="28px 30px" class="flex flex-col">
+    <Card radius="24px" pad="0" class="flex flex-col overflow-hidden">
+      <component
+        :is="href ? Link : 'div'"
+        :href="href || undefined"
+        class="flex flex-1 flex-col px-[30px] pb-[28px] pt-[28px]"
+        :class="href && 'transition hover:bg-canvas/40'"
+      >
         <div class="mb-1.5 flex items-start justify-between">
             <div class="flex items-center gap-[13px]">
                 <div
@@ -169,5 +178,7 @@ const LINE = '#8074cf';
                 </div>
             </div>
         </div>
+      </component>
+      <slot name="footer" />
     </Card>
 </template>
