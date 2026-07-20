@@ -177,6 +177,13 @@ irreversible — `DELETE /clients/{client}`). All three use the `useModalGuard`
 pattern (#43): keybindings beneath the scrim are suppressed, Escape is the sole
 exit. The `/clients` management tab still exists this slice.
 
+A **By client ⇆ By project** segmented toggle switches between the projection
+cards and a flat list of **all** projects (assigned + unassigned), one
+`ProjectRow` each (name + billable checkbox, `PATCH /projects/{project}`). The
+flat list is the sole billable editor for unassigned/yours-only projects (the
+cards render managed clients only). `c` selects By client, `p` By project;
+`j`/`k` walk the active view's cards/rows.
+
 ### Client context
 
 Clicking a Delivery card's chart opens `/delivery/{client}` (`delivery.show`,
@@ -397,9 +404,9 @@ it, `n` add a timer note (focuses the field).
 
 A few pages earn a small view-switcher keyset (rule #33, table #35, issue #45),
 registered under their own scope (independent of the row cursor): **Utilization**
-`w` weekly breakdown, `p` by project, `t` time entries; **Clients** `c` by
-client, `p` by project; **Estimation** `c` clears the project filter. Capacity,
-Delivery, Settings and Playground register no action keys.
+`w` weekly breakdown, `p` by project, `t` time entries; **Clients** and
+**Delivery** `c` by client, `p` by project; **Estimation** `c` clears the
+project filter. Capacity, Settings and Playground register no action keys.
 
 While a **blocking modal** is open (edit, promote-pick, manual-pick, ad-hoc,
 add-project, or the `?` cheat-sheet) the global listener early-returns

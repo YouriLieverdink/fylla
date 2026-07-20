@@ -6,16 +6,32 @@ import AppHeader from '../Components/AppHeader.vue';
 import Card from '../Components/Card.vue';
 import DeliveryProjectionChart from '../Components/DeliveryProjectionChart.vue';
 import EmptyState from '../Components/EmptyState.vue';
+import ProjectRow from '../Components/ProjectRow.vue';
+import SegmentedControl from '../Components/SegmentedControl.vue';
 import { usePageCursor } from '../Composables/usePageCursor';
 import { useModalGuard } from '../Composables/useModalGuard';
+import { useAction } from '../Composables/useAction';
 
 const props = defineProps({
     clients: { type: Array, default: () => [] },
     projects: { type: Array, default: () => [] },
 });
 
-// j/k cursor over the client projection cards, row-major (#43).
-const cursor = usePageCursor(() => props.clients.map((c) => 'd-' + c.id));
+// By-client cards (#62) vs By-project flat list (#64). By project is the sole
+// billable editor for unassigned/yours-only projects, which the cards omit.
+const view = ref('By client');
+
+// j/k cursor over the active view's rows (#43): projection cards under By
+// client, flat project rows under By project.
+const cursor = usePageCursor(() =>
+    view.value === 'By client'
+        ? props.clients.map((c) => 'd-' + c.id)
+        : props.projects.map((p) => 'pr-' + p.id),
+);
+
+// View-switcher keyset (#45), migrated from the old Clients page (#64).
+useAction({ id: 'delivery:by-client', label: 'By client', keys: 'c', scope: 'delivery', run: () => (view.value = 'By client') });
+useAction({ id: 'delivery:by-project', label: 'By project', keys: 'p', scope: 'delivery', run: () => (view.value = 'By project') });
 
 // A client's assigned projects — drives its billable pills.
 const assigned = (clientId) => props.projects.filter((p) => p.client_id === clientId);
@@ -54,9 +70,10 @@ const addable = computed(() => {
     );
 });
 
-// Footer edits hit the existing write routes (no new endpoints, #62).
-function toggleBillable(project) {
-    router.patch('/projects/' + project.id, { billable: !project.billable }, { preserveScroll: true });
+// Footer edits hit the existing write routes (no new endpoints, #62). Card pills
+// pass the flipped state; flat rows (#64) pass the checkbox's emitted state.
+function setBillable(project, billable) {
+    router.patch('/projects/' + project.id, { billable }, { preserveScroll: true });
 }
 
 function setTarget(card, value) {
@@ -121,6 +138,11 @@ function deleteClient() {
             </div>
         </div>
 
+        <div class="mb-5">
+            <SegmentedControl v-model="view" :options="['By client', 'By project']" />
+        </div>
+
+        <template v-if="view === 'By client'">
         <div v-if="clients.length" class="grid grid-cols-1 gap-4 md:grid-cols-2">
             <DeliveryProjectionChart
                 v-for="c in clients"
@@ -169,7 +191,7 @@ function deleteClient() {
                                         ? 'border-accent-tint-2 bg-accent-tint text-accent-deep'
                                         : 'border-divider text-faint-3 hover:bg-canvas'
                                 "
-                                @click="toggleBillable(p)"
+                                @click="setBillable(p, !p.billable)"
                             >
                                 <span class="h-1.5 w-1.5 rounded-full" :class="p.billable ? 'bg-accent' : 'bg-faint-3'"></span>
                                 {{ p.name }}
@@ -193,6 +215,28 @@ function deleteClient() {
             title="No clients yet"
             text="Add one with + New client above, then assign it Kendo projects — its team's monthly hours will show up here."
         />
+        </template>
+
+        <!-- By project: flat list of all projects (assigned + unassigned), name +
+             billable. Sole billable editor for unassigned/yours-only work (#64). -->
+        <Card v-else-if="projects.length" radius="22px" pad="10px 10px 12px">
+            <div class="grid grid-cols-[1fr_auto] gap-3 px-2 pb-3.5 pt-3 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-faint-3">
+                <span>Project</span>
+                <span>Billable</span>
+            </div>
+            <div class="flex flex-col">
+                <ProjectRow
+                    v-for="project in projects"
+                    :key="project.id"
+                    :project="project"
+                    :data-row="'pr-' + project.id"
+                    class="scroll-my-12"
+                    :class="cursor.isActive('pr-' + project.id) && 'ring-2 ring-accent'"
+                    @toggle-billable="setBillable(project, $event)"
+                />
+            </div>
+        </Card>
+        <EmptyState v-else title="No projects synced yet" text="Run Sync now to pull your Kendo projects in." />
 
         <!-- New-client modal (#63) -->
         <div
