@@ -16,10 +16,12 @@ class NoteSearchController extends Controller
     private const LIMIT = 200;
 
     /**
-     * Notes search page (#70): free-text over synced worklog notes, matching
-     * note + issue key/title with plain LIKE, newest-first. Team read —
-     * deliberately unscoped (ADR-0011): the corpus is teammates' notes on
-     * managed-client projects plus the user's own everywhere.
+     * Notes search page (#70): free-text over synced worklogs, matching
+     * note + issue key/title with plain LIKE, newest-first. Noteless worklogs
+     * are listed too — hiding them made non-note-writers look like they logged
+     * nothing. Team read — deliberately unscoped (ADR-0011): the corpus is
+     * teammates' worklogs on managed-client projects plus the user's own
+     * everywhere.
      */
     public function index(Request $request): Response
     {
@@ -34,9 +36,9 @@ class NoteSearchController extends Controller
             'to' => $request->query('to') ?: null,
         ];
 
-        // One definition of the corpus (noted worklogs) for both the results and
-        // the filter options below — they must never drift apart.
-        $corpus = fn () => SyncedWorklog::query()->whereNotNull('note')->where('note', '!=', '');
+        // One definition of the corpus (all synced worklogs, noteless included)
+        // for both the results and the filter options below — never drift apart.
+        $corpus = fn () => SyncedWorklog::query();
 
         $query = $corpus()->orderByDesc('started_at');
 
@@ -77,7 +79,7 @@ class NoteSearchController extends Controller
         ]);
 
         // Filter options come from the corpus itself — a client/project/developer
-        // with no noted worklog can never match, so it never shows as an option.
+        // with no synced worklog can never match, so it never shows as an option.
         $projectIds = $corpus()->distinct()->pluck('kendo_project_id');
 
         return Inertia::render('Notes', [

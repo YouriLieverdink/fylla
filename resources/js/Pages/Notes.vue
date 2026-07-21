@@ -60,7 +60,7 @@ function hours(minutes) {
         <div class="mb-8">
             <h1 class="mb-3 text-[34px] font-bold leading-[1.05] tracking-[-0.03em]">Notes</h1>
             <p class="max-w-[62ch] text-[15px] leading-[1.55] text-muted">
-                Every synced worklog note, newest first — yours everywhere, teammates' on managed-client
+                Every synced worklog, newest first — yours everywhere, teammates' on managed-client
                 projects. Search matches the note text and the issue key/title.
             </p>
         </div>
@@ -121,7 +121,9 @@ function hours(minutes) {
                             <span class="font-mono text-faint-2">{{ row.issueKey }}</span>
                             <span v-if="row.issueTitle" class="ml-2 text-muted">{{ row.issueTitle }}</span>
                         </td>
-                        <td class="max-w-[420px] px-6 py-3 leading-[1.5]">{{ row.note }}</td>
+                        <td class="max-w-[420px] px-6 py-3 leading-[1.5]" :class="!row.note && 'text-faint-3'">
+                            {{ row.note || '—' }}
+                        </td>
                         <td class="whitespace-nowrap px-6 py-3 text-right tabular-nums text-muted">{{ hours(row.minutes) }}</td>
                     </tr>
                 </tbody>
