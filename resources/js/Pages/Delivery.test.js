@@ -56,11 +56,11 @@ describe('Delivery By-project toggle + keybindings (#64)', () => {
         w.unmount();
     });
 
-    it('registers c/p under the delivery scope', async () => {
+    it('registers c/p/Enter under the delivery scope', async () => {
         const w = shallowMount(Delivery, { props: { clients, projects }, global: { stubs: { Card: false } } });
         await nextTick();
         const keys = [...registry.values()].filter((a) => a.scope === 'delivery').map((a) => a.keys).sort();
-        expect(keys).toEqual(['c', 'p']);
+        expect(keys).toEqual(['Enter', 'c', 'p']);
         w.unmount();
     });
 

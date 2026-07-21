@@ -33,6 +33,13 @@ const cursor = usePageCursor(() =>
 useAction({ id: 'delivery:by-client', label: 'By client', keys: 'c', scope: 'delivery', run: () => (view.value = 'By client') });
 useAction({ id: 'delivery:by-project', label: 'By project', keys: 'p', scope: 'delivery', run: () => (view.value = 'By project') });
 
+// Enter opens the cursored client's show page (By client only; flat project rows
+// have no show page). cursor.current is the 'd-{id}' key string.
+useAction({ id: 'delivery:open', label: 'Open client', keys: 'Enter', scope: 'delivery', run: () => {
+    if (view.value !== 'By client' || cursor.current.value == null) return;
+    router.visit('/delivery/' + cursor.current.value.slice(2));
+} });
+
 // A client's assigned projects — drives its billable pills.
 const assigned = (clientId) => props.projects.filter((p) => p.client_id === clientId);
 

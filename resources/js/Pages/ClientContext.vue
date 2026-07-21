@@ -11,6 +11,8 @@ import Card from '../Components/Card.vue';
 import Chip from '../Components/Chip.vue';
 import EmptyState from '../Components/EmptyState.vue';
 import ProgressBar from '../Components/ProgressBar.vue';
+import { usePageCursor } from '../Composables/usePageCursor';
+import { useAction } from '../Composables/useAction';
 
 const props = defineProps({
     data: { type: Object, required: true },
@@ -111,6 +113,15 @@ const toggleDev = (id) =>
 const visibleDevs = computed(() =>
     developers.filter((d) => countFor(d.id) > 0 || d.hoursMonth > 0 || isSelected(d.id)),
 );
+
+// j/k cursor over the board cards in visual order (lane by lane), Enter opens the
+// issue in Kendo — mirrors the Delivery page (#43).
+const ordered = computed(() => lanes.flatMap((l) => inLane(l.name)));
+const cursor = usePageCursor(() => ordered.value, (i) => i.key);
+useAction({ id: 'client:open', label: 'Open issue', keys: 'Enter', scope: 'client', run: () => {
+    const i = cursor.current.value;
+    if (i) window.open(i.kendo_url, '_blank');
+} });
 </script>
 
 <template>
@@ -329,8 +340,9 @@ const visibleDevs = computed(() =>
                             :key="i.key"
                             :href="i.kendo_url"
                             target="_blank"
-                            class="block rounded-[12px] border border-card-border border-l-4 px-3 py-2.5 shadow-[0_1px_2px_rgba(42,41,38,0.04)] transition hover:shadow-[0_2px_8px_rgba(42,41,38,0.12)]"
-                            :class="i.over ? 'bg-[#fdf3f2]' : i.stuck ? 'bg-[#fdf8ec]' : 'bg-surface'"
+                            :data-row="i.key"
+                            class="block scroll-my-12 rounded-[12px] border border-card-border border-l-4 px-3 py-2.5 shadow-[0_1px_2px_rgba(42,41,38,0.04)] transition hover:shadow-[0_2px_8px_rgba(42,41,38,0.12)]"
+                            :class="[i.over ? 'bg-[#fdf3f2]' : i.stuck ? 'bg-[#fdf8ec]' : 'bg-surface', cursor.isActive(i) && 'ring-2 ring-accent']"
                             :style="{ borderLeftColor: colorFor(i.assignee) }"
                         >
                             <div class="line-clamp-2 text-[13px] font-medium leading-snug">{{ i.title }}</div>
