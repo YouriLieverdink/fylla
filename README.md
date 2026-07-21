@@ -249,6 +249,18 @@ done-lane issues** (`assignee_id` = `FYLLA_KENDO_USER_ID`, `lane_position` =
 `done`): actual = the issue's `logged_minutes`, ordered most-recently-worked
 first; issues without an estimate list but sit out the bias.
 
+### Notes search
+
+The `/notes` page (the **Notes** nav tab, Team lens) searches synced worklog
+notes (issue #70). Corpus: the `synced_worklogs` mirror — your own worklogs
+everywhere plus teammates' on managed-client projects (ADR-0011; a team read,
+deliberately unscoped). Free-text matches the note text and the issue
+key/title with plain `LIKE`, newest-first, filterable by client, project,
+developer, and date range; each row shows date · developer · issue · note ·
+hours. Results cap at 200 rows (total match count still shown). Filters live
+in the URL (`?q=&client=&project=&developer=&from=&to=`), so searches are
+shareable.
+
 ### Utilization dashboard
 
 The home page headlines personal utilization (`App\Utilization\UtilizationReport`,

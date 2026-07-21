@@ -8,6 +8,7 @@ use App\Http\Controllers\DeliveryController;
 use App\Http\Controllers\DraftController;
 use App\Http\Controllers\EstimationController;
 use App\Http\Controllers\IssueController;
+use App\Http\Controllers\NoteSearchController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\PullRequestController;
 use App\Http\Controllers\SettingsController;
@@ -35,6 +36,8 @@ Route::delete('/target-changes/{targetChange}', [ClientTargetChangeController::c
 
 Route::get('/delivery', [DeliveryController::class, 'index'])->name('delivery.index');
 Route::get('/delivery/{client}', [ClientContextController::class, 'show'])->name('delivery.show');
+
+Route::get('/notes', [NoteSearchController::class, 'index'])->name('notes.index');
 
 Route::get('/utilization', [UtilizationController::class, 'index'])->name('utilization.index');
 
