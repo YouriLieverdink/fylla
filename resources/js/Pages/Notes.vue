@@ -1,9 +1,12 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppHeader from '../Components/AppHeader.vue';
 import Card from '../Components/Card.vue';
 import EmptyState from '../Components/EmptyState.vue';
+import MultiSelectFilter from '../Components/MultiSelectFilter.vue';
+import { useAction } from '../Composables/useAction';
+import { usePageCursor } from '../Composables/usePageCursor';
 
 const props = defineProps({
     rows: { type: Array, default: () => [] },
@@ -29,9 +32,21 @@ watch(
 );
 
 function apply() {
-    const query = Object.fromEntries(Object.entries(form.value).filter(([, v]) => v));
+    const query = Object.fromEntries(
+        Object.entries(form.value).filter(([, v]) => (Array.isArray(v) ? v.length : v)),
+    );
     router.get('/notes', query, { preserveState: true, preserveScroll: true });
 }
+
+const clientOptions = computed(() => props.clients.map((c) => ({ value: c.id, label: c.name })));
+const projectOptions = computed(() => props.projects.map((p) => ({ value: p.kendo_id, label: p.name })));
+const developerOptions = computed(() => props.developers.map((d) => ({ value: d.kendo_id, label: d.name })));
+
+// j/k row cursor over the result rows; `s` puts the caret in the search field.
+const cursor = usePageCursor(() => props.rows, (r) => r.id);
+const searchInput = ref(null);
+// preventDefault: without it the trigger letter is typed into the field it just focused.
+useAction({ id: 'notes:search', label: 'Focus search', keys: 's', scope: 'notes', run: (e) => { e?.preventDefault(); searchInput.value?.focus(); } });
 
 function hours(minutes) {
     return (minutes / 60).toFixed(1) + 'h';
@@ -52,48 +67,30 @@ function hours(minutes) {
 
         <div class="mb-6 flex flex-wrap items-center gap-2.5">
             <input
+                ref="searchInput"
                 v-model="form.q"
                 type="search"
                 placeholder="Search notes…"
-                class="w-[280px] rounded-xl border border-card-border bg-surface px-4 py-2 text-[13px] outline-none transition focus:border-accent"
+                class="w-[420px] max-w-full rounded-xl border border-card-border bg-surface px-4 py-2 text-[13px] outline-none transition focus:border-accent"
             />
-            <select
-                v-model="form.client"
-                class="rounded-xl border border-card-border bg-surface px-3 py-2 text-[13px] outline-none"
-                :class="form.client ? 'text-ink' : 'text-faint'"
-            >
-                <option :value="null">All clients</option>
-                <option v-for="c in clients" :key="c.id" :value="c.id">{{ c.name }}</option>
-            </select>
-            <select
-                v-model="form.project"
-                class="rounded-xl border border-card-border bg-surface px-3 py-2 text-[13px] outline-none"
-                :class="form.project ? 'text-ink' : 'text-faint'"
-            >
-                <option :value="null">All projects</option>
-                <option v-for="p in projects" :key="p.kendo_id" :value="p.kendo_id">{{ p.name }}</option>
-            </select>
-            <select
-                v-model="form.developer"
-                class="rounded-xl border border-card-border bg-surface px-3 py-2 text-[13px] outline-none"
-                :class="form.developer ? 'text-ink' : 'text-faint'"
-            >
-                <option :value="null">All developers</option>
-                <option v-for="d in developers" :key="d.kendo_id" :value="d.kendo_id">{{ d.name }}</option>
-            </select>
-            <input
-                v-model="form.from"
-                type="date"
-                class="rounded-xl border border-card-border bg-surface px-3 py-2 text-[13px] outline-none"
-                :class="form.from ? 'text-ink' : 'text-faint'"
-            />
-            <span class="text-[12px] text-faint-3">to</span>
-            <input
-                v-model="form.to"
-                type="date"
-                class="rounded-xl border border-card-border bg-surface px-3 py-2 text-[13px] outline-none"
-                :class="form.to ? 'text-ink' : 'text-faint'"
-            />
+            <MultiSelectFilter v-model="form.clients" :options="clientOptions" placeholder="All clients" />
+            <MultiSelectFilter v-model="form.projects" :options="projectOptions" placeholder="All projects" />
+            <MultiSelectFilter v-model="form.developers" :options="developerOptions" placeholder="All developers" />
+            <div class="flex items-center gap-1.5 whitespace-nowrap">
+                <input
+                    v-model="form.from"
+                    type="date"
+                    class="rounded-xl border border-card-border bg-surface px-3 py-2 text-[13px] outline-none"
+                    :class="form.from ? 'text-ink' : 'text-faint'"
+                />
+                <span class="text-[12px] text-faint-3">to</span>
+                <input
+                    v-model="form.to"
+                    type="date"
+                    class="rounded-xl border border-card-border bg-surface px-3 py-2 text-[13px] outline-none"
+                    :class="form.to ? 'text-ink' : 'text-faint'"
+                />
+            </div>
             <span class="ml-auto font-mono text-[11px] uppercase tracking-[0.08em] text-faint-3">
                 {{ total }} {{ total === 1 ? 'note' : 'notes' }}{{ total > rows.length ? ` · showing ${rows.length}` : '' }}
             </span>
@@ -111,7 +108,13 @@ function hours(minutes) {
                     </tr>
                 </thead>
                 <tbody>
-                    <tr v-for="row in rows" :key="row.id" class="border-b border-divider-soft align-top last:border-0">
+                    <tr
+                        v-for="row in rows"
+                        :key="row.id"
+                        :data-row="row.id"
+                        class="border-b border-divider-soft align-top last:border-0"
+                        :class="cursor.isActive(row) && 'ring-2 ring-inset ring-accent'"
+                    >
                         <td class="whitespace-nowrap px-6 py-3 text-faint-2">{{ row.date }}</td>
                         <td class="whitespace-nowrap px-6 py-3 text-muted">{{ row.developer }}</td>
                         <td class="px-6 py-3">

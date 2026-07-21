@@ -76,9 +76,57 @@ class NotesPageTest extends TestCase
         $this->worklog(['note' => 'too early', 'started_at' => '2026-06-01 09:00:00']);
         $this->worklog(['note' => 'too late', 'started_at' => '2026-08-01 09:00:00']);
 
-        $this->get('/notes?client='.$client->id.'&project=1&developer=10&from=2026-07-01&to=2026-07-31')
+        $this->get('/notes?clients[]='.$client->id.'&projects[]=1&developers[]=10&from=2026-07-01&to=2026-07-31')
             ->assertInertia(fn (AssertableInertia $page) => $page
                 ->has('rows', 1)
                 ->where('rows.0.note', 'match'));
+    }
+
+    public function test_client_and_project_filters_accept_multiple_values(): void
+    {
+        $acme = Client::create(['name' => 'Acme']);
+        $beta = Client::create(['name' => 'Beta']);
+        Project::create(['kendo_id' => 1, 'name' => 'P1', 'client_id' => $acme->id]);
+        Project::create(['kendo_id' => 2, 'name' => 'P2', 'client_id' => $beta->id]);
+        Project::create(['kendo_id' => 3, 'name' => 'P3']);
+
+        $this->worklog(['note' => 'in acme', 'kendo_project_id' => 1]);
+        $this->worklog(['note' => 'in beta', 'kendo_project_id' => 2]);
+        $this->worklog(['note' => 'in neither', 'kendo_project_id' => 3]);
+
+        $this->get('/notes?clients[]='.$acme->id.'&clients[]='.$beta->id)
+            ->assertInertia(fn (AssertableInertia $page) => $page->has('rows', 2));
+
+        $this->get('/notes?projects[]=1&projects[]=3')
+            ->assertInertia(fn (AssertableInertia $page) => $page->has('rows', 2));
+    }
+
+    public function test_developer_filter_accepts_multiple_values(): void
+    {
+        $this->worklog(['note' => 'by ten', 'kendo_user_id' => 10]);
+        $this->worklog(['note' => 'by eleven', 'kendo_user_id' => 11]);
+        $this->worklog(['note' => 'by twelve', 'kendo_user_id' => 12]);
+
+        $this->get('/notes?developers[]=10&developers[]=12')
+            ->assertInertia(fn (AssertableInertia $page) => $page->has('rows', 2));
+    }
+
+    public function test_filter_options_are_scoped_to_the_note_corpus(): void
+    {
+        $acme = Client::create(['name' => 'Acme']);
+        Client::create(['name' => 'Idle']);
+        Project::create(['kendo_id' => 1, 'name' => 'Noted', 'client_id' => $acme->id]);
+        Project::create(['kendo_id' => 2, 'name' => 'Noteless']);
+        Developer::create(['kendo_id' => 10, 'name' => 'Youri']);
+        Developer::create(['kendo_id' => 99, 'name' => 'Ghost']);
+
+        $this->worklog(['kendo_project_id' => 1, 'kendo_user_id' => 10]);
+        $this->worklog(['kendo_project_id' => 2, 'kendo_user_id' => 99, 'note' => null]);
+
+        $this->get('/notes')
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->has('clients', 1)->where('clients.0.name', 'Acme')
+                ->has('projects', 1)->where('projects.0.name', 'Noted')
+                ->has('developers', 1)->where('developers.0.name', 'Youri'));
     }
 }

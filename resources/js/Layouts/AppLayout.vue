@@ -32,6 +32,7 @@ const NAV = [
     { keys: 'g c', href: '/capacity',    label: 'Capacity' },
     { keys: 'g e', href: '/estimation',  label: 'Estimation' },
     { keys: 'g d', href: '/delivery',    label: 'Delivery' },
+    { keys: 'g n', href: '/notes',       label: 'Notes' },
     { keys: 'g s', href: '/settings',    label: 'Settings' },
 ];
 for (const { keys, href, label } of NAV) {

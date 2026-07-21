@@ -23,19 +23,22 @@ class NoteSearchController extends Controller
      */
     public function index(Request $request): Response
     {
+        $ids = fn (string $key) => array_values(array_filter(array_map('intval', (array) $request->query($key, []))));
+
         $filters = [
             'q' => trim((string) $request->query('q', '')),
-            'client' => (int) $request->query('client') ?: null,
-            'project' => (int) $request->query('project') ?: null,
-            'developer' => (int) $request->query('developer') ?: null,
+            'clients' => $ids('clients'),
+            'projects' => $ids('projects'),
+            'developers' => $ids('developers'),
             'from' => $request->query('from') ?: null,
             'to' => $request->query('to') ?: null,
         ];
 
-        $query = SyncedWorklog::query()
-            ->whereNotNull('note')
-            ->where('note', '!=', '')
-            ->orderByDesc('started_at');
+        // One definition of the corpus (noted worklogs) for both the results and
+        // the filter options below — they must never drift apart.
+        $corpus = fn () => SyncedWorklog::query()->whereNotNull('note')->where('note', '!=', '');
+
+        $query = $corpus()->orderByDesc('started_at');
 
         if ($filters['q'] !== '') {
             $like = '%'.$filters['q'].'%';
@@ -44,14 +47,14 @@ class NoteSearchController extends Controller
                 ->orWhere('issue_key', 'like', $like)
                 ->orWhere('issue_title', 'like', $like));
         }
-        if ($filters['client']) {
-            $query->whereHas('project', fn ($p) => $p->where('client_id', $filters['client']));
+        if ($filters['clients']) {
+            $query->whereHas('project', fn ($p) => $p->whereIn('client_id', $filters['clients']));
         }
-        if ($filters['project']) {
-            $query->where('kendo_project_id', $filters['project']);
+        if ($filters['projects']) {
+            $query->whereIn('kendo_project_id', $filters['projects']);
         }
-        if ($filters['developer']) {
-            $query->where('kendo_user_id', $filters['developer']);
+        if ($filters['developers']) {
+            $query->whereIn('kendo_user_id', $filters['developers']);
         }
         if ($filters['from']) {
             $query->whereDate('started_at', '>=', $filters['from']);
@@ -73,13 +76,19 @@ class NoteSearchController extends Controller
             'minutes' => $w->minutes,
         ]);
 
+        // Filter options come from the corpus itself — a client/project/developer
+        // with no noted worklog can never match, so it never shows as an option.
+        $projectIds = $corpus()->distinct()->pluck('kendo_project_id');
+
         return Inertia::render('Notes', [
             'rows' => $rows,
             'total' => $total,
             'filters' => $filters,
-            'clients' => Client::orderBy('name')->get(['id', 'name']),
-            'projects' => Project::orderBy('name')->get(['kendo_id', 'name']),
-            'developers' => Developer::orderBy('name')->get(['kendo_id', 'name']),
+            'clients' => Client::whereIn('id', Project::whereIn('kendo_id', $projectIds)->whereNotNull('client_id')->pluck('client_id'))
+                ->orderBy('name')->get(['id', 'name']),
+            'projects' => Project::whereIn('kendo_id', $projectIds)->orderBy('name')->get(['kendo_id', 'name']),
+            'developers' => Developer::whereIn('kendo_id', $corpus()->distinct()->pluck('kendo_user_id'))
+                ->orderBy('name')->get(['kendo_id', 'name']),
         ]);
     }
 }
