@@ -108,7 +108,7 @@ class ClientContextReport
             ->whereBetween('started_at', [$this->monthStart, $this->monthEnd])
             ->sum('minutes');
         $hours = (int) round($minutes / 60);
-        $target = $client->monthly_target_hours;
+        $target = $client->targetForMonth($this->now);
 
         $active = $rows->where('done', false);
         $overrunning = $active->where('over', true)->count();

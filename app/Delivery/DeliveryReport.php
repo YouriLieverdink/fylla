@@ -48,7 +48,7 @@ class DeliveryReport
         $hours = (int) round($logs->sum('minutes') / 60);
         $developers = $logs->pluck('kendo_user_id')->unique()->count();
         $projects = $client->projects->count();
-        $target = $client->monthly_target_hours;
+        $target = $client->targetForMonth($this->now);
 
         // Run-rate projection: delivered scaled by working days in month / elapsed.
         $tz = config('fylla.display_timezone');

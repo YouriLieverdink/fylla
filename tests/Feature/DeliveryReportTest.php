@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Delivery\DeliveryReport;
 use App\Models\Client;
+use App\Models\ClientTargetChange;
 use App\Models\Project;
 use App\Models\SyncedWorklog;
 use App\Utilization\UtilizationReport;
@@ -135,6 +136,24 @@ class DeliveryReportTest extends TestCase
         $this->assertSame([4, 4, 10, 10], $card['series']);
         $this->assertSame(4, $card['today']);
         $this->assertSame(31, $card['daysInMonth']);
+    }
+
+    public function test_override_for_the_current_month_replaces_the_default_target(): void
+    {
+        $now = CarbonImmutable::parse('2026-07-15 12:00', 'Europe/Amsterdam');
+
+        $client = Client::create(['name' => 'Meridian Studio', 'monthly_target_hours' => 160]);
+        Project::create(['kendo_id' => 1, 'name' => 'App', 'billable' => true, 'client_id' => $client->id]);
+        ClientTargetChange::create(['client_id' => $client->id, 'effective_from' => '2026-07-01', 'hours' => 100]);
+        // Effective next month — must not apply yet.
+        ClientTargetChange::create(['client_id' => $client->id, 'effective_from' => '2026-08-01', 'hours' => 300]);
+        $this->log(1, '2026-07-02', 50, 1, self::ME);
+
+        $card = (new DeliveryReport($now))->cards()[0];
+
+        $this->assertSame(100, $card['target']);
+        $this->assertSame(50, $card['pct']);   // round(50/100*100)
+        $this->assertSame('50%', $card['status']);
     }
 
     public function test_personal_utilization_ignores_teammate_rows(): void
