@@ -5,7 +5,7 @@
 // per developer, flagged when overrunning or stuck). Filtering is client-side.
 // Reached from a Delivery card.
 import { computed, ref } from 'vue';
-import { Link } from '@inertiajs/vue3';
+import { Link, router } from '@inertiajs/vue3';
 import AppHeader from '../Components/AppHeader.vue';
 import Card from '../Components/Card.vue';
 import Chip from '../Components/Chip.vue';
@@ -15,11 +15,59 @@ import ProgressBar from '../Components/ProgressBar.vue';
 const props = defineProps({
     data: { type: Object, required: true },
     history: { type: Object, required: true },
+    target: { type: Object, required: true },
 });
-const { client, developers, lanes, issues, currentSprintId } = props.data;
+const { developers, lanes, issues, currentSprintId } = props.data;
+// Computed, not destructured: target writes (#68) refresh props in place and
+// the totals band must pick up the new target without a remount.
+const client = computed(() => props.data.client);
 
 // Delivery history (#67): +/− formatting for the per-month and cumulative gaps.
 const signed = (n) => `${n > 0 ? '+' : n < 0 ? '−' : '±'}${Math.abs(n)}`;
+
+// Target editor (#68, ADR-0018): the page's only write. Default + overrides,
+// stateless inputs (@change PATCHes, the redirect refreshes every prop).
+const editingTarget = ref(false);
+const newMonth = ref('');
+const newHours = ref('');
+
+function setDefault(value) {
+    router.patch(
+        `/clients/${props.target.clientId}`,
+        { monthly_target_hours: value === '' ? null : Number(value) },
+        { preserveScroll: true },
+    );
+}
+
+function addOverride() {
+    if (!newMonth.value || newHours.value === '') return;
+    router.post(
+        `/clients/${props.target.clientId}/target-changes`,
+        { effective_from: `${newMonth.value}-01`, hours: Number(newHours.value) },
+        {
+            preserveScroll: true,
+            onSuccess: () => {
+                newMonth.value = '';
+                newHours.value = '';
+            },
+        },
+    );
+}
+
+// PATCH requires both fields, so send the row's current values plus the change.
+// A cleared input (empty month/hours) is ignored rather than sent as invalid.
+function patchOverride(change, { month = change.month, hours = change.hours }) {
+    if (month === '' || hours === '') return;
+    router.patch(
+        `/target-changes/${change.id}`,
+        { effective_from: `${month}-01`, hours: Number(hours) },
+        { preserveScroll: true },
+    );
+}
+
+function deleteOverride(change) {
+    router.delete(`/target-changes/${change.id}`, { preserveScroll: true });
+}
 
 const STUCK_HELP = 'Stuck = an in-progress issue with no time logged and no lane change in the last 5 working days.';
 
@@ -50,8 +98,9 @@ const inLane = (lane) => filtered.value.filter((i) => i.lane === lane);
 const countFor = (id) => scoped.value.filter((i) => i.assignee === id).length;
 
 const pace = computed(() => {
-    if (!client.target || client.projected === null) return null;
-    return { projected: client.projected, delta: client.paceDelta, onPace: Math.abs(client.paceDelta) <= client.target * 0.05 };
+    const c = client.value;
+    if (!c.target || c.projected === null) return null;
+    return { projected: c.projected, delta: c.paceDelta, onPace: Math.abs(c.paceDelta) <= c.target * 0.05 };
 });
 const isSelected = (id) => selectedDevs.value.includes(id);
 const toggleDev = (id) =>
@@ -113,9 +162,94 @@ const visibleDevs = computed(() =>
             </div>
         </Card>
 
-        <!-- delivery history: delivered vs target, last few months -->
+        <!-- delivery history: delivered vs target, last few months; owns all
+             target editing (#68, ADR-0018) -->
         <Card radius="22px" pad="20px 24px" class="w-[300px] flex-none">
-            <h2 class="mb-2 font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] text-faint-3">Delivery history</h2>
+            <div class="mb-2 flex items-baseline justify-between">
+                <h2 class="font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] text-faint-3">Delivery history</h2>
+                <button
+                    type="button"
+                    class="cursor-pointer font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] text-faint-3 transition hover:text-ink"
+                    @click="editingTarget = !editingTarget"
+                >
+                    {{ editingTarget ? 'Done' : 'Edit' }}
+                </button>
+            </div>
+
+            <!-- target editor: default + effective-dated overrides -->
+            <template v-if="editingTarget">
+                <label class="flex items-center justify-between gap-2 border-b border-card-border py-1.5">
+                    <span class="font-mono text-[11.5px] text-muted">Default</span>
+                    <span class="flex items-center gap-1 font-mono text-[11.5px] text-faint-3">
+                        <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            :value="target.default ?? ''"
+                            placeholder="—"
+                            class="w-[56px] rounded-[8px] border border-[#e0dbd0] bg-surface px-1.5 py-0.5 text-right text-[12px] tabular-nums outline-none focus:border-accent"
+                            @change="setDefault($event.target.value)"
+                        />
+                        h/mo
+                    </span>
+                </label>
+                <div
+                    v-for="ch in target.changes"
+                    :key="ch.id"
+                    class="flex items-center justify-between gap-2 border-b border-card-border py-1.5"
+                >
+                    <input
+                        type="month"
+                        :value="ch.month"
+                        class="rounded-[8px] border border-[#e0dbd0] bg-surface px-1.5 py-0.5 font-mono text-[11px] outline-none focus:border-accent"
+                        @change="patchOverride(ch, { month: $event.target.value })"
+                    />
+                    <span class="flex items-center gap-1 font-mono text-[11.5px] text-faint-3">
+                        <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            :value="ch.hours"
+                            class="w-[56px] rounded-[8px] border border-[#e0dbd0] bg-surface px-1.5 py-0.5 text-right text-[12px] tabular-nums outline-none focus:border-accent"
+                            @change="patchOverride(ch, { hours: $event.target.value })"
+                        />
+                        h
+                        <button
+                            type="button"
+                            title="Delete override — affected months revert to the previous target"
+                            class="ml-0.5 cursor-pointer text-faint-3 transition hover:text-behind"
+                            @click="deleteOverride(ch)"
+                        >
+                            ×
+                        </button>
+                    </span>
+                </div>
+                <form class="flex items-center justify-between gap-2 py-1.5" @submit.prevent="addOverride">
+                    <input
+                        v-model="newMonth"
+                        type="month"
+                        class="rounded-[8px] border border-[#e0dbd0] bg-surface px-1.5 py-0.5 font-mono text-[11px] outline-none focus:border-accent"
+                    />
+                    <span class="flex items-center gap-1 font-mono text-[11.5px] text-faint-3">
+                        <input
+                            v-model="newHours"
+                            type="number"
+                            min="0"
+                            step="1"
+                            placeholder="h"
+                            class="w-[56px] rounded-[8px] border border-[#e0dbd0] bg-surface px-1.5 py-0.5 text-right text-[12px] tabular-nums outline-none focus:border-accent"
+                        />
+                        <button type="submit" class="ml-0.5 cursor-pointer font-mono text-[11px] font-semibold uppercase text-faint-3 transition hover:text-ink">
+                            Add
+                        </button>
+                    </span>
+                </form>
+                <p class="mt-1.5 text-[10.5px] leading-snug text-faint-3">
+                    An override sets the target from that month onward, until the next one.
+                </p>
+            </template>
+
+            <template v-else>
             <div
                 v-for="row in history.rows"
                 :key="row.month"
@@ -139,6 +273,7 @@ const visibleDevs = computed(() =>
                     {{ signed(history.gap) }}h
                 </span>
             </div>
+            </template>
         </Card>
         </div>
 

@@ -39,7 +39,7 @@ class DeliveryPageTest extends TestCase
                 ->where('clients.0.target', null));
     }
 
-    public function test_footer_target_edit_persists_via_client_route(): void
+    public function test_default_target_edit_persists_via_client_route(): void
     {
         $client = Client::create(['name' => 'Acme', 'monthly_target_hours' => null]);
 

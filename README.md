@@ -161,16 +161,14 @@ non-billable — bucketing `started_at` by month/day in
 `config('fylla.display_timezone')`. Projection = delivered × working days in
 month ÷ working days elapsed (Mon–Fri, not holiday-adjusted; CONTEXT.md →
 _Delivery projection_). Clients without a target show the delivered burn-up
-alone (no projection or target line), with an accent-highlighted empty target
-input. The controller also passes raw `projects` rows (`id, name, code,
-billable, client_id`) driving the footer.
+alone (no projection or target line). The controller also passes raw `projects`
+rows (`id, name, code, billable, client_id`) driving the footer.
 
 Each card has two zones: the **chart region** (top) is the `<Link>` drill-down
 to `/delivery/{client}`; a **config footer strip** below never navigates. The
-footer holds an inline **target** input (`PATCH /clients/{client}`), clickable
-**billable pills** for the client's assigned projects (`PATCH
-/projects/{project}`, colour/dot reflects state), and `+ project`/`Delete`
-buttons that open modals. A header-row **+ New client** button opens a create
+footer holds clickable **billable pills** for the client's assigned projects
+(`PATCH /projects/{project}`, colour/dot reflects state), and `+ project`/`Delete`
+buttons that open modals; targets are edited on the client page (#68, ADR-0018). A header-row **+ New client** button opens a create
 modal (`POST /clients`); `+ project` opens a search modal that assigns an
 unassigned project (`PATCH /projects/{project}` setting `client_id`); `Delete`
 opens a confirm modal (projects fall back to unassigned, worklog history kept,
@@ -188,8 +186,8 @@ cards render managed clients only). `c` selects By client, `p` By project;
 ### Client context
 
 Clicking a Delivery card's chart opens `/delivery/{client}` (`delivery.show`,
-`ClientContextController`) — a read-only board over the team issue mirror +
-roster, scoped to one managed client. `App\ClientContext\ClientContextReport`
+`ClientContextController`) — a board over the team issue mirror + roster, scoped
+to one managed client; read-only except the target editor below (ADR-0018). `App\ClientContext\ClientContextReport`
 ships a **totals band** (team hours vs target this month with a run-rate **pace**
 line, active issues, flagged count; the current sprint's `done/total` and days
 left live in the header chip), a flat issue
@@ -207,6 +205,14 @@ per-month resolved target and over/under. A cumulative surplus/deficit sums the
 completed months only — the in-progress month is shown as delivered-so-far but
 excluded, framed as where the gap gets spent. Clients without a target show
 delivered-only rows and no gap.
+
+The history card is also the **target editor** (#68, ADR-0018) — the page's only
+write. Its Edit toggle exposes the `monthly_target_hours` default
+(`PATCH /clients/{client}`) and the effective-dated override rows (ADR-0017):
+add via `POST /clients/{client}/target-changes`, edit/delete via
+`PATCH`/`DELETE /target-changes/{targetChange}`. Submitted dates are normalized
+to first-of-month server-side; re-adding an existing month corrects that row,
+and deleting one reverts affected months to the previous entry or the default.
 
 Its data comes from three background jobs (all run by "Sync now" and scheduled
 **daily**):

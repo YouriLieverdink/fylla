@@ -3,6 +3,7 @@
 use App\Http\Controllers\CapacityController;
 use App\Http\Controllers\ClientContextController;
 use App\Http\Controllers\ClientController;
+use App\Http\Controllers\ClientTargetChangeController;
 use App\Http\Controllers\DeliveryController;
 use App\Http\Controllers\DraftController;
 use App\Http\Controllers\EstimationController;
@@ -28,6 +29,9 @@ Route::patch('/projects/{project}', [ProjectController::class, 'update'])->name(
 Route::post('/clients', [ClientController::class, 'store'])->name('clients.store');
 Route::patch('/clients/{client}', [ClientController::class, 'update'])->name('clients.update');
 Route::delete('/clients/{client}', [ClientController::class, 'destroy'])->name('clients.destroy');
+Route::post('/clients/{client}/target-changes', [ClientTargetChangeController::class, 'store'])->name('clients.target-changes.store');
+Route::patch('/target-changes/{targetChange}', [ClientTargetChangeController::class, 'update'])->name('target-changes.update');
+Route::delete('/target-changes/{targetChange}', [ClientTargetChangeController::class, 'destroy'])->name('target-changes.destroy');
 
 Route::get('/delivery', [DeliveryController::class, 'index'])->name('delivery.index');
 Route::get('/delivery/{client}', [ClientContextController::class, 'show'])->name('delivery.show');
