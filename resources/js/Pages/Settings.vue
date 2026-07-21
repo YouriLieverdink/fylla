@@ -87,6 +87,16 @@ const field = 'w-full rounded-[11px] border border-[#e0dbd0] bg-surface px-3.5 p
                 </div>
             </Card>
 
+            <!-- Delivery -->
+            <Card radius="20px" pad="20px 24px">
+                <h2 class="mb-4 font-mono text-[11px] uppercase tracking-[0.16em] text-faint">Delivery</h2>
+                <label class="flex max-w-[320px] flex-col gap-1.5">
+                    <span class="text-[13px] text-muted">History window (completed months)</span>
+                    <input v-model.number="form.delivery_history_months" type="number" min="1" :class="field" />
+                    <span v-if="form.errors.delivery_history_months" class="text-[12px] text-rose-500">{{ form.errors.delivery_history_months }}</span>
+                </label>
+            </Card>
+
             <!-- Sync -->
             <Card radius="20px" pad="20px 24px">
                 <h2 class="mb-4 font-mono text-[11px] uppercase tracking-[0.16em] text-faint">Sync</h2>

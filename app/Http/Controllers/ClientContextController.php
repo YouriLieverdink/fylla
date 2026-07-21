@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\ClientContext\ClientContextReport;
+use App\Delivery\ClientDeliveryHistory;
 use App\Models\Client;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -16,6 +17,7 @@ class ClientContextController extends Controller
 
         return Inertia::render('ClientContext', [
             'data' => (new ClientContextReport)->generate($client),
+            'history' => (new ClientDeliveryHistory)->generate($client),
         ]);
     }
 }

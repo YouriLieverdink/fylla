@@ -199,6 +199,14 @@ developer, flagged **overrunning** (`logged > estimate`) or **stuck** (no worklo
 or lane move in the last 5 working days). Filtering is client-side: current
 sprint (default on), overrunning, stuck, and a multi-select developer legend.
 
+Below the board, a **delivery-history card** (`App\Delivery\ClientDeliveryHistory`)
+shows delivered vs target for the last `fylla.delivery_history_months` completed
+months (default 3, `/settings`-editable) plus the current month, each with its
+per-month resolved target and over/under. A cumulative surplus/deficit sums the
+completed months only — the in-progress month is shown as delivered-so-far but
+excluded, framed as where the gap gets spent. Clients without a target show
+delivered-only rows and no gap.
+
 Its data comes from three background jobs (all run by "Sync now" and scheduled
 **daily**):
 
@@ -310,9 +318,9 @@ The `/capacity` page (the **Capacity** nav tab) is a **year calendar grid**
 
 The `/settings` page (the **gear icon** in the header) edits the tuning knobs in
 `config/fylla.php` without touching the file (ADR-0016): the utilization
-target/soft-floor, contracted hours and day off, the trend window, the worklog
-sync window, `kendo_user_id`, the GitHub PR queries and excluded repos, and the
-display timezone. Routes: `GET /settings` (edit), `PUT /settings` (save).
+target/soft-floor, contracted hours and day off, the trend window, the delivery
+history window, the worklog sync window, `kendo_user_id`, the GitHub PR queries
+and excluded repos, and the display timezone. Routes: `GET /settings` (edit), `PUT /settings` (save).
 
 The file values stay the built-in defaults; a save writes a row to the
 `settings` table (`key`, JSON `value`), and `SettingsProvider` reads that table

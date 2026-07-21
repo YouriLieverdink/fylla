@@ -12,8 +12,14 @@ import Chip from '../Components/Chip.vue';
 import EmptyState from '../Components/EmptyState.vue';
 import ProgressBar from '../Components/ProgressBar.vue';
 
-const props = defineProps({ data: { type: Object, required: true } });
+const props = defineProps({
+    data: { type: Object, required: true },
+    history: { type: Object, required: true },
+});
 const { client, developers, lanes, issues, currentSprintId } = props.data;
+
+// Delivery history (#67): +/− formatting for the per-month and cumulative gaps.
+const signed = (n) => `${n > 0 ? '+' : n < 0 ? '−' : '±'}${Math.abs(n)}`;
 
 const STUCK_HELP = 'Stuck = an in-progress issue with no time logged and no lane change in the last 5 working days.';
 
@@ -79,8 +85,9 @@ const visibleDevs = computed(() =>
             </Chip>
         </div>
 
-        <!-- totals band -->
-        <Card radius="22px" pad="22px 26px" class="mb-6">
+        <!-- totals band + delivery history (#67) -->
+        <div class="mb-6 flex items-stretch gap-4">
+        <Card radius="22px" pad="22px 26px" class="min-w-0 flex-1">
             <div class="grid grid-cols-4 gap-6">
                 <div>
                     <div class="mb-1 font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] text-faint-3">Hours this month</div>
@@ -117,6 +124,35 @@ const visibleDevs = computed(() =>
                 </div>
             </div>
         </Card>
+
+        <!-- delivery history: delivered vs target, last few months -->
+        <Card radius="22px" pad="20px 24px" class="w-[300px] flex-none">
+            <h2 class="mb-2 font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] text-faint-3">Delivery history</h2>
+            <div
+                v-for="row in history.rows"
+                :key="row.month"
+                class="flex items-baseline justify-between border-b border-card-border py-1 last:border-b-0"
+            >
+                <span class="font-mono text-[11.5px]" :class="row.current ? 'text-ink' : 'text-muted'">
+                    {{ row.month }}<span v-if="row.current" class="text-faint-3"> · so far</span>
+                </span>
+                <span class="font-mono text-[12px] tabular-nums">
+                    {{ row.delivered }}<span v-if="row.target !== null" class="text-faint-4"> / {{ row.target }}</span>h
+                    <span
+                        v-if="row.delta !== null && !row.current"
+                        class="ml-1.5 text-[11px]"
+                        :class="row.delta < 0 ? 'text-behind' : 'text-track'"
+                    >{{ signed(row.delta) }}h</span>
+                </span>
+            </div>
+            <div v-if="history.gap !== null" class="mt-2 flex items-baseline justify-between">
+                <span class="text-[11px] text-faint-2" title="Completed months only — the current month is where this gets spent">Cumulative (completed)</span>
+                <span class="font-mono text-[12px] font-semibold tabular-nums" :class="history.gap < 0 ? 'text-behind' : 'text-track'">
+                    {{ signed(history.gap) }}h
+                </span>
+            </div>
+        </Card>
+        </div>
 
         <!-- filter bar -->
         <div class="mb-3 flex flex-wrap items-center gap-2">

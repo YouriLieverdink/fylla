@@ -35,4 +35,8 @@ return [
     'utilization_window_weeks' => 13,
     'utilization_target' => 75,
     'utilization_soft_floor' => 73,
+
+    // Completed months shown (plus the current one) in the client
+    // delivery-history card (issue #67).
+    'delivery_history_months' => 3,
 ];
