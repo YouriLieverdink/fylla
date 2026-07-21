@@ -191,7 +191,8 @@ Clicking a Delivery card's chart opens `/delivery/{client}` (`delivery.show`,
 `ClientContextController`) — a read-only board over the team issue mirror +
 roster, scoped to one managed client. `App\ClientContext\ClientContextReport`
 ships a **totals band** (team hours vs target this month with a run-rate **pace**
-line, active issues, current sprint `done/total`, flagged count), a flat issue
+line, active issues, flagged count; the current sprint's `done/total` and days
+left live in the header chip), a flat issue
 list, the client's lanes, and **per-developer subtotals** (month hours). The page
 (`resources/js/Pages/ClientContext.vue`) renders a **kanban** whose columns are
 the client's real Kendo lanes and whose cards are its issues — colored per

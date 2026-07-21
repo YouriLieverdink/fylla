@@ -81,14 +81,14 @@ const visibleDevs = computed(() =>
                 <p class="mt-1 text-[13px] text-muted">{{ client.meta }}</p>
             </div>
             <Chip v-if="client.sprint" tone="track">
-                {{ client.sprint.name }} · {{ client.sprint.done }}/{{ client.sprint.total }} done
+                {{ client.sprint.name }} · {{ client.sprint.done }}/{{ client.sprint.total }} done<template v-if="client.sprint.daysLeft !== null"> · {{ client.sprint.daysLeft }}d left</template>
             </Chip>
         </div>
 
         <!-- totals band + delivery history (#67) -->
         <div class="mb-6 flex items-stretch gap-4">
         <Card radius="22px" pad="22px 26px" class="min-w-0 flex-1">
-            <div class="grid grid-cols-4 gap-6">
+            <div class="grid h-full grid-cols-3 content-center gap-6 text-center">
                 <div>
                     <div class="mb-1 font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] text-faint-3">Hours this month</div>
                     <div class="font-mono text-[26px] font-semibold tabular-nums">
@@ -104,18 +104,6 @@ const visibleDevs = computed(() =>
                     <div class="mb-1 font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] text-faint-3">Active issues</div>
                     <div class="font-mono text-[26px] font-semibold tabular-nums">{{ client.activeIssues }}</div>
                     <div class="mt-2 text-[12px] text-faint-2">across {{ developers.length }} developers</div>
-                </div>
-                <div>
-                    <div class="mb-1 font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] text-faint-3">Sprint</div>
-                    <template v-if="client.sprint">
-                        <div class="text-[18px] font-semibold">{{ client.sprint.name }}</div>
-                        <div class="mt-1 text-[12px] text-faint-2">
-                            <span v-if="client.sprint.dates">{{ client.sprint.dates }}</span>
-                            <span v-if="client.sprint.dates && client.sprint.daysLeft !== null"> · </span>
-                            <span v-if="client.sprint.daysLeft !== null">{{ client.sprint.daysLeft }}d left</span>
-                        </div>
-                    </template>
-                    <div v-else class="text-[15px] text-faint-3">No active sprint</div>
                 </div>
                 <div>
                     <div class="mb-1 font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] text-faint-3">Flagged</div>
