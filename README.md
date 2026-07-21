@@ -407,6 +407,43 @@ session and queue use the `database` driver. `docker/entrypoint.sh` recreates th
 `storage/` skeleton and runs `migrate --force` on boot; the SQLite file lives on
 the `/data/db` bind-mount. See `docker/supervisord.conf` for the process set.
 
+### Host deploy (compose + auto-update)
+
+The Mac runs the image via `docker-compose.yml` plus a scoped Watchtower
+([`nickfedor/watchtower`](https://github.com/nickfedor/watchtower) — the maintained
+fork; upstream `containrrr` is too old for current Docker Desktop) that auto-pulls
+new GHCR images. Everything lives under `~/fylla/`:
+
+```
+~/fylla/
+  docker-compose.yml        # copy of the repo file
+  env/.env                  # APP_KEY + secrets (copied from dev .env)
+  data/db/database.sqlite   # persistent DB (bind-mounted)
+  ghcr-config.json          # inline base64 GHCR PAT (read:packages), chmod 600
+```
+
+One-time setup:
+
+```bash
+mkdir -p ~/fylla/env ~/fylla/data/db
+cp docker-compose.yml ~/fylla/
+cp .env ~/fylla/env/.env                          # secrets only; deploy config is in compose
+cp database/database.sqlite ~/fylla/data/db/       # seed once with real synced data
+# ~/fylla/ghcr-config.json: see docker login / Watchtower auth in the deploy notes
+cd ~/fylla && docker compose up -d
+```
+
+App at http://localhost:1083. The deploy-fixed config (`APP_ENV`, `APP_URL`,
+`DB_CONNECTION`, `DB_DATABASE=/data/db/database.sqlite`) is set in
+`docker-compose.yml`'s `environment:` — it overrides `.env`, so `~/fylla/env/.env`
+only needs `APP_KEY` and the Kendo/GitHub secrets. The container's own healthcheck
+probes `GET /` (the base image's Caddy-admin probe is disabled).
+
+**Updates:** push a git tag → GitHub Actions builds and pushes
+`ghcr.io/yourilieverdink/fylla:latest` → Watchtower (polling every 5 min) pulls it
+and recreates the container with the same volumes. `WATCHTOWER_CLEANUP` drops the
+old image.
+
 ## Keyboard
 
 Bindings are registered through the `useAction` composable into a reactive

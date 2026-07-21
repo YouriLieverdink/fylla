@@ -1,0 +1,47 @@
+# Host deploy for Fylla. Canonical copy lives here in the repo; the running copy
+# lives at ~/fylla/docker-compose.yml (relative paths below resolve against ~/fylla).
+# See README "Host deploy" for the one-time host setup (env, seed, ghcr auth).
+services:
+    fylla:
+        image: ghcr.io/yourilieverdink/fylla:latest
+        container_name: fylla
+        restart: always
+        ports:
+            - "1083:80"
+        volumes:
+            - ./env/.env:/app/.env:ro          # APP_KEY + Kendo/GitHub secrets, read-only (#75)
+            - ./data/db:/data/db               # persistent SQLite
+        environment:
+            # Deploy-fixed config wins over .env (Laravel's immutable dotenv yields to
+            # real env vars), so it can't depend on the copied dev .env's shape. DB path
+            # + the database-driver choices settled in #75.
+            APP_ENV: production
+            APP_URL: http://localhost:1083
+            DB_CONNECTION: sqlite
+            DB_DATABASE: /data/db/database.sqlite
+            CACHE_STORE: database
+            QUEUE_CONNECTION: database
+            SESSION_DRIVER: database
+        healthcheck:
+            # base image probes Caddy's admin :2019 which we disable; probe the app instead
+            test: ["CMD", "curl", "-fsS", "http://localhost:80/"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+            start_period: 20s
+        labels:
+            com.centurylinklabs.watchtower.enable: "true"
+
+    watchtower:
+        # maintained fork — upstream containrrr speaks Docker API v1.25, too old for
+        # current Docker Desktop (needs >=v1.40); the fork is a drop-in (#76 research)
+        image: nickfedor/watchtower:latest
+        container_name: watchtower
+        restart: always
+        environment:
+            WATCHTOWER_LABEL_ENABLE: "true"    # only watch containers carrying the enable label (fylla)
+            WATCHTOWER_CLEANUP: "true"         # drop the old image after update
+            WATCHTOWER_POLL_INTERVAL: "300"
+        volumes:
+            - /var/run/docker.sock:/var/run/docker.sock
+            - ./ghcr-config.json:/config.json:ro   # inline base64 GHCR PAT, read:packages (#76/#77)
