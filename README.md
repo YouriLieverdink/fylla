@@ -385,6 +385,28 @@ php artisan queue:work     # processes the database queue
 
 Then open `/`. Hit **Sync now** to pull issues immediately (or press `.`).
 
+## Deploy (Docker)
+
+Single `linux/arm64` image (`Dockerfile`): FrankenPHP in classic mode serves the
+app on port 80, with `supervisord` (PID 1) also running `schedule:work` and
+`queue:work` and restarting any that die. Multi-stage build — Vite assets +
+`composer install --no-dev` — into the FrankenPHP runtime.
+
+```bash
+docker build --platform linux/arm64 -t fylla .
+docker run -d -p 1083:80 \
+  -v /path/to/.env:/app/.env:ro \
+  -v ~/fylla/data/db:/data/db \
+  fylla
+```
+
+The `.env` is bind-mounted read-only (never baked): it must set `APP_KEY` and
+`DB_DATABASE=/data/db/database.sqlite` (outside `/app`, so the mount doesn't
+shadow the baked `database/migrations`). `storage/` is not persisted — cache,
+session and queue use the `database` driver. `docker/entrypoint.sh` recreates the
+`storage/` skeleton and runs `migrate --force` on boot; the SQLite file lives on
+the `/data/db` bind-mount. See `docker/supervisord.conf` for the process set.
+
 ## Keyboard
 
 Bindings are registered through the `useAction` composable into a reactive

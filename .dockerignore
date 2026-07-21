@@ -1,0 +1,16 @@
+.git
+.github
+node_modules
+vendor
+.env
+.env.*
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/logs/*
+bootstrap/cache/*.php
+database/database.sqlite
+public/build
+tests
+docs
+*.md
