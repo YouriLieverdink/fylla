@@ -439,10 +439,15 @@ App at http://localhost:1083. The deploy-fixed config (`APP_ENV`, `APP_URL`,
 only needs `APP_KEY` and the Kendo/GitHub secrets. The container's own healthcheck
 probes `GET /` (the base image's Caddy-admin probe is disabled).
 
-**Updates:** push a git tag → GitHub Actions builds and pushes
-`ghcr.io/yourilieverdink/fylla:latest` → Watchtower (polling every 5 min) pulls it
-and recreates the container with the same volumes. `WATCHTOWER_CLEANUP` drops the
-old image.
+**Updates:** push a `v*` git tag → `.github/workflows/release.yml` builds the
+`linux/arm64` image (buildx + QEMU) and pushes it to GHCR as both
+`ghcr.io/yourilieverdink/fylla:<version>` and `:latest` (auth via the built-in
+`GITHUB_TOKEN`) → Watchtower (polling every 5 min) pulls `:latest` and recreates
+the container with the same volumes. `WATCHTOWER_CLEANUP` drops the old image.
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
 
 ## Keyboard
 
