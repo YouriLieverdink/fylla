@@ -45,7 +45,9 @@ class WorklistScorer
     private const PR_PRIORITY = 2; // High
 
     /**
-     * Score an issue. Returns ['score' => float, 'reason' => string].
+     * Score an issue. Returns ['score' => float, 'reason' => string,
+     * 'breakdown' => array] — the breakdown is the per-component weighted
+     * contributions the UI reveals on hover (ADR-0013: not a black box).
      */
     public function scoreIssue(Issue $issue, Carbon $now): array
     {
@@ -55,10 +57,8 @@ class WorklistScorer
         $notBefore = $issue->not_before;
         $upNext = (bool) $issue->up_next;
 
-        $score = $this->composite($priority, $due, $mins, $issue->type, $upNext, $notBefore, $now);
-        $reason = $this->issueReason($issue->priority, $due, $mins, $notBefore, $upNext, $now);
-
-        return ['score' => $score, 'reason' => $reason];
+        return $this->composite($priority, $issue->priority, $due, $mins, $issue->type, $upNext, $notBefore, $now)
+            + ['reason' => $this->issueReason($issue->priority, $due, $mins, $notBefore, $upNext, $now)];
     }
 
     /**
@@ -70,41 +70,75 @@ class WorklistScorer
     {
         $priority = self::PRIORITY_RANK[$draft->priority] ?? null;
 
-        $score = $this->composite($priority, $draft->due_date, null, null, (bool) $draft->up_next, $draft->not_before, $now);
-        $reason = $this->issueReason($draft->priority, $draft->due_date, null, $draft->not_before, (bool) $draft->up_next, $now);
-
-        return ['score' => $score, 'reason' => $reason];
+        return $this->composite($priority, $draft->priority, $draft->due_date, null, null, (bool) $draft->up_next, $draft->not_before, $now)
+            + ['reason' => $this->issueReason($draft->priority, $draft->due_date, null, $draft->not_before, (bool) $draft->up_next, $now)];
     }
 
     /**
      * Score a PR via a synthetic due date (ADR-0013): High priority, due
-     * `opened_at + grace`, no estimate, never up_next/not_before.
+     * `opened_at + grace`, no estimate, never up_next/not_before. The breakdown
+     * carries a note spelling out the synthetic inputs, since a PR shows no real
+     * priority/due fields of its own.
      */
     public function scorePr(PullRequest $pr, Carbon $now): array
     {
         $opened = $pr->opened_at ?? $now;
         $due = $opened->copy()->addDays(self::PR_GRACE_DAYS);
 
-        $score = $this->composite(self::PR_PRIORITY, $due, null, null, false, null, $now);
+        $result = $this->composite(self::PR_PRIORITY, 'High', $due, null, null, false, null, $now);
+        $result['breakdown']['note'] = 'Treated as High priority, due '.self::PR_GRACE_DAYS.' day after opening ('.self::ageLabel($opened, $now).').';
+        $result['reason'] = self::ageLabel($opened, $now);
 
-        return ['score' => $score, 'reason' => self::ageLabel($opened, $now)];
+        return $result;
     }
 
-    private function composite(?int $priority, ?Carbon $due, ?int $mins, ?string $type, bool $upNext, ?Carbon $notBefore, Carbon $now): float
+    /**
+     * The weighted composite (ADR-0013). Returns ['score', 'breakdown'] where
+     * breakdown lists each factor's actual point contribution — the score is
+     * summed from it, so the two can never drift.
+     */
+    private function composite(?int $priority, ?string $priorityLabel, ?Carbon $due, ?int $mins, ?string $type, bool $upNext, ?Carbon $notBefore, Carbon $now): array
     {
-        $score = self::W_PRIORITY * self::priorityScore($priority)
-            + self::W_DUE * self::dueDateScore($due, $now)
-            + self::W_ESTIMATE * self::estimateScore($mins)
-            + self::crunchBoost($due, $now)
-            + ($type !== null ? (self::TYPE_BONUS[$type] ?? 0) : 0);
+        // Priority always contributes; the rest only when they move the score, so
+        // the tooltip stays tight rather than listing a wall of +0.0 rows.
+        $components = [['label' => 'Priority ('.($priorityLabel ?? 'Medium').')', 'points' => self::W_PRIORITY * self::priorityScore($priority)]];
 
-        if ($upNext) {
-            $score += self::UP_NEXT_BOOST;
-        } else {
-            $score *= self::notBeforePenalty($notBefore, $now);
+        if (($duePts = self::W_DUE * self::dueDateScore($due, $now)) > 0) {
+            $components[] = ['label' => 'Due ('.self::dueQualifier($due, $now).')', 'points' => $duePts];
+        }
+        if (($estPts = self::W_ESTIMATE * self::estimateScore($mins)) > 0) {
+            $components[] = ['label' => 'Estimate ('.self::hoursLabel($mins).')', 'points' => $estPts];
+        }
+        if (($crunch = self::crunchBoost($due, $now)) > 0) {
+            $components[] = ['label' => 'Crunch (due soon)', 'points' => $crunch];
+        }
+        if ($type !== null && ($bonus = self::TYPE_BONUS[$type] ?? 0) > 0) {
+            $components[] = ['label' => 'Type ('.$type.')', 'points' => (float) $bonus];
         }
 
-        return $score;
+        $subtotal = array_sum(array_column($components, 'points'));
+
+        $transform = null;
+        if ($upNext) {
+            $total = $subtotal + self::UP_NEXT_BOOST;
+            $transform = ['label' => 'Up next', 'op' => '+', 'amount' => (float) self::UP_NEXT_BOOST];
+        } else {
+            $factor = self::notBeforePenalty($notBefore, $now);
+            $total = $subtotal * $factor;
+            if ($factor < 1.0) {
+                $transform = ['label' => 'Not before ('.self::notBeforeQualifier($notBefore, $now).')', 'op' => '×', 'amount' => $factor];
+            }
+        }
+
+        return [
+            'score' => $total,
+            'breakdown' => [
+                'components' => $components,
+                'subtotal' => $subtotal,
+                'transform' => $transform,
+                'total' => $total,
+            ],
+        ];
     }
 
     public static function priorityScore(?int $priority): float
@@ -200,6 +234,39 @@ class WorklistScorer
         }
 
         return $mins === 1 ? '1 minute old' : "{$mins} minutes old";
+    }
+
+    /** Bare due qualifier for a breakdown row (no "due" prefix): "in 4 days", "today", "2 days overdue". */
+    private static function dueQualifier(Carbon $due, Carbon $now): string
+    {
+        $days = (int) ceil(self::days($due, $now));
+        if ($days < 0) {
+            return abs($days) === 1 ? '1 day overdue' : abs($days).' days overdue';
+        }
+        if ($days === 0) {
+            return 'today';
+        }
+        if ($days === 1) {
+            return 'tomorrow';
+        }
+
+        return "in {$days} days";
+    }
+
+    /** Bare not-before qualifier: "tomorrow", "in 5 days". */
+    private static function notBeforeQualifier(Carbon $notBefore, Carbon $now): string
+    {
+        $days = (int) ceil(self::days($notBefore, $now));
+
+        return $days === 1 ? 'tomorrow' : "in {$days} days";
+    }
+
+    /** Minutes → "2h" / "1.5h" (mirrors the frontend `hrs`). */
+    private static function hoursLabel(int $minutes): string
+    {
+        $h = $minutes / 60;
+
+        return ($h === (float) (int) $h ? (string) (int) $h : (string) round($h, 1)).'h';
     }
 
     /** Single dominant reason: pinned > overdue > due-soon > deferred > quick-win > priority. */

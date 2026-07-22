@@ -493,8 +493,36 @@ useAction({ id: 'wl:note', label: 'Add timer note', keys: 'n', scope: 'worklist'
                             >
                             <span v-else class="truncate text-[14px] font-medium">{{ item.title }}</span>
                         </div>
-                        <div class="mt-[3px] font-mono text-[11px] text-faint-3">
-                            {{ item.kind === 'issue' ? 'score ' + Math.round(item.score) : item.reason }}
+                        <div class="group/score relative mt-[3px] inline-block">
+                            <span class="cursor-help border-b border-dotted border-faint-3/40 font-mono text-[11px] text-faint-3">
+                                score {{ Math.round(item.score) }} · {{ item.reason }}
+                            </span>
+                            <!-- score breakdown (ADR-0013): weighted contributions, revealed on hover -->
+                            <div
+                                class="pointer-events-none invisible absolute left-0 top-full z-40 mt-1.5 w-[264px] rounded-[12px] border border-[#ebe7de] bg-surface p-3 text-left opacity-0 shadow-[0_12px_40px_-12px_rgba(42,41,38,0.45)] transition-opacity duration-100 group-hover/score:visible group-hover/score:opacity-100"
+                            >
+                                <div v-if="item.breakdown.note" class="mb-2 border-b border-divider-soft pb-2 text-[11px] leading-snug text-faint-2">
+                                    {{ item.breakdown.note }}
+                                </div>
+                                <div class="flex flex-col gap-1 font-mono text-[11px]">
+                                    <div v-for="(c, i) in item.breakdown.components" :key="i" class="flex justify-between gap-4">
+                                        <span class="text-muted">{{ c.label }}</span>
+                                        <span class="tabular-nums text-ink-soft">+{{ c.points.toFixed(1) }}</span>
+                                    </div>
+                                    <div class="mt-1 flex justify-between gap-4 border-t border-divider-soft pt-1 text-faint-2">
+                                        <span>subtotal</span>
+                                        <span class="tabular-nums">{{ item.breakdown.subtotal.toFixed(1) }}</span>
+                                    </div>
+                                    <div v-if="item.breakdown.transform" class="flex justify-between gap-4 text-faint-2">
+                                        <span>{{ item.breakdown.transform.label }}</span>
+                                        <span class="tabular-nums">{{ item.breakdown.transform.op }}{{ item.breakdown.transform.op === '×' ? item.breakdown.transform.amount.toFixed(2) : item.breakdown.transform.amount.toFixed(0) }}</span>
+                                    </div>
+                                    <div class="mt-0.5 flex justify-between gap-4 font-semibold text-ink">
+                                        <span>= score</span>
+                                        <span class="tabular-nums">{{ item.breakdown.total.toFixed(1) }}</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 

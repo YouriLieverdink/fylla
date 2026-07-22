@@ -14,8 +14,8 @@ composer install && npm install   # deps
 php artisan test                  # run tests (PHPUnit)
 php artisan migrate               # apply migrations
 npm run build                     # build front-end assets
-# dev: run these three together
-php artisan serve                 # web
+# dev: run these three together (or `composer dev` for all + Vite)
+php artisan serve --port=9050     # web (9050-range, avoids :8000 collisions)
 php artisan schedule:work         # scheduler (15-min sync)
 php artisan queue:work            # database queue
 ```

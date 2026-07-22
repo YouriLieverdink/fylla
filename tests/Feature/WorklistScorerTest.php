@@ -186,4 +186,41 @@ class WorklistScorerTest extends TestCase
         $this->assertGreaterThan(0, $result['score']);
         $this->assertSame('now', $result['reason']);
     }
+
+    // --- Breakdown (ADR-0013 hover reveal) ---
+
+    public function test_breakdown_components_sum_to_score(): void
+    {
+        // High, due in 4 days, 2h remaining, slightly deferred: every additive
+        // component present, then the not_before multiplier.
+        $bd = $this->scorer->scoreIssue($this->issue([
+            'priority' => 'High',
+            'due_date' => $this->now->copy()->addDays(4),
+            'remaining_minutes' => 120,
+            'not_before' => $this->now->copy()->addDays(2),
+        ]), $this->now)['breakdown'];
+
+        $this->assertSame('Priority (High)', $bd['components'][0]['label']);
+        $this->assertEqualsWithDelta(array_sum(array_column($bd['components'], 'points')), $bd['subtotal'], 0.01);
+        // total = subtotal × not_before factor, and matches the transform shown.
+        $this->assertSame('×', $bd['transform']['op']);
+        $this->assertEqualsWithDelta($bd['subtotal'] * $bd['transform']['amount'], $bd['total'], 0.01);
+    }
+
+    public function test_breakdown_upnext_shows_additive_boost_no_multiplier(): void
+    {
+        $bd = $this->scorer->scoreIssue($this->issue(['priority' => 'Low', 'up_next' => true]), $this->now)['breakdown'];
+
+        $this->assertSame(['label' => 'Up next', 'op' => '+', 'amount' => 50.0], $bd['transform']);
+        $this->assertEqualsWithDelta($bd['subtotal'] + 50, $bd['total'], 0.01);
+    }
+
+    public function test_breakdown_omits_zero_components_but_keeps_priority(): void
+    {
+        // Plain Medium: no due, no estimate → only the priority row survives.
+        $bd = $this->scorer->scoreIssue($this->issue(['priority' => 'Medium']), $this->now)['breakdown'];
+
+        $this->assertCount(1, $bd['components']);
+        $this->assertNull($bd['transform']);
+    }
 }

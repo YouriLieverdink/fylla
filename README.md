@@ -44,8 +44,11 @@ recomputed on every render
 (`App\Services\WorklistScorer`, ADR-0013) — never hand-dragged. The score
 weights priority, due date, and estimate, boosts items in a crunch window or
 pinned via `up_next`, and demotes (never hides) those with a future
-`not_before`. Each row shows a single "why" string (e.g. "2 days overdue",
-"quick win", "pinned"). A PR carries none of these fields, so it is scored via a
+`not_before`. Each row shows the score and a single "why" string (e.g. "2 days
+overdue", "quick win", "pinned"); hovering it reveals the full **breakdown** —
+each factor's weighted point contribution, the subtotal, the `up_next` boost or
+`not_before` multiplier, and the total — so the ranking is not a black box. A PR
+carries none of these fields, so it is scored via a
 synthetic due date (`opened_at + 1 day` grace, High priority): high the day it
 opens, climbing to the top once it sits past the grace. This needs the PR's
 GitHub `created_at` persisted as `opened_at` on `pull_requests`.
@@ -378,10 +381,15 @@ npm run build
 Three processes:
 
 ```bash
-php artisan serve          # web server → http://127.0.0.1:8000
-php artisan schedule:work  # runs the 15-minute sync
-php artisan queue:work     # processes the database queue
+php artisan serve --port=9050  # web server → http://127.0.0.1:9050
+php artisan schedule:work      # runs the 15-minute sync
+php artisan queue:work         # processes the database queue
 ```
+
+Dev ports live in the 9050 range so they don't collide with another Laravel app
+on `:8000`/`:5173`: app on `:9050`, Vite dev server on `:9051` (`vite.config.js`).
+`APP_URL` needs no port — navigation is relative and Vite serves assets via
+`public/hot`. `composer dev` runs all of the above plus Vite in one command.
 
 Then open `/`. Hit **Sync now** to pull issues immediately (or press `.`).
 
