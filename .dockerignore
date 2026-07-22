@@ -11,6 +11,7 @@ storage/logs/*
 bootstrap/cache/*.php
 database/database.sqlite
 public/build
+public/hot
 tests
 docs
 *.md
