@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ActivityController;
 use App\Http\Controllers\CapacityController;
 use App\Http\Controllers\ClientContextController;
 use App\Http\Controllers\ClientController;
@@ -60,6 +61,8 @@ Route::post('/timers/resume', [TimerController::class, 'resume'])->name('timers.
 Route::post('/timers/stop', [TimerController::class, 'stop'])->name('timers.stop');
 Route::post('/timers/start-time', [TimerController::class, 'startTime'])->name('timers.start-time');
 Route::post('/timers/notes', [TimerController::class, 'note'])->name('timers.notes');
+
+Route::get('/activity', [ActivityController::class, 'index'])->name('activity.index');
 
 Route::get('/settings', [SettingsController::class, 'edit'])->name('settings.edit');
 Route::put('/settings', [SettingsController::class, 'update'])->name('settings.update');

@@ -355,6 +355,22 @@ on every request and overrides the matching `config('fylla.*')` — so edits app
 with no restart. Deleting a row restores the default. **Secrets** (`KENDO_TOKEN`,
 `GITHUB_TOKEN`, …) are deliberately not editable here; they stay in `.env`.
 
+### Activity log
+
+The `/activity` page shows a flat list of every background job run — the 15-min
+scheduled syncs, manual "Sync now", and worklog posts — newest first, with each
+run's job, trigger, status (`running`/`ok`/`failed`), start time, duration and
+error message. Route: `GET /activity`.
+
+Capture is queue-event based (`JobRunRecorder`, registered on
+`JobProcessing`/`JobProcessed`/`JobFailed` in `AppServiceProvider`), so it
+records the sync, queued and manual paths uniformly and writes one `job_runs`
+row per run — keyed by the queue `uuid`, upserted across attempts. Each dispatch
+site mints a `moment_id` correlation string (and a `trigger`) via `Context` so a
+fanned-out sync moment's runs share an id; `PostWorklog` runs carry a null
+`moment_id`. Failure stack traces stay in `failed_jobs`; `job_runs.error` keeps
+the message only.
+
 ## Setup
 
 ```bash

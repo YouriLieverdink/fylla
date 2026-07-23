@@ -9,6 +9,7 @@ use App\Jobs\SyncKendoProjects;
 use App\Jobs\SyncKendoUsers;
 use App\Jobs\SyncKendoWorklogs;
 use App\Kendo\Client as KendoClient;
+use App\Listeners\JobRunRecorder;
 use App\Models\Draft;
 use App\Models\Issue;
 use App\Models\Project;
@@ -20,6 +21,8 @@ use App\Utilization\UtilizationReport;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Context;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -170,6 +173,11 @@ class IssueController extends Controller
     /** Manual "sync now" — runs the job inline so back() returns fresh data. */
     public function sync(): RedirectResponse
     {
+        // One "sync moment": every job dispatched below shares this id and the
+        // manual trigger in the Activity Log (#87). Context rides into each run.
+        Context::add(JobRunRecorder::MOMENT, (string) Str::uuid());
+        Context::add(JobRunRecorder::TRIGGER, 'manual');
+
         try {
             SyncKendoIssues::dispatchSync();
             // Projects before worklogs: the billability join needs project rows
