@@ -134,25 +134,69 @@ class ActivityLogTest extends TestCase
         $this->assertTrue($runs->every(fn (JobRun $r) => $r->trigger === 'manual'));
     }
 
-    public function test_activity_page_renders_a_flat_list_newest_first(): void
+    public function test_activity_page_groups_runs_by_moment_newest_first(): void
     {
+        // One sync moment (two jobs, one failed) + one standalone worklog post.
         JobRun::create([
-            'uuid' => 'a', 'job_class' => 'App\Jobs\SyncKendoIssues', 'trigger' => 'scheduled',
-            'status' => 'ok', 'started_at' => '2026-07-23 09:00:00', 'finished_at' => '2026-07-23 09:00:01',
+            'uuid' => 'a', 'moment_id' => 'moment-1', 'job_class' => 'App\Jobs\SyncKendoIssues',
+            'trigger' => 'manual', 'status' => 'ok',
+            'started_at' => '2026-07-23 09:00:00', 'finished_at' => '2026-07-23 09:00:01',
         ]);
         JobRun::create([
-            'uuid' => 'b', 'job_class' => 'App\Jobs\PostWorklog', 'trigger' => 'worklog-post',
-            'status' => 'failed', 'started_at' => '2026-07-23 10:00:00', 'error' => 'Kendo 502',
+            'uuid' => 'b', 'moment_id' => 'moment-1', 'job_class' => 'App\Jobs\SyncKendoWorklogs',
+            'trigger' => 'manual', 'status' => 'failed',
+            'started_at' => '2026-07-23 09:00:02', 'error' => 'Kendo 502',
+        ]);
+        JobRun::create([
+            'uuid' => 'c', 'moment_id' => null, 'job_class' => 'App\Jobs\PostWorklog',
+            'trigger' => 'worklog-post', 'status' => 'ok',
+            'started_at' => '2026-07-23 10:00:00', 'finished_at' => '2026-07-23 10:00:01',
         ]);
 
         $this->get('/activity')
             ->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page
                 ->component('Activity')
-                ->has('runs', 2)
-                ->where('runs.0.jobClass', 'PostWorklog')
-                ->where('runs.0.status', 'failed')
-                ->where('runs.0.error', 'Kendo 502')
-                ->where('runs.1.jobClass', 'SyncKendoIssues'));
+                ->has('moments', 2)
+                // Newest first: the standalone worklog post leads, its own group.
+                ->where('moments.0.trigger', 'worklog-post')
+                ->where('moments.0.status', 'ok')
+                ->has('moments.0.runs', 1)
+                // The sync moment rolls its failed child up to the moment level.
+                ->where('moments.1.trigger', 'manual')
+                ->where('moments.1.status', 'failed')
+                ->where('moments.1.failedCount', 1)
+                ->has('moments.1.runs', 2)
+                // Recent failure surfaces on the shared header signal.
+                ->where('activityFailures', 1));
+    }
+
+    public function test_a_moment_with_a_running_child_and_no_failure_rolls_up_to_running(): void
+    {
+        JobRun::create([
+            'uuid' => 'r1', 'moment_id' => 'moment-2', 'job_class' => 'App\Jobs\SyncKendoIssues',
+            'trigger' => 'scheduled', 'status' => 'ok',
+            'started_at' => '2026-07-23 11:00:00', 'finished_at' => '2026-07-23 11:00:01',
+        ]);
+        JobRun::create([
+            'uuid' => 'r2', 'moment_id' => 'moment-2', 'job_class' => 'App\Jobs\SyncKendoWorklogs',
+            'trigger' => 'scheduled', 'status' => 'running', 'started_at' => '2026-07-23 11:00:02',
+        ]);
+
+        $this->get('/activity')
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('moments.0.status', 'running')
+                ->where('moments.0.failedCount', 0));
+    }
+
+    public function test_activity_failures_signal_ignores_stale_failures(): void
+    {
+        JobRun::create([
+            'uuid' => 'old', 'job_class' => 'App\Jobs\SyncKendoIssues', 'trigger' => 'scheduled',
+            'status' => 'failed', 'started_at' => now()->subDays(3), 'error' => 'old boom',
+        ]);
+
+        $this->get('/activity')
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('activityFailures', 0));
     }
 }

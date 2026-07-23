@@ -357,10 +357,14 @@ with no restart. Deleting a row restores the default. **Secrets** (`KENDO_TOKEN`
 
 ### Activity log
 
-The `/activity` page shows a flat list of every background job run — the 15-min
-scheduled syncs, manual "Sync now", and worklog posts — newest first, with each
-run's job, trigger, status (`running`/`ok`/`failed`), start time, duration and
-error message. Route: `GET /activity`.
+The `/activity` page groups background job runs by **sync moment** — the 15-min
+scheduled syncs and manual "Sync now" fan out into many jobs sharing one
+`moment_id` and render as one collapsible row (failed/running moments start
+expanded); worklog posts (null `moment_id`) stand alone. Each moment rolls its
+children's status up to `running`/`ok`/`failed`, running rows show a spinner,
+and a `N failed` pill sums the failed children. Route: `GET /activity`. A pulse
+icon in the header links here from every page and carries a failure dot whenever
+a run has failed in the last day (shared `activityFailures` prop).
 
 Capture is queue-event based (`JobRunRecorder`, registered on
 `JobProcessing`/`JobProcessed`/`JobFailed` in `AppServiceProvider`), so it

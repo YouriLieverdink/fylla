@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\JobRun;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Inertia\Middleware;
@@ -41,6 +42,11 @@ class HandleInertiaRequests extends Middleware
             'syncError' => fn () => $request->session()->get('syncError', false),
             // Header (every page) shows last-sync time; the job caches it on each run.
             'lastSyncedAt' => fn () => Cache::get('kendo.synced_at'),
+            // Header activity dot: recent failed runs. Bounded to a day so a stale
+            // failure self-clears; the daily prune (#85) keeps the table small too.
+            // ponytail: whole-table count if the prune ever guarantees recency.
+            'activityFailures' => fn () => JobRun::where('status', 'failed')
+                ->where('started_at', '>=', now()->subDay())->count(),
         ];
     }
 }

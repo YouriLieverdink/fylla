@@ -5,12 +5,15 @@ import Nav from './Nav.vue';
 import SyncStatus from './SyncStatus.vue';
 
 const settingsActive = computed(() => usePage().url.startsWith('/settings'));
+const activityActive = computed(() => usePage().url.startsWith('/activity'));
 
-// lastSyncedAt + syncError are globally shared (HandleInertiaRequests), so the
-// header is identical on every page with no per-page props.
+// lastSyncedAt + syncError + activityFailures are globally shared
+// (HandleInertiaRequests), so the header is identical on every page with no
+// per-page props.
 const page = usePage();
 const lastSyncedAt = computed(() => page.props.lastSyncedAt);
 const syncError = computed(() => page.props.syncError);
+const activityFailures = computed(() => page.props.activityFailures);
 const syncing = ref(false);
 
 // Keep the "last synced" label fresh across the 15-min scheduled sync.
@@ -40,6 +43,21 @@ function fmt(ts) {
                 :error="syncError"
                 @sync="syncNow"
             />
+            <Link
+                href="/activity"
+                aria-label="Activity"
+                class="relative transition"
+                :class="activityActive ? 'text-ink' : 'text-faint hover:text-muted'"
+            >
+                <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                </svg>
+                <span
+                    v-if="activityFailures"
+                    class="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-behind ring-2 ring-surface"
+                    aria-label="Recent failures"
+                ></span>
+            </Link>
             <Link
                 href="/settings"
                 aria-label="Settings"
