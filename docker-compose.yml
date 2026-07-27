@@ -8,6 +8,7 @@ services:
         restart: always
         ports:
             - "1083:80"
+            - "1084:8080"                      # Reverb WebSockets (#92)
         volumes:
             - ./env/.env:/app/.env:ro          # APP_KEY + Kendo/GitHub secrets, read-only (#75)
             - ./data/db:/data/db               # persistent SQLite
@@ -22,9 +23,18 @@ services:
             CACHE_STORE: database
             QUEUE_CONNECTION: database
             SESSION_DRIVER: database
+            # Reverb transport (#92). App id/key/secret stay in .env; these three
+            # point the server-side publisher at the in-container Reverb, not at
+            # the client-facing host (defaults are :443/https and would fail).
+            BROADCAST_CONNECTION: reverb
+            REVERB_HOST: 127.0.0.1
+            REVERB_PORT: 8080
+            REVERB_SCHEME: http
         healthcheck:
             # base image probes Caddy's admin :2019 which we disable; probe the app instead
-            test: ["CMD", "curl", "-fsS", "http://localhost:80/"]
+            # activity is a hard dependency on Reverb (#92), so a dead WS port is
+            # an unhealthy container, not a degraded one — probe both.
+            test: ["CMD-SHELL", "curl -fsS http://localhost:80/ && curl -fsS http://localhost:8080/up"]
             interval: 30s
             timeout: 5s
             retries: 3
