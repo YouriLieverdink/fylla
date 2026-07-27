@@ -97,8 +97,9 @@ ticks client-side from timestamps, so a reload recomputes it.
 When a segment closes, its worklog is posted to Kendo as a time entry by a queued
 `PostWorklog` job (`queue:work` must be running), stamping `posted_at` /
 `kendo_worklog_id`. It's idempotent on `posted_at`, so a retry never double-posts.
-After 3 failed tries the error is recorded in `post_error` and the worklog stays
-unposted (no auto-retry). Kendo-only, direct on `Kendo\Client` (ADR-0006).
+After 3 failed tries the worklog stays unposted (no auto-retry) and the error is
+recorded on the run's `job_runs` row, surfaced on `/activity`. Kendo-only, direct
+on `Kendo\Client` (ADR-0006).
 
 **Notes** attach to the open segment: add one (Enter or the Add button) while the
 timer runs and it's stamped with the wall-clock time. A segment's notes ride into

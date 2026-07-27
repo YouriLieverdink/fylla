@@ -76,21 +76,18 @@ class PostWorklogTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_failure_records_post_error_and_leaves_unposted(): void
+    /** The error itself lands on job_runs (#91) — covered by ActivityLogTest. */
+    public function test_failure_leaves_the_worklog_unposted(): void
     {
         Http::fake(['*/time-entries' => Http::response('boom', 500)]);
         $worklog = $this->worklog($this->issue());
-        $job = new PostWorklog($worklog);
+
+        $this->expectException(RequestException::class);
 
         try {
-            $job->handle(app(KendoClient::class));
-            $this->fail('expected RequestException');
-        } catch (RequestException $e) {
-            $job->failed($e);
+            (new PostWorklog($worklog))->handle(app(KendoClient::class));
+        } finally {
+            $this->assertNull($worklog->refresh()->posted_at);
         }
-
-        $worklog->refresh();
-        $this->assertNull($worklog->posted_at);
-        $this->assertNotNull($worklog->post_error);
     }
 }

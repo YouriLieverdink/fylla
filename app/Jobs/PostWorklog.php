@@ -7,14 +7,13 @@ use App\Models\JobRun;
 use App\Models\Worklog;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Throwable;
 
 /**
  * Post one local Worklog to Kendo as a time entry (issue #10, per-segment close).
  *
  * Dispatched afterCommit from TimerService::rollUpSegment. Idempotent on
  * posted_at so a retry never double-posts. On success stamps the Kendo id;
- * on exhaustion records post_error.
+ * failures are recorded by JobRunRecorder on job_runs.error (#91).
  */
 class PostWorklog implements ShouldQueue
 {
@@ -57,12 +56,6 @@ class PostWorklog implements ShouldQueue
         $worklog->update([
             'kendo_worklog_id' => (string) $id,
             'posted_at' => now(),
-            'post_error' => null,
         ]);
-    }
-
-    public function failed(Throwable $e): void
-    {
-        $this->worklog->update(['post_error' => $e->getMessage()]);
     }
 }
