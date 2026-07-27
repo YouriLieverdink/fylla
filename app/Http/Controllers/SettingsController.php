@@ -10,7 +10,7 @@ use Inertia\Response;
 
 class SettingsController extends Controller
 {
-    /** The eleven UI-editable `fylla.*` tuning keys (ADR-0016). */
+    /** The UI-editable `fylla.*` tuning keys (ADR-0016). */
     public const KEYS = [
         'kendo_user_id',
         'worklog_sync_days',
@@ -23,6 +23,7 @@ class SettingsController extends Controller
         'utilization_target',
         'utilization_soft_floor',
         'delivery_history_months',
+        'job_run_retention_days',
     ];
 
     /** Show current effective values — config already carries any DB override

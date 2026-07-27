@@ -97,6 +97,7 @@ class SettingsTest extends TestCase
             'utilization_target' => 75,
             'utilization_soft_floor' => 73,
             'delivery_history_months' => 3,
+            'job_run_retention_days' => 30,
         ], $overrides);
     }
 }

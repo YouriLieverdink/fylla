@@ -346,7 +346,8 @@ The `/capacity` page (the **Capacity** nav tab) is a **year calendar grid**
 The `/settings` page (the **gear icon** in the header) edits the tuning knobs in
 `config/fylla.php` without touching the file (ADR-0016): the utilization
 target/soft-floor, contracted hours and day off, the trend window, the delivery
-history window, the worklog sync window, `kendo_user_id`, the GitHub PR queries
+history window, the worklog sync window, the activity-log retention window,
+`kendo_user_id`, the GitHub PR queries
 and excluded repos, and the display timezone. Routes: `GET /settings` (edit), `PUT /settings` (save).
 
 The file values stay the built-in defaults; a save writes a row to the
@@ -383,6 +384,10 @@ request returns immediately, the retry writes its own `job_runs` row (new
 is idempotent on `posted_at`, so a worklog posted in the interim costs no
 provider call. The retry handle is `job_runs.worklog_id`, stamped by the job
 itself at the top of `handle()` so every dispatch site carries it.
+
+The log is append-only, so a daily `activity:prune` command (scheduled in
+`routes/console.php`) deletes `job_runs` whose `started_at` is older than
+`fylla.job_run_retention_days` (default 30, editable on `/settings`).
 
 ## Setup
 

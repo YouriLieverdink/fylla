@@ -107,6 +107,11 @@ const field = 'w-full rounded-[11px] border border-[#e0dbd0] bg-surface px-3.5 p
                         <span v-if="form.errors.worklog_sync_days" class="text-[12px] text-rose-500">{{ form.errors.worklog_sync_days }}</span>
                     </label>
                     <label class="flex flex-col gap-1.5">
+                        <span class="text-[13px] text-muted">Activity log retention (days)</span>
+                        <input v-model.number="form.job_run_retention_days" type="number" min="1" :class="field" />
+                        <span v-if="form.errors.job_run_retention_days" class="text-[12px] text-rose-500">{{ form.errors.job_run_retention_days }}</span>
+                    </label>
+                    <label class="flex flex-col gap-1.5">
                         <span class="text-[13px] text-muted">Kendo user id</span>
                         <input v-model="form.kendo_user_id" type="text" :class="field" />
                         <span class="text-[12px] text-faint-3">Wrong value silently empties the worklog.</span>

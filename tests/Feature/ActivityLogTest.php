@@ -302,4 +302,22 @@ class ActivityLogTest extends TestCase
 
         $this->post("/activity/runs/{$run->id}/retry")->assertNotFound();
     }
+
+    /** Retention prune (#90) — `job_runs` is append-only, so it needs a bound.
+     * The window is set off its default here so the prune has to read it. */
+    public function test_prune_deletes_runs_past_the_retention_window_and_keeps_newer_ones(): void
+    {
+        config(['fylla.job_run_retention_days' => 10]);
+
+        foreach (['old' => 11, 'fresh' => 9] as $uuid => $daysAgo) {
+            JobRun::create([
+                'uuid' => $uuid, 'job_class' => 'App\Jobs\SyncKendoIssues', 'trigger' => 'scheduled',
+                'status' => 'ok', 'started_at' => now()->subDays($daysAgo),
+            ]);
+        }
+
+        $this->artisan('activity:prune')->assertSuccessful();
+
+        $this->assertSame(['fresh'], JobRun::pluck('uuid')->all());
+    }
 }

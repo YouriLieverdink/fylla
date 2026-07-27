@@ -7,6 +7,7 @@ use App\Jobs\SyncKendoProjects;
 use App\Jobs\SyncKendoUsers;
 use App\Jobs\SyncKendoWorklogs;
 use App\Listeners\JobRunRecorder;
+use App\Models\JobRun;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Context;
@@ -44,3 +45,11 @@ Schedule::call(fn () => $syncMoment([
     new SyncKendoUsers,
     new SyncKendoProjectIssues,
 ]))->daily();
+
+// `job_runs` is append-only (#87), so the log needs a bound (#90).
+Artisan::command('activity:prune', function () {
+    $cutoff = now()->subDays(config('fylla.job_run_retention_days'));
+    $this->info(JobRun::where('started_at', '<', $cutoff)->delete().' run(s) pruned');
+})->purpose('Delete job_runs past the retention window');
+
+Schedule::command('activity:prune')->daily();

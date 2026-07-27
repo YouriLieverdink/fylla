@@ -39,4 +39,7 @@ return [
     // Completed months shown (plus the current one) in the client
     // delivery-history card (issue #67).
     'delivery_history_months' => 3,
+
+    // How long an activity-log run is kept before the daily prune drops it (#90).
+    'job_run_retention_days' => 30,
 ];

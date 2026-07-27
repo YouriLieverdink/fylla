@@ -5,7 +5,7 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Validates the eleven UI-editable `fylla.*` tuning keys (ADR-0016). A bad value
+ * Validates the UI-editable `fylla.*` tuning keys (ADR-0016). A bad value
  * here silently breaks the utilization math or the worklog sync, so this is the
  * boundary guard — including the one cross-field invariant (soft_floor ≤ target).
  */
@@ -27,6 +27,7 @@ class UpdateSettingsRequest extends FormRequest
             'utilization_target' => ['required', 'integer', 'between:0,100'],
             'utilization_soft_floor' => ['required', 'integer', 'between:0,100'],
             'delivery_history_months' => ['required', 'integer', 'min:1'],
+            'job_run_retention_days' => ['required', 'integer', 'min:1'],
         ];
     }
 
