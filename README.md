@@ -375,6 +375,15 @@ fanned-out sync moment's runs share an id; `PostWorklog` runs carry a null
 `moment_id`. Failure stack traces stay in `failed_jobs`; `job_runs.error` keeps
 the message only.
 
+**Retry** is worklog-only (ADR-free decision in #86): a failed sync self-heals on
+the next scheduled run, so only failed `PostWorklog` rows get a Retry button.
+`POST /activity/runs/{jobRun}/retry` re-dispatches `PostWorklog` **queued** — the
+request returns immediately, the retry writes its own `job_runs` row (new
+`uuid`), and the original failed row stays as a permanent record. `PostWorklog`
+is idempotent on `posted_at`, so a worklog posted in the interim costs no
+provider call. The retry handle is `job_runs.worklog_id`, stamped by the job
+itself at the top of `handle()` so every dispatch site carries it.
+
 ## Setup
 
 ```bash

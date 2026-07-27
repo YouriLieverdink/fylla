@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\PostWorklog;
 use App\Models\JobRun;
+use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -38,6 +40,7 @@ class ActivityController extends Controller
                 'startedAt' => $r->started_at,
                 'finishedAt' => $r->finished_at,
                 'error' => $r->error,
+                'canRetry' => $r->isRetryable(),
             ];
         }
 
@@ -51,5 +54,20 @@ class ActivityController extends Controller
         }, array_values($moments));
 
         return Inertia::render('Activity', ['moments' => $moments]);
+    }
+
+    /**
+     * Re-dispatch a stuck worklog post (#89, decided in #86). A fresh queued
+     * job, so it writes its own `job_runs` row and the original failed one
+     * stays as a record; `PostWorklog` is idempotent on `posted_at`, so a
+     * worklog posted in the interim costs no provider call.
+     */
+    public function retry(JobRun $jobRun): RedirectResponse
+    {
+        abort_unless($jobRun->isRetryable(), 404);
+
+        PostWorklog::dispatch($jobRun->worklog);
+
+        return back();
     }
 }

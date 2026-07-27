@@ -1,4 +1,5 @@
 <script setup>
+import { router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AppHeader from '../Components/AppHeader.vue';
 import Card from '../Components/Card.vue';
@@ -34,6 +35,19 @@ function toggle(id) {
     const s = new Set(expanded.value);
     s.has(id) ? s.delete(id) : s.add(id);
     expanded.value = s;
+}
+
+// Retry a stuck worklog post (#89). The re-dispatch is queued, so the reload
+// that follows usually shows nothing new — the fresh run appears once
+// `queue:work` picks the job up.
+const retrying = ref(null);
+function retry(run) {
+    retrying.value = run.id;
+    router.post(
+        `/activity/runs/${run.id}/retry`,
+        {},
+        { preserveScroll: true, onFinish: () => (retrying.value = null) },
+    );
 }
 </script>
 
@@ -119,6 +133,15 @@ function toggle(id) {
                         <span v-if="r.error" class="max-w-[320px] truncate font-mono text-[10.5px] text-behind">{{ r.error }}</span>
                         <span v-else-if="r.status === 'running'" class="font-mono text-[10.5px] text-accent">running…</span>
                         <span v-else class="font-mono text-[10.5px] text-faint-2">{{ dur(r) }}</span>
+                        <button
+                            v-if="r.canRetry"
+                            type="button"
+                            class="flex-none rounded-full border border-divider-soft px-2.5 py-1 font-mono text-[10.5px] font-semibold text-muted transition-colors hover:text-fg disabled:opacity-50"
+                            :disabled="retrying === r.id"
+                            @click="retry(r)"
+                        >
+                            {{ retrying === r.id ? 'retrying…' : 'Retry' }}
+                        </button>
                     </div>
                 </div>
             </Card>

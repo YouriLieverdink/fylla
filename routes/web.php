@@ -63,6 +63,7 @@ Route::post('/timers/start-time', [TimerController::class, 'startTime'])->name('
 Route::post('/timers/notes', [TimerController::class, 'note'])->name('timers.notes');
 
 Route::get('/activity', [ActivityController::class, 'index'])->name('activity.index');
+Route::post('/activity/runs/{jobRun}/retry', [ActivityController::class, 'retry'])->name('activity.retry');
 
 Route::get('/settings', [SettingsController::class, 'edit'])->name('settings.edit');
 Route::put('/settings', [SettingsController::class, 'update'])->name('settings.update');

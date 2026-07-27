@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Kendo\Client as KendoClient;
+use App\Models\JobRun;
 use App\Models\Worklog;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -30,6 +31,14 @@ class PostWorklog implements ShouldQueue
 
     public function handle(KendoClient $kendo): void
     {
+        // Retry handle for /activity (#89). The recorder wrote this run's row on
+        // JobProcessing; stamping the subject here rather than at the dispatch
+        // sites means every dispatch — roll-up and retry alike — carries it.
+        // $this->job is null only when handle() is called outside the queue.
+        if ($this->job) {
+            JobRun::where('uuid', $this->job->uuid())->update(['worklog_id' => $this->worklog->id]);
+        }
+
         $worklog = $this->worklog->fresh();
         if ($worklog->posted_at !== null) {
             return; // already posted — no HTTP

@@ -14,6 +14,7 @@ use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia;
 use Mockery;
 use RuntimeException;
@@ -43,6 +44,22 @@ class ActivityLogTest extends TestCase
             'started_at' => now(),
             'comment' => 'did stuff',
         ], $overrides));
+    }
+
+    /**
+     * Post a worklog against a failing provider and return the failed run row
+     * it recorded — the starting point for every retry case.
+     */
+    private function failedRun(Worklog $worklog): JobRun
+    {
+        try {
+            PostWorklog::dispatchSync($worklog);
+            $this->fail('expected the job to throw');
+        } catch (RequestException) {
+            // SyncQueue rethrows after firing JobFailed — the run is recorded.
+        }
+
+        return JobRun::where('worklog_id', $worklog->id)->sole();
     }
 
     /** A queue Job stub carrying just the three fields the recorder reads. */
@@ -136,6 +153,10 @@ class ActivityLogTest extends TestCase
 
     public function test_activity_page_groups_runs_by_moment_newest_first(): void
     {
+        // Pinned so the fixed timestamps below stay inside the header's
+        // one-day failure window.
+        $this->travelTo('2026-07-23 12:00:00');
+
         // One sync moment (two jobs, one failed) + one standalone worklog post.
         JobRun::create([
             'uuid' => 'a', 'moment_id' => 'moment-1', 'job_class' => 'App\Jobs\SyncKendoIssues',
@@ -198,5 +219,87 @@ class ActivityLogTest extends TestCase
 
         $this->get('/activity')
             ->assertInertia(fn (AssertableInertia $page) => $page->where('activityFailures', 0));
+    }
+
+    /**
+     * Worklog retry (#89). The retry handle is the run's worklog_id, stamped by
+     * the job itself, so every dispatch site carries it.
+     */
+    public function test_a_failed_worklog_post_is_retryable_and_a_failed_sync_is_not(): void
+    {
+        Http::fake(['*/time-entries' => Http::response('boom', 500)]);
+        $worklog = $this->worklog();
+        $this->failedRun($worklog);
+
+        JobRun::create([
+            'uuid' => 'sync-fail', 'job_class' => 'App\Jobs\SyncKendoIssues', 'trigger' => 'scheduled',
+            'status' => 'failed', 'started_at' => now()->subMinute(), 'error' => 'Kendo 502',
+        ]);
+
+        $this->get('/activity')
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                // Newest first: the worklog post leads, the sync failure follows.
+                ->where('moments.0.runs.0.canRetry', true)
+                ->where('moments.1.runs.0.canRetry', false));
+    }
+
+    /**
+     * The retry must be *queued*, not inline (#86) — the endpoint returns
+     * before the post is attempted. Asserted under Queue::fake because the
+     * suite's sync driver would otherwise hide a dispatchSync regression.
+     */
+    public function test_retry_dispatches_the_job_queued_rather_than_inline(): void
+    {
+        Http::fake(['*/time-entries' => Http::response('boom', 500)]);
+        $failed = $this->failedRun($this->worklog());
+
+        Queue::fake();
+        $this->post("/activity/runs/{$failed->id}/retry")->assertRedirect();
+
+        Queue::assertPushed(PostWorklog::class);
+    }
+
+    public function test_retry_redispatches_the_worklog_and_writes_a_new_ok_run(): void
+    {
+        Http::fake(['*/time-entries' => Http::sequence()->push('boom', 500)->push(['id' => 999], 201)]);
+        $worklog = $this->worklog();
+        $failed = $this->failedRun($worklog);
+
+        $this->post("/activity/runs/{$failed->id}/retry")->assertRedirect();
+
+        // The original row is a permanent record — status, error and timing all
+        // survive the retry untouched.
+        $this->assertEquals($failed->getAttributes(), $failed->fresh()->getAttributes());
+
+        $retry = JobRun::whereKeyNot($failed->id)->sole();
+        $this->assertSame('ok', $retry->status);
+        $this->assertSame($worklog->id, $retry->worklog_id);
+        $this->assertNotNull($worklog->fresh()->posted_at);
+    }
+
+    public function test_retrying_an_already_posted_worklog_makes_no_provider_call(): void
+    {
+        Http::fake(['*/time-entries' => Http::response('boom', 500)]);
+        $worklog = $this->worklog();
+        $failed = $this->failedRun($worklog);
+
+        // Posted out-of-band in the interim — the retry must do no HTTP.
+        $worklog->update(['posted_at' => now(), 'kendo_worklog_id' => '999']);
+        Http::fake(['*' => Http::response([], 500)]);
+
+        $this->post("/activity/runs/{$failed->id}/retry")->assertRedirect();
+
+        Http::assertNothingSent();
+        $this->assertSame('ok', JobRun::whereKeyNot($failed->id)->sole()->status);
+    }
+
+    public function test_retry_is_rejected_for_a_run_that_is_not_a_failed_worklog_post(): void
+    {
+        $run = JobRun::create([
+            'uuid' => 'sync-fail', 'job_class' => 'App\Jobs\SyncKendoIssues', 'trigger' => 'scheduled',
+            'status' => 'failed', 'started_at' => now(), 'error' => 'Kendo 502',
+        ]);
+
+        $this->post("/activity/runs/{$run->id}/retry")->assertNotFound();
     }
 }
