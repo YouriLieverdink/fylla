@@ -1,6 +1,7 @@
 import { createApp, h } from 'vue';
 import { createInertiaApp } from '@inertiajs/vue3';
 import AppLayout from './Layouts/AppLayout.vue';
+import { createEcho } from './echo';
 
 createInertiaApp({
     progress: { color: '#6c5fc9' },
@@ -13,6 +14,9 @@ createInertiaApp({
         return page;
     },
     setup({ el, App, props, plugin }) {
+        // Before the first mount, so every surface's listener finds it (#92).
+        createEcho(props.initialPage.props.reverb);
+
         createApp({ render: () => h(App, props) })
             .use(plugin)
             .mount(el);

@@ -34,8 +34,9 @@ queued, so it needs `queue:work` running. The request returns before any job
 starts, so fresh rows arrive a moment later rather than in the response — the
 button keeps spinning until the last job finishes (driven by the shared
 `activityRunning` prop), and a failed sync surfaces as a failed run on
-`/activity` plus the header failure dot. The header polls every 1s, so both the
-running state and scheduled syncs surface without a manual refresh. Fylla-native
+`/activity` plus the header failure dot. The header updates over a WebSocket, so
+both the running state and scheduled syncs surface without a manual refresh.
+Fylla-native
 scheduling fields (due, not-before, up-next,
 no-split, recurrence) are owned locally and never written back to Kendo (ADR-0004).
 
@@ -358,7 +359,9 @@ The file values stay the built-in defaults; a save writes a row to the
 `settings` table (`key`, JSON `value`), and `SettingsProvider` reads that table
 on every request and overrides the matching `config('fylla.*')` — so edits apply
 with no restart. Deleting a row restores the default. **Secrets** (`KENDO_TOKEN`,
-`GITHUB_TOKEN`, …) are deliberately not editable here; they stay in `.env`.
+`GITHUB_TOKEN`, …) are deliberately not editable here; they stay in `.env`. So
+is `fylla.reverb_port` — a wrong value there kills the live connection on the
+very page you'd fix it from.
 
 ### Activity log
 
@@ -368,14 +371,38 @@ scheduled syncs and manual "Sync now" fan out into many jobs sharing one
 failed/running one starts expanded, and a card the user collapses stays
 collapsed); worklog posts (null `moment_id`) stand alone. Each moment rolls its
 children's status up to `running`/`ok`/`failed`, running rows show a spinner,
-and a `N failed` pill sums the failed children. Route: `GET /activity`. The page
-polls every 1s, so a run flips `running` → `ok` in place.
+and a `N failed` pill sums the failed children. Route: `GET /activity`. A run
+flips `running` → `ok` in place the moment it happens.
 
 A pulse icon in the header links here from every page. It carries a failure dot
 whenever a run has failed in the last day (shared `activityFailures` prop), and
 swaps to a spinner whenever a job is mid-flight (shared `activityRunning` prop —
 bounded to runs started in the last 10 minutes, so a worker killed mid-job
 can't strand the icon spinning).
+
+**Live updates are pushed, not polled** (#92). `JobRunRecorder` dispatches an
+`App\Events\ActivityChanged` over Laravel Reverb as the last line of each of its
+three handlers — after the write, since a racing signal would render stale
+state. The event is **signal-only**: it says "activity changed" and carries no
+run, and each listener answers with a partial Inertia reload
+(`['moments']` on the page, `['lastSyncedAt', 'activityRunning',
+'activityFailures']` in the header), so moment grouping, `failedCount` and
+`canRetry` stay shaped in the controller with no rollup logic duplicated in Vue.
+
+It is `ShouldBroadcastNow` because a *queued* broadcast is itself a queue job,
+which the recorder would capture, which would broadcast again — an unbounded
+loop. Belt and braces on that: all three handlers are gated on
+`resolveQueuedJobClass()` starting with `App\Jobs\`, which also keeps every
+framework-internal job off the surface. `ShouldRescue` keeps a Reverb outage
+from failing the sync job that emitted.
+
+Echo is built eagerly in `resources/js/app.js` from the `reverb` shared prop
+(key + `fylla.reverb_port` only) and exported from `resources/js/echo.js` — not
+`window.Echo`. Both surfaces subscribe through
+`Composables/useActivityChannel.js`, whose `online` ref renders a muted
+**offline dot** when the socket is down, because there is no poll floor behind
+it: a stale page has to say it's stale. A missing `REVERB_APP_KEY` skips Echo
+entirely rather than throwing, so every page still renders with the tell lit.
 
 Capture is queue-event based (`JobRunRecorder`, registered on
 `JobProcessing`/`JobProcessed`/`JobFailed` in `AppServiceProvider`), so it
@@ -416,37 +443,57 @@ php artisan key:generate
 #   GITHUB_PR_QUERIES=<comma-separated search filters>
 #   GITHUB_PR_EXCLUDE_REPOS=<comma-separated owner/name repos to hide>
 
+php artisan reverb:install   # writes REVERB_APP_ID / _KEY / _SECRET into .env
+
+# Live activity over WebSockets — add to .env by hand (reverb:install does not,
+# and BROADCAST_CONNECTION defaults to `null`, which swallows every broadcast):
+#   BROADCAST_CONNECTION=reverb
+#   REVERB_HOST=127.0.0.1     # where the *app* publishes to
+#   REVERB_PORT=9052          # the dev Reverb port (see "Run (dev)")
+#   REVERB_SCHEME=http
+
 php artisan migrate
 npm run build
 ```
 
 ## Run (dev)
 
-Three processes:
+Four processes:
 
 ```bash
-php artisan serve --port=9050  # web server → http://127.0.0.1:9050
-php artisan schedule:work      # runs the 15-minute sync
-php artisan queue:work         # processes the database queue
+php artisan serve --port=9050         # web server → http://127.0.0.1:9050
+php artisan schedule:work             # runs the 15-minute sync
+php artisan queue:work                # processes the database queue
+php artisan reverb:start --port=9052  # WebSockets — live /activity + header pulse
 ```
 
 Dev ports live in the 9050 range so they don't collide with another Laravel app
-on `:8000`/`:5173`: app on `:9050`, Vite dev server on `:9051` (`vite.config.js`).
-`APP_URL` needs no port — navigation is relative and Vite serves assets via
-`public/hot`. `composer dev` runs all of the above plus Vite in one command.
+on `:8000`/`:5173`: app on `:9050`, Vite dev server on `:9051` (`vite.config.js`),
+Reverb on `:9052`. `APP_URL` needs no port — navigation is relative and Vite
+serves assets via `public/hot`. `composer dev` runs all of the above plus Vite
+in one command.
+
+`/activity` and the header pulse are **push-only** — there is no polling
+fallback, so without `reverb:start` they render an "offline" dot and stop
+updating (`.env` needs `BROADCAST_CONNECTION=reverb`, the three `REVERB_APP_*`
+credentials from `reverb:install`, and `REVERB_HOST=127.0.0.1` /
+`REVERB_PORT=9052` / `REVERB_SCHEME=http` so the app can publish to its own
+server). A missing `REVERB_APP_KEY` is not fatal: the page renders normally with
+the offline dot lit.
 
 Then open `/`. Hit **Sync now** to pull issues immediately (or press `.`).
 
 ## Deploy (Docker)
 
 Single `linux/arm64` image (`Dockerfile`): FrankenPHP in classic mode serves the
-app on port 80, with `supervisord` (PID 1) also running `schedule:work` and
-`queue:work` and restarting any that die. Multi-stage build — Vite assets +
-`composer install --no-dev` — into the FrankenPHP runtime.
+app on port 80, with `supervisord` (PID 1) also running `schedule:work`,
+`queue:work` and `reverb:start` (WebSockets on `:8080`) and restarting any that
+die. Multi-stage build — Vite assets + `composer install --no-dev` — into the
+FrankenPHP runtime.
 
 ```bash
 docker build --platform linux/arm64 -t fylla .
-docker run -d -p 1083:80 \
+docker run -d -p 1083:80 -p 1084:8080 \
   -v /path/to/.env:/app/.env:ro \
   -v ~/fylla/data/db:/data/db \
   fylla
@@ -485,11 +532,22 @@ cp database/database.sqlite ~/fylla/data/db/       # seed once with real synced 
 cd ~/fylla && docker compose up -d
 ```
 
-App at http://localhost:1083. The deploy-fixed config (`APP_ENV`, `APP_URL`,
-`DB_CONNECTION`, `DB_DATABASE=/data/db/database.sqlite`) is set in
-`docker-compose.yml`'s `environment:` — it overrides `.env`, so `~/fylla/env/.env`
-only needs `APP_KEY` and the Kendo/GitHub secrets. The container's own healthcheck
-probes `GET /` (the base image's Caddy-admin probe is disabled).
+App at http://localhost:1083, Reverb's WebSocket on `1084`. The deploy-fixed
+config (`APP_ENV`, `APP_URL`, `DB_CONNECTION`,
+`DB_DATABASE=/data/db/database.sqlite`, plus `BROADCAST_CONNECTION` and the
+`REVERB_*` pair below) is set in `docker-compose.yml`'s `environment:` — it
+overrides `.env`, so `~/fylla/env/.env` only needs `APP_KEY`, the Kendo/GitHub
+secrets and the three `REVERB_APP_*` credentials. The container's own healthcheck
+probes `GET /` **and** Reverb's `/up` on `:8080` (the base image's Caddy-admin
+probe is disabled) — the activity surface is frozen without a live Reverb, so a
+container reporting healthy without one would be lying.
+
+`REVERB_HOST`/`REVERB_PORT`/`REVERB_SCHEME` (`127.0.0.1` / `8080` / `http`) are
+where the *app publishes to*, inside the container; `REVERB_CLIENT_PORT` (`1084`)
+is the published port the *browser* connects to, carried to the page as a shared
+prop via `config('fylla.reverb_port')`. The two can't be one key — the host is
+container-local, the browser's is not. Client host and scheme are derived from
+`window.location`, so nothing is baked into the Vite bundle at image-build time.
 
 **Updates:** push a `v*` git tag → `.github/workflows/release.yml` builds the
 `linux/arm64` image (buildx + QEMU) and pushes it to GHCR as both

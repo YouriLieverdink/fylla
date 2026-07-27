@@ -39,6 +39,6 @@ COPY docker/supervisord.conf /etc/supervisor/conf.d/fylla.conf
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-EXPOSE 80
+EXPOSE 80 8080
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["supervisord", "-c", "/etc/supervisor/conf.d/fylla.conf", "-n"]

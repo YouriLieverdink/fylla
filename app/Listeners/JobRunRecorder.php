@@ -2,8 +2,10 @@
 
 namespace App\Listeners;
 
+use App\Events\ActivityChanged;
 use App\Jobs\PostWorklog;
 use App\Models\JobRun;
+use Illuminate\Contracts\Queue\Job;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
@@ -26,6 +28,11 @@ class JobRunRecorder
     public function processing(JobProcessing $event): void
     {
         $job = $event->job;
+
+        if (! $this->shouldRecord($job)) {
+            return;
+        }
+
         $class = $job->resolveName();
 
         // firstOrNew (not updateOrCreate) so a retry's JobProcessing keeps the
@@ -40,23 +47,50 @@ class JobRunRecorder
             'attempts' => $job->attempts(),
         ]);
         $run->save();
+
+        ActivityChanged::dispatch();
     }
 
     public function processed(JobProcessed $event): void
     {
+        if (! $this->shouldRecord($event->job)) {
+            return;
+        }
+
         JobRun::where('uuid', $event->job->uuid())->update([
             'status' => 'ok',
             'finished_at' => now(),
         ]);
+
+        ActivityChanged::dispatch();
     }
 
     public function failed(JobFailed $event): void
     {
+        if (! $this->shouldRecord($event->job)) {
+            return;
+        }
+
         JobRun::where('uuid', $event->job->uuid())->update([
             'status' => 'failed',
             'finished_at' => now(),
             'error' => $event->exception->getMessage(),
         ]);
+
+        ActivityChanged::dispatch();
+    }
+
+    /**
+     * Only Fylla's own jobs belong on /activity — every framework-internal one
+     * (queued broadcasts, notifications, mailables, queued listeners) is noise
+     * there, and recording a queued broadcast would emit a signal that queues
+     * another (#93). Read `resolveQueuedJobClass()`, not `resolveName()`:
+     * `BroadcastEvent::displayName()` returns the *wrapped event's* class, so a
+     * broadcast job would masquerade as an application class.
+     */
+    private function shouldRecord(Job $job): bool
+    {
+        return str_starts_with($job->resolveQueuedJobClass(), 'App\\Jobs\\');
     }
 
     /**

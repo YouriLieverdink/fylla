@@ -1,6 +1,7 @@
 <script setup>
-import { router, usePoll } from '@inertiajs/vue3';
+import { router } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
+import { useActivityChannel } from '../Composables/useActivityChannel';
 import AppHeader from '../Components/AppHeader.vue';
 import Card from '../Components/Card.vue';
 import EmptyState from '../Components/EmptyState.vue';
@@ -27,13 +28,13 @@ function dur(run) {
     return ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : ms + 'ms';
 }
 
-// Live view: runs go running → ok/failed while the page is open, so poll rather
-// than making the user reload.
-usePoll(1000, { only: ['moments'] });
+// Live view: runs go running → ok/failed while the page is open, pushed over
+// the socket (#92). No poll floor — `online` renders the tell when it's down.
+const { online } = useActivityChannel(['moments']);
 
 // Auto-expand a moment the *first* time it's seen: the newest one always, plus
 // anything wanting attention (failed or still running). Tracking what's been
-// seen is what keeps a poll from re-opening a card the user just collapsed.
+// seen is what keeps a reload from re-opening a card the user just collapsed.
 const expanded = ref(new Set());
 const seen = new Set();
 
@@ -78,12 +79,23 @@ function retry(run) {
                     jobs; worklog posts stand alone. Newest first.
                 </p>
             </div>
-            <div
-                v-if="failureCount"
-                class="flex flex-none items-center gap-2 rounded-full bg-behind/10 px-3 py-1.5"
-            >
-                <span class="h-2 w-2 rounded-full bg-behind"></span>
-                <span class="font-mono text-[11px] font-semibold text-behind">{{ failureCount }} failed</span>
+            <div class="flex flex-none items-center gap-3">
+                <!-- No socket, no updates: say so rather than showing a frozen list. -->
+                <div
+                    v-if="!online"
+                    class="flex items-center gap-2 rounded-full bg-faint-2/10 px-3 py-1.5"
+                    title="Not connected — this list won't update until the connection is back"
+                >
+                    <span class="h-2 w-2 rounded-full bg-faint-2"></span>
+                    <span class="font-mono text-[11px] font-semibold text-faint-2">offline</span>
+                </div>
+                <div
+                    v-if="failureCount"
+                    class="flex items-center gap-2 rounded-full bg-behind/10 px-3 py-1.5"
+                >
+                    <span class="h-2 w-2 rounded-full bg-behind"></span>
+                    <span class="font-mono text-[11px] font-semibold text-behind">{{ failureCount }} failed</span>
+                </div>
             </div>
         </div>
 

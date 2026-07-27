@@ -8,6 +8,7 @@ services:
         restart: always
         ports:
             - "1083:80"
+            - "1084:8080"                      # Reverb WebSockets (#92)
         volumes:
             - ./env/.env:/app/.env:ro          # APP_KEY + Kendo/GitHub secrets, read-only (#75)
             - ./data/db:/data/db               # persistent SQLite
@@ -22,9 +23,21 @@ services:
             CACHE_STORE: database
             QUEUE_CONNECTION: database
             SESSION_DRIVER: database
+            # Live activity (#92). BROADCAST_CONNECTION defaults to null, which
+            # silently swallows every broadcast. REVERB_HOST/PORT/SCHEME are the
+            # *publisher's* target — Reverb is in this container on plaintext
+            # :8080, and the shipped defaults (:443/https) are wrong for that.
+            # The browser reaches it on the published 1084 instead, which is
+            # what REVERB_CLIENT_PORT carries to the page.
+            BROADCAST_CONNECTION: reverb
+            REVERB_HOST: 127.0.0.1
+            REVERB_PORT: 8080
+            REVERB_SCHEME: http
+            REVERB_CLIENT_PORT: 1084
         healthcheck:
-            # base image probes Caddy's admin :2019 which we disable; probe the app instead
-            test: ["CMD", "curl", "-fsS", "http://localhost:80/"]
+            # base image probes Caddy's admin :2019 which we disable; probe the app
+            # instead — plus Reverb's own /up, since /activity is dead without it
+            test: ["CMD-SHELL", "curl -fsS http://localhost:80/ && curl -fsS http://localhost:8080/up"]
             interval: 30s
             timeout: 5s
             retries: 3

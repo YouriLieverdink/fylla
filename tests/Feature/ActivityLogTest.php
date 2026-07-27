@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Events\ActivityChanged;
 use App\Jobs\PostWorklog;
 use App\Jobs\SyncKendoIssues;
 use App\Jobs\SyncKendoProjectIssues;
@@ -9,12 +10,14 @@ use App\Listeners\JobRunRecorder;
 use App\Models\Issue;
 use App\Models\JobRun;
 use App\Models\Worklog;
+use Illuminate\Broadcasting\BroadcastEvent;
 use Illuminate\Contracts\Queue\Job;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia;
@@ -64,12 +67,13 @@ class ActivityLogTest extends TestCase
         return JobRun::where('worklog_id', $worklog->id)->sole();
     }
 
-    /** A queue Job stub carrying just the three fields the recorder reads. */
+    /** A queue Job stub carrying just the fields the recorder reads. */
     private function fakeJob(string $uuid, string $class): Job
     {
         $job = Mockery::mock(Job::class);
         $job->shouldReceive('uuid')->andReturn($uuid);
         $job->shouldReceive('resolveName')->andReturn($class);
+        $job->shouldReceive('resolveQueuedJobClass')->andReturn($class);
         $job->shouldReceive('attempts')->andReturn(1);
 
         return $job;
@@ -134,6 +138,41 @@ class ActivityLogTest extends TestCase
         $this->assertSame('failed', $run->status);
         $this->assertNotNull($run->error);
         $this->assertNotNull($run->finished_at);
+    }
+
+    /**
+     * Live activity (#92) — the push signal. One run is two transitions, so it
+     * emits twice: `running` on processing, then `ok`/`failed` on the finish.
+     * Fewer means a surface that never updates; more means the emit crept into
+     * a fourth writer.
+     */
+    public function test_a_run_dispatches_the_activity_signal_once_per_transition(): void
+    {
+        Event::fake([ActivityChanged::class]);
+        Http::fake(['*/time-entries' => Http::response(['id' => 999], 201)]);
+
+        PostWorklog::dispatchSync($this->worklog());
+
+        Event::assertDispatchedTimes(ActivityChanged::class, 2);
+    }
+
+    /**
+     * Loop containment (#93). A queued broadcast is itself a job; recording it
+     * would emit, which would queue another. `ShouldBroadcastNow` is what
+     * actually closes that loop — this is the belt-and-braces second layer, kept
+     * because its failure mode is a runaway write loop, not stale pixels.
+     */
+    public function test_a_framework_internal_job_is_not_recorded_and_emits_nothing(): void
+    {
+        Event::fake([ActivityChanged::class]);
+        $recorder = new JobRunRecorder;
+        $job = $this->fakeJob('broadcast', BroadcastEvent::class);
+
+        $recorder->processing(new JobProcessing('sync', $job));
+        $recorder->processed(new JobProcessed('sync', $job));
+
+        $this->assertSame(0, JobRun::count());
+        Event::assertNotDispatched(ActivityChanged::class);
     }
 
     public function test_manual_sync_records_every_job_under_one_shared_moment(): void

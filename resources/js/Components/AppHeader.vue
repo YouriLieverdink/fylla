@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
-import { Link, router, usePage, usePoll } from '@inertiajs/vue3';
+import { Link, router, usePage } from '@inertiajs/vue3';
+import { useActivityChannel } from '../Composables/useActivityChannel';
 import Nav from './Nav.vue';
 import SyncStatus from './SyncStatus.vue';
 
@@ -37,8 +38,9 @@ function syncNow() {
 }
 
 // The "Sync now" POST returns before any job starts, so the running state only
-// ever arrives by polling — and it changes by the second while a sync fans out.
-usePoll(1000, { only: ['lastSyncedAt', 'activityRunning', 'activityFailures'] });
+// ever arrives out-of-band — pushed over the socket now (#92). All three keys:
+// with fewer, "Sync now" stops clearing its own timestamp and failure dot.
+const { online } = useActivityChannel(['lastSyncedAt', 'activityRunning', 'activityFailures']);
 
 function fmt(ts) {
     return ts ? new Date(ts).toLocaleString() : '—';
@@ -49,6 +51,13 @@ function fmt(ts) {
     <header class="mb-[34px] flex items-center justify-between gap-6 border-b border-divider-soft pb-[26px]">
         <Nav />
         <div class="flex items-center gap-5">
+            <!-- Socket down: the header's live state is frozen, so it says so. -->
+            <span
+                v-if="!online"
+                class="h-2 w-2 rounded-full bg-faint-2"
+                title="Not connected — live activity is paused"
+                aria-label="Not connected"
+            ></span>
             <SyncStatus
                 label="Synced with issue tracker"
                 :last-synced="lastSyncedAt ? 'last synced ' + fmt(lastSyncedAt) : 'never synced'"

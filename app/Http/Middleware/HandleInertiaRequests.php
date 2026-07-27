@@ -50,6 +50,14 @@ class HandleInertiaRequests extends Middleware
             // ponytail: whole-table count if the prune ever guarantees recency.
             'activityFailures' => fn () => JobRun::where('status', 'failed')
                 ->where('started_at', '>=', now()->subDay())->count(),
+            // Everything the browser needs to open the WebSocket (#92). Only key
+            // and port: host and scheme come from window.location, because the
+            // publisher's REVERB_HOST is container-local and would be wrong here.
+            // Runtime-injected rather than VITE_*, which the image bakes at build.
+            'reverb' => fn () => [
+                'key' => config('broadcasting.connections.reverb.key'),
+                'port' => (int) config('fylla.reverb_port'),
+            ],
         ];
     }
 }

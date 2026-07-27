@@ -42,4 +42,12 @@ return [
 
     // How long an activity-log run is kept before the daily prune drops it (#90).
     'job_run_retention_days' => 30,
+
+    // Port the *browser* reaches Reverb on (#92). Defaults to the dev port
+    // (`composer dev` runs `reverb:start --port=9052`, staying in the 9050
+    // range with `serve`/Vite); the Docker deploy binds 8080 and publishes it
+    // as 1084, so compose sets REVERB_CLIENT_PORT. Kept out of /settings
+    // deliberately — a wrong port kills the page you'd fix it from. Host and
+    // scheme are derived from window.location, not configured.
+    'reverb_port' => env('REVERB_CLIENT_PORT', 9052),
 ];
