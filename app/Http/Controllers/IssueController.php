@@ -170,29 +170,32 @@ class IssueController extends Controller
         return back();
     }
 
-    /** Manual "sync now" — runs the job inline so back() returns fresh data. */
+    /**
+     * Manual "sync now" — queued, same as the scheduled sync. The response
+     * returns before any job runs, so the moment is observable as `running` on
+     * /activity and in the header while it works; failures land as failed
+     * `job_runs` rows (the header dot) rather than a one-shot flash.
+     * Ordering below holds because the single `queue:work` worker is FIFO.
+     */
     public function sync(): RedirectResponse
     {
         // One "sync moment": every job dispatched below shares this id and the
-        // manual trigger in the Activity Log (#87). Context rides into each run.
+        // manual trigger in the Activity Log (#87). Context rides into each run
+        // — Laravel serialises it into queued payloads too.
         Context::add(JobRunRecorder::MOMENT, (string) Str::uuid());
         Context::add(JobRunRecorder::TRIGGER, 'manual');
 
-        try {
-            SyncKendoIssues::dispatchSync();
-            // Projects before worklogs: the billability join needs project rows
-            // present on the first run.
-            SyncKendoProjects::dispatchSync();
-            SyncKendoWorklogs::dispatchSync();
-            SyncGithubPullRequests::dispatchSync();
-            // Roster + team issue mirror feed the Client context page (#56); the
-            // issue job depends on synced_worklogs (project list + last-worked),
-            // so it runs after them (D2: one button refreshes everything).
-            SyncKendoUsers::dispatchSync();
-            SyncKendoProjectIssues::dispatchSync();
-        } catch (\Throwable $e) {
-            return back()->with('syncError', true);
-        }
+        SyncKendoIssues::dispatch();
+        // Projects before worklogs: the billability join needs project rows
+        // present on the first run.
+        SyncKendoProjects::dispatch();
+        SyncKendoWorklogs::dispatch();
+        SyncGithubPullRequests::dispatch();
+        // Roster + team issue mirror feed the Client context page (#56); the
+        // issue job depends on synced_worklogs (project list + last-worked),
+        // so it runs after them (D2: one button refreshes everything).
+        SyncKendoUsers::dispatch();
+        SyncKendoProjectIssues::dispatch();
 
         return back();
     }

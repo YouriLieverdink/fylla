@@ -39,9 +39,12 @@ class HandleInertiaRequests extends Middleware
     {
         return [
             ...parent::share($request),
-            'syncError' => fn () => $request->session()->get('syncError', false),
             // Header (every page) shows last-sync time; the job caches it on each run.
             'lastSyncedAt' => fn () => Cache::get('kendo.synced_at'),
+            // Header spinner: a job is mid-flight right now. Bounded so a worker
+            // killed mid-job can't leave a `running` row spinning the icon forever.
+            'activityRunning' => fn () => JobRun::where('status', 'running')
+                ->where('started_at', '>=', now()->subMinutes(10))->exists(),
             // Header activity dot: recent failed runs. Bounded to a day so a stale
             // failure self-clears; the daily prune (#85) keeps the table small too.
             // ponytail: whole-table count if the prune ever guarantees recency.

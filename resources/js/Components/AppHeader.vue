@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Link, router, usePage, usePoll } from '@inertiajs/vue3';
 import Nav from './Nav.vue';
 import SyncStatus from './SyncStatus.vue';
@@ -7,25 +7,38 @@ import SyncStatus from './SyncStatus.vue';
 const settingsActive = computed(() => usePage().url.startsWith('/settings'));
 const activityActive = computed(() => usePage().url.startsWith('/activity'));
 
-// lastSyncedAt + syncError + activityFailures are globally shared
+// lastSyncedAt + activityRunning + activityFailures are globally shared
 // (HandleInertiaRequests), so the header is identical on every page with no
 // per-page props.
 const page = usePage();
 const lastSyncedAt = computed(() => page.props.lastSyncedAt);
-const syncError = computed(() => page.props.syncError);
+const activityRunning = computed(() => page.props.activityRunning);
 const activityFailures = computed(() => page.props.activityFailures);
-const syncing = ref(false);
+const posting = ref(false);
 
-// Keep the "last synced" label fresh across the 15-min scheduled sync.
-usePoll(60000, { only: ['lastSyncedAt'] });
+const syncing = computed(() => posting.value || activityRunning.value);
+
+// The dispatch is accepted long before a worker picks it up, so a spinner alone
+// would just stop with nothing to show for it. "Queued" holds that gap and
+// clears the moment a run goes live — and if it never clears, that itself is
+// the signal that `queue:work` isn't running.
+const queued = ref(false);
+watch(activityRunning, (running) => {
+    if (running) queued.value = false;
+});
 
 function syncNow() {
     router.post('/sync', {}, {
         preserveScroll: true,
-        onStart: () => (syncing.value = true),
-        onFinish: () => (syncing.value = false),
+        onStart: () => (posting.value = true),
+        onSuccess: () => (queued.value = true),
+        onFinish: () => (posting.value = false),
     });
 }
+
+// The "Sync now" POST returns before any job starts, so the running state only
+// ever arrives by polling — and it changes by the second while a sync fans out.
+usePoll(1000, { only: ['lastSyncedAt', 'activityRunning', 'activityFailures'] });
 
 function fmt(ts) {
     return ts ? new Date(ts).toLocaleString() : '—';
@@ -40,16 +53,28 @@ function fmt(ts) {
                 label="Synced with issue tracker"
                 :last-synced="lastSyncedAt ? 'last synced ' + fmt(lastSyncedAt) : 'never synced'"
                 :syncing="syncing"
-                :error="syncError"
                 @sync="syncNow"
             />
             <Link
                 href="/activity"
                 aria-label="Activity"
                 class="relative transition"
-                :class="activityActive ? 'text-ink' : 'text-faint hover:text-muted'"
+                :class="activityRunning ? 'text-accent' : activityActive ? 'text-ink' : 'text-faint hover:text-muted'"
             >
-                <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <!-- Mid-flight: the same spinning refresh arrow the runs use on /activity. -->
+                <svg
+                    v-if="activityRunning"
+                    class="h-[18px] w-[18px] animate-spin"
+                    viewBox="0 0 14 14"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                >
+                    <path d="M12 7a5 5 0 1 1-1.46-3.54M12 2v3h-3" />
+                </svg>
+                <svg v-else class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
                 </svg>
                 <span

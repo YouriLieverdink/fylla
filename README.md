@@ -29,11 +29,14 @@ timer/worklog history are kept regardless. Those retained rows are hidden from
 the work-items list — it shows only issues from the latest sync (current open
 work), so an issue moved to Kendo's done lane drops off on the next sync. The
 scheduler runs it every
-15 minutes (queued); the **Sync now** button runs the same job synchronously so
-the page returns fresh rows immediately — the button spins for the real
-duration, and a failed sync shows a red "Sync failed" in place of the status
-label. The page also polls every 60s so scheduled syncs surface without a
-manual refresh. Fylla-native scheduling fields (due, not-before, up-next,
+15 minutes (queued); the **Sync now** button dispatches the same jobs, also
+queued, so it needs `queue:work` running. The request returns before any job
+starts, so fresh rows arrive a moment later rather than in the response — the
+button keeps spinning until the last job finishes (driven by the shared
+`activityRunning` prop), and a failed sync surfaces as a failed run on
+`/activity` plus the header failure dot. The header polls every 1s, so both the
+running state and scheduled syncs surface without a manual refresh. Fylla-native
+scheduling fields (due, not-before, up-next,
 no-split, recurrence) are owned locally and never written back to Kendo (ADR-0004).
 
 ### Worklist ranking
@@ -361,12 +364,18 @@ with no restart. Deleting a row restores the default. **Secrets** (`KENDO_TOKEN`
 
 The `/activity` page groups background job runs by **sync moment** — the 15-min
 scheduled syncs and manual "Sync now" fan out into many jobs sharing one
-`moment_id` and render as one collapsible row (failed/running moments start
-expanded); worklog posts (null `moment_id`) stand alone. Each moment rolls its
+`moment_id` and render as one collapsible row (the newest moment plus any
+failed/running one starts expanded, and a card the user collapses stays
+collapsed); worklog posts (null `moment_id`) stand alone. Each moment rolls its
 children's status up to `running`/`ok`/`failed`, running rows show a spinner,
-and a `N failed` pill sums the failed children. Route: `GET /activity`. A pulse
-icon in the header links here from every page and carries a failure dot whenever
-a run has failed in the last day (shared `activityFailures` prop).
+and a `N failed` pill sums the failed children. Route: `GET /activity`. The page
+polls every 1s, so a run flips `running` → `ok` in place.
+
+A pulse icon in the header links here from every page. It carries a failure dot
+whenever a run has failed in the last day (shared `activityFailures` prop), and
+swaps to a spinner whenever a job is mid-flight (shared `activityRunning` prop —
+bounded to runs started in the last 10 minutes, so a worker killed mid-job
+can't strand the icon spinning).
 
 Capture is queue-event based (`JobRunRecorder`, registered on
 `JobProcessing`/`JobProcessed`/`JobFailed` in `AppServiceProvider`), so it

@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Jobs\PostWorklog;
+use App\Jobs\SyncKendoIssues;
+use App\Jobs\SyncKendoProjectIssues;
 use App\Listeners\JobRunRecorder;
 use App\Models\Issue;
 use App\Models\JobRun;
@@ -149,6 +151,52 @@ class ActivityLogTest extends TestCase
         $this->assertSame(1, $runs->pluck('moment_id')->unique()->count());
         $this->assertNotNull($runs->first()->moment_id);
         $this->assertTrue($runs->every(fn (JobRun $r) => $r->trigger === 'manual'));
+    }
+
+    /**
+     * Manual sync must be *queued*, not inline — an inline sync finishes before
+     * the response renders, so a manual moment could never be observed running.
+     * Asserted under Queue::fake because the suite's sync driver would otherwise
+     * hide a dispatchSync regression.
+     */
+    public function test_manual_sync_dispatches_the_jobs_queued_rather_than_inline(): void
+    {
+        Queue::fake();
+
+        $this->post('/sync')->assertRedirect();
+
+        Queue::assertPushed(SyncKendoIssues::class);
+        Queue::assertPushed(SyncKendoProjectIssues::class);
+        $this->assertSame(0, JobRun::count()); // nothing ran during the request
+    }
+
+    /** Header spinner signal: true only while a run is actually mid-flight. */
+    public function test_activity_running_signal_tracks_a_live_run(): void
+    {
+        $run = JobRun::create([
+            'uuid' => 'live', 'job_class' => 'App\Jobs\SyncKendoIssues', 'trigger' => 'manual',
+            'status' => 'running', 'started_at' => now(),
+        ]);
+
+        $this->get('/activity')
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('activityRunning', true));
+
+        $run->update(['status' => 'ok', 'finished_at' => now()]);
+
+        $this->get('/activity')
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('activityRunning', false));
+    }
+
+    /** A worker killed mid-job leaves a `running` row — it must not spin forever. */
+    public function test_activity_running_signal_ignores_a_stranded_run(): void
+    {
+        JobRun::create([
+            'uuid' => 'stranded', 'job_class' => 'App\Jobs\SyncKendoIssues', 'trigger' => 'manual',
+            'status' => 'running', 'started_at' => now()->subHour(),
+        ]);
+
+        $this->get('/activity')
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('activityRunning', false));
     }
 
     public function test_activity_page_groups_runs_by_moment_newest_first(): void

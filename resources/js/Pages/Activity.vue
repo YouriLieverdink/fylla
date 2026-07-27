@@ -1,6 +1,6 @@
 <script setup>
-import { router } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { router, usePoll } from '@inertiajs/vue3';
+import { computed, ref, watch } from 'vue';
 import AppHeader from '../Components/AppHeader.vue';
 import Card from '../Components/Card.vue';
 import EmptyState from '../Components/EmptyState.vue';
@@ -27,10 +27,25 @@ function dur(run) {
     return ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : ms + 'ms';
 }
 
-// Pre-expand the moments that want attention: anything failed or still running.
-const expanded = ref(
-    new Set(props.moments.filter((m) => m.status !== 'ok').map((m) => m.id)),
-);
+// Live view: runs go running → ok/failed while the page is open, so poll rather
+// than making the user reload.
+usePoll(1000, { only: ['moments'] });
+
+// Auto-expand a moment the *first* time it's seen: the newest one always, plus
+// anything wanting attention (failed or still running). Tracking what's been
+// seen is what keeps a poll from re-opening a card the user just collapsed.
+const expanded = ref(new Set());
+const seen = new Set();
+
+function absorb(moments) {
+    const fresh = moments.filter((m) => !seen.has(m.id));
+    fresh.forEach((m) => seen.add(m.id));
+    const open = fresh.filter((m) => m.id === moments[0]?.id || m.status !== 'ok');
+    if (open.length) expanded.value = new Set([...expanded.value, ...open.map((m) => m.id)]);
+}
+absorb(props.moments);
+watch(() => props.moments, absorb);
+
 function toggle(id) {
     const s = new Set(expanded.value);
     s.has(id) ? s.delete(id) : s.add(id);
@@ -38,8 +53,8 @@ function toggle(id) {
 }
 
 // Retry a stuck worklog post (#89). The re-dispatch is queued, so the reload
-// that follows usually shows nothing new — the fresh run appears once
-// `queue:work` picks the job up.
+// that follows shows nothing new — the fresh run arrives on the next poll, once
+// `queue:work` has picked the job up.
 const retrying = ref(null);
 function retry(run) {
     retrying.value = run.id;
