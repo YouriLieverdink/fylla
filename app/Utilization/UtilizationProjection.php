@@ -21,8 +21,8 @@ use Carbon\CarbonImmutable;
  * proration only enters through `remaining`, which bounds what is still
  * reachable today.
  *
- * Issue #106 adds the second question: at the pace of the last P complete
- * weeks, how far away is the band?
+ * Issue #106 adds time to band at the recent pace; issue #107 adds the flat
+ * sustained rate over the current week and next three.
  */
 class UtilizationProjection
 {
@@ -38,6 +38,9 @@ class UtilizationProjection
      * 8.0001 h does not report as 8.25 h.
      */
     private const GRID_TOLERANCE = 0.001;
+
+    /** Flat-rate horizon for the sustained prescription (#101, not config). */
+    private const SUSTAINED_WEEKS = 4;
 
     /** How far the time-to-band search steps before giving up (#101, not config). */
     private const CAP_WEEKS = 26;
@@ -87,6 +90,7 @@ class UtilizationProjection
             'paceHours' => $pace === null ? null : round($pace['hours'], 1),
             'paceWeeks' => $pace === null ? 0 : $pace['weeks'],
             'thisWeek' => $this->thisWeek(max($capacities)),
+            'sustained' => $this->sustained(),
             'timeToBand' => $this->timeToBand($pace === null ? null : $pace['hours']),
         ];
     }
@@ -178,14 +182,17 @@ class UtilizationProjection
      * bisection. `reachable` is false when even a fully billable week does not
      * get there — then `hours` is the best the week can do.
      *
+     * @param  (callable(float): float)|null  $ratio
      * @return array{hours: float, reachable: bool}
      */
-    private function solve(int $threshold, float $maxCapacity): array
+    private function solve(int $threshold, float $maxCapacity, ?callable $ratio = null): array
     {
-        if ($this->ratio(0.0) >= $threshold) {
+        $ratio ??= fn (float $hours): float => $this->ratio($hours);
+
+        if ($ratio(0.0) >= $threshold) {
             return ['hours' => 0.0, 'reachable' => true];
         }
-        if ($this->ratio($maxCapacity) < $threshold) {
+        if ($ratio($maxCapacity) < $threshold) {
             return ['hours' => $maxCapacity, 'reachable' => false];
         }
 
@@ -193,7 +200,7 @@ class UtilizationProjection
         $hi = $maxCapacity;
         while ($hi - $lo >= self::EPSILON) {
             $mid = ($lo + $hi) / 2;
-            if ($this->ratio($mid) >= $threshold) {
+            if ($ratio($mid) >= $threshold) {
                 $hi = $mid;
             } else {
                 $lo = $mid;
@@ -218,6 +225,59 @@ class UtilizationProjection
         if ($this->currentCapacity > 0) {
             $bill += min($hours, $this->currentCapacity);
             $cap += $this->currentCapacity;
+        }
+
+        return $cap > 0 ? $bill / $cap * 100 : 0.0;
+    }
+
+    /**
+     * Flat billable hours per capacity-bearing week that put the rolling
+     * window in the band at the end of cur+3. A fully off week still advances
+     * the calendar and evicts history, but contributes to neither sum.
+     */
+    private function sustained(): array
+    {
+        $effectiveWeeks = 0;
+        $maxCapacity = 0.0;
+        for ($i = 0; $i < self::SUSTAINED_WEEKS; $i++) {
+            $capacity = $this->report->weekCapacity($this->currentMonday->addWeeks($i));
+            if ($capacity > 0) {
+                $effectiveWeeks++;
+                $maxCapacity = max($maxCapacity, $capacity);
+            }
+        }
+
+        $ratio = fn (float $hours): float => $this->sustainedRatio($hours);
+        $floor = $this->solve($this->softFloor, $maxCapacity, $ratio);
+        $target = $this->solve($this->target, $maxCapacity, $ratio);
+
+        return [
+            'horizonWeeks' => self::SUSTAINED_WEEKS,
+            'effectiveWeeks' => $effectiveWeeks,
+            'floor' => ['hoursPerWeek' => $this->ceilQuarter($floor['hours']), 'feasible' => $floor['reachable']],
+            'target' => ['hoursPerWeek' => $this->ceilQuarter($target['hours']), 'feasible' => $target['reachable']],
+        ];
+    }
+
+    /** Window ending at cur+3 with one flat rate across its simulated weeks. */
+    private function sustainedRatio(float $hours): float
+    {
+        $bill = 0.0;
+        $cap = 0.0;
+        for ($i = self::SUSTAINED_WEEKS - $this->windowWeeks; $i < self::SUSTAINED_WEEKS; $i++) {
+            $weekStart = $this->currentMonday->addWeeks($i);
+            $weekCapacity = $this->report->weekCapacity($weekStart);
+            if ($weekCapacity <= 0) {
+                continue;
+            }
+
+            $simulated = min($hours, $weekCapacity);
+            $bill += match (true) {
+                $i < 0 => $this->report->weekBillable($weekStart),
+                $i === 0 => max($this->report->weekBillable($weekStart), $simulated),
+                default => $simulated,
+            };
+            $cap += $weekCapacity;
         }
 
         return $cap > 0 ? $bill / $cap * 100 : 0.0;

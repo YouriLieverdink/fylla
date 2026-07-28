@@ -8,7 +8,7 @@ import { useAction } from '../Composables/useAction';
 
 const props = defineProps({
     report: { type: Object, required: true }, // { weeks, totals, target, softFloor }
-    projection: { type: Object, default: null }, // { paceHours, paceWeeks, thisWeek, timeToBand } — null when there is nothing to project (#105, #106)
+    projection: { type: Object, default: null }, // { paceHours, paceWeeks, thisWeek, sustained, timeToBand } — null when there is nothing to project (#105–#107)
     windowWeeks: { type: Number, default: 13 },
     entries: { type: Array, default: () => [] },
 });
@@ -48,6 +48,20 @@ const prescription = computed(() => {
         value: t.target.neededMore + 'h',
         caption: `Holding the band needs ${t.target.neededMore}h more billable this week to reach ${props.report.target}%.`,
     };
+});
+
+// "Sustained" (#107): the flat rate that puts the rolling window back in the
+// band after four weeks. Once clear, maintaining the recent pace is the useful
+// reading; an impossible four-week recovery is stated rather than clamped.
+const sustained = computed(() => {
+    const s = props.projection?.sustained;
+    if (!s) return null;
+    const util = props.report.totals.utilization ?? null;
+    if (util !== null && util >= props.report.target) {
+        return `${props.projection.paceHours}h/wk (current pace)`;
+    }
+    if (!s.floor.feasible || !s.target.feasible) return 'out of reach';
+    return `${s.floor.hoursPerWeek}–${s.target.hoursPerWeek}h/wk for ${s.horizonWeeks} weeks`;
 });
 
 // "Time to band" (#106): how far off the band is at the current pace. The two
@@ -320,6 +334,10 @@ useAction({ id: 'util:entries', label: VIEWS.entries, keys: 't', scope: 'utiliza
                     <div v-if="thisWeek.capacityHours !== null">
                         <div class="mb-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint-3">Left</div>
                         <div class="font-mono text-[18px] font-semibold tabular-nums text-ink">{{ thisWeek.remainingHours }}h</div>
+                    </div>
+                    <div v-if="sustained" data-stat="sustained">
+                        <div class="mb-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint-3">Sustained</div>
+                        <div class="font-mono text-[18px] font-semibold tabular-nums text-ink">{{ sustained }}</div>
                     </div>
                     <div v-if="timeToBand" data-stat="time-to-band">
                         <div class="mb-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint-3">Time to band</div>

@@ -21,6 +21,11 @@ const projection = {
     },
     paceHours: 24.8,
     paceWeeks: 4,
+    sustained: {
+        horizonWeeks: 4, effectiveWeeks: 4,
+        floor: { hoursPerWeek: 26.5, feasible: true },
+        target: { hoursPerWeek: 28, feasible: true },
+    },
     timeToBand: { weeksToFloor: 3, weeksToTarget: null, capWeeks: 26 },
 };
 
@@ -78,6 +83,30 @@ describe('hours-needed-this-week card (#105)', () => {
         const w = shallowMount(Utilization, { props: { report, projection: clear } });
         expect(w.vm.prescription.value).toBe('+4.5h');
         expect(w.vm.prescription.caption).toContain('4.5h to spare');
+        w.unmount();
+    });
+});
+
+describe('sustained stat (#107)', () => {
+    it('renders the four-week range below the band', () => {
+        const w = shallowMount(Utilization, { props: { report: banded(60), projection } });
+        expect(w.vm.sustained).toBe('26.5–28h/wk for 4 weeks');
+        w.unmount();
+    });
+
+    it('uses the current pace once clear of the band', () => {
+        const w = shallowMount(Utilization, { props: { report: banded(94), projection: { ...projection, paceHours: 26.9 } } });
+        expect(w.vm.sustained).toBe('26.9h/wk (current pace)');
+        w.unmount();
+    });
+
+    it('says out of reach when the four-week solve is infeasible', () => {
+        const unreachable = { ...projection, sustained: {
+            ...projection.sustained,
+            target: { hoursPerWeek: 32, feasible: false },
+        } };
+        const w = shallowMount(Utilization, { props: { report: banded(60), projection: unreachable } });
+        expect(w.vm.sustained).toBe('out of reach');
         w.unmount();
     });
 });

@@ -263,6 +263,40 @@ class UtilizationProjectionTest extends TestCase
         $this->assertSame(2, $p['timeToBand']['weeksToFloor']);
     }
 
+    public function test_sustained_rate_skips_a_future_week_with_no_capacity(): void
+    {
+        config(['fylla.utilization_window_weeks' => 13]);
+        for ($week = 9; $week >= 1; $week--) {
+            $this->log(20 - $week, CarbonImmutable::parse(self::CURRENT_MONDAY)->subWeeks($week)->toDateString(), 24);
+        }
+        $this->off('2026-07-27', -32); // cur+2 is fully off
+
+        $p = $this->project('2026-07-15 12:00');
+
+        // At cur+3 the window is cur-9..cur+3. The off week contributes
+        // neither billable nor capacity: (216 + 3h) / (288 + 96) = 75%
+        // at 24h over each of the three capacity-bearing simulated weeks.
+        $this->assertSame(4, $p['sustained']['horizonWeeks']);
+        $this->assertSame(3, $p['sustained']['effectiveWeeks']);
+        $this->assertSame(24.0, $p['sustained']['target']['hoursPerWeek']);
+        $this->assertTrue($p['sustained']['target']['feasible']);
+    }
+
+    public function test_sustained_rate_reports_infeasibility_without_dropping_the_number(): void
+    {
+        config(['fylla.utilization_window_weeks' => 13]);
+
+        $p = $this->project('2026-07-15 12:00');
+
+        // Nine empty historic weeks leave too much deficit: even 32h in each
+        // simulated week reaches only 30.8%. Keep the ceiling as the reported
+        // best rate and flag it rather than pretending the target is reachable.
+        $this->assertSame(32.0, $p['sustained']['floor']['hoursPerWeek']);
+        $this->assertFalse($p['sustained']['floor']['feasible']);
+        $this->assertSame(32.0, $p['sustained']['target']['hoursPerWeek']);
+        $this->assertFalse($p['sustained']['target']['feasible']);
+    }
+
     public function test_deeply_below_the_floor_degrades_all_the_way_down(): void
     {
         // 5h in the last complete week: the floor is out of reach this week even

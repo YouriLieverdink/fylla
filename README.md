@@ -309,6 +309,18 @@ against 8h left is flagged rather than clamped. A fully booked-off current week
 nulls every this-week field; a window with no capacity at all makes the whole
 `projection` prop `null` and hides the card.
 
+The card's **Sustained** stat (issue #107) solves the flat billable rate that,
+held through the current week and next three calendar weeks, puts the rolling
+window back at the soft floor and target. It uses the same bisection and
+per-week capacity ceilings as the this-week solve; the current week cannot fall
+below hours already logged. Fully booked-off weeks still advance the rolling
+window but leave both sums, so `effectiveWeeks` can be less than the four-week
+horizon. Rates round up to the quarter hour. If even billing every
+capacity-bearing week fully cannot reach a threshold, the payload retains the
+best rate with `feasible: false` and the stat reads "out of reach". Below or
+inside the band it shows the floor–target range; clear of the band it shows the
+current pace.
+
 The same card carries **Time to band** (issue #106): how long the band is away
 at the current pace. The pace is `Σ billable ÷ weeks with capacity` over the
 last `fylla.utilization_pace_weeks` (default 4) **complete** weeks — the current
