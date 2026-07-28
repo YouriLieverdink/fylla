@@ -22,7 +22,8 @@ use Carbon\CarbonImmutable;
  * reachable today.
  *
  * Issue #106 adds time to band at the recent pace; issue #107 adds the flat
- * sustained rate over the current week and next three.
+ * sustained rate over the current week and next three; issue #108 exposes the
+ * first four pace-held steps for the projection chart.
  */
 class UtilizationProjection
 {
@@ -85,13 +86,15 @@ class UtilizationProjection
         }
 
         $pace = $this->pace();
+        $paceHeld = $this->paceHeldProjection($pace === null ? null : $pace['hours']);
 
         return [
             'paceHours' => $pace === null ? null : round($pace['hours'], 1),
             'paceWeeks' => $pace === null ? 0 : $pace['weeks'],
             'thisWeek' => $this->thisWeek(max($capacities)),
             'sustained' => $this->sustained(),
-            'timeToBand' => $this->timeToBand($pace === null ? null : $pace['hours']),
+            'timeToBand' => $paceHeld['timeToBand'],
+            'forward' => $paceHeld['forward'],
         ];
     }
 
@@ -309,28 +312,45 @@ class UtilizationProjection
     }
 
     /**
-     * Weeks until the window reaches the floor and the target if the pace
-     * holds. One loop over k = 1 … CAP_WEEKS, k = 1 being the end of the
-     * current week; either crossing is null when it never happens in range,
-     * which the card reads as "not at this pace".
+     * Weeks until the window reaches the band, plus the first four values for
+     * the chart, from one pace-held loop. An off week stays in the chart as a
+     * null calendar step but contributes to neither side of the ratio.
+     *
+     * @return array{timeToBand:array{weeksToFloor:int|null,weeksToTarget:int|null,capWeeks:int},forward:array<int,array{label:string,value:float|null}>}
      */
-    private function timeToBand(?float $pace): array
+    private function paceHeldProjection(?float $pace): array
     {
         $floor = null;
         $target = null;
+        $forward = [];
+        $steps = $pace === null ? self::SUSTAINED_WEEKS : self::CAP_WEEKS;
 
-        for ($k = 1; $pace !== null && $k <= self::CAP_WEEKS; $k++) {
-            $ratio = $this->paceRatio($pace, $k);
-            if ($floor === null && $ratio >= $this->softFloor) {
+        for ($k = 1; $k <= $steps; $k++) {
+            $weekStart = $this->currentMonday->addWeeks($k - 1);
+            $hasCapacity = $this->report->weekCapacity($weekStart) > 0;
+            $ratio = $pace === null ? null : $this->paceRatio($pace, $k);
+
+            if ($k <= self::SUSTAINED_WEEKS) {
+                $forward[] = [
+                    'label' => $weekStart->format('M j'),
+                    'value' => $hasCapacity && $ratio !== null ? round($ratio, 1) : null,
+                ];
+            }
+            if ($ratio !== null && $floor === null && $ratio >= $this->softFloor) {
                 $floor = $k;
             }
-            if ($target === null && $ratio >= $this->target) {
+            if ($ratio !== null && $target === null && $ratio >= $this->target) {
                 $target = $k;
-                break; // target ≥ floor, so both are settled by now
+            }
+            if ($target !== null && $k >= self::SUSTAINED_WEEKS) {
+                break;
             }
         }
 
-        return ['weeksToFloor' => $floor, 'weeksToTarget' => $target, 'capWeeks' => self::CAP_WEEKS];
+        return [
+            'timeToBand' => ['weeksToFloor' => $floor, 'weeksToTarget' => $target, 'capWeeks' => self::CAP_WEEKS],
+            'forward' => $forward,
+        ];
     }
 
     /**

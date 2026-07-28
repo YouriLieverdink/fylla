@@ -3,17 +3,21 @@ import { computed, ref, watch } from 'vue';
 import Card from '../Components/Card.vue';
 import AppHeader from '../Components/AppHeader.vue';
 import SegmentedControl from '../Components/SegmentedControl.vue';
+import ProjectionChart from '../Components/ProjectionChart.vue';
 import { usePageCursor } from '../Composables/usePageCursor';
 import { useAction } from '../Composables/useAction';
 
 const props = defineProps({
     report: { type: Object, required: true }, // { weeks, totals, target, softFloor }
-    projection: { type: Object, default: null }, // { paceHours, paceWeeks, thisWeek, sustained, timeToBand } — null when there is nothing to project (#105–#107)
+    projection: { type: Object, default: null }, // { paceHours, paceWeeks, thisWeek, sustained, timeToBand, forward } — null when there is nothing to project (#105–#108)
     windowWeeks: { type: Number, default: 13 },
     entries: { type: Array, default: () => [] },
 });
 
 const totals = computed(() => props.report.totals);
+const history = computed(() =>
+    [...props.report.weeks].reverse().map((week) => ({ label: week.label, value: week.utilization })),
+);
 
 // "Hours needed this week" (#105). One payload, five states — the math never
 // branches, only the copy does.
@@ -312,10 +316,32 @@ useAction({ id: 'util:entries', label: VIEWS.entries, keys: 't', scope: 'utiliza
 
         <!-- hours needed this week (#105) -->
         <Card v-if="prescription" radius="24px" pad="28px 30px" class="mb-[22px]" data-card="projection">
-            <div class="mb-6 font-mono text-[11px] font-semibold uppercase tracking-[0.13em] text-faint">
-                Billable hours needed · this week
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <div class="text-[16px] font-semibold tracking-[-0.01em]">Utilization projection</div>
+                    <div class="mt-[3px] text-[12.5px] text-faint-2">Recent pace held for the next {{ projection.forward?.length ?? 0 }} weeks</div>
+                </div>
+                <div class="flex items-center gap-4 font-mono text-[11px] font-medium">
+                    <span class="inline-flex items-center gap-1.5 text-muted">
+                        <span class="inline-block h-0.5 w-3.5 rounded-sm bg-accent"></span>history
+                    </span>
+                    <span class="inline-flex items-center gap-1.5 text-muted">
+                        <span class="inline-block w-3.5 border-t-2 border-dashed border-accent"></span>at pace
+                    </span>
+                    <span class="inline-flex items-center gap-1.5 text-faint">
+                        <span class="inline-block h-2 w-3.5 bg-behind-tint"></span>{{ report.softFloor }}–{{ report.target }}% band
+                    </span>
+                </div>
             </div>
-            <div class="flex flex-wrap items-end justify-between gap-6">
+            <div class="mt-2">
+                <ProjectionChart
+                    :history="history"
+                    :projection="projection.forward"
+                    :floor="report.softFloor"
+                    :target="report.target"
+                />
+            </div>
+            <div class="mt-3 flex flex-wrap items-end justify-between gap-6 border-t border-divider pt-5">
                 <div>
                     <div class="font-mono text-[34px] font-semibold leading-none tabular-nums" :class="prescription.behind ? 'text-behind' : 'text-track'">
                         {{ prescription.value }}

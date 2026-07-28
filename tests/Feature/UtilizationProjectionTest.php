@@ -263,6 +263,45 @@ class UtilizationProjectionTest extends TestCase
         $this->assertSame(2, $p['timeToBand']['weeksToFloor']);
     }
 
+    public function test_forward_is_the_first_four_pace_held_steps(): void
+    {
+        config(['fylla.utilization_pace_weeks' => 1]);
+        $this->log(1, '2026-07-06', 24);
+
+        $p = $this->project('2026-07-15 12:00');
+
+        $this->assertSame([
+            ['label' => 'Jul 13', 'value' => 50.0],
+            ['label' => 'Jul 20', 'value' => 75.0],
+            ['label' => 'Jul 27', 'value' => 75.0],
+            ['label' => 'Aug 3', 'value' => 75.0],
+        ], $p['forward']);
+    }
+
+    public function test_forward_keeps_zero_capacity_weeks_as_null_calendar_steps(): void
+    {
+        config(['fylla.utilization_pace_weeks' => 1]);
+        $this->log(1, '2026-07-06', 24);
+        $this->off('2026-07-20', -32);
+
+        $p = $this->project('2026-07-15 12:00');
+
+        $this->assertCount(4, $p['forward']);
+        $this->assertSame(['label' => 'Jul 20', 'value' => null], $p['forward'][1]);
+        $this->assertSame('Jul 27', $p['forward'][2]['label']);
+    }
+
+    public function test_forward_has_four_null_steps_without_a_recent_pace(): void
+    {
+        config(['fylla.utilization_pace_weeks' => 1]);
+        $this->off('2026-07-06', -32);
+
+        $p = $this->project('2026-07-15 12:00');
+
+        $this->assertCount(4, $p['forward']);
+        $this->assertSame([null, null, null, null], array_column($p['forward'], 'value'));
+    }
+
     public function test_sustained_rate_skips_a_future_week_with_no_capacity(): void
     {
         config(['fylla.utilization_window_weeks' => 13]);

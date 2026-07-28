@@ -334,6 +334,15 @@ first step over the soft floor and over the target are reported. Uncrossed by
 week 26 reads as "not at this pace"; already inside the band reads as "holding",
 and clear of the target as "n/a".
 
+The card's projection chart (issue #108) derives its 13-week history from
+`report.weeks` and plots a separate four-entry `projection.forward` continuation
+from the same pace-held loop. The continuation is dashed; the 73–75% band is
+shaded with a labelled dashed floor. Fully booked-off history or forward weeks
+remain calendar steps with `null` values that break the line rather than
+plotting zero. This chart is `/utilization`-only: the dashboard's
+`UtilizationTrendChart` keeps its billable-share series, tooltip, and single 75%
+target line unchanged.
+
 The `/utilization` page (the **Utilization** nav tab) exposes the data behind
 the headline via `UtilizationReport::breakdown()`: window totals (Σ capacity /
 worked / billable, billable share, + the cumulative %), and — behind a

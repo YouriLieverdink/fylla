@@ -32,6 +32,7 @@ class UtilizationPageTest extends TestCase
                 // Sibling of report, not nested in the breakdown (#103).
                 ->has('projection.thisWeek')
                 ->has('projection.sustained')
+                ->has('projection.forward', 4)
                 ->has('entries', 1)
                 ->where('entries.0.issueKey', 'A-1')
                 ->where('entries.0.billable', true)
