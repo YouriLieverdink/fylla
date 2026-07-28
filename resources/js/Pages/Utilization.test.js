@@ -19,7 +19,13 @@ const projection = {
         target: { neededTotal: 22, neededMore: 12, feasible: false },
         headroomHours: 0,
     },
+    paceHours: 24.8,
+    paceWeeks: 4,
+    timeToBand: { weeksToFloor: 3, weeksToTarget: null, capWeeks: 26 },
 };
+
+// The stat reads the two in-band states off the window's own ratio.
+const banded = (utilization) => ({ ...report, totals: { utilization } });
 
 describe('Utilization view-switcher keyset (#45)', () => {
     beforeEach(() => { registry.clear(); });
@@ -73,5 +79,34 @@ describe('hours-needed-this-week card (#105)', () => {
         expect(w.vm.prescription.value).toBe('+4.5h');
         expect(w.vm.prescription.caption).toContain('4.5h to spare');
         w.unmount();
+    });
+});
+
+describe('time-to-band stat (#106)', () => {
+    const read = (props) => {
+        const w = shallowMount(Utilization, { props });
+        const value = w.vm.timeToBand;
+        w.unmount();
+
+        return value;
+    };
+
+    it('counts the weeks to the floor at the current pace', () => {
+        expect(read({ report: banded(60), projection })).toBe('3 wks at 24.8h/wk');
+    });
+
+    it('reads holding inside the band and n/a above the target', () => {
+        expect(read({ report: banded(82), projection })).toBe('holding');
+        expect(read({ report: banded(94), projection })).toBe('n/a');
+    });
+
+    it('says not at this pace when the band is never reached', () => {
+        const stalled = { ...projection, paceHours: 19.8,
+            timeToBand: { weeksToFloor: null, weeksToTarget: null, capWeeks: 26 } };
+        expect(read({ report: banded(60), projection: stalled })).toBe('not at this pace');
+    });
+
+    it('is absent without a projection', () => {
+        expect(read({ report })).toBe(null);
     });
 });

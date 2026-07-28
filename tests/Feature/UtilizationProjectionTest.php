@@ -36,6 +36,7 @@ class UtilizationProjectionTest extends TestCase
             'fylla.utilization_window_weeks' => 3,
             'fylla.utilization_target' => 75,
             'fylla.utilization_soft_floor' => 73,
+            'fylla.utilization_pace_weeks' => 4,
         ]);
         Project::create(['kendo_id' => 1, 'name' => 'Client A', 'billable' => true]);
     }
@@ -172,6 +173,109 @@ class UtilizationProjectionTest extends TestCase
             'target' => null,
             'headroomHours' => null,
         ], $p['thisWeek']);
+    }
+
+    public function test_pace_reads_complete_weeks_only_and_skips_the_ones_with_no_capacity(): void
+    {
+        // Two complete weeks at 20h, plus 2h already logged this (partial) week
+        // — which must not enter the mean, or every Monday reads as a collapse.
+        config(['fylla.utilization_pace_weeks' => 2]);
+        $this->log(1, '2026-06-29', 20);
+        $this->log(2, '2026-07-06', 20);
+        $this->log(3, self::CURRENT_MONDAY, 2);
+
+        $p = $this->project('2026-07-15 12:00'); // Wednesday
+
+        $this->assertSame(20.0, $p['paceHours']);
+        $this->assertSame(2, $p['paceWeeks']);
+
+        // A week off leaves both the sum and the divisor: 20h over one week,
+        // not 10h over two.
+        $this->off('2026-07-06', -32);
+        $p = $this->project('2026-07-15 12:00');
+
+        $this->assertSame(20.0, $p['paceHours']);
+        $this->assertSame(1, $p['paceWeeks']);
+    }
+
+    public function test_no_capacity_bearing_pace_week_is_no_pace_at_all(): void
+    {
+        // The one trailing pace week is fully off → null, never 0 h/wk, and the
+        // time-to-band search does not run.
+        config(['fylla.utilization_pace_weeks' => 1]);
+        $this->log(1, '2026-06-29', 24);
+        $this->off('2026-07-06', -32);
+
+        $p = $this->project('2026-07-15 12:00');
+
+        $this->assertNull($p['paceHours']);
+        $this->assertSame(0, $p['paceWeeks']);
+        $this->assertSame(
+            ['weeksToFloor' => null, 'weeksToTarget' => null, 'capWeeks' => 26],
+            $p['timeToBand'],
+        );
+    }
+
+    public function test_time_to_band_steps_the_window_forward_at_the_current_pace(): void
+    {
+        // Pace = last complete week = 23.5h. Step k = 1 is the end of this week:
+        // (0 + 23.5 + 23.5) / 96 = 49.0%. By k = 2 the empty week has been
+        // evicted: (23.5 × 3) / 96 = 73.4% — over the floor, under the target,
+        // and it stays there for every later step.
+        config(['fylla.utilization_pace_weeks' => 1]);
+        $this->log(1, '2026-07-06', 23.5);
+
+        $p = $this->project('2026-07-15 12:00');
+
+        $this->assertSame(23.5, $p['paceHours']);
+        $this->assertSame(2, $p['timeToBand']['weeksToFloor']);
+        $this->assertNull($p['timeToBand']['weeksToTarget']); // uncrossed by k = 26
+    }
+
+    public function test_the_current_weeks_logged_hours_floor_its_contribution(): void
+    {
+        // Pace = 20h, but 32h is already billed this week — hours logged cannot
+        // be undone by a slower pace (#101). Floored, step 1 is (20+20+32)/96 =
+        // 75% and the band is reached now; at a bare 20h it would be 62.5% and
+        // never cross at all.
+        config(['fylla.utilization_pace_weeks' => 1]);
+        $this->log(1, '2026-06-29', 20);
+        $this->log(2, '2026-07-06', 20);
+        $this->log(3, self::CURRENT_MONDAY, 32);
+
+        $p = $this->project('2026-07-17 17:00'); // Friday
+
+        $this->assertSame(20.0, $p['paceHours']);
+        $this->assertSame(1, $p['timeToBand']['weeksToFloor']);
+        $this->assertSame(1, $p['timeToBand']['weeksToTarget']);
+    }
+
+    public function test_a_forward_week_with_no_capacity_is_neutral_not_a_penalty(): void
+    {
+        // Same as above with cur+1 booked off: the off week leaves both sums,
+        // so the crossing lands on the same step.
+        config(['fylla.utilization_pace_weeks' => 1]);
+        $this->log(1, '2026-07-06', 23.5);
+        $this->off('2026-07-20', -32);
+
+        $p = $this->project('2026-07-15 12:00');
+
+        $this->assertSame(2, $p['timeToBand']['weeksToFloor']);
+    }
+
+    public function test_deeply_below_the_floor_degrades_all_the_way_down(): void
+    {
+        // 5h in the last complete week: the floor is out of reach this week even
+        // at a fully billable one, and holding 5h/wk never reaches it either.
+        config(['fylla.utilization_pace_weeks' => 1]);
+        $this->log(1, '2026-07-06', 5);
+
+        $p = $this->project('2026-07-15 12:00');
+
+        $this->assertFalse($p['thisWeek']['floor']['feasible']);
+        $this->assertSame(5.0, $p['paceHours']);
+        $this->assertNull($p['timeToBand']['weeksToFloor']);
+        $this->assertNull($p['timeToBand']['weeksToTarget']);
     }
 
     public function test_payload_is_null_when_no_week_in_the_window_has_capacity(): void

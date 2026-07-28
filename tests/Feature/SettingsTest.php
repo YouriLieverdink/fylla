@@ -74,6 +74,17 @@ class SettingsTest extends TestCase
         $this->assertDatabaseCount('settings', 0);
     }
 
+    public function test_pace_window_round_trips(): void
+    {
+        $this->put('/settings', $this->payload(['utilization_pace_weeks' => 6]))
+            ->assertRedirect('/settings');
+
+        $this->assertSame(6, Setting::where('key', 'utilization_pace_weeks')->value('value'));
+
+        (new SettingsProvider($this->app))->boot();
+        $this->assertSame(6, config('fylla.utilization_pace_weeks'));
+    }
+
     public function test_out_of_range_value_is_rejected(): void
     {
         $this->put('/settings', $this->payload(['contracted_off_weekday' => 9]))
@@ -96,6 +107,7 @@ class SettingsTest extends TestCase
             'utilization_window_weeks' => 13,
             'utilization_target' => 75,
             'utilization_soft_floor' => 73,
+            'utilization_pace_weeks' => 4,
             'delivery_history_months' => 3,
             'job_run_retention_days' => 30,
         ], $overrides);

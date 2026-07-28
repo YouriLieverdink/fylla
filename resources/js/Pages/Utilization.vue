@@ -8,7 +8,7 @@ import { useAction } from '../Composables/useAction';
 
 const props = defineProps({
     report: { type: Object, required: true }, // { weeks, totals, target, softFloor }
-    projection: { type: Object, default: null }, // { thisWeek } — null when there is nothing to project (#105)
+    projection: { type: Object, default: null }, // { paceHours, paceWeeks, thisWeek, timeToBand } — null when there is nothing to project (#105, #106)
     windowWeeks: { type: Number, default: 13 },
     entries: { type: Array, default: () => [] },
 });
@@ -48,6 +48,19 @@ const prescription = computed(() => {
         value: t.target.neededMore + 'h',
         caption: `Holding the band needs ${t.target.neededMore}h more billable this week to reach ${props.report.target}%.`,
     };
+});
+
+// "Time to band" (#106): how far off the band is at the current pace. The two
+// in-band readings come off the window's own ratio, so the stat stays honest
+// about today rather than restating the projection.
+const timeToBand = computed(() => {
+    const t = props.projection?.timeToBand;
+    if (!t) return null;
+    const util = props.report.totals.utilization ?? null;
+    if (util !== null && util >= props.report.target) return 'n/a';
+    if (util !== null && util >= props.report.softFloor) return 'holding';
+    if (t.weeksToFloor === null) return 'not at this pace';
+    return `${t.weeksToFloor} wk${t.weeksToFloor === 1 ? '' : 's'} at ${props.projection.paceHours}h/wk`;
 });
 
 // View synced to ?view= (client-only tab state, no server round-trip).
@@ -295,18 +308,22 @@ useAction({ id: 'util:entries', label: VIEWS.entries, keys: 't', scope: 'utiliza
                     </div>
                     <p class="mt-3 max-w-[52ch] text-[13.5px] leading-[1.55] text-muted">{{ prescription.caption }}</p>
                 </div>
-                <div v-if="thisWeek.capacityHours !== null" class="grid grid-cols-3 gap-x-9 gap-y-2">
-                    <div>
+                <div class="flex flex-wrap gap-x-9 gap-y-4">
+                    <div v-if="thisWeek.capacityHours !== null">
                         <div class="mb-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint-3">Capacity</div>
                         <div class="font-mono text-[18px] font-semibold tabular-nums text-ink">{{ thisWeek.capacityHours }}h</div>
                     </div>
-                    <div>
+                    <div v-if="thisWeek.capacityHours !== null">
                         <div class="mb-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint-3">Billable so far</div>
                         <div class="font-mono text-[18px] font-semibold tabular-nums text-ink">{{ thisWeek.loggedBillableHours }}h</div>
                     </div>
-                    <div>
+                    <div v-if="thisWeek.capacityHours !== null">
                         <div class="mb-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint-3">Left</div>
                         <div class="font-mono text-[18px] font-semibold tabular-nums text-ink">{{ thisWeek.remainingHours }}h</div>
+                    </div>
+                    <div v-if="timeToBand" data-stat="time-to-band">
+                        <div class="mb-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint-3">Time to band</div>
+                        <div class="font-mono text-[18px] font-semibold tabular-nums text-ink">{{ timeToBand }}</div>
                     </div>
                 </div>
             </div>

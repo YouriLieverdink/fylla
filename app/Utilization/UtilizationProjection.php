@@ -20,6 +20,9 @@ use Carbon\CarbonImmutable;
  * assume an impossible week. Capacity is full-week, unprorated (#101 dec. 2);
  * proration only enters through `remaining`, which bounds what is still
  * reachable today.
+ *
+ * Issue #106 adds the second question: at the pace of the last P complete
+ * weeks, how far away is the band?
  */
 class UtilizationProjection
 {
@@ -36,7 +39,12 @@ class UtilizationProjection
      */
     private const GRID_TOLERANCE = 0.001;
 
+    /** How far the time-to-band search steps before giving up (#101, not config). */
+    private const CAP_WEEKS = 26;
+
     private int $windowWeeks;
+
+    private int $paceWeeks;
 
     private int $target;
 
@@ -56,6 +64,9 @@ class UtilizationProjection
         $this->windowWeeks = (int) config('fylla.utilization_window_weeks');
         $this->target = (int) config('fylla.utilization_target');
         $this->softFloor = (int) config('fylla.utilization_soft_floor');
+        // Kept ≤ the report's trailing worklog range (2×W−1 weeks); at the real
+        // 13-week window and a 4-week pace there is no contest.
+        $this->paceWeeks = (int) config('fylla.utilization_pace_weeks');
         // One clock: the report's. A second injectable clock is two sources
         // that can disagree (#103).
         $this->currentMonday = $this->report->now()->startOfWeek(CarbonImmutable::MONDAY);
@@ -70,7 +81,14 @@ class UtilizationProjection
             return null; // whole window booked off — no ratio to move
         }
 
-        return ['thisWeek' => $this->thisWeek(max($capacities))];
+        $pace = $this->pace();
+
+        return [
+            'paceHours' => $pace === null ? null : round($pace['hours'], 1),
+            'paceWeeks' => $pace === null ? 0 : $pace['weeks'],
+            'thisWeek' => $this->thisWeek(max($capacities)),
+            'timeToBand' => $this->timeToBand($pace === null ? null : $pace['hours']),
+        ];
     }
 
     /**
@@ -200,6 +218,89 @@ class UtilizationProjection
         if ($this->currentCapacity > 0) {
             $bill += min($hours, $this->currentCapacity);
             $cap += $this->currentCapacity;
+        }
+
+        return $cap > 0 ? $bill / $cap * 100 : 0.0;
+    }
+
+    /**
+     * Billable hours per capacity-bearing week over the P **complete** weeks
+     * before this one. The current partial week is excluded — including it
+     * collapses the reading every Monday. Zero-capacity weeks leave both the
+     * sum and the divisor, so a holiday does not depress the pace (#101 dec. 7);
+     * with none left there is no pace at all, which is not the same as 0 h/wk.
+     *
+     * @return array{hours: float, weeks: int}|null
+     */
+    private function pace(): ?array
+    {
+        $hours = 0.0;
+        $weeks = 0;
+        for ($i = $this->paceWeeks; $i >= 1; $i--) {
+            $weekStart = $this->currentMonday->subWeeks($i);
+            if ($this->report->weekCapacity($weekStart) <= 0) {
+                continue;
+            }
+            $hours += $this->report->weekBillable($weekStart);
+            $weeks++;
+        }
+
+        return $weeks === 0 ? null : ['hours' => $hours / $weeks, 'weeks' => $weeks];
+    }
+
+    /**
+     * Weeks until the window reaches the floor and the target if the pace
+     * holds. One loop over k = 1 … CAP_WEEKS, k = 1 being the end of the
+     * current week; either crossing is null when it never happens in range,
+     * which the card reads as "not at this pace".
+     */
+    private function timeToBand(?float $pace): array
+    {
+        $floor = null;
+        $target = null;
+
+        for ($k = 1; $pace !== null && $k <= self::CAP_WEEKS; $k++) {
+            $ratio = $this->paceRatio($pace, $k);
+            if ($floor === null && $ratio >= $this->softFloor) {
+                $floor = $k;
+            }
+            if ($target === null && $ratio >= $this->target) {
+                $target = $k;
+                break; // target ≥ floor, so both are settled by now
+            }
+        }
+
+        return ['weeksToFloor' => $floor, 'weeksToTarget' => $target, 'capWeeks' => self::CAP_WEEKS];
+    }
+
+    /**
+     * The window ratio at the end of step $k, with the pace held as **hours per
+     * week** rather than as a ratio: every simulated week contributes
+     * min(pace, cap) against its own capacity, so booked leave delays the
+     * crossing instead of bending the rate. The window is always the last W
+     * weeks ending at the evaluated one, so stepping forward evicts the oldest
+     * week for free; a cap ≤ 0 week adds nothing to either sum but still
+     * consumes its calendar step. The current week floors at the hours already
+     * logged (#101's clamp): they cannot be undone by a slower pace. There is
+     * no bisection here, so the floor costs the curve nothing.
+     */
+    private function paceRatio(float $pace, int $k): float
+    {
+        $bill = 0.0;
+        $cap = 0.0;
+        for ($i = $k - $this->windowWeeks; $i < $k; $i++) {
+            $weekStart = $this->currentMonday->addWeeks($i);
+            $weekCapacity = $this->report->weekCapacity($weekStart);
+            if ($weekCapacity <= 0) {
+                continue;
+            }
+            $atPace = min($pace, $weekCapacity);
+            $bill += match (true) {
+                $i < 0 => $this->report->weekBillable($weekStart),
+                $i === 0 => max($this->report->weekBillable($weekStart), $atPace),
+                default => $atPace,
+            };
+            $cap += $weekCapacity;
         }
 
         return $cap > 0 ? $bill / $cap * 100 : 0.0;

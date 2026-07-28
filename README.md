@@ -309,6 +309,19 @@ against 8h left is flagged rather than clamped. A fully booked-off current week
 nulls every this-week field; a window with no capacity at all makes the whole
 `projection` prop `null` and hides the card.
 
+The same card carries **Time to band** (issue #106): how long the band is away
+at the current pace. The pace is `Σ billable ÷ weeks with capacity` over the
+last `fylla.utilization_pace_weeks` (default 4) **complete** weeks — the current
+partial week is excluded, and a fully booked-off week leaves both the sum and
+the divisor, so a holiday does not depress the reading. With no capacity-bearing
+week among them there is no pace at all (`null`, never `0 h/wk`). The pace is
+then held constant as **hours per week** and the window is stepped forward up to
+26 weeks, each stepped week contributing `min(pace, that week's capacity)` —
+floored, for the current week, at the hours already billed; the
+first step over the soft floor and over the target are reported. Uncrossed by
+week 26 reads as "not at this pace"; already inside the band reads as "holding",
+and clear of the target as "n/a".
+
 The `/utilization` page (the **Utilization** nav tab) exposes the data behind
 the headline via `UtilizationReport::breakdown()`: window totals (Σ capacity /
 worked / billable, billable share, + the cumulative %), and — behind a
@@ -364,7 +377,8 @@ The `/capacity` page (the **Capacity** nav tab) is a **year calendar grid**
 
 The `/settings` page (the **gear icon** in the header) edits the tuning knobs in
 `config/fylla.php` without touching the file (ADR-0016): the utilization
-target/soft-floor, contracted hours and day off, the trend window, the delivery
+target/soft-floor, contracted hours and day off, the trend window, the pace
+window, the delivery
 history window, the worklog sync window, the activity-log retention window,
 `kendo_user_id`, the GitHub PR queries
 and excluded repos, and the display timezone. Routes: `GET /settings` (edit), `PUT /settings` (save).

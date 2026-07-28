@@ -84,6 +84,11 @@ const field = 'w-full rounded-[11px] border border-[#e0dbd0] bg-surface px-3.5 p
                         <input v-model.number="form.utilization_window_weeks" type="number" min="1" :class="field" />
                         <span v-if="form.errors.utilization_window_weeks" class="text-[12px] text-rose-500">{{ form.errors.utilization_window_weeks }}</span>
                     </label>
+                    <label class="flex flex-col gap-1.5">
+                        <span class="text-[13px] text-muted">Pace window (weeks)</span>
+                        <input v-model.number="form.utilization_pace_weeks" type="number" min="1" :class="field" />
+                        <span v-if="form.errors.utilization_pace_weeks" class="text-[12px] text-rose-500">{{ form.errors.utilization_pace_weeks }}</span>
+                    </label>
                 </div>
             </Card>
 

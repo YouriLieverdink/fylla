@@ -35,6 +35,9 @@ return [
     'utilization_window_weeks' => 13,
     'utilization_target' => 75,
     'utilization_soft_floor' => 73,
+    // Complete weeks read for the projection's pace (issue #106). Lower reacts
+    // faster to a change of gear; higher smooths a single odd week out.
+    'utilization_pace_weeks' => 4,
 
     // Completed months shown (plus the current one) in the client
     // delivery-history card (issue #67).

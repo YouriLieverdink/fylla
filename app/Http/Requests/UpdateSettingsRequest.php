@@ -26,6 +26,7 @@ class UpdateSettingsRequest extends FormRequest
             'utilization_window_weeks' => ['required', 'integer', 'min:1'],
             'utilization_target' => ['required', 'integer', 'between:0,100'],
             'utilization_soft_floor' => ['required', 'integer', 'between:0,100'],
+            'utilization_pace_weeks' => ['required', 'integer', 'min:1'],
             'delivery_history_months' => ['required', 'integer', 'min:1'],
             'job_run_retention_days' => ['required', 'integer', 'min:1'],
         ];

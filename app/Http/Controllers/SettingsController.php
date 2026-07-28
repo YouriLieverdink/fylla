@@ -22,6 +22,7 @@ class SettingsController extends Controller
         'utilization_window_weeks',
         'utilization_target',
         'utilization_soft_floor',
+        'utilization_pace_weeks',
         'delivery_history_months',
         'job_run_retention_days',
     ];
