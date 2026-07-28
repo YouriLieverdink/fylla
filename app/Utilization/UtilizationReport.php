@@ -22,17 +22,27 @@ use Illuminate\Support\Collection;
 class UtilizationReport
 {
     private int $contracted;
+
     private int $offWeekday;
+
     private int $windowWeeks;
+
     private int $target;
+
     private int $softFloor;
+
     private CarbonImmutable $now;
+
     private CarbonImmutable $currentMonday;
+
+    private bool $loaded = false;
 
     /** @var Collection<string,int> billable minutes keyed by week-start date */
     private Collection $billableByWeek;
+
     /** @var Collection<string,int> all worked minutes keyed by week-start date */
     private Collection $workedByWeek;
+
     private Collection $adjustments;
 
     public function __construct(?CarbonImmutable $now = null)
@@ -44,6 +54,34 @@ class UtilizationReport
         $this->softFloor = (int) config('fylla.utilization_soft_floor');
         $this->now = $now ?? CarbonImmutable::now();
         $this->currentMonday = $this->now->startOfWeek(CarbonImmutable::MONDAY);
+    }
+
+    /** The report's clock — the one clock the projection reads too (#103). */
+    public function now(): CarbonImmutable
+    {
+        return $this->now;
+    }
+
+    /**
+     * Full-week, unprorated capacity: contracted ± that week's confirmed
+     * adjustments (Mon–Sun). Distinct from weekData()'s current-week branch,
+     * which prorates — the projection deliberately does not (#101 decision 2).
+     */
+    public function weekCapacity(CarbonImmutable $weekStart): float
+    {
+        $this->load();
+
+        return (float) ($this->contracted + $this->adjustments
+            ->filter(fn ($a) => $a->date->gte($weekStart) && $a->date->lt($weekStart->addWeek()))
+            ->sum('hours'));
+    }
+
+    /** Billable hours logged in the week starting $weekStart. */
+    public function weekBillable(CarbonImmutable $weekStart): float
+    {
+        $this->load();
+
+        return $this->billableByWeek->get($weekStart->toDateString(), 0) / 60;
     }
 
     public function generate(): array
@@ -191,8 +229,17 @@ class UtilizationReport
      */
     private function load(): void
     {
+        if ($this->loaded) {
+            return;
+        }
+        $this->loaded = true;
+
         $rangeStart = $this->currentMonday->subWeeks(2 * $this->windowWeeks - 1);
         $rangeEnd = $this->currentMonday->addWeek();
+        // Adjustments reach further forward than worklogs do: the projection
+        // steps up to 26 weeks ahead and needs their capacity (#101). No
+        // future worklogs exist, so that range stays as it is.
+        $adjustmentEnd = $this->currentMonday->addWeeks(26);
 
         $worklogs = SyncedWorklog::mine()
             ->whereBetween('started_at', [$rangeStart, $rangeEnd])
@@ -207,7 +254,7 @@ class UtilizationReport
         $this->billableByWeek = $byWeek($worklogs->filter(fn ($w) => $w->billable));
         // Only confirmed adjustments move the capacity denominator; planned ones
         // are penciled-in and must not shift the metric (ADR-0010).
-        $this->adjustments = CapacityAdjustment::whereBetween('date', [$rangeStart, $rangeEnd])
+        $this->adjustments = CapacityAdjustment::whereBetween('date', [$rangeStart, $adjustmentEnd])
             ->where('status', 'confirmed')
             ->get();
     }

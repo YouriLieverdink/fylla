@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\SyncedWorklog;
+use App\Utilization\UtilizationProjection;
 use App\Utilization\UtilizationReport;
 use Carbon\CarbonImmutable;
 use Inertia\Inertia;
@@ -37,8 +38,12 @@ class UtilizationController extends Controller
                 'note' => $w->note,
             ]);
 
+        $report = new UtilizationReport;
+
         return Inertia::render('Utilization', [
-            'report' => (new UtilizationReport)->breakdown(),
+            'report' => $report->breakdown(),
+            // Sibling key, not nested: breakdown()'s contract stays as it is.
+            'projection' => (new UtilizationProjection($report))->payload(),
             'windowWeeks' => $windowWeeks,
             'entries' => $entries,
         ]);

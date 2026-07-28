@@ -8,11 +8,47 @@ import { useAction } from '../Composables/useAction';
 
 const props = defineProps({
     report: { type: Object, required: true }, // { weeks, totals, target, softFloor }
+    projection: { type: Object, default: null }, // { thisWeek } — null when there is nothing to project (#105)
     windowWeeks: { type: Number, default: 13 },
     entries: { type: Array, default: () => [] },
 });
 
 const totals = computed(() => props.report.totals);
+
+// "Hours needed this week" (#105). One payload, five states — the math never
+// branches, only the copy does.
+const thisWeek = computed(() => props.projection?.thisWeek ?? null);
+const prescription = computed(() => {
+    const t = thisWeek.value;
+    if (!t) return null;
+    if (t.capacityHours === null) {
+        return { value: '—', caption: 'This week is fully booked off — no floor to hit.' };
+    }
+    if (t.floor.neededMore === 0 && t.target.neededMore === 0) {
+        return {
+            value: '+' + t.headroomHours + 'h',
+            caption: `Clear of the band with ${t.headroomHours}h to spare — no floor to hit this week.`,
+        };
+    }
+    if (t.floor.neededMore > 0 && !t.floor.feasible) {
+        return {
+            value: t.floor.neededMore + 'h',
+            behind: true,
+            caption: `${props.report.softFloor}% is out of reach this week (${t.floor.neededMore}h against ${t.remainingHours}h left) — the coming weeks are the way back.`,
+        };
+    }
+    if (t.floor.neededMore > 0) {
+        return {
+            value: t.floor.neededMore + '–' + t.target.neededMore + 'h',
+            behind: true,
+            caption: `${t.floor.neededMore}–${t.target.neededMore}h more billable this week clears the ${props.report.softFloor}–${props.report.target}% band.`,
+        };
+    }
+    return {
+        value: t.target.neededMore + 'h',
+        caption: `Holding the band needs ${t.target.neededMore}h more billable this week to reach ${props.report.target}%.`,
+    };
+});
 
 // View synced to ?view= (client-only tab state, no server round-trip).
 const VIEWS = { weekly: 'Weekly breakdown', projects: 'By project', entries: 'Time entries' };
@@ -243,6 +279,35 @@ useAction({ id: 'util:entries', label: VIEWS.entries, keys: 't', scope: 'utiliza
                 <div>
                     <div class="mb-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint-3">Utilization</div>
                     <div class="font-mono text-[26px] font-semibold tabular-nums text-accent">{{ fmtPct(totals.utilization) }}</div>
+                </div>
+            </div>
+        </Card>
+
+        <!-- hours needed this week (#105) -->
+        <Card v-if="prescription" radius="24px" pad="28px 30px" class="mb-[22px]" data-card="projection">
+            <div class="mb-6 font-mono text-[11px] font-semibold uppercase tracking-[0.13em] text-faint">
+                Billable hours needed · this week
+            </div>
+            <div class="flex flex-wrap items-end justify-between gap-6">
+                <div>
+                    <div class="font-mono text-[34px] font-semibold leading-none tabular-nums" :class="prescription.behind ? 'text-behind' : 'text-track'">
+                        {{ prescription.value }}
+                    </div>
+                    <p class="mt-3 max-w-[52ch] text-[13.5px] leading-[1.55] text-muted">{{ prescription.caption }}</p>
+                </div>
+                <div v-if="thisWeek.capacityHours !== null" class="grid grid-cols-3 gap-x-9 gap-y-2">
+                    <div>
+                        <div class="mb-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint-3">Capacity</div>
+                        <div class="font-mono text-[18px] font-semibold tabular-nums text-ink">{{ thisWeek.capacityHours }}h</div>
+                    </div>
+                    <div>
+                        <div class="mb-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint-3">Billable so far</div>
+                        <div class="font-mono text-[18px] font-semibold tabular-nums text-ink">{{ thisWeek.loggedBillableHours }}h</div>
+                    </div>
+                    <div>
+                        <div class="mb-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint-3">Left</div>
+                        <div class="font-mono text-[18px] font-semibold tabular-nums text-ink">{{ thisWeek.remainingHours }}h</div>
+                    </div>
                 </div>
             </div>
         </Card>

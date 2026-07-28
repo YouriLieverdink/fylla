@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\CapacityAdjustment;
 use App\Models\Project;
 use App\Models\SyncedWorklog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -28,9 +29,26 @@ class UtilizationPageTest extends TestCase
                 ->component('Utilization')
                 ->has('report.weeks', 3)
                 ->has('report.totals')
+                // Sibling of report, not nested in the breakdown (#103).
+                ->has('projection.thisWeek')
                 ->has('entries', 1)
                 ->where('entries.0.issueKey', 'A-1')
                 ->where('entries.0.billable', true)
                 ->where('entries.0.minutes', 120));
+    }
+
+    public function test_projection_is_null_when_the_window_has_no_capacity(): void
+    {
+        // Whole (one-week) window booked off → nothing to project, so the card
+        // is hidden rather than rendered as an object of nulls.
+        config(['fylla.kendo_user_id' => 42, 'fylla.utilization_window_weeks' => 1]);
+        CapacityAdjustment::create([
+            'date' => now()->startOfWeek()->toDateString(),
+            'type' => 'off', 'hours' => -32, 'status' => 'confirmed',
+        ]);
+
+        $this->get('/utilization')
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('projection', null));
     }
 }

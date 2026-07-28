@@ -295,6 +295,20 @@ capacity.
 - A week with no capacity (fully time off) drops out of both sums; an all-off
   window shows "—".
 
+**Hours needed this week** (`App\Utilization\UtilizationProjection`, issue
+#105) sits on `/utilization` as a card between the totals and the view
+switcher. It is a simulation, never `target × capacity`: the window is the last
+`fylla.utilization_window_weeks` weeks ending at the current one, so the
+historic weeks' surplus or deficit nets into the answer. Per threshold (soft
+floor and target) it bisects for the smallest weekly billable total that lifts
+the window ratio to the threshold, with the week's own **full-week** capacity
+(unprorated) as the ceiling inside the step. Needed hours round **up** to the
+quarter, headroom **down**. `feasible` compares the extra hours against what is
+left of the week (capacity − prorated capacity), so a Thursday ask of 12h
+against 8h left is flagged rather than clamped. A fully booked-off current week
+nulls every this-week field; a window with no capacity at all makes the whole
+`projection` prop `null` and hides the card.
+
 The `/utilization` page (the **Utilization** nav tab) exposes the data behind
 the headline via `UtilizationReport::breakdown()`: window totals (Σ capacity /
 worked / billable, billable share, + the cumulative %), and — behind a
