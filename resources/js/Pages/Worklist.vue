@@ -384,6 +384,7 @@ useAction({ id: 'wl:note', label: 'Add timer note', keys: 'n', scope: 'worklist'
             />
             <UtilizationTrendChart
                 :points="utilization.points"
+                :floor="utilization.softFloor"
                 :target="utilization.target"
                 :class="cursor.isActive(cards.utilization) && 'ring-2 ring-accent'"
             />

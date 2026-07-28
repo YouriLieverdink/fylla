@@ -147,6 +147,7 @@ class UtilizationReport
         return [
             'value' => $value,
             'target' => $this->target,
+            'softFloor' => $this->softFloor,
             'status' => $value === null ? 'no data' : ($onTrack ? 'on track' : 'below band'),
             'onTrack' => $onTrack,
             'note' => $this->note($value),
@@ -155,6 +156,37 @@ class UtilizationReport
             'week' => $week,
             'points' => $points,
         ];
+    }
+
+    /**
+     * Rolling-window utilization at each of the last W week endings, oldest
+     * first. Completed endpoints use full weekly capacity; the current endpoint
+     * keeps the same partial-week proration as the headline.
+     *
+     * @return array<int,array{label:string,value:float|null}>
+     */
+    public function rollingHistory(): array
+    {
+        $this->load();
+
+        $points = [];
+        for ($endOffset = -($this->windowWeeks - 1); $endOffset <= 0; $endOffset++) {
+            $end = $this->currentMonday->addWeeks($endOffset);
+            $starts = [];
+            for ($i = $this->windowWeeks - 1; $i >= 0; $i--) {
+                $starts[] = $end->subWeeks($i);
+            }
+            $point = [
+                'label' => $end->format('M j'),
+                'value' => $this->cumulative($starts),
+            ];
+            if ($this->weekCapacity($end) <= 0) {
+                $point['off'] = true;
+            }
+            $points[] = $point;
+        }
+
+        return $points;
     }
 
     /**

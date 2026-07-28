@@ -288,7 +288,7 @@ capacity.
   `fylla.utilization_window_weeks` weeks (default 13), with a delta vs. the
   preceding equal-length window.
 - **Trend chart** = each week's own utilization %, with a second line for that
-  week's billable share (billable ÷ worked).
+  week's billable share (billable ÷ worked) and the 73–75% target band shaded.
 - **This-week gauge** = the prorated current-week number.
 - `fylla.utilization_target` (75) is a soft target; at or above
   `fylla.utilization_soft_floor` (73) reads as "on track" — trend, not pass/fail.
@@ -296,8 +296,10 @@ capacity.
   window shows "—".
 
 **Hours needed this week** (`App\Utilization\UtilizationProjection`, issue
-#105) sits on `/utilization` as a card between the totals and the view
-switcher. It is a simulation, never `target × capacity`: the window is the last
+#105) sits on `/utilization` in a details card beside its projection chart,
+between the totals and the view switcher. The large value is explicitly labelled
+as the additional billable hours needed this week. It is a simulation, never
+`target × capacity`: the window is the last
 `fylla.utilization_window_weeks` weeks ending at the current one, so the
 historic weeks' surplus or deficit nets into the answer. Per threshold (soft
 floor and target) it bisects for the smallest weekly billable total that lifts
@@ -309,17 +311,16 @@ against 8h left is flagged rather than clamped. A fully booked-off current week
 nulls every this-week field; a window with no capacity at all makes the whole
 `projection` prop `null` and hides the card.
 
-The card's **Sustained** stat (issue #107) solves the flat billable rate that,
-held through the current week and next three calendar weeks, puts the rolling
-window back at the soft floor and target. It uses the same bisection and
+The projection payload's **Sustained** calculation (issue #107) solves the flat
+billable rate that, held through the current week and next three calendar weeks,
+puts the rolling window back at the soft floor and target. It is retained for
+the projection model but is not displayed in the details card. It uses the same bisection and
 per-week capacity ceilings as the this-week solve; the current week cannot fall
 below hours already logged. Fully booked-off weeks still advance the rolling
 window but leave both sums, so `effectiveWeeks` can be less than the four-week
 horizon. Rates round up to the quarter hour. If even billing every
 capacity-bearing week fully cannot reach a threshold, the payload retains the
-best rate with `feasible: false` and the stat reads "out of reach". Below or
-inside the band it shows the floor–target range; clear of the band it shows the
-current pace.
+best rate with `feasible: false`.
 
 The same card carries **Time to band** (issue #106): how long the band is away
 at the current pace. The pace is `Σ billable ÷ weeks with capacity` over the
@@ -335,20 +336,24 @@ week 26 reads as "not at this pace"; already inside the band reads as "holding",
 and clear of the target as "n/a". In the not-at-this-pace state, the same
 roll-forward loop also tries the soft-floor and target percentages as rates,
 rounded up to the quarter hour against each future week's own capacity. The
-Time to band stat then shows the floor rate and crossing week, while the caption
-shows the floor–target rate range. This counterfactual is omitted in every other
+Time to band stat then shows the floor rate and crossing week; the caption only
+states that the recent pace does not reach the floor. This counterfactual is omitted in every other
 state. If fewer than 13 capacity-bearing weeks fit in the 26-calendar-week cap
 (for example, a long sabbatical), it falls back to plain "not at this pace".
 The at-pace chart continuation is unchanged.
 
-The card's projection chart (issue #108) derives its 13-week history from
-`report.weeks` and plots a separate four-entry `projection.forward` continuation
-from the same pace-held loop. The continuation is dashed; the 73–75% band is
-shaded with a labelled dashed floor. Fully booked-off history or forward weeks
-remain calendar steps with `null` values that break the line rather than
-plotting zero. This chart is `/utilization`-only: the dashboard's
-`UtilizationTrendChart` keeps its billable-share series, tooltip, and single 75%
-target line unchanged.
+The projection chart (issue #108) plots rolling-window utilization for both its
+history and its equal-length `projection.forward` continuation (13 historical +
+13 projected week endings by default). Historical points therefore use the same
+metric as the dashed pace-held projection rather than standalone weekly
+utilization. The continuation is dashed;
+the 73–75% band is shaded with a labelled dashed floor. Hovering or focusing a
+point shows its week and exact percentage. A thin vertical marker separates
+this week from the forward projection. A fully booked-off endpoint keeps its
+rolling-window value and renders as a hollow “week off” point; it still advances
+the calendar and evicts old history while adding no capacity or billable hours.
+The dashboard's `UtilizationTrendChart` keeps its separate weekly-utilization
+and billable-share series, while using the same shaded target band and tooltip.
 
 The `/utilization` page (the **Utilization** nav tab) exposes the data behind
 the headline via `UtilizationReport::breakdown()`: window totals (Σ capacity /

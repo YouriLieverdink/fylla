@@ -90,9 +90,10 @@ class UtilizationProjection
         $paceHeld = $this->paceHeldProjection($pace === null ? null : $pace['hours']);
 
         return [
+            'history' => $this->report->rollingHistory(),
             'paceHours' => $pace === null ? null : round($pace['hours'], 1),
             'paceWeeks' => $pace === null ? 0 : $pace['weeks'],
-            'thisWeek' => $this->thisWeek(max($capacities)),
+            'thisWeek' => $this->thisWeek(),
             'sustained' => $this->sustained(),
             'timeToBand' => $paceHeld['timeToBand'],
             'forward' => $paceHeld['forward'],
@@ -125,11 +126,7 @@ class UtilizationProjection
         return $capacities;
     }
 
-    /**
-     * @param  float  $maxCapacity  bisection's upper bound: the largest weekly
-     *                              capacity in scope
-     */
-    private function thisWeek(float $maxCapacity): array
+    private function thisWeek(): array
     {
         if ($this->currentCapacity <= 0) {
             // The week is off; there is nothing to act on.
@@ -151,8 +148,10 @@ class UtilizationProjection
         $prorated = (float) $this->report->breakdown()['weeks'][0]['capacity'];
         $remaining = $this->currentCapacity - $prorated;
 
-        $floor = $this->solve($this->softFloor, $maxCapacity);
-        $target = $this->solve($this->target, $maxCapacity);
+        // This week's solve cannot borrow a larger capacity from an historic
+        // extra-day week. Its truthful upper bound is this week's own capacity.
+        $floor = $this->solve($this->softFloor, $this->currentCapacity);
+        $target = $this->solve($this->target, $this->currentCapacity);
 
         return [
             'capacityHours' => round($this->currentCapacity, 1),
@@ -313,8 +312,8 @@ class UtilizationProjection
     }
 
     /**
-     * Weeks until the window reaches the band, plus the first four values for
-     * the chart, from one pace-held loop. An off week stays in the chart as a
+     * Weeks until the window reaches the band, plus one full window of values
+     * for the chart, from one pace-held loop. An off week stays in the chart as a
      * null calendar step but contributes to neither side of the ratio.
      *
      * @return array{timeToBand:array{weeksToFloor:int|null,weeksToTarget:int|null,capWeeks:int,counterfactual:array{floor:array{hoursPerWeek:float,weeks:int}|null,target:array{hoursPerWeek:float,weeks:int}|null}|null},forward:array<int,array{label:string,value:float|null}>}
@@ -324,18 +323,22 @@ class UtilizationProjection
         $floor = null;
         $target = null;
         $forward = [];
-        $steps = $pace === null ? self::SUSTAINED_WEEKS : self::CAP_WEEKS;
+        $steps = $pace === null ? $this->windowWeeks : self::CAP_WEEKS;
 
         for ($k = 1; $k <= $steps; $k++) {
             $weekStart = $this->currentMonday->addWeeks($k - 1);
             $hasCapacity = $this->report->weekCapacity($weekStart) > 0;
             $ratio = $pace === null ? null : $this->paceRatio($pace, $k);
 
-            if ($k <= self::SUSTAINED_WEEKS) {
-                $forward[] = [
+            if ($k <= $this->windowWeeks) {
+                $point = [
                     'label' => $weekStart->format('M j'),
-                    'value' => $hasCapacity && $ratio !== null ? round($ratio, 1) : null,
+                    'value' => $ratio === null ? null : round($ratio, 1),
                 ];
+                if (! $hasCapacity) {
+                    $point['off'] = true;
+                }
+                $forward[] = $point;
             }
             if ($ratio !== null && $floor === null && $ratio >= $this->softFloor) {
                 $floor = $k;
@@ -343,7 +346,7 @@ class UtilizationProjection
             if ($ratio !== null && $target === null && $ratio >= $this->target) {
                 $target = $k;
             }
-            if ($target !== null && $k >= self::SUSTAINED_WEEKS) {
+            if ($target !== null && $k >= $this->windowWeeks) {
                 break;
             }
         }

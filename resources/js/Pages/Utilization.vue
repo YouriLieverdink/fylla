@@ -9,15 +9,13 @@ import { useAction } from '../Composables/useAction';
 
 const props = defineProps({
     report: { type: Object, required: true }, // { weeks, totals, target, softFloor }
-    projection: { type: Object, default: null }, // { paceHours, paceWeeks, thisWeek, sustained, timeToBand, forward } — null when there is nothing to project (#105–#108)
+    projection: { type: Object, default: null }, // { history, paceHours, paceWeeks, thisWeek, sustained, timeToBand, forward } — null when there is nothing to project (#105–#108)
     windowWeeks: { type: Number, default: 13 },
     entries: { type: Array, default: () => [] },
 });
 
 const totals = computed(() => props.report.totals);
-const history = computed(() =>
-    [...props.report.weeks].reverse().map((week) => ({ label: week.label, value: week.utilization })),
-);
+const history = computed(() => props.projection?.history ?? []);
 
 // "Hours needed this week" (#105). One payload, five states — the math never
 // branches, only the copy does.
@@ -30,29 +28,26 @@ const prescription = computed(() => {
         const first = props.projection.paceHours === null
             ? `The current pace never reaches ${props.report.softFloor}%.`
             : `At ${props.projection.paceHours}h/wk the window never reaches ${props.report.softFloor}%.`;
-        const floor = time.counterfactual?.floor;
-        const target = time.counterfactual?.target;
-        const value = t.floor === null ? '—' : t.floor.neededMore + 'h';
-        if (!floor) return { value, behind: true, caption: first };
-        const rate = target ? `${floor.hoursPerWeek}–${target.hoursPerWeek}` : floor.hoursPerWeek;
-
         return {
-            value,
+            label: 'Billable hours needed this week',
+            value: t.floor === null ? '—' : t.floor.neededMore + 'h',
             behind: true,
-            caption: `${first} Billing ${rate}h/wk from here gets you back in the band in ${floor.weeks} weeks.`,
+            caption: first,
         };
     }
     if (t.capacityHours === null) {
-        return { value: '—', caption: 'This week is fully booked off — no floor to hit.' };
+        return { label: 'This week', value: '—', caption: 'This week is fully booked off — no floor to hit.' };
     }
     if (t.floor.neededMore === 0 && t.target.neededMore === 0) {
         return {
+            label: `Headroom above the ${props.report.softFloor}% floor`,
             value: '+' + t.headroomHours + 'h',
             caption: `Clear of the band with ${t.headroomHours}h to spare — no floor to hit this week.`,
         };
     }
     if (t.floor.neededMore > 0 && !t.floor.feasible) {
         return {
+            label: 'Billable hours needed this week',
             value: t.floor.neededMore + 'h',
             behind: true,
             caption: `${props.report.softFloor}% is out of reach this week (${t.floor.neededMore}h against ${t.remainingHours}h left) — the coming weeks are the way back.`,
@@ -60,30 +55,17 @@ const prescription = computed(() => {
     }
     if (t.floor.neededMore > 0) {
         return {
+            label: 'Billable hours needed this week',
             value: t.floor.neededMore + '–' + t.target.neededMore + 'h',
             behind: true,
             caption: `${t.floor.neededMore}–${t.target.neededMore}h more billable this week clears the ${props.report.softFloor}–${props.report.target}% band.`,
         };
     }
     return {
+        label: 'Billable hours needed this week',
         value: t.target.neededMore + 'h',
         caption: `Holding the band needs ${t.target.neededMore}h more billable this week to reach ${props.report.target}%.`,
     };
-});
-
-// "Sustained" (#107): the flat rate that puts the rolling window back in the
-// band after four weeks. Once clear, maintaining the recent pace is the useful
-// reading; an impossible four-week recovery is stated rather than clamped.
-const sustained = computed(() => {
-    const s = props.projection?.sustained;
-    if (!s) return null;
-    const util = props.report.totals.utilization ?? null;
-    if (util !== null && util >= props.report.target) {
-        return `${props.projection.paceHours}h/wk (current pace)`;
-    }
-    if (props.projection.timeToBand?.counterfactual) return 'out of reach';
-    if (!s.floor.feasible || !s.target.feasible) return 'out of reach';
-    return `${s.floor.hoursPerWeek}–${s.target.hoursPerWeek}h/wk for ${s.horizonWeeks} weeks`;
 });
 
 // "Time to band" (#106/#109): how far off the band is at the current pace.
@@ -336,64 +318,57 @@ useAction({ id: 'util:entries', label: VIEWS.entries, keys: 't', scope: 'utiliza
             </div>
         </Card>
 
-        <!-- hours needed this week (#105) -->
-        <Card v-if="prescription" radius="24px" pad="28px 30px" class="mb-[22px]" data-card="projection">
-            <div class="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                    <div class="text-[16px] font-semibold tracking-[-0.01em]">Utilization projection</div>
-                    <div class="mt-[3px] text-[12.5px] text-faint-2">Recent pace held for the next {{ projection.forward?.length ?? 0 }} weeks</div>
+        <!-- utilization projection + prescription (#105–#109) -->
+        <div v-if="prescription" class="mb-[22px] grid gap-[22px] lg:grid-cols-[minmax(0,3fr)_minmax(320px,2fr)]" data-card="projection">
+            <Card radius="24px" pad="28px 30px" class="flex flex-col">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <div class="text-[16px] font-semibold tracking-[-0.01em]">Utilization projection</div>
+                        <div class="mt-[3px] text-[12.5px] text-faint-2">{{ history.length }} weeks of history · {{ projection.forward?.length ?? 0 }} weeks at recent pace</div>
+                    </div>
+                    <div class="flex items-center gap-4 font-mono text-[11px] font-medium">
+                        <span class="inline-flex items-center gap-1.5 text-muted">
+                            <span class="inline-block h-0.5 w-3.5 rounded-sm bg-accent"></span>history
+                        </span>
+                        <span class="inline-flex items-center gap-1.5 text-muted">
+                            <span class="inline-block w-3.5 border-t-2 border-dashed border-accent"></span>at pace
+                        </span>
+                        <span class="inline-flex items-center gap-1.5 text-faint">
+                            <span class="inline-block h-2 w-3.5 bg-behind-tint"></span>{{ report.softFloor }}–{{ report.target }}% band
+                        </span>
+                    </div>
                 </div>
-                <div class="flex items-center gap-4 font-mono text-[11px] font-medium">
-                    <span class="inline-flex items-center gap-1.5 text-muted">
-                        <span class="inline-block h-0.5 w-3.5 rounded-sm bg-accent"></span>history
-                    </span>
-                    <span class="inline-flex items-center gap-1.5 text-muted">
-                        <span class="inline-block w-3.5 border-t-2 border-dashed border-accent"></span>at pace
-                    </span>
-                    <span class="inline-flex items-center gap-1.5 text-faint">
-                        <span class="inline-block h-2 w-3.5 bg-behind-tint"></span>{{ report.softFloor }}–{{ report.target }}% band
-                    </span>
+                <div class="mt-5 flex flex-1 items-center">
+                    <ProjectionChart
+                        :history="history"
+                        :projection="projection.forward"
+                        :floor="report.softFloor"
+                        :target="report.target"
+                    />
                 </div>
-            </div>
-            <div class="mt-2">
-                <ProjectionChart
-                    :history="history"
-                    :projection="projection.forward"
-                    :floor="report.softFloor"
-                    :target="report.target"
-                />
-            </div>
-            <div class="mt-3 flex flex-wrap items-end justify-between gap-6 border-t border-divider pt-5">
-                <div>
+            </Card>
+
+            <Card radius="24px" pad="28px 30px">
+                <div class="text-[16px] font-semibold tracking-[-0.01em]">Projection details</div>
+                <div class="mt-[3px] text-[12.5px] text-faint-2">
+                    Recent pace: {{ projection.paceHours === null ? 'unavailable' : projection.paceHours + 'h/wk' }}
+                    <span v-if="projection.paceHours !== null"> · average of {{ projection.paceWeeks }} complete capacity-bearing {{ projection.paceWeeks === 1 ? 'week' : 'weeks' }}</span>
+                </div>
+
+                <div class="mt-7">
+                    <div class="mb-2 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint-3">{{ prescription.label }}</div>
                     <div class="font-mono text-[34px] font-semibold leading-none tabular-nums" :class="prescription.behind ? 'text-behind' : 'text-track'">
                         {{ prescription.value }}
                     </div>
-                    <p class="mt-3 max-w-[52ch] text-[13.5px] leading-[1.55] text-muted">{{ prescription.caption }}</p>
+                    <p class="mt-3 text-[13.5px] leading-[1.55] text-muted">{{ prescription.caption }}</p>
                 </div>
-                <div class="flex flex-wrap gap-x-9 gap-y-4">
-                    <div v-if="thisWeek.capacityHours !== null">
-                        <div class="mb-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint-3">Capacity</div>
-                        <div class="font-mono text-[18px] font-semibold tabular-nums text-ink">{{ thisWeek.capacityHours }}h</div>
-                    </div>
-                    <div v-if="thisWeek.capacityHours !== null">
-                        <div class="mb-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint-3">Billable so far</div>
-                        <div class="font-mono text-[18px] font-semibold tabular-nums text-ink">{{ thisWeek.loggedBillableHours }}h</div>
-                    </div>
-                    <div v-if="thisWeek.capacityHours !== null">
-                        <div class="mb-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint-3">Left</div>
-                        <div class="font-mono text-[18px] font-semibold tabular-nums text-ink">{{ thisWeek.remainingHours }}h</div>
-                    </div>
-                    <div v-if="sustained" data-stat="sustained">
-                        <div class="mb-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint-3">Sustained</div>
-                        <div class="font-mono text-[18px] font-semibold tabular-nums text-ink">{{ sustained }}</div>
-                    </div>
-                    <div v-if="timeToBand" data-stat="time-to-band">
-                        <div class="mb-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint-3">Time to band</div>
-                        <div class="font-mono text-[18px] font-semibold tabular-nums text-ink">{{ timeToBand }}</div>
-                    </div>
+
+                <div v-if="timeToBand" class="mt-6 border-t border-divider pt-5" data-stat="time-to-band">
+                    <div class="mb-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-faint-3">Time to {{ report.softFloor }}% floor</div>
+                    <div class="font-mono text-[18px] font-semibold tabular-nums text-ink">{{ timeToBand }}</div>
                 </div>
-            </div>
-        </Card>
+            </Card>
+        </div>
 
         <!-- view switcher: weekly breakdown ⇆ time entries -->
         <div class="mb-[22px]">

@@ -87,30 +87,6 @@ describe('hours-needed-this-week card (#105)', () => {
     });
 });
 
-describe('sustained stat (#107)', () => {
-    it('renders the four-week range below the band', () => {
-        const w = shallowMount(Utilization, { props: { report: banded(60), projection } });
-        expect(w.vm.sustained).toBe('26.5–28h/wk for 4 weeks');
-        w.unmount();
-    });
-
-    it('uses the current pace once clear of the band', () => {
-        const w = shallowMount(Utilization, { props: { report: banded(94), projection: { ...projection, paceHours: 26.9 } } });
-        expect(w.vm.sustained).toBe('26.9h/wk (current pace)');
-        w.unmount();
-    });
-
-    it('says out of reach when the four-week solve is infeasible', () => {
-        const unreachable = { ...projection, sustained: {
-            ...projection.sustained,
-            target: { hoursPerWeek: 32, feasible: false },
-        } };
-        const w = shallowMount(Utilization, { props: { report: banded(60), projection: unreachable } });
-        expect(w.vm.sustained).toBe('out of reach');
-        w.unmount();
-    });
-});
-
 describe('time-to-band stat (#106)', () => {
     const read = (props) => {
         const w = shallowMount(Utilization, { props });
@@ -140,8 +116,7 @@ describe('time-to-band stat (#106)', () => {
         const w = shallowMount(Utilization, { props: { report: banded(60), projection: stalled } });
 
         expect(w.vm.timeToBand).toBe('12 wks at 23.4h/wk');
-        expect(w.vm.prescription.caption).toBe('At 19.8h/wk the window never reaches 80%. Billing 23.4–24h/wk from here gets you back in the band in 12 weeks.');
-        expect(w.vm.sustained).toBe('out of reach');
+        expect(w.vm.prescription.caption).toBe('At 19.8h/wk the window never reaches 80%.');
         w.unmount();
     });
 

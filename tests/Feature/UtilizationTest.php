@@ -74,6 +74,7 @@ class UtilizationTest extends TestCase
         $this->assertSame(32.0, $report['week']['capacityHours']);
         $this->assertSame(20.0, $report['week']['billableHours']);
         $this->assertSame(62.5, $report['week']['value']);
+        $this->assertSame(73, $report['softFloor']);
         $this->assertFalse($report['onTrack']); // 68.2 < 73 soft floor
         $this->assertSame('vs. previous 3 weeks', $report['deltaCaption']);
     }

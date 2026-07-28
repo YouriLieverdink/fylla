@@ -62,6 +62,36 @@ class UtilizationProjectionTest extends TestCase
         return (new UtilizationProjection(new UtilizationReport(CarbonImmutable::parse($now))))->payload();
     }
 
+    public function test_history_uses_the_same_rolling_window_as_the_projection(): void
+    {
+        $this->log(1, '2026-06-29', 32);
+        $this->log(2, '2026-07-06', 16);
+        $this->log(3, self::CURRENT_MONDAY, 8);
+
+        $p = $this->project('2026-07-17 17:00');
+
+        // Each point is a three-week rolling ratio ending at that week, not
+        // that week's standalone utilization.
+        $this->assertSame([
+            ['label' => 'Jun 29', 'value' => 33.3],
+            ['label' => 'Jul 6', 'value' => 50.0],
+            ['label' => 'Jul 13', 'value' => 58.3],
+        ], $p['history']);
+    }
+
+    public function test_rolling_history_marks_a_zero_capacity_endpoint_as_a_week_off(): void
+    {
+        $this->log(1, '2026-06-29', 24);
+        $this->off('2026-07-06', -32);
+
+        $p = $this->project('2026-07-17 17:00');
+
+        $this->assertSame(
+            ['label' => 'Jul 6', 'value' => 37.5, 'off' => true],
+            $p['history'][1],
+        );
+    }
+
     public function test_needed_hours_net_out_the_window_history(): void
     {
         // Two historic weeks at 100% (32/32) carry surplus into the window, so
@@ -80,6 +110,20 @@ class UtilizationProjectionTest extends TestCase
         $this->assertSame(32.0, $p['thisWeek']['capacityHours']);
         $this->assertSame(8.0, $p['thisWeek']['remainingHours']);
         $this->assertTrue($p['thisWeek']['target']['feasible']);
+    }
+
+    public function test_unreachable_ask_is_bounded_by_the_current_weeks_capacity(): void
+    {
+        // A historic extra-day week must not become this week's reported
+        // ceiling. This week can contribute at most its own 32h capacity.
+        $this->off('2026-06-29', 8); // historic capacity = 40h
+        $this->log(1, self::CURRENT_MONDAY, 8.75);
+
+        $p = $this->project('2026-07-15 12:00');
+
+        $this->assertFalse($p['thisWeek']['floor']['feasible']);
+        $this->assertSame(32.0, $p['thisWeek']['floor']['neededTotal']);
+        $this->assertSame(23.25, $p['thisWeek']['floor']['neededMore']);
     }
 
     public function test_ask_beyond_the_weeks_remaining_capacity_is_infeasible(): void
@@ -263,16 +307,19 @@ class UtilizationProjectionTest extends TestCase
         $this->assertSame(2, $p['timeToBand']['weeksToFloor']);
     }
 
-    public function test_forward_is_the_first_four_pace_held_steps(): void
+    public function test_forward_matches_the_history_window_at_the_current_pace(): void
     {
-        config(['fylla.utilization_pace_weeks' => 1]);
+        config([
+            'fylla.utilization_window_weeks' => 4,
+            'fylla.utilization_pace_weeks' => 1,
+        ]);
         $this->log(1, '2026-07-06', 24);
 
         $p = $this->project('2026-07-15 12:00');
 
         $this->assertSame([
-            ['label' => 'Jul 13', 'value' => 50.0],
-            ['label' => 'Jul 20', 'value' => 75.0],
+            ['label' => 'Jul 13', 'value' => 37.5],
+            ['label' => 'Jul 20', 'value' => 56.3],
             ['label' => 'Jul 27', 'value' => 75.0],
             ['label' => 'Aug 3', 'value' => 75.0],
         ], $p['forward']);
@@ -286,20 +333,20 @@ class UtilizationProjectionTest extends TestCase
 
         $p = $this->project('2026-07-15 12:00');
 
-        $this->assertCount(4, $p['forward']);
-        $this->assertSame(['label' => 'Jul 20', 'value' => null], $p['forward'][1]);
+        $this->assertCount(3, $p['forward']);
+        $this->assertSame(['label' => 'Jul 20', 'value' => 75.0, 'off' => true], $p['forward'][1]);
         $this->assertSame('Jul 27', $p['forward'][2]['label']);
     }
 
-    public function test_forward_has_four_null_steps_without_a_recent_pace(): void
+    public function test_forward_fills_the_window_with_null_steps_without_a_recent_pace(): void
     {
         config(['fylla.utilization_pace_weeks' => 1]);
         $this->off('2026-07-06', -32);
 
         $p = $this->project('2026-07-15 12:00');
 
-        $this->assertCount(4, $p['forward']);
-        $this->assertSame([null, null, null, null], array_column($p['forward'], 'value'));
+        $this->assertCount(3, $p['forward']);
+        $this->assertSame([null, null, null], array_column($p['forward'], 'value'));
     }
 
     public function test_sustained_rate_skips_a_future_week_with_no_capacity(): void

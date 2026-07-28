@@ -4,6 +4,7 @@ import Card from './Card.vue';
 
 const props = defineProps({
     points: { type: Array, default: () => [] }, // [{ label, value }] oldest → newest
+    floor: { type: Number, default: 73 },
     target: { type: Number, default: 75 },
     weeks: { type: Number, default: 13 },
 });
@@ -18,7 +19,7 @@ const BOTTOM = 118;
 const domain = computed(() => {
     const shares = props.points.map((p) => p.billableShare).filter((v) => v != null);
     const values = props.points.map((p) => p.value).filter((v) => v != null);
-    const vals = [...values, ...shares, props.target];
+    const vals = [...values, ...shares, props.floor, props.target];
     const lo = Math.max(0, Math.min(...vals) - 8);
     const hi = Math.max(...vals) + 8;
     return { lo, hi: hi > lo ? hi : lo + 1 };
@@ -76,7 +77,11 @@ const shareCoords = computed(() =>
 );
 const sharePath = computed(() => lineOf(shareCoords.value));
 const shareDots = computed(() => dotsOf(shareCoords.value));
+const floorY = computed(() => yFor(props.floor));
 const targetY = computed(() => yFor(props.target));
+const bandY = computed(() => Math.min(floorY.value, targetY.value));
+const bandHeight = computed(() => Math.abs(floorY.value - targetY.value));
+const bandLabelY = computed(() => Math.max(bandY.value - 6, 10));
 
 const hover = ref(null); // active point index
 const bandW = computed(() => (props.points.length <= 1 ? X1 - X0 : (X1 - X0) / (props.points.length - 1)));
@@ -112,14 +117,14 @@ const tip = computed(() => {
                     <span class="inline-block h-0.5 w-3.5 rounded-sm bg-track"></span>billable share
                 </span>
                 <span class="inline-flex items-center gap-1.5 text-faint">
-                    <span class="inline-block w-3.5 border-t-[1.5px] border-dashed border-behind"></span>{{ target }}% target
+                    <span class="inline-block h-2 w-3.5 bg-behind-tint"></span>{{ floor }}–{{ target }}% band
                 </span>
             </div>
         </div>
         <div class="mt-2 flex flex-1 items-center">
             <svg v-if="points.some((p) => p.value != null)" viewBox="0 0 360 150" width="100%" class="block">
-                <line :x1="X0" :y1="targetY" :x2="X1" :y2="targetY" stroke="#b18749" stroke-width="1.25" stroke-dasharray="3 4" opacity=".85" />
-                <text :x="X1" :y="targetY - 5" text-anchor="end" font-family="var(--font-mono)" font-size="9" fill="#b18749">{{ target }}%</text>
+                <rect data-band :x="X0" :y="bandY" :width="X1 - X0" :height="bandHeight" fill="#b18749" fill-opacity=".12" />
+                <line data-floor :x1="X0" :y1="floorY" :x2="X1" :y2="floorY" stroke="#b18749" stroke-width="1.25" stroke-dasharray="3 4" opacity=".85" />
                 <path :d="area" fill="url(#utilFill)" />
                 <defs>
                     <linearGradient id="utilFill" x1="0" y1="0" x2="0" y2="1">
@@ -129,10 +134,11 @@ const tip = computed(() => {
                 </defs>
                 <path v-if="sharePath" :d="sharePath" fill="none" stroke="#5c8a6f" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
                 <circle v-for="([dx, dy], i) in shareDots" :key="'share' + i" :cx="dx" :cy="dy" r="2.5" fill="#5c8a6f" />
-                <path :d="linePath" fill="none" stroke="#6c5fc9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                <path data-series="utilization" :d="linePath" fill="none" stroke="#6c5fc9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                 <circle v-for="([dx, dy], i) in utilDots" :key="'util' + i" :cx="dx" :cy="dy" r="2.75" fill="#6c5fc9" />
                 <circle v-for="(gx, i) in gaps" :key="'gap' + i" :cx="gx" :cy="BOTTOM" r="2.5" fill="none" stroke="#a8a498" stroke-width="1.25" />
                 <circle v-if="last" :cx="last[0]" :cy="last[1]" r="4" fill="#6c5fc9" stroke="#fff" stroke-width="2" />
+                <text data-floor-label :x="X1" :y="bandLabelY" text-anchor="end" font-family="var(--font-mono)" font-size="9" fill="#9a7139" stroke="#fff" stroke-width="3" paint-order="stroke">{{ floor }}% floor</text>
                 <text :x="X0" y="140" font-family="var(--font-mono)" font-size="9" fill="#a8a498">{{ weeks }}w ago</text>
                 <text :x="X1" y="140" text-anchor="end" font-family="var(--font-mono)" font-size="9" fill="#a8a498">now</text>
 
