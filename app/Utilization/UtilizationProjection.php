@@ -64,6 +64,23 @@ class UtilizationProjection
     /** Null wholesale when there is nothing to project against (#101). */
     public function payload(): ?array
     {
+        $capacities = $this->collectWindow();
+
+        if (max($capacities) <= 0) {
+            return null; // whole window booked off — no ratio to move
+        }
+
+        return ['thisWeek' => $this->thisWeek(max($capacities))];
+    }
+
+    /**
+     * Read the window off the report into the sums ratio() closes over, and
+     * return every week's full capacity (oldest → newest, current week last).
+     *
+     * @return array<int,float>
+     */
+    private function collectWindow(): array
+    {
         $capacities = [];
         $this->historicBillable = 0.0;
         $this->historicCapacity = 0.0;
@@ -79,11 +96,7 @@ class UtilizationProjection
         }
         $this->currentCapacity = end($capacities);
 
-        if (max($capacities) <= 0) {
-            return null; // whole window booked off — no ratio to move
-        }
-
-        return ['thisWeek' => $this->thisWeek(max($capacities))];
+        return $capacities;
     }
 
     /**

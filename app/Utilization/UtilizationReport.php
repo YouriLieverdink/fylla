@@ -21,6 +21,12 @@ use Illuminate\Support\Collection;
  */
 class UtilizationReport
 {
+    /**
+     * How far ahead confirmed capacity adjustments are loaded: the projection's
+     * time-to-band search steps at most this many weeks forward (#101).
+     */
+    private const ADJUSTMENT_LOOKAHEAD_WEEKS = 26;
+
     private int $contracted;
 
     private int $offWeekday;
@@ -236,10 +242,9 @@ class UtilizationReport
 
         $rangeStart = $this->currentMonday->subWeeks(2 * $this->windowWeeks - 1);
         $rangeEnd = $this->currentMonday->addWeek();
-        // Adjustments reach further forward than worklogs do: the projection
-        // steps up to 26 weeks ahead and needs their capacity (#101). No
-        // future worklogs exist, so that range stays as it is.
-        $adjustmentEnd = $this->currentMonday->addWeeks(26);
+        // Adjustments reach further forward than worklogs do — the projection
+        // needs future capacity. No future worklogs exist, so that range stays.
+        $adjustmentEnd = $this->currentMonday->addWeeks(self::ADJUSTMENT_LOOKAHEAD_WEEKS);
 
         $worklogs = SyncedWorklog::mine()
             ->whereBetween('started_at', [$rangeStart, $rangeEnd])
