@@ -71,12 +71,14 @@ class UtilizationProjectionTest extends TestCase
         $p = $this->project('2026-07-17 17:00');
 
         // Each point is a three-week rolling ratio ending at that week, not
-        // that week's standalone utilization.
+        // that week's standalone utilization. History stops at the last
+        // complete week — the current one is forward[0], never plotted twice.
         $this->assertSame([
+            ['label' => 'Jun 22', 'value' => 0.0],
             ['label' => 'Jun 29', 'value' => 33.3],
             ['label' => 'Jul 6', 'value' => 50.0],
-            ['label' => 'Jul 13', 'value' => 58.3],
         ], $p['history']);
+        $this->assertSame('Jul 13', $p['forward'][0]['label']);
     }
 
     public function test_rolling_history_marks_a_zero_capacity_endpoint_as_a_week_off(): void
@@ -88,7 +90,7 @@ class UtilizationProjectionTest extends TestCase
 
         $this->assertSame(
             ['label' => 'Jul 6', 'value' => 37.5, 'off' => true],
-            $p['history'][1],
+            $p['history'][2],
         );
     }
 
@@ -240,6 +242,26 @@ class UtilizationProjectionTest extends TestCase
 
         $this->assertSame(20.0, $p['paceHours']);
         $this->assertSame(1, $p['paceWeeks']);
+    }
+
+    public function test_pace_weighs_each_week_by_the_capacity_it_actually_had(): void
+    {
+        // A 24h week (one day off) billed 18h and a 32h week billed 24h are both
+        // exactly 75%. As a capacity-weighted rate that is 42/56 = 75% → 24h
+        // against a standard 32h week; averaging *hours* would have read 21h/wk
+        // and put the projection under the floor on a week that never missed.
+        config(['fylla.utilization_pace_weeks' => 2]);
+        $this->off('2026-06-29', -8);
+        $this->log(1, '2026-06-29', 18);
+        $this->log(2, '2026-07-06', 24);
+
+        $p = $this->project('2026-07-15 12:00');
+
+        $this->assertSame(24.0, $p['paceHours']);
+        $this->assertSame(2, $p['paceWeeks']);
+        // Held as a rate, every full 32h week ahead contributes 24h — so the
+        // window converges on 75%, not on 21/32 = 65.6%.
+        $this->assertSame(75.0, $p['forward'][2]['value']);
     }
 
     public function test_no_capacity_bearing_pace_week_is_no_pace_at_all(): void

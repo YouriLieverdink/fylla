@@ -323,13 +323,17 @@ capacity-bearing week fully cannot reach a threshold, the payload retains the
 best rate with `feasible: false`.
 
 The same card carries **Time to band** (issue #106): how long the band is away
-at the current pace. The pace is `Σ billable ÷ weeks with capacity` over the
-last `fylla.utilization_pace_weeks` (default 4) **complete** weeks — the current
-partial week is excluded, and a fully booked-off week leaves both the sum and
-the divisor, so a holiday does not depress the reading. With no capacity-bearing
-week among them there is no pace at all (`null`, never `0 h/wk`). The pace is
-then held constant as **hours per week** and the window is stepped forward up to
-26 weeks, each stepped week contributing `min(pace, that week's capacity)` —
+at the current pace. The pace is a **capacity-weighted rate**,
+`Σ billable ÷ Σ capacity` over the last `fylla.utilization_pace_weeks`
+(default 4) **complete** weeks — the current partial week is excluded, and a
+fully booked-off week leaves both sums, so a holiday does not depress the
+reading. Weighting by capacity means a 24h week (one day off) billed 18h reads
+as the 75% it was, where averaging *hours* scored it against a 32h week and
+dragged the whole projection under the floor. With no capacity-bearing week
+among them there is no pace at all (`null`, never `0 h/wk`). `paceHours` is that
+rate rendered against a full contracted week, for display only. The rate is
+then held constant and the window is stepped forward up to 26 weeks, each
+stepped week contributing `rate × that week's capacity` —
 floored, for the current week, at the hours already billed; the
 first step over the soft floor and over the target are reported. Uncrossed by
 week 26 reads as "not at this pace"; already inside the band reads as "holding",
@@ -346,10 +350,14 @@ The projection chart (issue #108) plots rolling-window utilization for both its
 history and its equal-length `projection.forward` continuation (13 historical +
 13 projected week endings by default). Historical points therefore use the same
 metric as the dashed pace-held projection rather than standalone weekly
-utilization. The continuation is dashed;
+utilization. History ends at the last **complete** week: the current week is
+`forward[0]`, so plotting it in history too would show the same week twice —
+once part-done and once at pace, reading as a mid-week dip. The live
+current-week number stays on the gauge and in the breakdown table. The
+continuation is dashed;
 the 73–75% band is shaded with a labelled dashed floor. Hovering or focusing a
-point shows its week and exact percentage. A thin vertical marker separates
-this week from the forward projection. A fully booked-off endpoint keeps its
+point shows its week and exact percentage. A thin vertical marker sits on the
+history/projection boundary, separating complete weeks from this week onward. A fully booked-off endpoint keeps its
 rolling-window value and renders as a hollow “week off” point; it still advances
 the calendar and evicts old history while adding no capacity or billable hours.
 The dashboard's `UtilizationTrendChart` keeps its separate weekly-utilization

@@ -352,7 +352,7 @@ useAction({ id: 'util:entries', label: VIEWS.entries, keys: 't', scope: 'utiliza
                 <div class="text-[16px] font-semibold tracking-[-0.01em]">Projection details</div>
                 <div class="mt-[3px] text-[12.5px] text-faint-2">
                     Recent pace: {{ projection.paceHours === null ? 'unavailable' : projection.paceHours + 'h/wk' }}
-                    <span v-if="projection.paceHours !== null"> · average of {{ projection.paceWeeks }} complete capacity-bearing {{ projection.paceWeeks === 1 ? 'week' : 'weeks' }}</span>
+                    <span v-if="projection.paceHours !== null"> · billable ÷ capacity over {{ projection.paceWeeks }} complete capacity-bearing {{ projection.paceWeeks === 1 ? 'week' : 'weeks' }}, shown against a full week</span>
                 </div>
 
                 <div class="mt-7">

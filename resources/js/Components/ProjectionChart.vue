@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 
 const props = defineProps({
-    history: { type: Array, default: () => [] }, // [{ label, value }] oldest → newest
+    history: { type: Array, default: () => [] }, // [{ label, value }] oldest → newest, ending at the last *complete* week
     projection: { type: Array, default: () => [] }, // separate pace-held continuation
     floor: { type: Number, default: 73 },
     target: { type: Number, default: 75 },
@@ -72,7 +72,11 @@ const targetY = computed(() => yFor(props.target));
 const bandY = computed(() => Math.min(floorY.value, targetY.value));
 const bandHeight = computed(() => Math.abs(floorY.value - targetY.value));
 const bandLabelY = computed(() => Math.max(bandY.value - 6, 10));
-const currentX = computed(() => props.history.length ? xFor(props.history.length - 1) : null);
+// The current week is projection[0], not the last history point, so "now" sits
+// on the boundary between the two series.
+const currentX = computed(() => props.history.length
+    ? xFor(props.history.length - (props.projection.length ? 0.5 : 1))
+    : null);
 
 // Match the Worklist trend chart: each week owns a full-height hover band, with
 // a guide line and tooltip. This is easier to hit than a tiny point.

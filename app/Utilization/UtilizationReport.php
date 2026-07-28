@@ -159,9 +159,15 @@ class UtilizationReport
     }
 
     /**
-     * Rolling-window utilization at each of the last W week endings, oldest
-     * first. Completed endpoints use full weekly capacity; the current endpoint
-     * keeps the same partial-week proration as the headline.
+     * Rolling-window utilization at each of the last W **complete** week
+     * endings, oldest first — every endpoint uses full weekly capacity.
+     *
+     * The current week is deliberately absent: the projection's `forward`
+     * series starts at it, so including it here plotted the same week twice —
+     * once part-done (prorated capacity, billable still trickling in) and once
+     * at pace — which read as a mid-week dip in the chart rather than as a
+     * trend. History ends at the last settled week; the current week belongs to
+     * the projection, and its live number to the gauge and breakdown.
      *
      * @return array<int,array{label:string,value:float|null}>
      */
@@ -170,7 +176,7 @@ class UtilizationReport
         $this->load();
 
         $points = [];
-        for ($endOffset = -($this->windowWeeks - 1); $endOffset <= 0; $endOffset++) {
+        for ($endOffset = -$this->windowWeeks; $endOffset <= -1; $endOffset++) {
             $end = $this->currentMonday->addWeeks($endOffset);
             $starts = [];
             for ($i = $this->windowWeeks - 1; $i >= 0; $i--) {

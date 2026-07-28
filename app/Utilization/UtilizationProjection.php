@@ -51,6 +51,9 @@ class UtilizationProjection
 
     private int $paceWeeks;
 
+    /** Standard week the pace *rate* is reported against, in hours. */
+    private int $contracted;
+
     private int $target;
 
     private int $softFloor;
@@ -72,6 +75,7 @@ class UtilizationProjection
         // Kept ≤ the report's trailing worklog range (2×W−1 weeks); at the real
         // 13-week window and a 4-week pace there is no contest.
         $this->paceWeeks = (int) config('fylla.utilization_pace_weeks');
+        $this->contracted = (int) config('fylla.contracted_hours_per_week');
         // One clock: the report's. A second injectable clock is two sources
         // that can disagree (#103).
         $this->currentMonday = $this->report->now()->startOfWeek(CarbonImmutable::MONDAY);
@@ -87,7 +91,7 @@ class UtilizationProjection
         }
 
         $pace = $this->pace();
-        $paceHeld = $this->paceHeldProjection($pace === null ? null : $pace['hours']);
+        $paceHeld = $this->paceHeldProjection($pace === null ? null : $pace['rate']);
 
         return [
             'history' => $this->report->rollingHistory(),
@@ -287,28 +291,42 @@ class UtilizationProjection
     }
 
     /**
-     * Billable hours per capacity-bearing week over the P **complete** weeks
-     * before this one. The current partial week is excluded — including it
-     * collapses the reading every Monday. Zero-capacity weeks leave both the
-     * sum and the divisor, so a holiday does not depress the pace (#101 dec. 7);
-     * with none left there is no pace at all, which is not the same as 0 h/wk.
+     * Recent pace as a **capacity-weighted rate**: Σ billable ÷ Σ capacity over
+     * the P **complete** weeks before this one. The current partial week is
+     * excluded — including it collapses the reading every Monday. Zero-capacity
+     * weeks leave both sums, so a holiday does not depress the pace (#101
+     * dec. 7); with none left there is no pace at all, which is not the same as
+     * a rate of 0.
      *
-     * @return array{hours: float, weeks: int}|null
+     * A rate, not hours per week: averaging *hours* silently treats a 24h week
+     * (one day off) as a 32h one, so a short-but-fully-utilized week dragged the
+     * pace — and with it the whole projection — below the floor. Each week is
+     * now weighed by the capacity it actually had. `hours` is the same rate
+     * rendered against a standard contracted week, purely for display.
+     *
+     * @return array{rate: float, hours: float, weeks: int}|null
      */
     private function pace(): ?array
     {
-        $hours = 0.0;
+        $billable = 0.0;
+        $capacity = 0.0;
         $weeks = 0;
         for ($i = $this->paceWeeks; $i >= 1; $i--) {
             $weekStart = $this->currentMonday->subWeeks($i);
-            if ($this->report->weekCapacity($weekStart) <= 0) {
+            $weekCapacity = $this->report->weekCapacity($weekStart);
+            if ($weekCapacity <= 0) {
                 continue;
             }
-            $hours += $this->report->weekBillable($weekStart);
+            $billable += $this->report->weekBillable($weekStart);
+            $capacity += $weekCapacity;
             $weeks++;
         }
+        if ($weeks === 0) {
+            return null;
+        }
+        $rate = $billable / $capacity;
 
-        return $weeks === 0 ? null : ['hours' => $hours / $weeks, 'weeks' => $weeks];
+        return ['rate' => $rate, 'hours' => $rate * $this->contracted, 'weeks' => $weeks];
     }
 
     /**
@@ -318,17 +336,17 @@ class UtilizationProjection
      *
      * @return array{timeToBand:array{weeksToFloor:int|null,weeksToTarget:int|null,capWeeks:int,counterfactual:array{floor:array{hoursPerWeek:float,weeks:int}|null,target:array{hoursPerWeek:float,weeks:int}|null}|null},forward:array<int,array{label:string,value:float|null}>}
      */
-    private function paceHeldProjection(?float $pace): array
+    private function paceHeldProjection(?float $rate): array
     {
         $floor = null;
         $target = null;
         $forward = [];
-        $steps = $pace === null ? $this->windowWeeks : self::CAP_WEEKS;
+        $steps = $rate === null ? $this->windowWeeks : self::CAP_WEEKS;
 
         for ($k = 1; $k <= $steps; $k++) {
             $weekStart = $this->currentMonday->addWeeks($k - 1);
             $hasCapacity = $this->report->weekCapacity($weekStart) > 0;
-            $ratio = $pace === null ? null : $this->paceRatio($pace, $k);
+            $ratio = $rate === null ? null : $this->paceRatio($rate, $k);
 
             if ($k <= $this->windowWeeks) {
                 $point = [
@@ -356,7 +374,7 @@ class UtilizationProjection
                 'weeksToFloor' => $floor,
                 'weeksToTarget' => $target,
                 'capWeeks' => self::CAP_WEEKS,
-                'counterfactual' => $pace !== null && $floor === null ? $this->counterfactual() : null,
+                'counterfactual' => $rate !== null && $floor === null ? $this->counterfactual() : null,
             ],
             'forward' => $forward,
         ];
@@ -416,19 +434,19 @@ class UtilizationProjection
     }
 
     /**
-     * The window ratio at the end of step $k, with the pace held as **hours per
-     * week** rather than as a ratio: every simulated week contributes
-     * min(pace, cap) against its own capacity, so booked leave delays the
-     * crossing instead of bending the rate. The window is always the last W
-     * weeks ending at the evaluated one, so stepping forward evicts the oldest
-     * week for free; a cap ≤ 0 week adds nothing to either sum but still
-     * consumes its calendar step. The current week floors at the hours already
-     * logged (#101's clamp): they cannot be undone by a slower pace. There is
-     * no bisection here, so the floor costs the curve nothing.
+     * The window ratio at the end of step $k, with the pace held as a **rate**:
+     * every simulated week contributes rate × its own capacity, so a short week
+     * is asked for proportionally less rather than being scored against a full
+     * one. The window is always the last W weeks ending at the evaluated one, so
+     * stepping forward evicts the oldest week for free; a cap ≤ 0 week adds
+     * nothing to either sum but still consumes its calendar step. The current
+     * week floors at the hours already logged (#101's clamp): they cannot be
+     * undone by a slower pace. There is no bisection here, so the floor costs
+     * the curve nothing.
      */
-    private function paceRatio(float $pace, int $k): float
+    private function paceRatio(float $rate, int $k): float
     {
-        return $this->rollForwardRatio($k, fn (float $capacity): float => min($pace, $capacity));
+        return $this->rollForwardRatio($k, fn (float $capacity): float => $rate * $capacity);
     }
 
     /**
