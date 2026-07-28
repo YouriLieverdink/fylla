@@ -211,7 +211,7 @@ class UtilizationProjectionTest extends TestCase
         $this->assertNull($p['paceHours']);
         $this->assertSame(0, $p['paceWeeks']);
         $this->assertSame(
-            ['weeksToFloor' => null, 'weeksToTarget' => null, 'capWeeks' => 26],
+            ['weeksToFloor' => null, 'weeksToTarget' => null, 'capWeeks' => 26, 'counterfactual' => null],
             $p['timeToBand'],
         );
     }
@@ -349,6 +349,49 @@ class UtilizationProjectionTest extends TestCase
         $this->assertSame(5.0, $p['paceHours']);
         $this->assertNull($p['timeToBand']['weeksToFloor']);
         $this->assertNull($p['timeToBand']['weeksToTarget']);
+    }
+
+    public function test_not_at_this_pace_gets_a_band_rate_counterfactual(): void
+    {
+        config([
+            'fylla.utilization_window_weeks' => 13,
+            'fylla.utilization_pace_weeks' => 1,
+        ]);
+        $this->log(1, '2026-07-06', 5);
+
+        $p = $this->project('2026-07-15 12:00');
+
+        $this->assertNull($p['timeToBand']['weeksToFloor']);
+        $this->assertLessThanOrEqual(13, $p['timeToBand']['counterfactual']['floor']['weeks']);
+        $this->assertSame(23.5, $p['timeToBand']['counterfactual']['floor']['hoursPerWeek']);
+        $this->assertSame(24.0, $p['timeToBand']['counterfactual']['target']['hoursPerWeek']);
+    }
+
+    public function test_counterfactual_falls_back_with_more_than_13_zero_capacity_weeks(): void
+    {
+        config([
+            'fylla.utilization_window_weeks' => 13,
+            'fylla.utilization_pace_weeks' => 1,
+        ]);
+        $this->log(1, '2026-07-06', 5);
+        for ($week = 0; $week < 14; $week++) {
+            $this->off(CarbonImmutable::parse(self::CURRENT_MONDAY)->addWeeks($week)->toDateString(), -32);
+        }
+
+        $p = $this->project('2026-07-15 12:00');
+
+        $this->assertNull($p['timeToBand']['counterfactual']);
+    }
+
+    public function test_counterfactual_is_null_when_the_current_pace_reaches_the_band(): void
+    {
+        config(['fylla.utilization_pace_weeks' => 1]);
+        $this->log(1, '2026-07-06', 23.5);
+
+        $p = $this->project('2026-07-15 12:00');
+
+        $this->assertSame(2, $p['timeToBand']['weeksToFloor']);
+        $this->assertNull($p['timeToBand']['counterfactual']);
     }
 
     public function test_payload_is_null_when_no_week_in_the_window_has_capacity(): void

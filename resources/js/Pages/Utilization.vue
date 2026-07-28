@@ -25,6 +25,23 @@ const thisWeek = computed(() => props.projection?.thisWeek ?? null);
 const prescription = computed(() => {
     const t = thisWeek.value;
     if (!t) return null;
+    const time = props.projection?.timeToBand;
+    if (time?.weeksToFloor === null) {
+        const first = props.projection.paceHours === null
+            ? `The current pace never reaches ${props.report.softFloor}%.`
+            : `At ${props.projection.paceHours}h/wk the window never reaches ${props.report.softFloor}%.`;
+        const floor = time.counterfactual?.floor;
+        const target = time.counterfactual?.target;
+        const value = t.floor === null ? '—' : t.floor.neededMore + 'h';
+        if (!floor) return { value, behind: true, caption: first };
+        const rate = target ? `${floor.hoursPerWeek}–${target.hoursPerWeek}` : floor.hoursPerWeek;
+
+        return {
+            value,
+            behind: true,
+            caption: `${first} Billing ${rate}h/wk from here gets you back in the band in ${floor.weeks} weeks.`,
+        };
+    }
     if (t.capacityHours === null) {
         return { value: '—', caption: 'This week is fully booked off — no floor to hit.' };
     }
@@ -64,20 +81,25 @@ const sustained = computed(() => {
     if (util !== null && util >= props.report.target) {
         return `${props.projection.paceHours}h/wk (current pace)`;
     }
+    if (props.projection.timeToBand?.counterfactual) return 'out of reach';
     if (!s.floor.feasible || !s.target.feasible) return 'out of reach';
     return `${s.floor.hoursPerWeek}–${s.target.hoursPerWeek}h/wk for ${s.horizonWeeks} weeks`;
 });
 
-// "Time to band" (#106): how far off the band is at the current pace. The two
-// in-band readings come off the window's own ratio, so the stat stays honest
-// about today rather than restating the projection.
+// "Time to band" (#106/#109): how far off the band is at the current pace.
+// When that pace never lands, show the floor-rate counterfactual in the same
+// slot; the chart remains the honest at-pace continuation.
 const timeToBand = computed(() => {
     const t = props.projection?.timeToBand;
     if (!t) return null;
     const util = props.report.totals.utilization ?? null;
     if (util !== null && util >= props.report.target) return 'n/a';
     if (util !== null && util >= props.report.softFloor) return 'holding';
-    if (t.weeksToFloor === null) return 'not at this pace';
+    if (t.weeksToFloor === null) {
+        const floor = t.counterfactual?.floor;
+        if (!floor) return 'not at this pace';
+        return `${floor.weeks} wk${floor.weeks === 1 ? '' : 's'} at ${floor.hoursPerWeek}h/wk`;
+    }
     return `${t.weeksToFloor} wk${t.weeksToFloor === 1 ? '' : 's'} at ${props.projection.paceHours}h/wk`;
 });
 

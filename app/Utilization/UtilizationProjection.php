@@ -23,7 +23,8 @@ use Carbon\CarbonImmutable;
  *
  * Issue #106 adds time to band at the recent pace; issue #107 adds the flat
  * sustained rate over the current week and next three; issue #108 exposes the
- * first four pace-held steps for the projection chart.
+ * first four pace-held steps for the projection chart; issue #109 adds the
+ * band-rate counterfactual when that pace never reaches the floor.
  */
 class UtilizationProjection
 {
@@ -316,7 +317,7 @@ class UtilizationProjection
      * the chart, from one pace-held loop. An off week stays in the chart as a
      * null calendar step but contributes to neither side of the ratio.
      *
-     * @return array{timeToBand:array{weeksToFloor:int|null,weeksToTarget:int|null,capWeeks:int},forward:array<int,array{label:string,value:float|null}>}
+     * @return array{timeToBand:array{weeksToFloor:int|null,weeksToTarget:int|null,capWeeks:int,counterfactual:array{floor:array{hoursPerWeek:float,weeks:int}|null,target:array{hoursPerWeek:float,weeks:int}|null}|null},forward:array<int,array{label:string,value:float|null}>}
      */
     private function paceHeldProjection(?float $pace): array
     {
@@ -348,9 +349,67 @@ class UtilizationProjection
         }
 
         return [
-            'timeToBand' => ['weeksToFloor' => $floor, 'weeksToTarget' => $target, 'capWeeks' => self::CAP_WEEKS],
+            'timeToBand' => [
+                'weeksToFloor' => $floor,
+                'weeksToTarget' => $target,
+                'capWeeks' => self::CAP_WEEKS,
+                'counterfactual' => $pace !== null && $floor === null ? $this->counterfactual() : null,
+            ],
             'forward' => $forward,
         ];
+    }
+
+    /**
+     * Hold each simulated week at the band percentage of its own capacity and
+     * solve only for the crossing week. With fewer than W capacity-bearing
+     * weeks available inside the calendar cap, the recovery promise is not
+     * useful during that long-leave corner and falls back to the plain state.
+     *
+     * @return array{floor:array{hoursPerWeek:float,weeks:int}|null,target:array{hoursPerWeek:float,weeks:int}|null}|null
+     */
+    private function counterfactual(): ?array
+    {
+        $capacityWeeks = 0;
+        for ($k = 1; $k <= self::CAP_WEEKS; $k++) {
+            if ($this->report->weekCapacity($this->currentMonday->addWeeks($k - 1)) > 0) {
+                $capacityWeeks++;
+            }
+        }
+        if ($capacityWeeks < $this->windowWeeks) {
+            return null;
+        }
+
+        $floor = $this->counterfactualForThreshold($this->softFloor);
+        $target = $this->counterfactualForThreshold($this->target);
+
+        return $floor === null && $target === null ? null : ['floor' => $floor, 'target' => $target];
+    }
+
+    /** @return array{hoursPerWeek:float,weeks:int}|null */
+    private function counterfactualForThreshold(int $threshold): ?array
+    {
+        $displayRate = null;
+        for ($k = 1; $k <= self::CAP_WEEKS; $k++) {
+            $capacity = $this->report->weekCapacity($this->currentMonday->addWeeks($k - 1));
+            if ($displayRate === null && $capacity > 0) {
+                $displayRate = $this->bandRate($threshold, $capacity);
+            }
+            $ratio = $this->rollForwardRatio(
+                $k,
+                fn (float $weekCapacity): float => $this->bandRate($threshold, $weekCapacity),
+            );
+            if ($ratio >= $threshold) {
+                return ['hoursPerWeek' => $displayRate ?? 0.0, 'weeks' => $k];
+            }
+        }
+
+        return null;
+    }
+
+    /** Threshold-derived rates round up, so the counterfactual never under-asks. */
+    private function bandRate(int $threshold, float $capacity): float
+    {
+        return ceil(($threshold / 100 * $capacity) / 0.25) * 0.25;
     }
 
     /**
@@ -366,6 +425,18 @@ class UtilizationProjection
      */
     private function paceRatio(float $pace, int $k): float
     {
+        return $this->rollForwardRatio($k, fn (float $capacity): float => min($pace, $capacity));
+    }
+
+    /**
+     * Shared roll-forward step. Off weeks still consume their calendar slot and
+     * evict history, while the supplied rate is ceilinged by each week's own
+     * capacity before it enters the rolling ratio.
+     *
+     * @param  callable(float): float  $hoursForCapacity
+     */
+    private function rollForwardRatio(int $k, callable $hoursForCapacity): float
+    {
         $bill = 0.0;
         $cap = 0.0;
         for ($i = $k - $this->windowWeeks; $i < $k; $i++) {
@@ -374,11 +445,11 @@ class UtilizationProjection
             if ($weekCapacity <= 0) {
                 continue;
             }
-            $atPace = min($pace, $weekCapacity);
+            $simulated = min($hoursForCapacity($weekCapacity), $weekCapacity);
             $bill += match (true) {
                 $i < 0 => $this->report->weekBillable($weekStart),
-                $i === 0 => max($this->report->weekBillable($weekStart), $atPace),
-                default => $atPace,
+                $i === 0 => max($this->report->weekBillable($weekStart), $simulated),
+                default => $simulated,
             };
             $cap += $weekCapacity;
         }

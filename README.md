@@ -332,7 +332,14 @@ then held constant as **hours per week** and the window is stepped forward up to
 floored, for the current week, at the hours already billed; the
 first step over the soft floor and over the target are reported. Uncrossed by
 week 26 reads as "not at this pace"; already inside the band reads as "holding",
-and clear of the target as "n/a".
+and clear of the target as "n/a". In the not-at-this-pace state, the same
+roll-forward loop also tries the soft-floor and target percentages as rates,
+rounded up to the quarter hour against each future week's own capacity. The
+Time to band stat then shows the floor rate and crossing week, while the caption
+shows the floor–target rate range. This counterfactual is omitted in every other
+state. If fewer than 13 capacity-bearing weeks fit in the 26-calendar-week cap
+(for example, a long sabbatical), it falls back to plain "not at this pace".
+The at-pace chart continuation is unchanged.
 
 The card's projection chart (issue #108) derives its 13-week history from
 `report.weeks` and plots a separate four-entry `projection.forward` continuation

@@ -26,7 +26,7 @@ const projection = {
         floor: { hoursPerWeek: 26.5, feasible: true },
         target: { hoursPerWeek: 28, feasible: true },
     },
-    timeToBand: { weeksToFloor: 3, weeksToTarget: null, capWeeks: 26 },
+    timeToBand: { weeksToFloor: 3, weeksToTarget: null, capWeeks: 26, counterfactual: null },
 };
 
 // The stat reads the two in-band states off the window's own ratio.
@@ -129,10 +129,30 @@ describe('time-to-band stat (#106)', () => {
         expect(read({ report: banded(94), projection })).toBe('n/a');
     });
 
-    it('says not at this pace when the band is never reached', () => {
+    it('shows the band-rate counterfactual when the current pace never reaches it', () => {
         const stalled = { ...projection, paceHours: 19.8,
-            timeToBand: { weeksToFloor: null, weeksToTarget: null, capWeeks: 26 } };
-        expect(read({ report: banded(60), projection: stalled })).toBe('not at this pace');
+            timeToBand: { weeksToFloor: null, weeksToTarget: null, capWeeks: 26,
+                counterfactual: {
+                    floor: { hoursPerWeek: 23.4, weeks: 12 },
+                    target: { hoursPerWeek: 24, weeks: 13 },
+                },
+            } };
+        const w = shallowMount(Utilization, { props: { report: banded(60), projection: stalled } });
+
+        expect(w.vm.timeToBand).toBe('12 wks at 23.4h/wk');
+        expect(w.vm.prescription.caption).toBe('At 19.8h/wk the window never reaches 80%. Billing 23.4–24h/wk from here gets you back in the band in 12 weeks.');
+        expect(w.vm.sustained).toBe('out of reach');
+        w.unmount();
+    });
+
+    it('falls back to plain not-at-pace copy without a counterfactual', () => {
+        const stalled = { ...projection, paceHours: 19.8,
+            timeToBand: { weeksToFloor: null, weeksToTarget: null, capWeeks: 26, counterfactual: null } };
+        const w = shallowMount(Utilization, { props: { report: banded(60), projection: stalled } });
+
+        expect(w.vm.timeToBand).toBe('not at this pace');
+        expect(w.vm.prescription.caption).toBe('At 19.8h/wk the window never reaches 80%.');
+        w.unmount();
     });
 
     it('is absent without a projection', () => {
