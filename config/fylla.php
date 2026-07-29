@@ -11,12 +11,14 @@ return [
     // Timestamps are stored UTC (app.timezone); note stamps render in this zone.
     'display_timezone' => 'Europe/Amsterdam',
 
-    // GitHub PR feed (ADR-0009). Each entry is a search filter; `is:pr is:open`
-    // is prepended, so entries take the full search syntax (org:, author:@me, …).
-    // Comma-separated in GITHUB_PR_QUERIES.
+    // Actionable GitHub PR feed (ADR-0009, #110). Search qualifiers carry the
+    // lifecycle: explicit direct/team review requests, or authored PRs whose
+    // current aggregate decision is CHANGES_REQUESTED. Add one
+    // `team-review-requested:ORG/TEAM` query per relevant team when needed.
+    // `is:pr is:open` is prepended. Comma-separated in GITHUB_PR_QUERIES.
     'github_pr_queries' => array_values(array_filter(array_map(
         'trim',
-        explode(',', (string) env('GITHUB_PR_QUERIES', 'org:Back-to-code review-requested:@me,org:Back-to-code assignee:@me')),
+        explode(',', (string) env('GITHUB_PR_QUERIES', 'org:Back-to-code review-requested:@me,org:Back-to-code author:@me review:changes_requested')),
     ))),
 
     // Repos (owner/name) whose PRs are never shown. Filtered at sync so they

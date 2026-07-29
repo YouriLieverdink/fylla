@@ -64,11 +64,10 @@ class IssueController extends Controller
                 'kendo_url' => $i->kendo_url,
             ] + $scorer->scoreIssue($i, $now));
 
-        // Only PRs from the latest GitHub sync = still open. Merged PRs leave the
-        // feed; ones with local timer history are retained (for their worklogs)
-        // with a stale synced_at, so this filters them out without deleting them —
-        // the same freshness rule the issues list uses above.
-        $prs = PullRequest::where('synced_at', PullRequest::max('synced_at'))
+        // The sync owns actionability from GitHub's current query union. Rows
+        // retained for timer history remain available as provenance but stay off
+        // the action queue after a review is submitted or changes are addressed.
+        $prs = PullRequest::where('actionable', true)
             ->orderByDesc('synced_at')->get()
             ->map(fn (PullRequest $p) => [
                 'kind' => 'pr',

@@ -15,9 +15,9 @@ use Illuminate\Support\Facades\Cache;
  * Unions the search feed over each query in config('fylla.github_pr_queries'),
  * recomputes the suggested Kendo key from each PR's title/body, and upserts
  * GitHub-mirror fields on `github_id` — never touching the Fylla-owned
- * resolution columns. PRs absent from the feed are reconcile-deleted UNLESS they
- * carry local timer history, and never when the feed came back truncated (the
- * exact rule SyncKendoIssues uses).
+ * resolution columns. A complete feed marks absent PRs non-actionable and
+ * reconcile-deletes them UNLESS they carry local timer history. A truncated feed
+ * cannot prove absence, so existing actionability is preserved.
  */
 class SyncGithubPullRequests implements ShouldQueue
 {
@@ -58,6 +58,7 @@ class SyncGithubPullRequests implements ShouldQueue
                     'title' => $pr['title'],
                     'url' => $pr['url'],
                     'state' => $pr['state'],
+                    'actionable' => true,
                     'opened_at' => $pr['opened_at'] ?? null,
                     'suggested_key' => $this->parseKey($pr['title'], $pr['body']),
                     'synced_at' => $now,
@@ -66,6 +67,10 @@ class SyncGithubPullRequests implements ShouldQueue
         }
 
         if (! $truncated) {
+            // A reviewed PR disappears from review-requested immediately; an
+            // authored PR disappears once CHANGES_REQUESTED is no longer the
+            // current decision. Keep history rows, but never keep them actionable.
+            PullRequest::whereNotIn('github_id', $seen)->update(['actionable' => false]);
             PullRequest::whereNotIn('github_id', $seen)
                 ->whereDoesntHave('timers')
                 ->delete();

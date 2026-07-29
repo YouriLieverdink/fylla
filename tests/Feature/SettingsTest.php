@@ -22,6 +22,22 @@ class SettingsTest extends TestCase
                 ->has('values.github_pr_queries'));
     }
 
+    public function test_default_pr_queries_only_select_current_review_actions(): void
+    {
+        $this->assertContains(
+            'org:Back-to-code review-requested:@me',
+            config('fylla.github_pr_queries'),
+        );
+        $this->assertContains(
+            'org:Back-to-code author:@me review:changes_requested',
+            config('fylla.github_pr_queries'),
+        );
+        $this->assertNotContains(
+            'org:Back-to-code assignee:@me',
+            config('fylla.github_pr_queries'),
+        );
+    }
+
     public function test_update_persists_an_override_row(): void
     {
         $this->put('/settings', $this->payload(['utilization_target' => 80]))
@@ -44,11 +60,17 @@ class SettingsTest extends TestCase
     public function test_list_fields_round_trip_as_arrays(): void
     {
         $this->put('/settings', $this->payload([
-            'github_pr_queries' => ['org:Foo author:@me', 'org:Bar assignee:@me'],
+            'github_pr_queries' => [
+                'org:Foo author:@me review:changes_requested',
+                'org:Bar team-review-requested:Bar/reviewers',
+            ],
         ]))->assertRedirect('/settings');
 
         $this->assertSame(
-            ['org:Foo author:@me', 'org:Bar assignee:@me'],
+            [
+                'org:Foo author:@me review:changes_requested',
+                'org:Bar team-review-requested:Bar/reviewers',
+            ],
             Setting::where('key', 'github_pr_queries')->value('value'),
         );
     }
@@ -70,6 +92,15 @@ class SettingsTest extends TestCase
             'utilization_target' => 70,
             'utilization_soft_floor' => 80,
         ]))->assertSessionHasErrors('utilization_soft_floor');
+
+        $this->assertDatabaseCount('settings', 0);
+    }
+
+    public function test_non_actionable_pr_query_is_rejected(): void
+    {
+        $this->put('/settings', $this->payload([
+            'github_pr_queries' => ['org:Back-to-code assignee:@me'],
+        ]))->assertSessionHasErrors('github_pr_queries.0');
 
         $this->assertDatabaseCount('settings', 0);
     }
@@ -100,7 +131,10 @@ class SettingsTest extends TestCase
             'kendo_user_id' => 'user-1',
             'worklog_sync_days' => 90,
             'display_timezone' => 'Europe/Amsterdam',
-            'github_pr_queries' => ['org:Back-to-code assignee:@me'],
+            'github_pr_queries' => [
+                'org:Back-to-code review-requested:@me',
+                'org:Back-to-code author:@me review:changes_requested',
+            ],
             'github_pr_exclude_repos' => ['Back-to-code/daymate-api'],
             'contracted_hours_per_week' => 32,
             'contracted_off_weekday' => 5,

@@ -51,8 +51,15 @@ pinned via `up_next`, and demotes (never hides) those with a future
 `not_before`. Each row shows the score and a single "why" string (e.g. "2 days
 overdue", "quick win", "pinned"); hovering it reveals the full **breakdown** —
 each factor's weighted point contribution, the subtotal, the `up_next` boost or
-`not_before` multiplier, and the total — so the ranking is not a black box. A PR
-carries none of these fields, so it is scored via a
+`not_before` multiplier, and the total — so the ranking is not a black box. A PR enters this action queue only while the user has an explicit direct/team
+review request, or—when authored by the user—while GitHub's current aggregate
+review decision is `CHANGES_REQUESTED`. Submitting any review removes a requested
+review; a later renewed request returns the same Work item. Team requests require
+a `team-review-requested:ORG/TEAM` line in the GitHub PR query setting. Fylla does
+not infer stale reviews from commits. The existing suggested/manual Kendo link
+and Kendo time booking remain unchanged.
+
+A PR carries none of the ranking fields, so it is scored via a
 synthetic due date (`opened_at + 1 day` grace, High priority): high the day it
 opens, climbing to the top once it sits past the grace. This needs the PR's
 GitHub `created_at` persisted as `opened_at` on `pull_requests`.
@@ -508,8 +515,8 @@ php artisan key:generate
 #   KENDO_TOKEN=<bearer token>
 #   FYLLA_KENDO_USER_ID=<your Kendo user id>   # required: filters worklogs to you
 #
-# Optional GitHub PR feed overrides:
-#   GITHUB_PR_QUERIES=<comma-separated search filters>
+# Optional actionable GitHub PR feed overrides (comma-separated):
+#   GITHUB_PR_QUERIES="org:Back-to-code review-requested:@me,org:Back-to-code team-review-requested:Back-to-code/reviewers,org:Back-to-code author:@me review:changes_requested"
 #   GITHUB_PR_EXCLUDE_REPOS=<comma-separated owner/name repos to hide>
 
 php artisan reverb:install   # writes REVERB_APP_ID / _KEY / _SECRET into .env

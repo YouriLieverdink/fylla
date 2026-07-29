@@ -41,12 +41,16 @@ polymorphic; and the Worklog carries the Kendo coordinates it posts to.**
 - **`pull_requests` mirror** (GitHub-owned, ADR-0003 pattern). Keyed on the
   GitHub PR id; stores `number`, `repo`, `title`, `url`, `state`, `synced_at`,
   plus a recomputed `suggested_key`. `SyncGithubPullRequests` unions the GitHub
-  Search API over each query in `config('fylla.github_pr_queries')` (default
-  `['review-requested:@me', 'assignee:@me']`, env-overridable) — the filter is a
-  config knob, not hardcoded, so it takes the full search syntax (`org:`,
-  `author:@me`, `draft:false`, …). It upserts and reconcile-deletes PRs absent
-  from the feed **unless they carry local timer history** — the exact rule the
-  issues sync uses.
+  Search API over each query in `config('fylla.github_pr_queries')`. The default
+  union is direct `review-requested:@me` plus authored
+  `author:@me review:changes_requested`; a
+  `team-review-requested:ORG/TEAM` query can be added for each relevant team.
+  These current GitHub search states define actionability (#110): submitting any
+  review removes a requested-review PR, a renewed request returns the same PR,
+  and authored PRs appear only while the aggregate decision is
+  `CHANGES_REQUESTED`. Fylla does not compare head/review SHAs. The sync marks
+  absent rows non-actionable and reconcile-deletes them unless they carry local
+  timer history; retained history rows do not remain on the Worklist.
 - **Key parsed from title then body** (not the branch name). The original plan
   read `head_ref` first via a per-PR `GET /repos/{o}/{r}/pulls/{n}` call, but the
   `Back-to-code` org **forbids classic PATs on repo-scoped endpoints** (that call

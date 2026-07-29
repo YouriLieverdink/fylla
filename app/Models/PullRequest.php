@@ -12,6 +12,7 @@ class PullRequest extends Model
     protected $guarded = [];
 
     protected $casts = [
+        'actionable' => 'boolean',
         'synced_at' => 'datetime',
         'resolved_at' => 'datetime',
         'opened_at' => 'datetime',

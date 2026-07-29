@@ -130,8 +130,9 @@ const field = 'w-full rounded-[11px] border border-[#e0dbd0] bg-surface px-3.5 p
                 <h2 class="mb-4 font-mono text-[11px] uppercase tracking-[0.16em] text-faint">GitHub PRs</h2>
                 <div class="flex flex-col gap-4">
                     <label class="flex flex-col gap-1.5">
-                        <span class="text-[13px] text-muted">PR queries — one per line (<code class="text-[12px]">is:pr is:open</code> is prepended)</span>
+                        <span class="text-[13px] text-muted">Actionable PR queries — one per line (<code class="text-[12px]">is:pr is:open</code> is prepended)</span>
                         <textarea v-model="form.github_pr_queries" rows="3" :class="field" class="font-mono text-[13px]"></textarea>
+                        <span class="text-[12px] text-faint-3">Use <code>review-requested:@me</code>, <code>team-review-requested:ORG/TEAM</code>, or <code>author:@me review:changes_requested</code>.</span>
                         <span v-if="form.errors.github_pr_queries" class="text-[12px] text-rose-500">{{ form.errors.github_pr_queries }}</span>
                     </label>
                     <label class="flex flex-col gap-1.5">
