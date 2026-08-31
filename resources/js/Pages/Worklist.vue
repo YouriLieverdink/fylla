@@ -523,6 +523,10 @@ useAction({ id: 'wl:note', label: 'Add timer note', keys: 'n', scope: 'worklist'
                                         <span class="tabular-nums">{{ item.breakdown.total.toFixed(1) }}</span>
                                     </div>
                                 </div>
+                                <!-- the pin is a band, not a score term (ADR-0013), so it needs saying in words -->
+                                <div v-if="item.pinned" class="mt-2 border-t border-divider-soft pt-2 text-[11px] leading-snug text-faint-2">
+                                    Pinned to up next: ranks above every unpinned item, whatever its score.
+                                </div>
                             </div>
                         </div>
                     </div>

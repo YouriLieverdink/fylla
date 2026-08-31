@@ -11,7 +11,7 @@ use Tests\TestCase;
 /**
  * Ported from the retired Go sorter (internal/scheduler/sorter_test.go), minus
  * the dropped Age component (ADR-0013). Component math is exact; orderings prove
- * the composite, up_next boost, not_before penalty, and PR synthetic-due.
+ * the composite, the up_next band, not_before penalty, and PR synthetic-due.
  */
 class WorklistScorerTest extends TestCase
 {
@@ -71,8 +71,18 @@ class WorklistScorerTest extends TestCase
         $this->assertSame(0.0, WorklistScorer::dueDateScore(null, $this->now));
         $this->assertSame(0.0, WorklistScorer::dueDateScore($this->now->copy()->addDays(31), $this->now));
         $this->assertEqualsWithDelta(50.0, WorklistScorer::dueDateScore($this->now->copy()->addDays(15), $this->now), 0.1);
-        // Overdue clamps to 100.
-        $this->assertSame(100.0, WorklistScorer::dueDateScore($this->now->copy()->subDays(2), $this->now));
+        // Overdue keeps climbing on the same slope, no ceiling.
+        $this->assertEqualsWithDelta(106.67, WorklistScorer::dueDateScore($this->now->copy()->subDays(2), $this->now), 0.01);
+    }
+
+    public function test_older_overdue_outranks_newer_overdue(): void
+    {
+        $recent = WorklistScorer::dueDateScore($this->now->copy()->subDays(3), $this->now);
+        $stale = WorklistScorer::dueDateScore($this->now->copy()->subDays(73), $this->now);
+
+        $this->assertGreaterThan($recent, $stale);
+        // Same slope as the pre-due ramp: 70 extra days overdue = 70 * 100/30 points.
+        $this->assertEqualsWithDelta(70 * 100 / 30, $stale - $recent, 0.01);
     }
 
     // --- Estimate (SORT008) ---
@@ -118,11 +128,16 @@ class WorklistScorerTest extends TestCase
 
     // --- up_next (SORT011) ---
 
-    public function test_upnext_boost_beats_higher_priority(): void
+    public function test_upnext_is_a_band_not_a_score_boost(): void
     {
-        $regular = $this->scoreOf(['priority' => 'Highest']);
-        $upnext = $this->scoreOf(['priority' => 'Lowest', 'up_next' => true]);
-        $this->assertGreaterThan($regular, $upnext);
+        $pinned = $this->scorer->scoreIssue($this->issue(['priority' => 'Lowest', 'up_next' => true]), $this->now);
+        $regular = $this->scorer->scoreIssue($this->issue(['priority' => 'Highest']), $this->now);
+
+        $this->assertTrue($pinned['pinned']);
+        $this->assertFalse($regular['pinned']);
+        // The pin adds nothing to the score; the controller's band does the lifting.
+        $this->assertEqualsWithDelta($this->scoreOf(['priority' => 'Lowest']), $pinned['score'], 0.01);
+        $this->assertGreaterThan($pinned['score'], $regular['score']);
     }
 
     public function test_upnext_exempt_from_not_before_penalty(): void
@@ -130,8 +145,8 @@ class WorklistScorerTest extends TestCase
         $future = $this->now->copy()->addDays(10);
         $upnext = $this->scoreOf(['priority' => 'Medium', 'not_before' => $future, 'up_next' => true]);
         $regular = $this->scoreOf(['priority' => 'Medium']);
-        // 60*0.45 + 50 boost, penalty skipped.
-        $this->assertEqualsWithDelta($regular + 50, $upnext, 0.01);
+        // Penalty skipped, so a pinned deferred item scores as if actionable now.
+        $this->assertEqualsWithDelta($regular, $upnext, 0.01);
     }
 
     // --- Reasons ---
@@ -161,6 +176,15 @@ class WorklistScorerTest extends TestCase
         // Fresh PR still ranks above a plain low-priority issue.
         $this->assertGreaterThan($this->scoreOf(['priority' => 'Lowest']), $fresh);
         $this->assertSame('4 days old', $this->scorer->scorePr($pr($this->now->copy()->subDays(4)), $this->now)['reason']);
+    }
+
+    public function test_older_pr_outranks_newer_pr(): void
+    {
+        $pr = fn (int $days) => $this->scorer->scorePr(new PullRequest(['opened_at' => $this->now->copy()->subDays($days)]), $this->now)['score'];
+
+        $this->assertGreaterThan($pr(3), $pr(73));
+        // +1 point of final score per day overdue (0.30 weight x 100/30 slope).
+        $this->assertEqualsWithDelta(70.0, $pr(73) - $pr(3), 0.01);
     }
 
     public function test_pr_age_shows_hours_under_a_day(): void
@@ -207,12 +231,12 @@ class WorklistScorerTest extends TestCase
         $this->assertEqualsWithDelta($bd['subtotal'] * $bd['transform']['amount'], $bd['total'], 0.01);
     }
 
-    public function test_breakdown_upnext_shows_additive_boost_no_multiplier(): void
+    public function test_breakdown_upnext_has_no_transform(): void
     {
-        $bd = $this->scorer->scoreIssue($this->issue(['priority' => 'Low', 'up_next' => true]), $this->now)['breakdown'];
+        $bd = $this->scorer->scoreIssue($this->issue(['priority' => 'Low', 'up_next' => true, 'not_before' => $this->now->copy()->addDays(10)]), $this->now)['breakdown'];
 
-        $this->assertSame(['label' => 'Up next', 'op' => '+', 'amount' => 50.0], $bd['transform']);
-        $this->assertEqualsWithDelta($bd['subtotal'] + 50, $bd['total'], 0.01);
+        $this->assertNull($bd['transform']);
+        $this->assertEqualsWithDelta($bd['subtotal'], $bd['total'], 0.01);
     }
 
     public function test_breakdown_omits_zero_components_but_keeps_priority(): void

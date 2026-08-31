@@ -49,11 +49,11 @@ _Avoid_: borrowed issue, foreign issue (jargon; it is just a Kendo issue you tim
 Fylla-native annotations a user sets on a Work item to steer where it lands on the worklist. **Owned locally** (ADR-0004), never synced to or from a provider, and set through Fylla's own UI. Distinct from **priority**, which is a Kendo-owned field (edited in Fylla but stored in Kendo).
 
 **Up next**:
-A user-set **pin** marking a Work item as committed-to-next. Applies a large additive score boost (ADR-0013) so it rises near the top — a strong nudge, not an absolute lock. Manual on/off; **several may be pinned at once** and pinned items still order among themselves by score.
+A user-set **pin** marking a Work item as committed-to-next. Pinned items form a **band above all unpinned work** (ADR-0013), not a score boost — the score range is unbounded above, so no additive nudge can reliably reach the top. Manual on/off; **several may be pinned at once** and pinned items still order among themselves by score.
 _Avoid_: starred, flagged (reserve for other affordances)
 
 **Due date**:
-A user-set **deadline** on a Work item. Drives the due-date and crunch score components (climbs as it nears, overdue tops out). A Fylla concept — Kendo issues carry no due date Fylla mirrors.
+A user-set **deadline** on a Work item. Drives the due-date and crunch score components: the score climbs as the date nears and **keeps climbing while overdue**, so the longer something is late the higher it ranks. A Fylla concept — Kendo issues carry no due date Fylla mirrors.
 
 **Not before**:
 A user-set **earliest-actionable date**. **Demotes, never hides** — the item stays on the worklist but its score is multiplied down until the date passes, so deferred work sinks without vanishing.

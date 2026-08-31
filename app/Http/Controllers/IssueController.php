@@ -95,14 +95,15 @@ class IssueController extends Controller
                 'not_before' => $d->not_before?->toDateString(),
             ] + $scorer->scoreDraft($d, $now));
 
-        // Score desc; a stable key breaks ties (sort isn't guaranteed stable).
+        // Pinned band first (ADR-0013), then score desc; a stable key breaks ties
+        // (sort isn't guaranteed stable).
         $tie = fn (array $x) => match ($x['kind']) {
             'issue' => (string) $x['key'],
             'pr' => $x['repo'].'#'.$x['number'],
             'draft' => 'draft#'.$x['id'],
         };
         $items = $issues->concat($prs)->concat($drafts)
-            ->sort(fn ($a, $b) => $b['score'] <=> $a['score'] ?: strcmp($tie($a), $tie($b)))
+            ->sort(fn ($a, $b) => $b['pinned'] <=> $a['pinned'] ?: $b['score'] <=> $a['score'] ?: strcmp($tie($a), $tie($b)))
             ->values();
 
         return Inertia::render('Worklist', [

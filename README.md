@@ -46,12 +46,16 @@ The home page (`/`) is the **Worklist**: open issues, GitHub PRs, and
 Fylla-native drafts merged into one list, ranked by a weighted composite score
 recomputed on every render
 (`App\Services\WorklistScorer`, ADR-0013) — never hand-dragged. The score
-weights priority, due date, and estimate, boosts items in a crunch window or
-pinned via `up_next`, and demotes (never hides) those with a future
-`not_before`. Each row shows the score and a single "why" string (e.g. "2 days
+weights priority, due date, and estimate, boosts items in a crunch window, and
+demotes (never hides) those with a future `not_before`. The due component has no
+ceiling: an overdue item keeps climbing (+1 point of score per day late), so the
+longest-neglected work rises. Items pinned via `up_next` are a **band** rather
+than a boost — they sort above all unpinned work and order among themselves by
+score. Each row shows the score and a single "why" string (e.g. "2 days
 overdue", "quick win", "pinned"); hovering it reveals the full **breakdown** —
-each factor's weighted point contribution, the subtotal, the `up_next` boost or
-`not_before` multiplier, and the total — so the ranking is not a black box. A PR enters this action queue only while the user has an explicit direct/team
+each factor's weighted point contribution, the subtotal, the `not_before`
+multiplier, the total, and a note when the item is pinned — so the ranking is
+not a black box. A PR enters this action queue only while the user has an explicit direct/team
 review request, or—when authored by the user—while GitHub's current aggregate
 review decision is `CHANGES_REQUESTED`. Submitting any review removes a requested
 review; a later renewed request returns the same Work item. Team requests require

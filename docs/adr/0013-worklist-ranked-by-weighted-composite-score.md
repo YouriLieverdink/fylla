@@ -70,3 +70,62 @@ Default weights (from the Go app): `priority 0.45, due 0.30, estimate 0.15`,
 - Reversible in principle (it is an algorithm), but recorded because a future
   reader will otherwise "simplify" it to a plain sort and lose the deliberate
   behavior above.
+
+## Amended 2026-08-31 — overdue escalates without a ceiling; `up_next` is a band
+
+Two statements above turned out to be false in practice. Both are corrected
+here rather than in a new ADR, so this stays the single document on worklist
+ranking.
+
+### The overdue clamp made the PR escalation a lie
+
+This ADR claims a PR "climbs to the top once past the grace". It does not. It
+climbs for exactly 24 hours and then stops: `DueDateScore` returns a flat 100
+for anything overdue and `CrunchBoost` a flat 20, so every PR past the grace
+lands on `0.45·80 + 0.30·100 + 20 = 86`, whatever its age.
+
+Observed on the live worklist: **11 of 20 items scored exactly 86** — every
+actionable PR, ranging from 3 days old to 73 days old, indistinguishable. They
+took the entire top of the list, ordered alphabetically by `repo#number`
+(the determinism tiebreak in `IssueController`), which is what made the ranking
+look arbitrary and cost the list its credibility.
+
+**`DueDateScore` no longer clamps at 100.** Past the due date it keeps climbing
+at the same slope as the pre-due ramp (100 points per 30 days, so +1 point of
+final score per day overdue). PRs then spread roughly 88 (3d) → 158 (73d) and
+rank by how long they have been left, which is what this ADR always described.
+`CrunchBoost` keeps its 20-point ceiling; the due component now carries the
+escalation, and a second unbounded term would double-count it.
+
+Consequence, accepted deliberately: with PRs this stale, **every PR outranks
+every issue**. That is the intended reading — PR review blocks a teammate — but
+it means the composite is doing no discriminating work across the top of the
+list, only age ordering. If the worklist ever needs issues interleaved with
+PRs, this is the knob, not the weights.
+
+### An additive `up_next` boost cannot survive an unbounded range
+
+`UP_NEXT_BOOST` is a flat +50, calibrated when the whole score range was 0–100.
+Once a PR can reach 158, a pinned issue at 81.5 ranks below a three-day-old PR.
+Raising the constant only chases a ceiling that moves every day the oldest PR
+ages.
+
+**Pinned items are now a band: they sort above all unpinned work, ordered among
+themselves by score.** This reverses this ADR's "a strong nudge, not an absolute
+lock" — that framing was only tenable while the range was bounded. The pin is
+the one place the user overrides the algorithm outright, and it has to work
+without depending on the current magnitude of anything else.
+
+### Not changed
+
+- **Ties are legitimate.** Two Medium issues with no deadline, no estimate and
+  no pin score identically because they *are* identical on everything Fylla
+  holds. A tiebreak that invented a distinction would manufacture confidence the
+  data does not support. `strcmp` on the item key stays — its only job is
+  keeping the order stable between renders.
+- **Age is still dropped for issues.** No `created_at` on the `issues` mirror,
+  and the case for one has not improved.
+- **The weights are unchanged.** Note that `due_date` is null on every synced
+  issue in practice, so 30% of the model is inert on the issue side. That is a
+  usage gap, not a weighting bug; the fix is setting due dates, not
+  redistributing weight onto priority.

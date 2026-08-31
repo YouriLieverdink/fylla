@@ -14,7 +14,7 @@ use Carbon\Carbon;
  * recomputed every render.
  *
  *   score = 0.45·Priority + 0.30·Due + 0.15·Estimate + Crunch + TypeBonus
- *   then:  up_next → +50   else → ×NotBefore(0.2–1.0)
+ *   then:  up_next → pinned band (sorts above everything)  else → ×NotBefore(0.2–1.0)
  *
  * A PR carries none of these fields, so it is fed to the same math as a High
  * issue due `opened_at + grace` — high on open, climbing to the top once past
@@ -27,8 +27,6 @@ class WorklistScorer
     private const W_DUE = 0.30;
 
     private const W_ESTIMATE = 0.15;
-
-    private const UP_NEXT_BOOST = 50;
 
     /** Priority 1–5 → 0-100. Unset/out-of-range → medium (index 2). */
     private const PRIORITY_LEVELS = [100.0, 80.0, 60.0, 40.0, 20.0];
@@ -45,8 +43,8 @@ class WorklistScorer
     private const PR_PRIORITY = 2; // High
 
     /**
-     * Score an issue. Returns ['score' => float, 'reason' => string,
-     * 'breakdown' => array] — the breakdown is the per-component weighted
+     * Score an issue. Returns ['score' => float, 'pinned' => bool,
+     * 'reason' => string, 'breakdown' => array] — the breakdown is the per-component weighted
      * contributions the UI reveals on hover (ADR-0013: not a black box).
      */
     public function scoreIssue(Issue $issue, Carbon $now): array
@@ -93,9 +91,10 @@ class WorklistScorer
     }
 
     /**
-     * The weighted composite (ADR-0013). Returns ['score', 'breakdown'] where
-     * breakdown lists each factor's actual point contribution — the score is
-     * summed from it, so the two can never drift.
+     * The weighted composite (ADR-0013). Returns ['score', 'pinned', 'breakdown']
+     * where breakdown lists each factor's actual point contribution — the score is
+     * summed from it, so the two can never drift. `pinned` is a sort band, not a
+     * score term: the range is unbounded above, so no additive boost reaches the top.
      */
     private function composite(?int $priority, ?string $priorityLabel, ?Carbon $due, ?int $mins, ?string $type, bool $upNext, ?Carbon $notBefore, Carbon $now): array
     {
@@ -119,10 +118,8 @@ class WorklistScorer
         $subtotal = array_sum(array_column($components, 'points'));
 
         $transform = null;
-        if ($upNext) {
-            $total = $subtotal + self::UP_NEXT_BOOST;
-            $transform = ['label' => 'Up next', 'op' => '+', 'amount' => (float) self::UP_NEXT_BOOST];
-        } else {
+        $total = $subtotal;
+        if (! $upNext) {
             $factor = self::notBeforePenalty($notBefore, $now);
             $total = $subtotal * $factor;
             if ($factor < 1.0) {
@@ -132,6 +129,7 @@ class WorklistScorer
 
         return [
             'score' => $total,
+            'pinned' => $upNext,
             'breakdown' => [
                 'components' => $components,
                 'subtotal' => $subtotal,
@@ -150,16 +148,17 @@ class WorklistScorer
         return self::PRIORITY_LEVELS[$priority - 1];
     }
 
-    /** Days until due: due today=100, 30+ days out=0, linear; null=0, overdue=100. */
+    /**
+     * Days until due: due today=100, 30+ days out=0, linear; null=0. Overdue is
+     * NOT clamped — it keeps climbing on the same slope (+100/30 days), which is
+     * what makes a stale PR outrank a fresh one (ADR-0013, amended 2026-08-31).
+     */
     public static function dueDateScore(?Carbon $due, Carbon $now): float
     {
         if ($due === null) {
             return 0.0;
         }
         $days = self::days($due, $now);
-        if ($days <= 0) {
-            return 100.0;
-        }
         if ($days >= 30) {
             return 0.0;
         }
