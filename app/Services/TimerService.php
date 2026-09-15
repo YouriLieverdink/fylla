@@ -127,14 +127,11 @@ class TimerService
      */
     public function overlapsToday(): array
     {
-        $day = now()->setTimezone(config('fylla.display_timezone'));
-
-        $from = $day->copy()->startOfDay()->utc();
+        $from = now()->setTimezone(config('fylla.display_timezone'))->startOfDay()->utc();
 
         // Segments that touch today, not those that started today: a timer left
         // running overnight closes this morning against yesterday's start.
         $segments = Segment::with('timer.timeable')
-            ->where('started_at', '<=', $day->copy()->endOfDay()->utc())
             ->where(fn ($q) => $q->whereNull('ended_at')->orWhere('ended_at', '>=', $from))
             ->orderBy('started_at')->get();
 
