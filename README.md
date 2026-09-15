@@ -129,6 +129,12 @@ correcting a forgotten/late start. Pulling it before the previous stretch may
 overlap an already-posted worklog — accepted, user-reconciled in Kendo. Only
 available while running; a future time is rejected.
 
+When that happens the timer card shows a **double-booked** warning naming the
+minutes and both segments (`15 min double-booked — A-1 14:00–15:00 overlaps B-1
+from 14:45`). It is computed from today's segments in the display tz on every
+render, covers all timers, and disappears once the overlap is corrected. Gaps
+between segments are left alone: a break is not an error.
+
 Routes: `POST /timers` (start), `POST /timers/pause`, `POST /timers/resume`,
 `POST /timers/stop`, `POST /timers/notes`, `POST /timers/start-time`.
 

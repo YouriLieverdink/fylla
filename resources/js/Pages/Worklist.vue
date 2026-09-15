@@ -17,6 +17,8 @@ const props = defineProps({
     // One ranked list of { kind:'issue'|'pr', id, title, reason, score, ... }.
     items: { type: Array, default: () => [] },
     timer: { type: Object, default: null },
+    // [{ minutes, earlier, later }] — today's double-booked stretches (#114).
+    overlaps: { type: Array, default: () => [] },
     liveIssueIds: { type: Array, default: () => [] },
     livePrIds: { type: Array, default: () => [] },
     utilization: { type: Object, default: () => ({}) },
@@ -400,6 +402,7 @@ useAction({ id: 'wl:note', label: 'Add timer note', keys: 'n', scope: 'worklist'
                 ref="timerStack"
                 :active="timer?.active ?? null"
                 :paused="timer?.paused ?? []"
+                :overlaps="overlaps"
                 @pause="router.post('/timers/pause', {}, opts)"
                 @resume="router.post('/timers/resume', {}, opts)"
                 @stop="router.post('/timers/stop', {}, opts)"
