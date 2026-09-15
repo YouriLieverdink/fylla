@@ -9,6 +9,8 @@ const props = defineProps({
     active: { type: Object, default: null },
     // [{ id, key, title, accumulated_seconds }]
     paused: { type: Array, default: () => [] },
+    // [{ minutes, earlier: {key, from, to}, later: {key, from, to} }]
+    overlaps: { type: Array, default: () => [] },
 });
 const emit = defineEmits(['pause', 'resume', 'stop', 'note']);
 
@@ -47,6 +49,10 @@ const activeTime = computed(() => {
 
 const notes = computed(() => props.active?.notes ?? []);
 
+// The corrected segment may still be open, and it is not always the later of the
+// pair: a start pulled far enough back sorts it first.
+const span = (side) => (side.to ? `${side.from}–${side.to}` : `from ${side.from}`);
+
 // Inline edit of the open segment's start time (display-tz H:i).
 const editingStart = ref(false);
 const startDraft = ref('');
@@ -78,6 +84,14 @@ function submitStart() {
         <div class="mb-4 flex items-center justify-between">
             <div class="font-mono text-[11px] font-semibold uppercase tracking-[0.13em] text-faint">Timer stack</div>
             <div v-if="active" class="text-[12px] text-faint-2">{{ paused.length + 1 }} running · 1 active</div>
+        </div>
+
+        <div v-if="overlaps.length" class="mb-4 rounded-[14px] border border-[#e8cdc9] bg-[#fbf1ef] px-4 py-3">
+            <div class="font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] text-over">Double-booked</div>
+            <div v-for="(o, i) in overlaps" :key="i" class="mt-1.5 text-[12.5px] leading-[1.45] text-ink-soft">
+                {{ o.minutes }} min double-booked — {{ o.earlier.key }} {{ span(o.earlier) }} overlaps
+                {{ o.later.key }} {{ span(o.later) }}. Reconcile in Kendo.
+            </div>
         </div>
 
         <EmptyState v-if="!active" title="No timer running" text="Start a timer from an issue below." />

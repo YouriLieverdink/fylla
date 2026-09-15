@@ -211,4 +211,56 @@ class TimerServiceTest extends TestCase
             ->where('timer.active.running', false)
             ->where('timer.active.accumulated_seconds', 120));
     }
+
+    public function test_a_backdated_start_reports_the_double_booked_minutes_and_both_segments(): void
+    {
+        config(['fylla.display_timezone' => 'Europe/Amsterdam']);
+        $this->travelTo(CarbonImmutable::parse('2026-07-13 12:00:00', 'UTC')); // 14:00 Amsterdam
+
+        $this->svc->start($this->issue('A-1'));
+        $this->travel(60)->minutes();
+        $this->svc->stop();                     // A ran 14:00 → 15:00, already posted
+
+        $this->svc->start($this->issue('B-1'));
+        $this->svc->setStartTime('14:45');      // pulled 15 min into A's stretch
+
+        $overlaps = $this->svc->overlapsToday();
+
+        $this->assertCount(1, $overlaps);
+        $this->assertSame(15, $overlaps[0]['minutes']);
+        $this->assertSame('A-1', $overlaps[0]['earlier']->timer->timeable->key);
+        $this->assertSame('B-1', $overlaps[0]['later']->timer->timeable->key);
+    }
+
+    public function test_a_break_between_segments_is_not_an_overlap(): void
+    {
+        config(['fylla.display_timezone' => 'Europe/Amsterdam']);
+        $this->travelTo(CarbonImmutable::parse('2026-07-13 12:00:00', 'UTC'));
+
+        $this->svc->start($this->issue('A-1'));
+        $this->travel(60)->minutes();
+        $this->svc->stop();
+
+        $this->travel(30)->minutes();           // lunch: unaccounted, but not wrong
+        $this->svc->start($this->issue('B-1'));
+
+        $this->assertSame([], $this->svc->overlapsToday());
+    }
+
+    public function test_a_segment_that_ran_past_midnight_still_counts_against_today(): void
+    {
+        config(['fylla.display_timezone' => 'Europe/Amsterdam']);
+        $this->travelTo(CarbonImmutable::parse('2026-07-13 20:00:00', 'UTC')); // 22:00 Amsterdam
+
+        $this->svc->start($this->issue('A-1'));                                 // left running overnight
+
+        $this->travelTo(CarbonImmutable::parse('2026-07-14 07:00:00', 'UTC'));  // 09:00 Amsterdam
+        $this->svc->start($this->issue('B-1'));                                 // closes A at 09:00, opens B
+        $this->svc->setStartTime('08:00');                                      // pulled an hour into A's stretch
+
+        $overlaps = $this->svc->overlapsToday();
+
+        $this->assertCount(1, $overlaps);
+        $this->assertSame(60, $overlaps[0]['minutes']);
+    }
 }

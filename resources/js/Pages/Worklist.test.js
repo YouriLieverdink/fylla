@@ -8,6 +8,7 @@ const { post, patch, del, visit, usePoll } = vi.hoisted(() => ({
 vi.mock('@inertiajs/vue3', () => ({ router: { post, patch, delete: del, visit }, usePoll }));
 
 import Worklist from './Worklist.vue';
+import TimerStack from '../Components/TimerStack.vue';
 import { registry } from '../Composables/useAction';
 
 // jsdom implements neither; the cursor's scroll-into-view watcher would throw.
@@ -55,6 +56,19 @@ describe('Worklist keyset (#44)', () => {
         const w = await mountAt(0);
         const keys = [...registry.values()].filter((a) => a.scope === 'worklist').map((a) => a.keys).sort();
         expect(keys).toEqual(['a', 'c', 'd', 'e', 'm', 'n', 'o', 'p', 'r', 's', 't', 'u']);
+        w.unmount();
+    });
+});
+
+describe('Worklist double-booked warning (#114)', () => {
+    beforeEach(() => { registry.clear(); vi.clearAllMocks(); });
+
+    it('hands the day\'s overlaps to the timer card', async () => {
+        const overlaps = [{ minutes: 15, earlier: { key: 'A-1', from: '14:00', to: '15:00' }, later: { key: 'B-1', from: '14:45', to: null } }];
+        const w = shallowMount(Worklist, { props: { items: [], overlaps } });
+        await nextTick();
+
+        expect(w.findComponent(TimerStack).props('overlaps')).toEqual(overlaps);
         w.unmount();
     });
 });

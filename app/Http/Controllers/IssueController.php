@@ -14,6 +14,7 @@ use App\Models\Draft;
 use App\Models\Issue;
 use App\Models\Project;
 use App\Models\PullRequest;
+use App\Models\Segment;
 use App\Models\Timer;
 use App\Services\TimerService;
 use App\Services\WorklistScorer;
@@ -111,6 +112,7 @@ class IssueController extends Controller
             'liveIssueIds' => $this->liveIds($live, Issue::class),
             'livePrIds' => $this->liveIds($live, PullRequest::class),
             'timer' => $this->stack($live),
+            'overlaps' => $this->overlaps(),
             'utilization' => (new UtilizationReport)->generate(),
             // Target projects for promoting a draft to a Kendo issue (ADR-0012).
             'projects' => Project::orderBy('name')->get(['kendo_id', 'name']),
@@ -198,6 +200,23 @@ class IssueController extends Controller
         SyncKendoProjectIssues::dispatch();
 
         return back();
+    }
+
+    /** Today's double-booked stretches (#114), shaped for the timer card. */
+    private function overlaps(): array
+    {
+        $at = fn ($t) => $t?->setTimezone(config('fylla.display_timezone'))->format('H:i');
+        $side = fn (Segment $s) => [
+            'key' => $this->subjectKey($s->timer->timeable),
+            'from' => $at($s->started_at),
+            'to' => $at($s->ended_at),
+        ];
+
+        return array_map(fn (array $o) => [
+            'minutes' => $o['minutes'],
+            'earlier' => $side($o['earlier']),
+            'later' => $side($o['later']),
+        ], $this->timers->overlapsToday());
     }
 
     /** Subject ids of live timers for one morph type — drives the "live" badge. */
