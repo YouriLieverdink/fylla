@@ -129,10 +129,14 @@ class TimerService
     {
         $day = now()->setTimezone(config('fylla.display_timezone'));
 
-        $segments = Segment::whereBetween('started_at', [
-            $day->copy()->startOfDay()->utc(),
-            $day->copy()->endOfDay()->utc(),
-        ])->orderBy('started_at')->get();
+        $from = $day->copy()->startOfDay()->utc();
+
+        // Segments that touch today, not those that started today: a timer left
+        // running overnight closes this morning against yesterday's start.
+        $segments = Segment::with('timer.timeable')
+            ->where('started_at', '<=', $day->copy()->endOfDay()->utc())
+            ->where(fn ($q) => $q->whereNull('ended_at')->orWhere('ended_at', '>=', $from))
+            ->orderBy('started_at')->get();
 
         $end = fn (Segment $s) => $s->ended_at ?? now();
 
@@ -140,7 +144,7 @@ class TimerService
         foreach ($segments as $i => $earlier) {
             foreach ($segments->slice($i + 1) as $later) {
                 $shared = min($end($earlier), $end($later))->getTimestamp() - $later->started_at->getTimestamp();
-                $minutes = (int) round(max(0, $shared) / 60);
+                $minutes = (int) round($shared / 60);
                 if ($minutes > 0) {
                     $overlaps[] = ['minutes' => $minutes, 'earlier' => $earlier, 'later' => $later];
                 }

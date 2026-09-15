@@ -246,4 +246,21 @@ class TimerServiceTest extends TestCase
 
         $this->assertSame([], $this->svc->overlapsToday());
     }
+
+    public function test_a_segment_that_ran_past_midnight_still_counts_against_today(): void
+    {
+        config(['fylla.display_timezone' => 'Europe/Amsterdam']);
+        $this->travelTo(CarbonImmutable::parse('2026-07-13 20:00:00', 'UTC')); // 22:00 Amsterdam
+
+        $this->svc->start($this->issue('A-1'));                                 // left running overnight
+
+        $this->travelTo(CarbonImmutable::parse('2026-07-14 07:00:00', 'UTC'));  // 09:00 Amsterdam
+        $this->svc->start($this->issue('B-1'));                                 // closes A at 09:00, opens B
+        $this->svc->setStartTime('08:00');                                      // pulled an hour into A's stretch
+
+        $overlaps = $this->svc->overlapsToday();
+
+        $this->assertCount(1, $overlaps);
+        $this->assertSame(60, $overlaps[0]['minutes']);
+    }
 }

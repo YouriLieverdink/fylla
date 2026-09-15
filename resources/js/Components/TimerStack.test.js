@@ -28,4 +28,14 @@ describe('TimerStack double-booked warning', () => {
 
         expect(w.text()).not.toContain('double-booked');
     });
+    it('reads as a range on a closed segment and an open start on the corrected one', () => {
+        const flipped = {
+            minutes: 60,
+            earlier: { key: 'B-1', from: '08:30', to: null },
+            later: { key: 'A-1', from: '09:00', to: '10:00' },
+        };
+        const w = mount(TimerStack, { props: { active: null, paused: [], overlaps: [flipped] } });
+
+        expect(w.text()).toContain('60 min double-booked — B-1 from 08:30 overlaps A-1 09:00–10:00');
+    });
 });

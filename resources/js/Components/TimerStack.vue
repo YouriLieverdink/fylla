@@ -49,6 +49,10 @@ const activeTime = computed(() => {
 
 const notes = computed(() => props.active?.notes ?? []);
 
+// The corrected segment may still be open, and it is not always the later of the
+// pair: a start pulled far enough back sorts it first.
+const span = (side) => (side.to ? `${side.from}–${side.to}` : `from ${side.from}`);
+
 // Inline edit of the open segment's start time (display-tz H:i).
 const editingStart = ref(false);
 const startDraft = ref('');
@@ -85,8 +89,8 @@ function submitStart() {
         <div v-if="overlaps.length" class="mb-4 rounded-[14px] border border-[#e8cdc9] bg-[#fbf1ef] px-4 py-3">
             <div class="font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] text-over">Double-booked</div>
             <div v-for="(o, i) in overlaps" :key="i" class="mt-1.5 text-[12.5px] leading-[1.45] text-ink-soft">
-                {{ o.minutes }} min double-booked — {{ o.earlier.key }} {{ o.earlier.from }}–{{ o.earlier.to }} overlaps
-                {{ o.later.key }} from {{ o.later.from }}. Reconcile in Kendo.
+                {{ o.minutes }} min double-booked — {{ o.earlier.key }} {{ span(o.earlier) }} overlaps
+                {{ o.later.key }} {{ span(o.later) }}. Reconcile in Kendo.
             </div>
         </div>
 
